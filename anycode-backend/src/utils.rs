@@ -27,7 +27,7 @@ pub const DEFAULT_IGNORE_FILES: &[&str] = &[
 pub fn get_ignore_dirs() -> Vec<&'static str> {
     let mut dirs = DEFAULT_IGNORE_DIRS.to_vec();
 
-    if let Ok(extra_dirs) = std::env::var("REDAI_IGNORE_DIRS") {
+    if let Ok(extra_dirs) = std::env::var("ANYCODE_IGNORE_DIRS") {
         for dir in extra_dirs.split(',') {
             let dir = dir.trim();
             if !dir.is_empty() {
@@ -148,4 +148,20 @@ pub fn get_file_name(input: &str) -> String {
     let path_buf = std::path::PathBuf::from(input);
     let file_name = path_buf.file_name().unwrap().to_string_lossy().into_owned();
     file_name
+}
+
+pub fn offset_to_byte(o: usize, s: &str) -> usize {
+    let mut byte_index = 0;
+    let mut chars = s.chars();
+
+    for _ in 0..o {
+        if let Some(c) = chars.next() {
+            let l = c.len_utf8();
+            byte_index += l;
+        } else {
+            panic!("Out of bounds byte index");
+        }
+    }
+
+    byte_index
 }

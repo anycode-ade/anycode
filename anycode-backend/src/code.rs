@@ -19,27 +19,12 @@ pub enum Operation {
     End,
 }
 
-
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Change {
     pub start: usize,
     pub operation: Operation,
     pub text: String,
-    pub row: usize,
-    pub column: usize,
 }
-
-#[derive(Debug, Serialize, Deserialize, Clone, Default)]
-pub struct MultipleChange {
-    pub changes: Vec<Change>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct Position {
-    pub line: usize,
-    pub character: usize
-}
-
 
 pub struct Code {
     pub file_name: String,
@@ -49,6 +34,7 @@ pub struct Code {
     pub changed: bool,
     pub undo_history: Vec<Change>,
     pub redo_history: Vec<Change>,
+    pub self_updated: bool,
 }
 
 impl Code {
@@ -61,6 +47,7 @@ impl Code {
             lang: String::new(),
             undo_history: Vec::new(),
             redo_history: Vec::new(),
+            self_updated: false,
         }
     }
 
@@ -94,6 +81,7 @@ impl Code {
             lang,
             undo_history: Vec::new(),
             redo_history: Vec::new(),
+            self_updated: false,
         })
     }
 
@@ -104,6 +92,26 @@ impl Code {
         self.changed = true;
     }
 
+    pub fn apply_edits(&mut self, edits: &[crate::diff::Edit]) {
+        let mut sorted_edits = edits.to_vec();
+        sorted_edits.sort_by(|a, b| b.start.cmp(&a.start));
+
+        for edit in sorted_edits {
+            match edit.operation {
+                crate::diff::Operation::Delete => {
+                    if edit.start < edit.end && edit.end <= self.text.len_chars() {
+                        self.remove(edit.start, edit.end);
+                    }
+                }
+                crate::diff::Operation::Insert => {
+                    if edit.start <= self.text.len_chars() {
+                        self.insert(&edit.text, edit.start);
+                    }
+                }
+            }
+        }
+    }
+
     pub fn save_file(&mut self) -> std::io::Result<()> {
         if !self.changed {
             return Ok(());
@@ -112,6 +120,7 @@ impl Code {
         let file = File::create(&self.abs_path)?;
         let saved = self.text.write_to(BufWriter::new(file));
         self.changed = false;
+        self.self_updated = true;
         saved
     }
 
@@ -165,8 +174,6 @@ impl Code {
             start: from,
             operation: Operation::Insert,
             text: text.to_string(),
-            row,
-            column,
         });
 
         self.redo_history.clear();
@@ -179,7 +186,6 @@ impl Code {
             start: offset,
             operation: Operation::Insert,
             text: text.to_string(),
-            row: 0, column: 0,
         });
 
         self.redo_history.clear();
@@ -201,8 +207,6 @@ impl Code {
             start: from,
             operation: Operation::Remove,
             text: text.to_string(),
-            row: row1,
-            column: col1,
         });
 
         self.redo_history.clear();
@@ -217,79 +221,11 @@ impl Code {
             start: from,
             operation: Operation::Remove,
             text: text.to_string(),
-            row: 0, column: 0,
         });
 
         self.redo_history.clear();
     }
 
-    pub fn undo(&mut self) -> Option<MultipleChange> {
-        let mut multiple_change = MultipleChange::default();
-        let mut end = false;
-        let mut multiple = false;
-
-        while !end {
-            match self.undo_history.pop() {
-                None => return None,
-                Some(change) => {
-                    match change.operation {
-                        Operation::Insert => {
-                            let from = change.start;
-                            let to = from + change.text.chars().count();
-                            self.remove(from, to);
-                            multiple_change.changes.push(change.clone());
-                            self.redo_history.push(change);
-                            if !multiple { return Some(multiple_change) }
-                        },
-                        Operation::Remove => {
-                            self.insert(&change.text, change.start);
-                            multiple_change.changes.push(change.clone());
-                            self.redo_history.push(change);
-                            if !multiple { return Some(multiple_change) }
-                        }
-                        Operation::End => multiple = true,
-                        Operation::Start => end = true,
-                    }
-                }
-            }
-        }
-
-        Some(multiple_change)
-    }
-
-    pub fn redo(&mut self) -> Option<MultipleChange> {
-        let mut multiple_change = MultipleChange::default();
-        let mut end = false;
-        let mut multiple = false;
-
-        while !end {
-            match self.redo_history.pop() {
-                None => return None,
-                Some(change) => {
-                    match change.operation {
-                        Operation::Insert => {
-                            self.insert(&change.text, change.start);
-                            multiple_change.changes.push(change.clone());
-                            self.undo_history.push(change);
-                            if !multiple { return Some(multiple_change) }
-                        },
-                        Operation::Remove => {
-                            let from = change.start;
-                            let to = from + change.text.chars().count();
-                            self.remove(from, to);
-                            multiple_change.changes.push(change.clone());
-                            self.undo_history.push(change);
-                            if !multiple { return Some(multiple_change) }
-                        }
-                        Operation::End => multiple = true,
-                        Operation::Start => end = true,
-                    }
-                }
-            }
-        }
-
-        Some(multiple_change)
-    }
 
     pub fn line_len(&self, idx: usize) -> usize {
         let line = self.text.line(idx);
@@ -301,42 +237,6 @@ impl Code {
         }
     }
 
-    pub fn replace_text(&mut self, row: usize, col: usize, row1: usize, col1: usize, text: &str) {
-        let from = self.text.line_to_char(row) + col;
-        // let to = self.text.line_to_char(row1) + col1;
-        // let removed_text = self.text.slice(from..to).to_string();
-
-        self.undo_history.push(Change {
-            start: from,
-            operation: Operation::Start,
-            text: "".to_string(),
-            row: row1, column: col1
-        });
-
-        self.remove_text(row, col, row1, col1);
-        self.insert_text(text, row, col);
-
-        self.undo_history.push(Change {
-            start: from,
-            operation: Operation::End,
-            text: "".to_string(),
-            row: row1, column: col1
-        });
-
-        self.redo_history.clear();
-    }
-
-    pub fn reload(&mut self) -> std::io::Result<()>{
-        let file = File::open(&self.abs_path)?;
-        let text = Rope::from_reader(BufReader::new(file))?;
-
-        let last_row =  self.text.len_lines() - 1;
-        let last_col = self.line_len(last_row);
-
-        self.replace_text(0, 0, last_row, last_col, &text.to_string());
-
-        Ok(())
-    }
 }
 
 
@@ -381,59 +281,5 @@ mod code_undo_tests {
         let buffer = Code::from_str(text);
         assert_eq!(buffer.char_to_position(0), (0, 0));
         assert_eq!(buffer.char_to_position(text.len()), (0, text.len()));
-    }
-    
-    #[test]
-    fn test_code_undo() {
-        let mut buffer = Code::new();
-
-        buffer.insert_text("hello", 0, 0);
-        buffer.insert_text(" world", 0, 5);
-
-        println!("{}", buffer.text.to_string());
-        println!("{:?}", buffer.undo_history);
-
-        buffer.undo();
-
-        println!("{}", buffer.text.to_string());
-        println!("{:?}", buffer.undo_history);
-    }
-
-    #[test]
-    fn test_code_redo() {
-        let mut buffer = Code::new();
-
-        // Insert initial text
-        buffer.insert_text("hello", 0, 0);
-        buffer.insert_text(" world", 0, 5);
-        assert_eq!(buffer.text.to_string(), "hello world");
-
-        // Undo the last change
-        buffer.undo();
-        assert_eq!(buffer.text.to_string(), "hello");
-
-        // Redo the change
-        buffer.redo();
-        assert_eq!(buffer.text.to_string(), "hello world");
-
-        // Test multiple operations
-        buffer.insert_text("!", 0, 11);
-        assert_eq!(buffer.text.to_string(), "hello world!");
-
-        // Undo multiple times
-        buffer.undo();
-        assert_eq!(buffer.text.to_string(), "hello world");
-        buffer.undo();
-        assert_eq!(buffer.text.to_string(), "hello");
-        buffer.undo();
-        assert_eq!(buffer.text.to_string(), "");
-
-        // Redo multiple times
-        buffer.redo();
-        assert_eq!(buffer.text.to_string(), "hello");
-        buffer.redo();
-        assert_eq!(buffer.text.to_string(), "hello world");
-        buffer.redo();
-        assert_eq!(buffer.text.to_string(), "hello world!");
     }
 }

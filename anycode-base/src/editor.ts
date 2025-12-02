@@ -1,6 +1,6 @@
 
 
-import { Code, Edit, Change, Position } from "./code";
+import { Code, Edit, Change, Position, Operation } from "./code";
 import { vesper } from './theme';
 import { Renderer } from './renderer';
 import { getPosFromMouse } from './mouse';
@@ -1014,4 +1014,28 @@ export class AnycodeEditor {
         this.renderer.updateSearchHighlights(this.search);
         this.search.setNeedsFocus(true);
     }
+
+    public applyChange(change: Change) {
+        if (change.edits.length === 0) return;
+
+        this.code.tx();
+        
+        // sort edits by start in reverse order
+        change.edits.sort((a, b) => b.start - a.start);
+        
+        this.code.tx();
+        this.code.setStateBefore(this.offset, this.selection || undefined);
+        for (const edit of change.edits) {
+            if (edit.operation === Operation.Insert) {
+                this.code.insert(edit.text, edit.start);
+            } else if (edit.operation === Operation.Remove) {
+                this.code.remove(edit.start, edit.text.length);
+            }
+        }
+        this.code.setStateAfter(this.offset, this.selection || undefined);
+        this.code.commit();
+        
+        this.renderer.renderChanges(this.getEditorState(), this.search);
+    }
+
 }

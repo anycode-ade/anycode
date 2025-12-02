@@ -23,6 +23,7 @@ pub struct AppState {
 #[derive(Clone, Default)]
 pub struct SocketData {
     pub opened_files: HashSet<String>,
+    pub opened_dirs: HashSet<String>,
     pub search_cancel: Option<CancellationToken>,
 }
 

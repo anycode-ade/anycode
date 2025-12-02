@@ -55,9 +55,10 @@ pub struct DirOpenRequest {
 }
 
 pub async fn handle_dir_list(
+    socket: SocketRef,
     Data(request): Data<DirOpenRequest>,
     ack: AckSender,
-    _state: State<AppState>
+    state: State<AppState>
 ) {
     info!("Received dir:list: {:?}", request);
 
@@ -111,6 +112,12 @@ pub async fn handle_dir_list(
         "fullpath": abs_path,
         "relative_path": relative_path,
     });
+
+    // Track opened directories
+    let sid = socket.id.as_str().to_string();
+    let mut sockets_data = state.socket2data.lock().await;
+    let data = sockets_data.entry(sid).or_insert_with(SocketData::default);
+    data.opened_dirs.insert(abs_path.clone());
 
     if let Err(err) = ack.send(&message) {
         error!("Failed to send acknowledgment: {:?}", err);

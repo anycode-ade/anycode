@@ -1,3 +1,5 @@
+import { Edit } from 'anycode-base';
+
 export interface TreeNode {
     id: string;
     name: string;
@@ -70,4 +72,19 @@ export interface Terminal {
     session: string;
     cols: number;
     rows: number;
+}
+
+export interface WatcherEdits {
+    file: string;
+    edits: Edit[];
+}
+
+export interface WatcherCreate {
+    path: string;
+    isFile: boolean;
+}
+
+export interface WatcherRemove {
+    path: string;
+    isFile: boolean;
 }

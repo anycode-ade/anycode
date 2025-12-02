@@ -78,6 +78,7 @@
     transition: all 0.2s ease;
     text-align: left;
     width: 30px;
+    outline: none !important;
 }
 
 .terminal-tab-add-vertical:hover {

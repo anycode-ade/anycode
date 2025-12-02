@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { AnycodeEditorReact, AnycodeEditor, Edit, Operation } from 'anycode-react';
 import type { Change, Position } from '../anycode-base/src/code';
-import { type Cursor, type CursorHistory, type Terminal} from './types';
+import { WatcherCreate, WatcherEdits, WatcherRemove, type Cursor, type CursorHistory, type Terminal} from './types';
 import { loadTerminals, loadTerminalSelected, loadTerminalVisible, loadLeftPanelVisible } from './storage';
 import { Allotment } from 'allotment';
 import 'allotment/dist/style.css';
@@ -94,43 +94,41 @@ const App: React.FC = () => {
         return editor;
     };
 
-    useEffect(() => {
-        console.log('useEffect - initializeEditors');
+    const initializeEditors = async () => {
+        try {
+            const newEditorStates = new Map<string, AnycodeEditor>();
+            
+            for (const file of files) {
+                if (!editorStates.has(file.id)) {
+                    // create editor if it doesn't exist
+                    const content = savedFileContentsRef.current.get(file.id);
+                    if (content === undefined) continue;
 
-        const initializeEditors = async () => {
-            try {
-                const newEditorStates = new Map<string, AnycodeEditor>();
-                
-                for (const file of files) {
-                    if (!editorStates.has(file.id)) {
-                        // create editor if it doesn't exist
-                        const content = savedFileContentsRef.current.get(file.id);
-                        if (!content) continue;
+                    const pendingPosition = pendingPositions.current.get(file.id);
+                    const pendingDiagnostics = diagnosticsRef.current.get(file.id);
+                    const errors = pendingDiagnostics ? pendingDiagnostics
+                        .map(d => ({ line: d.range.start.line, message: d.message })) : undefined;
 
-                        const pendingPosition = pendingPositions.current.get(file.id);
-                        const pendingDiagnostics = diagnosticsRef.current.get(file.id);
-                        const errors = pendingDiagnostics ? pendingDiagnostics
-                            .map(d => ({ line: d.range.start.line, message: d.message })) : undefined;
-
-                        const editor = await createEditor(content, file.language, file.id, pendingPosition, errors);
-                        newEditorStates.set(file.id, editor);
-                        savedFileContentsRef.current.set(file.id, content);
-                        editorRefs.current.set(file.id, editor);
-                        
-                        if (pendingPosition) pendingPositions.current.delete(file.id);
-                    } else {
-                        // if editor already exists, just use it
-                        const existing = editorStates.get(file.id)!;
-                        newEditorStates.set(file.id, existing);
-                        editorRefs.current.set(file.id, existing);
-                    }
+                    const editor = await createEditor(content, file.language, file.id, pendingPosition, errors);
+                    newEditorStates.set(file.id, editor);
+                    savedFileContentsRef.current.set(file.id, content);
+                    editorRefs.current.set(file.id, editor);
+                    
+                    if (pendingPosition) pendingPositions.current.delete(file.id);
+                } else {
+                    // if editor already exists, just use it
+                    const existing = editorStates.get(file.id)!;
+                    newEditorStates.set(file.id, existing);
+                    editorRefs.current.set(file.id, existing);
                 }
-                setEditorStates(newEditorStates);
-            } catch (error) {
-                console.error('Error initializing editors:', error);
             }
-        };
-        
+            setEditorStates(newEditorStates);
+        } catch (error) {
+            console.error('Error initializing editors:', error);
+        }
+    };
+
+    useEffect(() => {
         if (files.length > 0) {
             initializeEditors();
         }
@@ -143,7 +141,6 @@ const App: React.FC = () => {
                 e.preventDefault();
             }
 
-            // Ctrl+S to save active file
             if ((e.ctrlKey || e.metaKey) && e.key === 's') {
                 e.preventDefault();
                 if (activeFileId) {
@@ -177,16 +174,6 @@ const App: React.FC = () => {
             document.removeEventListener('keydown', handleKeyDown);
         }
     }, [activeFileId]);
-
-
-    const applyEdit = (content: string, edit: Edit): string => {
-        const { operation, start, text } = edit;
-        if (operation === Operation.Insert) {
-            return content.slice(0, start) + text + content.slice(start);
-        } else {
-            return content.slice(0, start) + content.slice(start + text.length);
-        }
-    };
 
     const handleChange = (filename: string, change: Change) => {
         console.log('handleChange', filename, change);
@@ -364,6 +351,9 @@ const App: React.FC = () => {
                 setConnectionError(data.message);
             });
             ws.on("lsp:diagnostics", handleDiagnostics);
+            ws.on("watcher:edits", handleWatcherEdits);
+            ws.on("watcher:create", handleWatcherCreate);
+            ws.on("watcher:remove", handleWatcherRemove);
         } catch (error) {
             console.error('Failed to connect to backend:', error);
             setConnectionError('Failed to connect to backend');
@@ -372,6 +362,7 @@ const App: React.FC = () => {
 
     const handleDiagnostics = (diagnosticsResponse: DiagnosticResponse) => {
         console.log("lsp:diagnostics", diagnosticsResponse);
+
         // Store per-file diagnostics and update editor visuals if editor exists
         const uri = diagnosticsResponse.uri || '';
         const diags = diagnosticsResponse.diagnostics || [];
@@ -387,8 +378,6 @@ const App: React.FC = () => {
         }
 
         if (!targetFileId) {
-            // If file is not open yet, try to derive a relative id from uri by stripping file:// and cwd prefix
-            // Fallback: leave as-is; we will match later when the file opens
             targetFileId = uri.replace('file://', '');
         }
 
@@ -607,7 +596,7 @@ const App: React.FC = () => {
     };
 
     const openFile = (path: string) => {
-        console.log('Opening file:', path);
+        console.log('Open file:', path);
         
         const existingFile = files.find(file => file.id === path);
         
@@ -628,11 +617,6 @@ const App: React.FC = () => {
                 }
             });
         }
-    };
-
-    const openTreeFile = (file: string) => {
-        console.log('Opening file from tree:', file);
-        openFile(file);
     };
 
     const handleOpenFileResponse = (path: string, content: string) => {
@@ -811,7 +795,6 @@ const App: React.FC = () => {
 
     const undoCursor = () => {
         console.log("undoCursor");
-        console.log('History before undo:', cursorHistory.current);
 
         if (cursorHistory.current.undoStack.length === 0) {
             console.log('No positions to undo');
@@ -827,23 +810,12 @@ const App: React.FC = () => {
         }
 
         var prevPosition = cursorHistory.current.undoStack.pop();
-        console.log("undoCursor ", prevPosition);
-        // if cursor the same, pop one more 
-        // if (prevPosition && prevPosition.file === activeFileId) {
-        //     const editor = editorRefs.current.get(activeFileId);
-        //     if (editor) {
-        //         const cursor = editor.getCursor();
-        //         if (cursor.line === prevPosition.cursor.line && 
-        //             cursor.column === prevPosition.cursor.column)
-        //             prevPosition = cursorHistory.current.undoStack.pop();  
-        //     }
-        // }   
+        console.log("undoCursor", prevPosition);
         
         if (prevPosition && prevPosition.file) {
             const filePath = prevPosition.file;
             const fileName = filePath.split('/').pop() || '';
             const { line, column } = prevPosition.cursor;
-
 
             pendingPositions.current.set(filePath, { line, column });
 
@@ -862,7 +834,6 @@ const App: React.FC = () => {
 
     const redoCursor = () => {
         console.log("redoCursor");
-        console.log('History before redo:', cursorHistory.current);
 
         if (cursorHistory.current.redoStack.length === 0) {
             console.log('No positions to redo');
@@ -896,6 +867,87 @@ const App: React.FC = () => {
                 openFile(filePath);
             }
         }
+    };
+
+    const handleWatcherEdits = (watcherEdits: WatcherEdits) => {
+        console.log('watcher:edits', watcherEdits);
+        const { file, edits } = watcherEdits;
+
+        const editor = editorRefs.current.get(file);
+        if (!editor) return;
+
+        editor.applyChange({ edits });
+    }
+
+    const handleWatcherCreate = (watcherCreate: WatcherCreate) => {
+        console.log('watcher:create', watcherCreate);
+        const { path, isFile } = watcherCreate;
+
+        // Extract parent path and filename
+        const parts = path.split('/');
+        const fileName = parts[parts.length - 1];
+        const parentPath = parts.slice(0, -1).join('/') || ".";
+
+        setFileTree(prevTree => {
+            const addNode = (nodes: TreeNode[]): TreeNode[] => {
+                return nodes.map(node => {
+                    // Find parent directory and add child
+                    if (node.type === 'directory' && node.path === parentPath && node.children) {
+                        // Check if node already exists
+                        const exists = node.children.some(child => child.path === path);
+                        if (exists) return node;
+
+                        const newNode: TreeNode = {
+                            id: path,
+                            name: fileName,
+                            type: isFile ? 'file' : 'directory',
+                            path: path,
+                            children: isFile ? undefined : [],
+                            isExpanded: false,
+                            isSelected: false,
+                            isLoading: false,
+                            hasLoaded: !isFile
+                        };
+
+                        return {
+                            ...node,
+                            children: [...node.children, newNode].sort((a, b) => {
+                                // Directories first, then files, alphabetically
+                                if (a.type !== b.type) {
+                                    return a.type === 'directory' ? -1 : 1;
+                                }
+                                return a.name.localeCompare(b.name);
+                            })
+                        };
+                    }
+
+                    if (node.children) {
+                        return { ...node, children: addNode(node.children) };
+                    }
+                    return node;
+                });
+            };
+            return addNode(prevTree);
+        });
+    };
+
+    const handleWatcherRemove = (watcherRemove: WatcherRemove) => {
+        console.log('watcher:remove', watcherRemove);
+        const { path, isFile } = watcherRemove;
+
+        setFileTree(prevTree => {
+            const removeNode = (nodes: TreeNode[]): TreeNode[] => {
+                return nodes
+                    .filter(node => node.path !== path)
+                    .map(node => {
+                        if (node.children) {
+                            return { ...node, children: removeNode(node.children) };
+                        }
+                        return node;
+                    });
+            };
+            return removeNode(prevTree);
+        });
     };
 
     useEffect(() => {
@@ -963,7 +1015,7 @@ const App: React.FC = () => {
                                                         node={node} 
                                                         onToggle={toggleNode}
                                                         onSelect={selectNode}
-                                                        onOpenFile={openTreeFile}
+                                                        onOpenFile={openFile}
                                                         onLoadFolder={openFolder}
                                                     />
                                                 ))}
@@ -1067,7 +1119,7 @@ const App: React.FC = () => {
                         >
                             <span className={`tab-dirty-indicator ${dirtyFlags.get(file.id) ? 'dirty' : ''}`}> ● </span>
                             <span className="tab-filename"> {file.name} </span>
-                            <button className="tab-close-button" onClick={(e) => closeTab(file)}> × </button>
+                            <button className="tab-close-button" onClick={(e) => { e.stopPropagation(); closeTab(file); }}> × </button>
                         </div>
                     ))}                    
                 </div>
