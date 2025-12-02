@@ -1,55 +1,31 @@
 # Anycode Editor Example
 
-Простой пример использования пакета `anycode-base` для создания редактора кода на JavaScript.
+Simple example project using the `anycode-base` package to create a code editor in JavaScript.
 
-## Установка
+## Installation
 
 ```bash
 npm install
 ```
 
-или
-
-```bash
-pnpm install
-```
-
-## Запуск
+## Running
 
 ```bash
 npm run dev
 ```
 
-Откроется браузер на `http://localhost:3000` с работающим редактором.
+The browser will open at `http://localhost:3000` with a working editor.
 
-## Сборка
+## Building
 
 ```bash
 npm run build
 ```
 
-## Структура проекта
+## Project Structure
 
-- `src/main.ts` - основной файл с примером использования редактора
-- `index.html` - HTML страница
-- `vite.config.js` - конфигурация Vite
-- `package.json` - зависимости проекта
-
-## Использование
-
-Редактор автоматически загружает WASM файлы из пакета `anycode-base`. Если нужно использовать кастомный путь к WASM файлам, используйте:
-
-```typescript
-import { setWasmBasePath } from 'anycode-base';
-
-setWasmBasePath('/wasm/'); // путь к WASM файлам
-```
-
-## Особенности
-
-- ✅ Подсветка синтаксиса TypeScript
-- ✅ Автодополнение кода
-- ✅ Множественный курсор
-- ✅ Поиск и замена
-- ✅ И многое другое!
-
+- `main.js` - main file with editor usage example
+- `index.html` - HTML page
+- `styles.css` - styles
+- `vite.config.js` - Vite configuration
+- `package.json` - project dependencies
