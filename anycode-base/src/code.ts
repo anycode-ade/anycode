@@ -10,6 +10,7 @@ import {
 import Parser from 'web-tree-sitter';
 import History from './history';
 import { Selection } from './selection';
+import { getWasmPath } from './utils';
 
 import javascript from './langs/javascript';
 import typescript from './langs/typescript';
@@ -137,10 +138,11 @@ export class Code {
         await Parser.init();
         this.parser = new Parser();
         const filename = `tree-sitter-${this.language}.wasm`;
+        const wasmPath = getWasmPath(filename);
 
         const lang = langsCache.has(this.language) ?
             langsCache.get(this.language)! :
-            await Parser.Language.load(filename);
+            await Parser.Language.load(wasmPath);
 
         langsCache.set(this.language, lang);
         this.parser.setLanguage(lang);
@@ -175,7 +177,8 @@ export class Code {
                 if (langsCache.has(language)) {
                     lang = langsCache.get(language)!;
                 } else {
-                    lang = await Parser.Language.load(`tree-sitter-${language}.wasm`);
+                    const injectionWasmPath = getWasmPath(`tree-sitter-${language}.wasm`);
+                    lang = await Parser.Language.load(injectionWasmPath);
                     langsCache.set(language, lang);
                 }
 

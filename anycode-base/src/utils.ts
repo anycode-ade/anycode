@@ -273,3 +273,59 @@ export function scoreMatches(src: string, matchStr: string): number {
 
     return score;
 }
+
+/**
+ * Get the path to a WASM file for tree-sitter grammar
+ * Supports both npm package and local development
+ */
+let wasmBasePath: string | null = "/";
+
+export function getWasmPath(filename: string): string {
+    if (wasmBasePath !== null) {
+        // Custom path set by user
+        return wasmBasePath.endsWith('/') ? wasmBasePath + filename : wasmBasePath;
+    }
+    
+    // Try to determine the base path for WASM files
+    // In npm package: node_modules/anycode-base/wasm/tree-sitter-*.wasm
+    // In local development: /tree-sitter-*.wasm (from public folder)
+    
+    if (typeof import.meta !== 'undefined' && import.meta.url) {
+        try {
+            // Get the directory of the current module
+            const moduleUrl = new URL(import.meta.url);
+            const modulePath = moduleUrl.pathname;
+            
+            // Check if we're in npm package (node_modules/anycode-base/dist/...)
+            if (modulePath.includes('/node_modules/anycode-base/')) {
+                // Calculate relative path to wasm folder
+                // From dist/utils.js to wasm/ in the same package
+                const wasmUrl = new URL('../wasm/' + filename, moduleUrl);
+                return wasmUrl.href;
+            }
+        } catch (e) {
+            // Fall through to default
+        }
+    }
+    
+    // Default: assume WASM files are in public folder or current directory
+    // This works for local development and if WASM files are served from public/
+    return filename.startsWith('/') ? filename : `/${filename}`;
+}
+
+/**
+ * Set custom base path for WASM files (useful for custom deployments)
+ * @param path Base path (e.g., '/wasm/' or 'https://cdn.example.com/wasm/')
+ * 
+ * @example
+ * ```ts
+ * import { setWasmBasePath } from 'anycode-base';
+ * // Set path relative to public folder
+ * setWasmBasePath('/wasm/');
+ * // Or use CDN
+ * setWasmBasePath('https://cdn.example.com/tree-sitter-wasm/');
+ * ```
+ */
+export function setWasmBasePath(path: string) {
+    wasmBasePath = path;
+}

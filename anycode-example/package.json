@@ -1,0 +1,22 @@
+{
+  "name": "anycode-example",
+  "version": "1.0.0",
+  "description": "Example project using anycode-base editor",
+  "type": "module",
+  "scripts": {
+    "postinstall": "mkdir -p public && cp node_modules/anycode-base/wasm/*.wasm public/ 2>/dev/null || true",
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "dependencies": {
+    "anycode-base": "1.0.2"
+  },
+  "devDependencies": {
+    "vite": "^7.0.5"
+  }
+}
+

@@ -1,0 +1,42 @@
+{
+  "name": "anycode-base",
+  "version": "1.0.2",
+  "description": "Anycode Editor component",
+  "type": "module",
+  "main": "dist/index.js",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./styles.css": "./dist/styles.css"
+  },
+  "files": [
+    "dist",
+    "wasm"
+  ],
+  "scripts": {
+    "build": "tsc -p . && cp src/styles.css dist/styles.css && mkdir -p wasm && cp ../anycode/public/tree-sitter*.wasm wasm/ 2>/dev/null || true",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "editor",
+    "code-editor",
+    "anycode"
+  ],
+  "author": "",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": ""
+  },
+  "dependencies": {
+    "vscode-textbuffer": "^1.0.0",
+    "web-tree-sitter": "^0.21.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3"
+  }
+}

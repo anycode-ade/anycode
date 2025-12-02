@@ -3,4 +3,5 @@ node_modules
 .DS_Store
 *copy*.ts
 anycode/dist
+anycode-base/dist
 anycode-backend/dist

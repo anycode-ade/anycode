@@ -3,7 +3,9 @@
   "compilerOptions": {
     "outDir": "dist",
     "rootDir": "src",
-    "allowJs": true
+    "allowJs": true,
+    "declaration": true,
+    "declarationMap": true
   },
   "include": ["src"]
 }

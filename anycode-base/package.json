@@ -2,6 +2,18 @@
   "name": "anycode-base",
   "version": "1.0.0",
   "main": "src/index.ts",
+  "description": "Anycode Editor component",
+  "keywords": [
+    "editor",
+    "code-editor",
+    "anycode"
+  ],
+  "author": "",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": ""
+  },
   "scripts": {
     "build": "tsc -p ."
   },

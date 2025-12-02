@@ -684,14 +684,17 @@ export class AnycodeEditor {
         if (selectionChanged) this.selection = result.ctx.selection || null;
     
         const state = this.getEditorState();
-        const focused = this.renderer.focus(state);
     
         if (textChanged) {
-            let matches = this.code.search(this.search.getPattern());
-            this.search.setMatches(matches);
-            if (!focused) this.renderer.renderChanges(state, this.search);
+            if (this.search.isActive()) {
+                let matches = this.code.search(this.search.getPattern());
+                this.search.setMatches(matches);
+            }
+            this.renderer.renderChanges(state, this.search);
+            let focused = this.renderer.focus(state);
         } else if (offsetChanged || selectionChanged) {
-            if (!focused) this.renderer.renderCursorOrSelection(state);
+            this.renderer.renderCursorOrSelection(state);
+            let focused = this.renderer.focus(state);
         }
     }
     
