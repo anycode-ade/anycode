@@ -18,6 +18,7 @@
   text-align: center;
   background: inherit;
   min-width: 32px;
+  z-index: 10;
 }
 .anyeditor .buttons div {
   background: inherit;
@@ -35,6 +36,7 @@
   min-width: 48px;
   /* text-align: center; */
   color: #888;
+  z-index: 10;
 }
 .anyeditor .gutter .ln {
   background: inherit;
@@ -65,6 +67,7 @@
   display: inline-block; 
   position: relative;
   pointer-events: none;
+  z-index: 1;
 }
 
 .completion-box {

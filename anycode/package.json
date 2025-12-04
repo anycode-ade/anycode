@@ -5,6 +5,7 @@
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
+    "postinstall": "mkdir -p public && cp node_modules/anycode-base/wasm/*.wasm public/ 2>/dev/null || true",
     "dev": "vite --host 0.0.0.0",
     "build:dev": "vite build --mode development && cpy dist ../anycode-backend/public --parents  && cpy dist ../anycode-backend --parents",
     "build": "vite build && cpy dist ../anycode-backend/public --parents  && cpy dist ../anycode-backend --parents",

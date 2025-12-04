@@ -30,7 +30,8 @@ function hello() {
 `;
 
 // Backend connection settings
-const port = "3000"
+// if curent port is 5173 then use 3000 else use current port
+const port = window.location.port === '5173' ? '3000' : window.location.port;
 export const BACKEND_URL = `${window.location.protocol}//${window.location.hostname}:${port}`;
 
 // Default panel sizes

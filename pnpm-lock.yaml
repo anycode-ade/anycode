@@ -94,8 +94,8 @@ importers:
   anycode-example:
     dependencies:
       anycode-base:
-        specifier: 1.0.1
-        version: 1.0.1
+        specifier: 1.0.2
+        version: 1.0.2
     devDependencies:
       vite:
         specifier: ^7.0.5
@@ -608,8 +608,8 @@ packages:
     resolution: {integrity: sha512-4Dj6M28JB+oAH8kFkTLUo+a2jwOFkuqb3yucU0CANcRRUbxS0cP0nZYCGjcc3BNXwRIsUVmDGgzawme7zvJHvg==}
     engines: {node: '>=12'}
 
-  anycode-base@1.0.1:
-    resolution: {integrity: sha512-l40/zoCbsDw7z5Xkh/j2fGxAZtKRrZLvdYXEVfH2XGQfYa5Njrjq35Wl/rTcTHsNliu+IqRFKl0e6dIoWdeYfg==}
+  anycode-base@1.0.2:
+    resolution: {integrity: sha512-RmZ+P5lz/yPLgI+tfF9XZ84i7pTbtr8hyPpOuI0LzOEBwnGJ3cFuo5/QIXmSU8tCESXOl++gcNca2DTdQNNK8Q==}
 
   arrify@3.0.0:
     resolution: {integrity: sha512-tLkvA81vQG/XqE2mjDkGQHoOINtMHtysSnemrmoGe6PydDPMRbVugqyk4A6V/WDWEfm3l+0d8anA9r8cv/5Jaw==}
@@ -1786,7 +1786,7 @@ snapshots:
 
   ansi-styles@6.2.3: {}
 
-  anycode-base@1.0.1:
+  anycode-base@1.0.2:
     dependencies:
       vscode-textbuffer: 1.0.0
       web-tree-sitter: 0.21.0

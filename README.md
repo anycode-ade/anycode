@@ -30,6 +30,7 @@ The project consists of several packages:
    ```bash
    pnpm install
    cd anycode
+   pnpm build
    pnpm dev
    ```
 
@@ -41,10 +42,6 @@ The project consists of several packages:
    cargo run --release
 
 4. **Open your browser** and navigate to the frontend URL
-
-## Troubleshooting
-
-If you encounter issues with native modules (especially on macOS ARM64), see [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) for solutions.
 
 ## Contributing
 

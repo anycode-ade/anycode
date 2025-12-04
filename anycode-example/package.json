@@ -13,7 +13,7 @@
     "node": ">=24"
   },
   "dependencies": {
-    "anycode-base": "1.0.2"
+    "anycode-base": "1.0.3"
   },
   "devDependencies": {
     "vite": "^7.0.5"

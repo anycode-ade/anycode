@@ -631,6 +631,8 @@ export class AnycodeEditor {
                 case 'v': return Action.PASTE;
                 case 'x': return Action.CUT;
                 case 'd': return Action.DUPLICATE;
+                case "backspace": return Action.BACKSPACE;
+                case "enter": return Action.ENTER;
                 default: return null;
             }
         }

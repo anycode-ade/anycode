@@ -1,6 +1,6 @@
 import { Operation, type Code } from "./code";
 import { Selection } from "./selection";
-import { getIndentation, getPrevGraphemeIndex, getNextGraphemeIndex } from "./utils";
+import { getIndentation, getPrevGraphemeIndex, getNextGraphemeIndex, findPrevWord } from "./utils";
 
 export enum Action {
     // Navigation
@@ -109,6 +109,8 @@ export const removeSelection = (ctx: ActionContext): ActionResult => {
 }
 
 export const handleBackspace = (ctx: ActionContext): ActionResult => {
+    let event: KeyboardEvent | undefined = ctx.event;
+    
     ctx.code.tx();
     ctx.code.setStateBefore(ctx.offset, ctx.selection);
 
@@ -121,36 +123,55 @@ export const handleBackspace = (ctx: ActionContext): ActionResult => {
 
     if (ctx.offset <= 0) { return { ctx, changed: false } }
 
-    let { line, column } = ctx.code.getPosition(ctx.offset);
-
-    // At start of line: join with previous line by removing the newline
-    if (column === 0 && line > 0) {
-        ctx.offset -= 1;
-        ctx.code.remove(ctx.offset, 1);
-        ctx.code.setStateAfter(ctx.offset, ctx.selection);
-        ctx.code.commit();
-        return { ctx, changed: true };
-    }
-
-    let isRemoveIndent = column > 0 && ctx.code.getIndent() &&
-        ctx.code.isOnlyIndentationBefore(line, column);
-
-    if (isRemoveIndent) {
-        // idea like
-        // let start = ctx.code.getOffset(line, 0);
-
-        // vscode like 
-        let start = ctx.code.getOffset(line, 0) + ctx.code.prevIndentation(line, column);
-        ctx.code.remove(start, ctx.offset - start);
-        ctx.offset = start;
+    const { line, column } = ctx.code.getPosition(ctx.offset);
+    const lineText = ctx.code.line(line);
+    
+    // Calculate the start position for deletion
+    let removeStart: number;
+    
+    if (event?.metaKey) {
+        // Meta+Backspace: delete to start of line
+        removeStart = ctx.code.getOffset(line, 0);
+        if (removeStart > 0 && removeStart === ctx.offset) {
+            removeStart -= 1;
+        }
+    } else if (event?.altKey) {
+        // Alt+Backspace: delete to start of word
+        // If at start of line, join with previous line
+        if (column === 0 && line > 0) {
+            removeStart = ctx.offset - 1;
+        } else {
+            const wordStartCol = findPrevWord(lineText, column);
+            removeStart = ctx.code.getOffset(line, wordStartCol);
+        }
+        if (removeStart > 0 && removeStart === ctx.offset) {
+            removeStart -= 1;
+        }
     } else {
-        // delete previous grapheme cluster
-        const { line, column } = ctx.code.getPosition(ctx.offset);
-        const lineText = ctx.code.line(line);
-        const prevCol = getPrevGraphemeIndex(lineText, column);
-        const removeLen = column - prevCol;
-        ctx.offset -= removeLen;
-        ctx.code.remove(ctx.offset, removeLen);
+        // Regular backspace
+        // At start of line: join with previous line by removing the newline
+        if (column === 0 && line > 0) {
+            removeStart = ctx.offset - 1;
+        } else {
+            const isRemoveIndent = column > 0 && ctx.code.getIndent() &&
+                ctx.code.isOnlyIndentationBefore(line, column);
+            
+            if (isRemoveIndent) {
+                // vscode like: remove to previous indentation level
+                removeStart = ctx.code.getOffset(line, 0) + ctx.code.prevIndentation(line, column);
+            } else {
+                // delete previous grapheme cluster
+                const prevCol = getPrevGraphemeIndex(lineText, column);
+                removeStart = ctx.code.getOffset(line, prevCol);
+            }
+        }
+    }
+    
+    // Perform the deletion
+    const removeLen = ctx.offset - removeStart;
+    if (removeLen > 0) {
+        ctx.code.remove(removeStart, removeLen);
+        ctx.offset = removeStart;
     }
 
     ctx.code.setStateAfter(ctx.offset, ctx.selection);
@@ -160,11 +181,19 @@ export const handleBackspace = (ctx: ActionContext): ActionResult => {
 };
 
 export const handleEnter = (ctx: ActionContext): ActionResult => {
+    let event: KeyboardEvent | undefined = ctx.event;
+
     ctx.code.tx();
     ctx.code.setStateBefore(ctx.offset, ctx.selection);
 
     if (ctx.selection?.nonEmpty()) {
         removeSelection(ctx);
+    }
+
+    if (event?.metaKey) {
+        const { line } = ctx.code.getPosition(ctx.offset);
+        const lineLength = ctx.code.lineLength(line);
+        ctx.offset = ctx.code.getOffset(line, lineLength);
     }
 
     const { line, column } = ctx.code.getPosition(ctx.offset);
