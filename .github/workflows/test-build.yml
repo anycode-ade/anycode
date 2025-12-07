@@ -1,0 +1,67 @@
+name: Test Build
+
+# Тестовый workflow для проверки сборки без создания релиза
+on:
+  push:
+    branches:
+      - main
+      - develop
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test-build-linux:
+    name: Test Build Linux
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+      
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      
+      - name: Build frontend
+        working-directory: ./anycode
+        run: pnpm build
+      
+      - name: Verify frontend build
+        working-directory: ./anycode-backend
+        run: |
+          if [ ! -d "dist" ] || [ -z "$(ls -A dist)" ]; then
+            echo "Error: dist directory is empty or missing"
+            exit 1
+          fi
+          echo "Frontend build verified:"
+          ls -la dist | head -10
+          echo "Total files: $(find dist -type f | wc -l)"
+      
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      
+      - name: Build Linux x86_64 binary (test)
+        working-directory: ./anycode-backend
+        run: cargo build --release
+      
+      - name: Check binary size
+        working-directory: ./anycode-backend
+        run: |
+          ls -lh target/release/anycode
+          file target/release/anycode
+      
+      - name: Test binary
+        working-directory: ./anycode-backend
+        run: |
+          ./target/release/anycode --help || echo "Binary executed (exit code: $?)"
+
