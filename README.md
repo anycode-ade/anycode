@@ -23,8 +23,26 @@ The project consists of several packages:
 - **`anycode-react/`** - React wrapper for the editor
 - **`anycode-backend/`** - Rust backend for file system access
 
+## Installation
+### From releases
 
-## Quick Start
+Linux:
+```bash
+curl -L https://github.com/anycode-ide/anycode/releases/latest/download/anycode-linux-x86_64.tar.gz | tar -xz
+sudo mv anycode /usr/local/bin/
+sudo chmod +x /usr/local/bin/anycode
+anycode
+```
+
+MacOS:
+```bash
+curl -L https://github.com/anycode-ide/anycode/releases/latest/download/anycode-universal-apple-darwin.tar.gz | tar -xz
+sudo mv anycode /usr/local/bin/
+sudo chmod +x /usr/local/bin/anycode
+anycode
+```
+
+## Development
 
 1. **Start frontend:**
    ```bash
