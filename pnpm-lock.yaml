@@ -80,22 +80,23 @@ importers:
         version: 7.0.5(@types/node@22.18.8)(tsx@4.20.4)
 
   anycode-base:
-    devDependencies:
-      typescript:
-        specifier: ^5.8.3
-        version: 5.8.3
+    dependencies:
       vscode-textbuffer:
         specifier: ^1.0.0
         version: 1.0.0
       web-tree-sitter:
         specifier: ^0.21.0
         version: 0.21.0
+    devDependencies:
+      typescript:
+        specifier: ^5.8.3
+        version: 5.8.3
 
   anycode-example:
     dependencies:
       anycode-base:
-        specifier: 1.0.2
-        version: 1.0.2
+        specifier: 1.0.4
+        version: 1.0.4
     devDependencies:
       vite:
         specifier: ^7.0.5
@@ -608,8 +609,8 @@ packages:
     resolution: {integrity: sha512-4Dj6M28JB+oAH8kFkTLUo+a2jwOFkuqb3yucU0CANcRRUbxS0cP0nZYCGjcc3BNXwRIsUVmDGgzawme7zvJHvg==}
     engines: {node: '>=12'}
 
-  anycode-base@1.0.2:
-    resolution: {integrity: sha512-RmZ+P5lz/yPLgI+tfF9XZ84i7pTbtr8hyPpOuI0LzOEBwnGJ3cFuo5/QIXmSU8tCESXOl++gcNca2DTdQNNK8Q==}
+  anycode-base@1.0.4:
+    resolution: {integrity: sha512-XL5jTfii/pRPg6OrjYRX8tzPX9k31ZxnWSQhU+4wctXGm4cq7Ys3VaOjveNsLTbCmN55xL8TSG6QmmWUTcQ1Vg==}
 
   arrify@3.0.0:
     resolution: {integrity: sha512-tLkvA81vQG/XqE2mjDkGQHoOINtMHtysSnemrmoGe6PydDPMRbVugqyk4A6V/WDWEfm3l+0d8anA9r8cv/5Jaw==}
@@ -1786,7 +1787,7 @@ snapshots:
 
   ansi-styles@6.2.3: {}
 
-  anycode-base@1.0.2:
+  anycode-base@1.0.4:
     dependencies:
       vscode-textbuffer: 1.0.0
       web-tree-sitter: 0.21.0
