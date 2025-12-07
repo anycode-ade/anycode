@@ -1,0 +1,174 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch: 
+
+permissions:
+  contents: write
+
+jobs:
+  build-linux:
+    name: Build for Linux
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+      
+      - name: Get pnpm store directory
+        shell: bash
+        run: |
+          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+      
+      - name: Setup pnpm cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+      
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      
+      - name: Build frontend
+        working-directory: ./anycode
+        run: pnpm build
+      
+      - name: Verify frontend build
+        working-directory: ./anycode-backend
+        run: |
+          if [ ! -d "dist" ] || [ -z "$(ls -A dist)" ]; then
+            echo "Error: dist directory is empty or missing"
+            exit 1
+          fi
+          echo "Frontend build verified: $(ls -la dist | head -5)"
+      
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      
+      - name: Cache Rust dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            anycode-backend/target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+      
+      - name: Build Linux x86_64 binary
+        working-directory: ./anycode-backend
+        run: cargo build --release
+      
+      - name: Package as tar.gz
+        working-directory: ./anycode-backend
+        run: |
+          mkdir -p dist-release
+          strip target/release/anycode
+          cp target/release/anycode dist-release/
+          tar -czf anycode-linux-x86_64.tar.gz -C dist-release anycode
+      
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: anycode-backend/anycode-linux-x86_64.tar.gz
+
+  build-macos:
+    name: Build for macOS Universal
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+      
+      - name: Get pnpm store directory
+        shell: bash
+        run: |
+          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+      
+      - name: Setup pnpm cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+      
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      
+      - name: Build frontend
+        working-directory: ./anycode
+        run: pnpm build
+      
+      - name: Verify frontend build
+        working-directory: ./anycode-backend
+        run: |
+          if [ ! -d "dist" ] || [ -z "$(ls -A dist)" ]; then
+            echo "Error: dist directory is empty or missing"
+            exit 1
+          fi
+          echo "Frontend build verified: $(ls -la dist | head -5)"
+      
+      - name: Install Rust targets
+        run: |
+          rustup target add aarch64-apple-darwin x86_64-apple-darwin
+      
+      - name: Cache Rust dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            anycode-backend/target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+      
+      - name: Build macOS binaries
+        working-directory: ./anycode-backend
+        run: |
+          cargo build --release --target aarch64-apple-darwin
+          cargo build --release --target x86_64-apple-darwin
+      
+      - name: Create universal binary
+        working-directory: ./anycode-backend
+        run: |
+          mkdir -p dist-release
+          lipo -create \
+            target/aarch64-apple-darwin/release/anycode \
+            target/x86_64-apple-darwin/release/anycode \
+            -output dist-release/anycode
+      
+      - name: Package as tar.gz
+        working-directory: ./anycode-backend
+        run: |
+          strip dist-release/anycode
+          tar -czf anycode-universal-apple-darwin.tar.gz -C dist-release anycode
+      
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: anycode-backend/anycode-universal-apple-darwin.tar.gz
+
