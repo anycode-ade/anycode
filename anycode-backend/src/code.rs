@@ -92,25 +92,6 @@ impl Code {
         self.changed = true;
     }
 
-    pub fn apply_edits(&mut self, edits: &[crate::diff::Edit]) {
-        let mut sorted_edits = edits.to_vec();
-        sorted_edits.sort_by(|a, b| b.start.cmp(&a.start));
-
-        for edit in sorted_edits {
-            match edit.operation {
-                crate::diff::Operation::Delete => {
-                    if edit.start < edit.end && edit.end <= self.text.len_chars() {
-                        self.remove(edit.start, edit.end);
-                    }
-                }
-                crate::diff::Operation::Insert => {
-                    if edit.start <= self.text.len_chars() {
-                        self.insert(&edit.text, edit.start);
-                    }
-                }
-            }
-        }
-    }
 
     pub fn save_file(&mut self) -> std::io::Result<()> {
         if !self.changed {

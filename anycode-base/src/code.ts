@@ -33,7 +33,7 @@ import cpp from './langs/cpp';
 
 export enum Operation {
     Insert = "insert",
-    Remove = "remove"
+    Delete = "delete"
 }
 
 export type Edit = {
@@ -389,7 +389,7 @@ export class Code {
         ));
 
         let edit: Edit = {
-            operation: Operation.Remove,
+            operation: Operation.Delete,
             start: offset,
             text
         };
@@ -498,12 +498,12 @@ export class Code {
         for (const edit of edits) {
             if (edit.operation === Operation.Insert) {
                 undoChange.edits.push({
-                    operation: Operation.Remove,
+                    operation: Operation.Delete,
                     start: edit.start,
                     text: edit.text
                 });
                 this.remove(edit.start, edit.text.length);
-            } else if (edit.operation === Operation.Remove) {
+            } else if (edit.operation === Operation.Delete) {
                 undoChange.edits.push({
                     operation: Operation.Insert,
                     start: edit.start,
@@ -533,9 +533,9 @@ export class Code {
                     text: edit.text
                 });
                 this.insert(edit.text, edit.start);
-            } else if (edit.operation === Operation.Remove) {
+            } else if (edit.operation === Operation.Delete) {
                 redoChange.edits.push({
-                    operation: Operation.Remove,
+                    operation: Operation.Delete,
                     start: edit.start,
                     text: edit.text
                 });

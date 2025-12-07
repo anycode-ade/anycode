@@ -4,12 +4,10 @@ use std::collections::HashMap;
 use tokio::sync::Mutex;
 use serde_json::json;
 use tracing::info;
-use notify::Event;
 use anyhow::Result;
 
 use crate::app_state::SocketData;
 use crate::code::Code;
-use crate::utils::is_ignored_dir;
 use crate::diff::compute_text_edits;
 
 async fn is_parent_dir_opened(

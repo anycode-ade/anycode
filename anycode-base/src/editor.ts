@@ -1026,14 +1026,14 @@ export class AnycodeEditor {
         this.code.tx();
         
         // sort edits by start in reverse order
-        change.edits.sort((a, b) => b.start - a.start);
+        // change.edits.sort((a, b) => b.start - a.start);
         
         this.code.tx();
         this.code.setStateBefore(this.offset, this.selection || undefined);
         for (const edit of change.edits) {
             if (edit.operation === Operation.Insert) {
                 this.code.insert(edit.text, edit.start);
-            } else if (edit.operation === Operation.Remove) {
+            } else if (edit.operation === Operation.Delete) {
                 this.code.remove(edit.start, edit.text.length);
             }
         }

@@ -164,7 +164,7 @@ pub async fn handle_file_close(
 #[serde(rename_all = "lowercase")]
 pub enum Operation {
     Insert,
-    Remove,
+    Delete,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -218,7 +218,7 @@ pub async fn handle_change(
                     lsp.did_change(line, col_utf16, line, col_utf16, &abs_path, &e.text).await;
                 }
             }
-            Operation::Remove => {
+            Operation::Delete => {
                 let start_char = code.utf16_to_char_offset(e.start);
                 let end_char = code.utf16_to_char_offset(e.start + e.text.encode_utf16().count());
                 let (start_line, start_col_utf16) = code.char_to_position(start_char);
