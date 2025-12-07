@@ -1,6 +1,6 @@
 {
   "name": "anycode-base",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "main": "src/index.ts",
   "description": "Anycode Editor component",
   "keywords": [
@@ -17,9 +17,11 @@
   "scripts": {
     "build": "tsc -p ."
   },
-  "devDependencies": {
-    "typescript": "^5.8.3",
+  "dependencies": {
     "vscode-textbuffer": "^1.0.0",
     "web-tree-sitter": "^0.21.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3"
   }
 }
