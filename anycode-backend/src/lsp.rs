@@ -20,6 +20,7 @@ use crate::config::Config;
 
 pub struct Lsp {
     lang: String,
+    lsp_name: Option<String>,
     kill_send: Option<mpsc::Sender<()>>,
     stdin_send: Option<mpsc::Sender<String>>,
     next_id: AtomicUsize,
@@ -33,6 +34,7 @@ impl Lsp {
     pub fn new() -> Self {
         Self {
             lang: String::new(),
+            lsp_name: None,
             kill_send: None,
             stdin_send: None,
             next_id: AtomicUsize::new(1),
@@ -44,7 +46,7 @@ impl Lsp {
     }
 
     pub fn start(
-        &mut self, lang: &str, cmd: &str,
+        &mut self, lang: &str, cmd: &str, lsp_name: Option<String>,
         diagnostic_updates: Option<mpsc::Sender<PublishDiagnosticsParams>>
     ) -> io::Result<()> {
 
@@ -53,6 +55,7 @@ impl Lsp {
         let args = &s[1..];
 
         self.lang = lang.to_string();
+        self.lsp_name = lsp_name;
 
         let (kill_send, mut kill_recv) = mpsc::channel::<()>(1);
         self.kill_send = Some(kill_send);
@@ -197,11 +200,18 @@ impl Lsp {
         let id = 0;
         let (tx, rx) = mpsc::channel::<String>(1);
         self.add_pending(id, tx).await;
-        let message = lsp_messages::initialize(dir);
+        let message = lsp_messages::initialize(dir, self.lsp_name.as_deref());
         self.send_async(message);
         self.wait(5, rx).await;
         self.remove_pending(id).await;
         self.initialized();
+        
+        if let Some(lsp_name) = &self.lsp_name {
+            let settings = lsp_messages::read_vscode_settings(lsp_name, dir)
+                .unwrap_or_else(|| Value::Object(serde_json::Map::new()));
+            self.did_change_configuration(settings);
+        }
+        
         self.ready.store(true, Ordering::SeqCst)
     }
 
@@ -266,9 +276,20 @@ impl Lsp {
         self.ready.load(Ordering::SeqCst)
     }
 
+    pub fn lsp_name(&self) -> Option<&str> {
+        self.lsp_name.as_deref()
+    }
+
     pub fn initialized(&mut self) {
         let params = InitializedParams {};
         self.send_notification::<Initialized>(params);
+    }
+
+    pub fn did_change_configuration(&self, settings: Value) {
+        let params = DidChangeConfigurationParams {
+            settings,
+        };
+        self.send_notification::<DidChangeConfiguration>(params);
     }
 
     pub fn did_open(&mut self, lang: &str, path: &str, text: &str) {
@@ -467,7 +488,7 @@ mod tests {
         let lang = "python";
 
         let mut lsp = Lsp::new();
-        lsp.start(lang, "pyright-langserver --stdio", None)?;
+        lsp.start(lang, "pyright-langserver --stdio", Some("pyright-langserver".to_string()), None)?;
 
         let dir = std::env::current_dir().unwrap()
             .to_string_lossy().into_owned();
@@ -515,6 +536,7 @@ mod tests {
 pub mod lsp_messages {
     use super::*;
     use serde_json::to_string;
+    use std::path::PathBuf;
 
     #[derive(Deserialize)]
     pub struct LspRawResponse {
@@ -524,7 +546,75 @@ pub mod lsp_messages {
         pub error: Option<Value>,
     }
 
-    pub fn initialize(dir: &str) -> String {
+    pub fn read_vscode_settings(lsp_name: &str, dir: &str) -> Option<Value> {
+        let settings_path = PathBuf::from(dir).join(".vscode").join("settings.json");
+        
+        if !settings_path.exists() {
+            debug!("Settings file not found: {:?}", settings_path);
+            return None;
+        }
+
+        let content = match std::fs::read_to_string(&settings_path) {
+            Ok(c) => c,
+            Err(e) => {
+                debug!("Failed to read settings file: {:?}", e);
+                return None;
+            }
+        };
+
+        let settings: Value = match serde_json::from_str(&content) {
+            Ok(s) => s,
+            Err(e) => {
+                debug!("Failed to parse settings JSON: {:?}", e);
+                return None;
+            }
+        };
+
+        let prefix = format!("{}.", lsp_name);
+        let mut lsp_settings = serde_json::Map::new();
+
+        if let Some(obj) = settings.as_object() {
+            for (key, value) in obj {
+                if key.starts_with(&prefix) {
+                    let setting_key = key.strip_prefix(&prefix).unwrap();
+                    
+                    let parts: Vec<&str> = setting_key.split('.').collect();
+                    if parts.is_empty() {
+                        continue;
+                    }
+
+                    let mut current = &mut lsp_settings;
+                    for (i, part) in parts.iter().enumerate() {
+                        if i == parts.len() - 1 {
+                            current.insert(part.to_string(), value.clone());
+                        } else {
+                            if !current.contains_key(*part) {
+                                current.insert(part.to_string(), Value::Object(serde_json::Map::new()));
+                            }
+                            match current.get_mut(*part) {
+                                Some(Value::Object(obj)) => {
+                                    current = obj;
+                                }
+                                _ => {
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if lsp_settings.is_empty() {
+            None
+        } else {
+            let mut wrapper = serde_json::Map::new();
+            wrapper.insert(lsp_name.to_string(), Value::Object(lsp_settings));
+            Some(Value::Object(wrapper))
+        }
+    }
+
+    pub fn initialize(dir: &str, lsp_name: Option<&str>) -> String {
         let uri: Uri = format!("file://{}", dir).parse().unwrap();
 
         let workspace_folders = Some(vec![
@@ -574,6 +664,12 @@ pub mod lsp_messages {
             ..Default::default()
         };
 
+        let initialization_options = if let Some(name) = lsp_name {
+            read_vscode_settings(name, dir)
+        } else {
+            None
+        };
+
         let params = InitializeParams {
             process_id: Some(std::process::id() as u32),
             root_path: Some(dir.to_string()),
@@ -584,6 +680,7 @@ pub mod lsp_messages {
                 name: "anycode".to_string(),
                 version: Some("1.0.0".to_string()),
             }),
+            initialization_options,
             ..Default::default()
         };
 
@@ -632,7 +729,9 @@ impl LspManager {
     pub async fn init_new(&mut self, lang: String, lsp_cmd: &str) {
         let mut lsp = Lsp::new();
         let diagnostic_send = self.diagnostics_sender.as_mut().map(|s|s.clone());
-        let result = lsp.start(&lang, &lsp_cmd, diagnostic_send);
+        let lsp_name = lsp_cmd.split_whitespace().next().map(|s| s.to_string());
+        
+        let result = lsp.start(&lang, &lsp_cmd, lsp_name, diagnostic_send);
 
         match result {
             Ok(_) => {
@@ -651,5 +750,25 @@ impl LspManager {
         lsp.init(&dir).await;
 
         self.lang2lsp.insert(lang, lsp);
+    }
+
+    pub fn notify_configuration_changed(&mut self, lang: &str, dir: &str) {
+        if let Some(lsp) = self.lang2lsp.get_mut(lang) {
+            if let Some(lsp_name) = lsp.lsp_name() {
+                if let Some(settings) = lsp_messages::read_vscode_settings(lsp_name, dir) {
+                    lsp.did_change_configuration(settings);
+                }
+            }
+        }
+    }
+
+    pub fn notify_all_configuration_changed(&mut self, dir: &str) {
+        for lsp in self.lang2lsp.values_mut() {
+            if let Some(lsp_name) = lsp.lsp_name() {
+                if let Some(settings) = lsp_messages::read_vscode_settings(lsp_name, dir) {
+                    lsp.did_change_configuration(settings);
+                }
+            }
+        }
     }
 }

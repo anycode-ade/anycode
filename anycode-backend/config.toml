@@ -24,7 +24,9 @@ indent = { width = 4, unit = "\t" }
 name = "python"
 types = ["py"]
 comment = "#"
-lsp = ["pyright-langserver", "--stdio"]
+# lsp = ["pyright-langserver", "--stdio"]
+lsp = ["uvx", "ty", "server"]
+# lsp = ["/Users/max/.cursor/extensions/astral-sh.ty-2025.57.13300119-darwin-arm64/bundled/libs/bin/ty server"]
 indent = { width = 4, unit = " " }
 executable = true
 exec = "python -u {file}"
@@ -42,7 +44,27 @@ exectest = "tsx -m pytest -k {test} {file}"
 
 [[language]]
 name = "typescript"
-types = ["ts", "tsx"]
+types = ["ts"]
+comment = "//"
+lsp = ["typescript-language-server", "--stdio"]
+indent = { width = 2, unit = " " }
+executable = true
+exec = "tsx {file}"
+exectest = "tsx -m pytest -k {test} {file}"  
+
+[[language]]
+name = "javascriptreact"
+types = ["jsx"]
+comment = "//"
+lsp = ["typescript-language-server", "--stdio"]
+indent = { width = 2, unit = " " }
+executable = true
+exec = "tsx {file}"
+exectest = "tsx -m pytest -k {test} {file}"
+
+[[language]]
+name = "typescriptreact"
+types = ["tsx"]
 comment = "//"
 lsp = ["typescript-language-server", "--stdio"]
 indent = { width = 2, unit = " " }
