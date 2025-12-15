@@ -1,0 +1,217 @@
+.agent-settings-container {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.agent-settings-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 4px 4px 16px;
+}
+
+.agent-settings-header h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-color, #ccc);
+}
+
+.agent-settings-header-actions {
+  display: flex;
+  align-items: center;
+}
+
+.agent-settings-close-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-color, #ccc);
+  padding: 4px;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  transition: background-color 0.2s;
+}
+
+.agent-settings-close-btn:hover {
+  background-color: var(--hover-bg, #2a2a2a);
+}
+
+.agent-settings-content {
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}
+
+.agent-settings-item {
+  background: var(--item-bg, #252525);
+  border: 1px solid var(--border-color, #333);
+  border-radius: 6px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.agent-settings-item:last-of-type {
+  margin-bottom: 0;
+}
+
+.agent-settings-item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.agent-settings-item-header h4 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-color, #ccc);
+}
+
+.agent-settings-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.agent-settings-default-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-color, #ccc);
+}
+
+.agent-settings-default-checkbox input[type="radio"] {
+  cursor: pointer;
+}
+
+.agent-settings-default-checkbox span {
+  font-size: 11px;
+}
+
+.agent-settings-remove-btn {
+  background: transparent;
+  border: none;
+  padding: 4px;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  transition: background-color 0.2s;
+}
+
+.agent-settings-remove-btn:hover {
+  background-color: var(--hover-bg, #2a2a2a);
+}
+
+.agent-settings-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.agent-settings-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.agent-settings-field label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-color, #ccc);
+}
+
+.agent-settings-field input,
+.agent-settings-field textarea {
+  border: 1px solid var(--border-color, #333);
+  padding: 8px 12px;
+  font-size: 13px;
+  font-family: inherit;
+  resize: vertical;
+  border-radius: 16px;
+}
+
+.agent-settings-field input:focus,
+.agent-settings-field textarea:focus {
+  outline: none;
+}
+
+.agent-settings-field textarea {
+  min-height: 50px;
+}
+
+.agent-settings-id-hint {
+  font-size: 11px;
+  color: var(--text-color-secondary, #888);
+  margin-top: 2px;
+  font-style: italic;
+}
+
+.agent-settings-add-btn {
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  padding: 12px 16px;
+  color: var(--text-color, #ccc);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 16px;
+  transition: background-color 0.2s;
+}
+
+.agent-settings-add-btn:hover {
+  background-color: var(--hover-bg, #2a2a2a);
+}
+
+.agent-settings-add-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+.agent-settings-cancel-btn,
+.agent-settings-save-btn {
+  padding: 4px 12px;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  border: none;
+  background: transparent;
+  color: var(--text-color, #ccc);
+}
+
+.agent-settings-cancel-btn:hover {
+  background-color: var(--hover-bg, #2a2a2a);
+}
+
+.agent-settings-save-btn:hover {
+  background-color: var(--hover-bg, #2a2a2a);
+}
+
+@media (max-width: 768px) {
+  .acp-dialog-input textarea {
+      font-size: 16px;
+  }
+  .agent-settings-field input, .agent-settings-field textarea {
+    font-size: 16px;
+  }
+}

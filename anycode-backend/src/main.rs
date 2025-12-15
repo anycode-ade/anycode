@@ -7,7 +7,7 @@ use socketioxide::{
     SocketIo,
 };
 use tower::ServiceBuilder;
-use tower_http::{cors::CorsLayer, services::ServeDir};
+use tower_http::cors::CorsLayer;
 use tracing::info;
 use anyhow::Result;
 
@@ -15,11 +15,13 @@ mod code;
 mod config;
 mod utils;
 mod lsp;
+mod acp;
 use lsp::LspManager;
+use acp::AcpManager;
 
 use std::sync::Arc;
 use tokio::sync::{mpsc::Receiver, Mutex};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use tokio::sync::mpsc;
 
 mod app_state;
@@ -34,6 +36,7 @@ use handlers::{
     lsp_handler::*, 
     terminal_handler::*,
     watch_handler::handle_watch_event,
+    acp_handler::*,
 };
 
 mod search;
@@ -42,7 +45,7 @@ mod terminal;
 use lsp_types::PublishDiagnosticsParams;
 use notify::{recommended_watcher, Event, RecursiveMode, Watcher};
 
-async fn on_connect(socket: SocketRef, _state: State<AppState>) {
+async fn on_connect(socket: SocketRef, state: State<AppState>) {
     info!("Socket.IO connected: {:?} {:?}", socket.ns(), socket.id);
 
     socket.on("file:open", handle_file_open);
@@ -65,12 +68,58 @@ async fn on_connect(socket: SocketRef, _state: State<AppState>) {
     socket.on("terminal:resize", handle_terminal_resize);
     socket.on("terminal:close", handle_terminal_close);
     socket.on("terminal:reconnect", handle_terminal_reconnect);
+
+    socket.on("acp:start", handle_acp_start);
+    socket.on("acp:prompt", handle_acp_prompt);
+    socket.on("acp:stop", handle_acp_stop);
+    socket.on("acp:cancel", handle_acp_cancel);
+    socket.on("acp:list", handle_acp_list);
+    socket.on("acp:reconnect", handle_acp_reconnect);
     
     socket.on_disconnect(on_disconnect)
 }
 
-async fn on_disconnect(socket: SocketRef, _state: State<AppState>) {
+async fn on_disconnect(socket: SocketRef, state: State<AppState>) {
     info!("Socket.IO disconnected: {}", socket.id);
+    
+    let sid = socket.id.as_str().to_string();
+    
+    // Get languages for files opened by this socket
+    let languages = {
+        let mut sockets_data = state.socket2data.lock().await;
+        let socket_data = match sockets_data.remove(&sid) {
+            Some(data) => data,
+            None => return,
+        };
+        
+        let f2c = state.file2code.lock().await;
+        socket_data.opened_files.iter()
+            .filter_map(|path| f2c.get(path).map(|code| code.lang.clone()))
+            .collect::<HashSet<_>>()
+    };
+    
+    // Get all opened files from remaining sockets
+    let all_opened_files = {
+        let sockets_data = state.socket2data.lock().await;
+        sockets_data.values()
+            .flat_map(|data| data.opened_files.iter())
+            .cloned()
+            .collect::<Vec<_>>()
+    };
+    
+    // Stop LSP servers for languages that have no files opened by other sockets
+    let f2c = state.file2code.lock().await;
+    let mut lsp_manager = state.lsp_manager.lock().await;
+    for lang in languages {
+        let lang_still_opened = all_opened_files.iter().any(|file_path| {
+            f2c.get(file_path)
+                .map(|code| code.lang == lang)
+                .unwrap_or(false)
+        });
+        if !lang_still_opened {
+            lsp_manager.stop_by_lang(&lang).await;
+        }
+    }
 }
 
 
@@ -83,13 +132,14 @@ fn build_app_state() -> (AppState, Receiver<PublishDiagnosticsParams>) {
     lsp_manager.set_diagnostics_sender(diagnostic_send);
 
     let lsp_manager = Arc::new(Mutex::new(lsp_manager));
+    let acp_manager = Arc::new(Mutex::new(AcpManager::new()));
 
     let file2code = Arc::new(Mutex::new(HashMap::new()));
     let socket2data = Arc::new(Mutex::new(HashMap::new()));
     let terminals = Arc::new(Mutex::new(HashMap::new())); 
 
     let state = AppState { 
-        config, file2code, lsp_manager, socket2data, terminals 
+        config, file2code, lsp_manager, acp_manager, socket2data, terminals 
     };
 
     (state, diagnostic_recv)

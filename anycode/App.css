@@ -195,6 +195,27 @@
     text-shadow: 0 0 6px rgba(255, 255, 255, 0.8);
 }
 
+.acp-toggle-btn {
+    background: none;
+    border: none;
+    color: #888;
+    cursor: pointer;
+    border-radius: 12px;
+    font-weight: bold;
+    transition: all 0.2s ease;
+}
+
+.acp-toggle-btn:hover {
+    color: #fff;
+    /* text-shadow: 0 0 6px rgba(255, 255, 255, 0.8); */
+}
+
+.acp-toggle-btn.active {
+    /* background-color: #444; */
+    color: #fff;
+    text-shadow: 0 0 6px rgba(255, 255, 255, 0.8);
+}
+
 .language-indicator {
     color: #888;
     font-size: 12px;
@@ -344,6 +365,26 @@
 
 .app-container.terminal-visible .file-system-content {
     padding-bottom: 4px;
+}
+
+/* Add bottom padding only when terminal is closed - same approach as file-system-content */
+.app-container:not(.terminal-visible) .acp-dialog-input {
+    margin-bottom: var(--toolbar-total-space);
+}
+/* Add bottom padding only when terminal is closed - same approach as file-system-content */
+.app-container:not(.terminal-visible) .agent-settings-add-btn {
+    margin-bottom: var(--toolbar-total-space);
+}
+
+
+.acp-dialog::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 1.5px;
+    background: linear-gradient(to bottom, transparent, #555, transparent);
 }
 
 

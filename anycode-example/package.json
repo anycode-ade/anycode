@@ -16,7 +16,6 @@
     "anycode-base": "1.0.4"
   },
   "devDependencies": {
-    "vite": "^7.0.5"
-  }
+    "vite": "^7.0.5"  }
 }
 

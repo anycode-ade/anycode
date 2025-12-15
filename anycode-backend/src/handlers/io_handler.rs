@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use crate::utils::{abs_file, is_ignored_path};
 use crate::app_state::*;
 use crate::error_ack;
+use lsp_types::{TextDocumentContentChangeEvent, Range, Position};
 
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -142,21 +143,62 @@ pub async fn handle_file_close(
         Err(e) => error_ack!(ack, &request, "Failed to resolve file: {:?}", e),
     };
 
-    let mut f2c = state.file2code.lock().await;
-    let code = match get_or_create_code(&mut f2c, &abs_path, &state.config) {
-        Ok(c) => c,
-        Err(e) => error_ack!(ack, &abs_path, "{:?}", e),
+    // Get code and language before removing from file2code
+    let lang = {
+        let mut f2c = state.file2code.lock().await;
+        let code = match get_or_create_code(&mut f2c, &abs_path, &state.config) {
+            Ok(c) => c,
+            Err(e) => error_ack!(ack, &abs_path, "{:?}", e),
+        };
+        code.lang.clone()
     };
 
+    // Close in LSP
     let mut lsp_manager = state.lsp_manager.lock().await;
-    if let Some(lsp) = lsp_manager.get(&code.lang).await {
+    if let Some(lsp) = lsp_manager.get(&lang).await {
         lsp.did_close(&abs_path);
     }
+    drop(lsp_manager);
 
+    // Remove from current socket's opened_files
     let sid = socket.id.as_str().to_string();
     let mut sockets_data = state.socket2data.lock().await;
     let data = sockets_data.entry(sid).or_insert_with(SocketData::default);
     data.opened_files.remove(&abs_path);
+
+    // Check if file is still opened by other sockets
+    let is_still_opened = sockets_data.values().any(|data| data.opened_files.contains(&abs_path));
+    
+    // Collect all opened file paths from all sockets
+    let all_opened_files: Vec<String> = sockets_data
+        .values()
+        .flat_map(|data| data.opened_files.iter())
+        .cloned()
+        .collect();
+    drop(sockets_data);
+
+    // Remove from file2code if no other sockets have it open
+    if !is_still_opened {
+        let mut f2c = state.file2code.lock().await;
+        f2c.remove(&abs_path);
+        info!("Removed file from file2code: {}", abs_path);
+    }
+
+    // Check if there are any other files of this language opened by any socket
+    let f2c = state.file2code.lock().await;
+    let lang_still_opened = all_opened_files.iter().any(|file_path| {
+        f2c.get(file_path)
+            .map(|code| code.lang == lang)
+            .unwrap_or(false)
+    });
+    drop(f2c);
+
+    // Stop LSP server for this language if no files of this language are opened
+    if !lang_still_opened {
+        let mut lsp_manager = state.lsp_manager.lock().await;
+        lsp_manager.stop_by_lang(&lang).await;
+        info!("Stopped LSP server for language '{}' - no files of this language are opened", lang);
+    }
 }
 
 
@@ -206,7 +248,9 @@ pub async fn handle_change(
     };
 
     let mut lsp_manager = state.lsp_manager.lock().await;
+    let mut lsp_changes = Vec::new();
 
+    // Apply all edits to code and collect LSP changes
     for e in change.edits.iter() {
         match e.operation {
             Operation::Insert => {
@@ -214,9 +258,14 @@ pub async fn handle_change(
                 let (line, col_utf16) = code.char_to_position(start_char);
                 code.insert_text_at(&e.text, start_char);
 
-                if let Some(lsp) = lsp_manager.get(&code.lang).await {
-                    lsp.did_change(line, col_utf16, line, col_utf16, &abs_path, &e.text).await;
-                }
+                lsp_changes.push(TextDocumentContentChangeEvent {
+                    range: Some(Range {
+                        start: Position::new(line as u32, col_utf16 as u32),
+                        end: Position::new(line as u32, col_utf16 as u32),
+                    }),
+                    range_length: None,
+                    text: e.text.clone(),
+                });
             }
             Operation::Delete => {
                 let start_char = code.utf16_to_char_offset(e.start);
@@ -226,15 +275,22 @@ pub async fn handle_change(
 
                 code.remove_text2(start_char, end_char);
 
-                if let Some(lsp) = lsp_manager.get(&code.lang).await {
-                    lsp.did_change(
-                        start_line, start_col_utf16,
-                        end_line, end_col_utf16,
-                        &abs_path, "",
-                    )
-                    .await;
-                }
+                lsp_changes.push(TextDocumentContentChangeEvent {
+                    range: Some(Range {
+                        start: Position::new(start_line as u32, start_col_utf16 as u32),
+                        end: Position::new(end_line as u32, end_col_utf16 as u32),
+                    }),
+                    range_length: None,
+                    text: String::new(),
+                });
             }
+        }
+    }
+
+    // Send all changes to LSP in a single notification
+    if !lsp_changes.is_empty() {
+        if let Some(lsp) = lsp_manager.get(&code.lang).await {
+            lsp.did_change_multi(&abs_path, lsp_changes).await;
         }
     }
 

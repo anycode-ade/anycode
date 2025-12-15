@@ -1,0 +1,17 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": ".",
+    "jsx": "react-jsx",
+    "baseUrl": ".",
+    "paths": {
+      "anycode-base": ["../anycode-base/src"],
+      "anycode-base/*": ["../anycode-base/src/*"],
+      "anycode-react": ["../anycode-react/src"],
+      "anycode-react/*": ["../anycode-react/src/*"]
+    }
+  },
+  "include": ["**/*.ts", "**/*.tsx"],
+  "exclude": ["node_modules", "dist"]
+}

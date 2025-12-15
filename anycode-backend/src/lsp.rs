@@ -345,21 +345,29 @@ impl Lsp {
         end_line: usize, end_column: usize,
         path: &str, text: &str,
     ) {
+        self.did_change_multi(path, vec![
+            TextDocumentContentChangeEvent {
+                range: Some(Range {
+                    start: Position::new(start_line as u32, start_column as u32),
+                    end: Position::new(end_line as u32, end_column as u32),
+                }),
+                range_length: None,
+                text: text.to_string(),
+            }
+        ]).await;
+    }
+
+    pub async fn did_change_multi(
+        &mut self,
+        path: &str,
+        content_changes: Vec<TextDocumentContentChangeEvent>,
+    ) {
         let params = DidChangeTextDocumentParams {
             text_document: VersionedTextDocumentIdentifier {
                 uri: format!("file://{}", path).parse().unwrap(),
                 version: self.get_next_version(path) as i32,
             },
-            content_changes: vec![
-                TextDocumentContentChangeEvent {
-                    range: Some(Range {
-                        start: Position::new(start_line as u32, start_column as u32),
-                        end: Position::new(end_line as u32, end_column as u32),
-                    }),
-                    range_length: None,
-                    text: text.to_string(),
-                }
-            ],
+            content_changes,
         };
 
         self.send_notification::<DidChangeTextDocument>(params);
@@ -769,6 +777,13 @@ impl LspManager {
                     lsp.did_change_configuration(settings);
                 }
             }
+        }
+    }
+
+    pub async fn stop_by_lang(&mut self, lang: &str) {
+        if let Some(mut lsp) = self.lang2lsp.remove(lang) {
+            lsp.stop().await;
+            info!("Stopped LSP server for language: {}", lang);
         }
     }
 }

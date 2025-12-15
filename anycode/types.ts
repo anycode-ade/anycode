@@ -88,3 +88,69 @@ export interface WatcherRemove {
     path: string;
     isFile: boolean;
 }
+
+// ACP protocol types
+export interface AcpAgent {
+    id: string;
+    name: string;
+    command: string;
+    args: string[];
+    description?: string;
+}
+
+export interface AcpPromptStateMessage {
+    role: 'prompt_state';
+    is_processing: boolean;
+}
+
+export type AcpMessage = 
+    | AcpUserMessage
+    | AcpAssistantMessage
+    | AcpToolCallMessage
+    | AcpToolResultMessage
+    | AcpPromptStateMessage;
+
+export interface AcpUserMessage {
+    role: 'user';
+    content: string;
+    is_chunk?: boolean;
+}
+
+export interface AcpAssistantMessage {
+    role: 'assistant';
+    content: string;
+    is_chunk?: boolean;
+}
+
+export interface AcpToolCallMessage {
+    role: 'tool_call';
+    id: string;
+    name: string;
+    command?: string;
+    arguments: any;
+}
+
+export interface AcpToolResultMessage {
+    role: 'tool_result';
+    id: string;
+    result: any;
+}
+
+export interface AcpToolCall {
+    id: string;
+    name: string;
+    arguments: any;
+}
+
+export interface AcpToolResult {
+    id: string;
+    result: any;
+}
+
+export interface AcpSession {
+    agentId: string;
+    agentName: string;
+    messages: AcpMessage[];
+    isActive: boolean;
+    isProcessing?: boolean;
+}

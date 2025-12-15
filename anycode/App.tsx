@@ -2,11 +2,13 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { AnycodeEditorReact, AnycodeEditor, Edit, Operation } from 'anycode-react';
 import type { Change, Position } from '../anycode-base/src/code';
-import { WatcherCreate, WatcherEdits, WatcherRemove, type Cursor, type CursorHistory, type Terminal} from './types';
-import { loadTerminals, loadTerminalSelected, loadTerminalVisible, loadLeftPanelVisible } from './storage';
+import { WatcherCreate, WatcherEdits, WatcherRemove, type Cursor, type CursorHistory, type Terminal, type AcpSession, type AcpMessage, type AcpToolCall, type AcpPromptStateMessage} from './types';
+import { loadTerminals, loadTerminalSelected, loadTerminalVisible, loadLeftPanelVisible, loadAcpPanelVisible } from './storage';
 import { Allotment } from 'allotment';
 import 'allotment/dist/style.css';
-import { TreeNodeComponent, TreeNode, FileState, TerminalComponent, TerminalTabs } from './components';
+import { TreeNodeComponent, TreeNode, FileState, TerminalComponent, TerminalTabs, AcpDialog, AgentSettingsDialog } from './components';
+import { getAllAgents, getDefaultAgent, updateAgents, getDefaultAgentId, ensureDefaultAgents } from './agents';
+import { AcpAgent } from './types';
 import { DEFAULT_FILE, DEFAULT_FILE_CONTENT, BACKEND_URL, MIN_LEFT_PANEL_SIZE, LANGUAGE_EXTENSIONS } from './constants';
 import './App.css';
 import { 
@@ -36,12 +38,21 @@ const App: React.FC = () => {
 
     const [leftPanelVisible, setLeftPanelVisible] = useState<boolean>(loadLeftPanelVisible());
     const [terminalVisible, setTerminalVisible] = useState<boolean>(loadTerminalVisible());
+    const [acpPanelVisible, setAcpPanelVisible] = useState<boolean>(loadAcpPanelVisible());
 
     const [terminals, setTerminals] = useState<Terminal[]>(loadTerminals);
     const [terminalSelected, setTerminalSelected] = useState<number>(loadTerminalSelected());
     const terminalCounterRef = useRef<number>(1);
     const newTerminalsRef = useRef<Set<string>>(new Set());
     const terminalListenersRef = useRef<Map<string, Set<(data: string) => void>>>(new Map());
+
+    const [acpSessions, setAcpSessions] = useState<Map<string, AcpSession>>(new Map());
+    const selectedAgentIdRef = useRef<string | null>(null);
+    const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
+    const agentCounterRef = useRef<Map<string, number>>(new Map());
+    const acpSessionsRef = useRef<Map<string, AcpSession>>(new Map());
+    const [isAgentSettingsOpen, setIsAgentSettingsOpen] = useState<boolean>(false);
+    const [agentsVersion, setAgentsVersion] = useState<number>(0);
 
     const wsRef = useRef<Socket | null>(null);
     const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -51,6 +62,14 @@ const App: React.FC = () => {
     useEffect(() => {
         filesRef.current = files;
     }, [files]);
+
+    useEffect(() => {
+        acpSessionsRef.current = acpSessions;
+    }, [acpSessions]);
+
+    useEffect(() => {
+        selectedAgentIdRef.current = selectedAgentId;
+    }, [selectedAgentId]);
 
     useEffect(() => {
         localStorage.setItem('terminals', JSON.stringify(terminals));
@@ -335,6 +354,9 @@ const App: React.FC = () => {
                     initializeTerminal(term);
                     reattachTerminalListener(term.name);
                 });
+
+                // Reconnect to ACP agents
+                reconnectToAcpAgents();
             });
             ws.on('disconnect', (reason) => {
                 console.log('Disconnected from backend', reason);
@@ -354,6 +376,8 @@ const App: React.FC = () => {
             ws.on("watcher:edits", handleWatcherEdits);
             ws.on("watcher:create", handleWatcherCreate);
             ws.on("watcher:remove", handleWatcherRemove);
+            ws.on("acp:message", handleAcpMessage);
+            ws.on("acp:history", handleAcpHistory);
         } catch (error) {
             console.error('Failed to connect to backend:', error);
             setConnectionError('Failed to connect to backend');
@@ -950,6 +974,379 @@ const App: React.FC = () => {
         });
     };
 
+    const handleAcpMessage = (data: { agent_id: string; item: AcpMessage }) => {
+        console.log('acp:message', data);
+        
+        // Handle prompt_state messages
+        if (data.item.role === 'prompt_state') {
+            const promptState = data.item as AcpPromptStateMessage;
+            setAcpSessions(prev => {
+                const newSessions = new Map(prev);
+                const existing = newSessions.get(data.agent_id);
+                if (!existing) {
+                    newSessions.set(data.agent_id, {
+                        agentId: data.agent_id,
+                        agentName: '',
+                        messages: [],
+                        isActive: true,
+                        isProcessing: promptState.is_processing,
+                    });
+                } else {
+                    newSessions.set(data.agent_id, {
+                        ...existing,
+                        isProcessing: promptState.is_processing,
+                    });
+                }
+                return newSessions;
+            });
+            return;
+        }
+        
+        // Handle tool_call and tool_result messages
+        if (data.item.role === 'tool_call' || data.item.role === 'tool_result') {
+            setAcpSessions(prev => {
+                const newSessions = new Map(prev);
+                const existing = newSessions.get(data.agent_id);
+                if (!existing) {
+                    newSessions.set(data.agent_id, {
+                        agentId: data.agent_id,
+                        agentName: '',
+                        messages: [data.item],
+                        isActive: true,
+                    });
+                } else {
+                    newSessions.set(data.agent_id, {
+                        ...existing,
+                        messages: [...existing.messages, data.item],
+                    });
+                }
+                return newSessions;
+            });
+            return;
+        }
+        
+        // At this point, TypeScript knows it's either 'user' or 'assistant'
+        if (data.item.role !== 'user' && data.item.role !== 'assistant') {
+            return;
+        }
+        
+        // Now we can safely access content and is_chunk
+        const message = data.item;
+        const isChunk = message.is_chunk || false;
+        
+        setAcpSessions(prev => {
+            const newSessions = new Map(prev);
+            const existing = newSessions.get(data.agent_id);
+            if (!existing) {
+                newSessions.set(data.agent_id, {
+                    agentId: data.agent_id,
+                    agentName: '',
+                    messages: [message],
+                    isActive: true,
+                });
+            } else {
+                // If it's a chunk and last message is from assistant, update it
+                if (isChunk && existing.messages.length > 0) {
+                    const lastMessage = existing.messages[existing.messages.length - 1];
+                    if (lastMessage.role === 'assistant') {
+                        // Update last message by appending chunk content
+                        const updatedMessages = [...existing.messages];
+                        updatedMessages[updatedMessages.length - 1] = {
+                            ...lastMessage,
+                            content: lastMessage.content + message.content,
+                        };
+                        newSessions.set(data.agent_id, {
+                            ...existing,
+                            messages: updatedMessages,
+                        });
+                        return newSessions;
+                    }
+                }
+                // Otherwise, add as new message
+                newSessions.set(data.agent_id, {
+                    ...existing,
+                    messages: [...existing.messages, message],
+                });
+            }
+            return newSessions;
+        });
+    };
+
+    const handleAcpHistory = (data: { agent_id: string; history: AcpMessage[] }) => {
+        console.log('acp:history', data);
+        
+        setAcpSessions(prev => {
+            const newSessions = new Map(prev);
+            const existing = newSessions.get(data.agent_id);
+            if (!existing) {
+                newSessions.set(data.agent_id, {
+                    agentId: data.agent_id,
+                    agentName: '',
+                    messages: data.history,
+                    isActive: true,
+                });
+            } else {
+                newSessions.set(data.agent_id, {
+                    ...existing,
+                    messages: data.history,
+                });
+            }
+            return newSessions;
+        });
+    };
+
+    const generateUniqueAgentId = (baseAgentId: string): string => {
+        // Check if base agent ID already exists in sessions
+        const existingSessions = acpSessionsRef.current;
+        let uniqueId = baseAgentId;
+        let counter = 1;
+        
+        // Find the highest counter for this base agent ID
+        const currentCounter = agentCounterRef.current.get(baseAgentId) || 0;
+        counter = currentCounter;
+        
+        // Check if base ID exists, if not use it, otherwise increment
+        if (existingSessions.has(baseAgentId)) {
+            counter++;
+            uniqueId = `${baseAgentId}-${counter}`;
+            // Make sure this ID doesn't exist either
+            while (existingSessions.has(uniqueId)) {
+                counter++;
+                uniqueId = `${baseAgentId}-${counter}`;
+            }
+        }
+        
+        // Update counter for this base agent ID
+        agentCounterRef.current.set(baseAgentId, counter);
+        
+        return uniqueId;
+    };
+
+    const startAgent = (agentId: string, agentName: string, command: string, args: string[]) => {
+        if (!wsRef.current || !isConnected) return;
+
+        // Generate unique agent ID
+        const uniqueAgentId = generateUniqueAgentId(agentId);
+
+        wsRef.current.emit('acp:start', {
+            agent_id: uniqueAgentId,
+            agent_name: agentName,
+            command,
+            args,
+        }, (response: any) => {
+            if (response.success) {
+                setAcpSessions(prev => {
+                    const newSessions = new Map(prev);
+                    newSessions.set(uniqueAgentId, {
+                        agentId: uniqueAgentId,
+                        agentName,
+                        messages: [],
+                        isActive: true,
+                    });
+                    return newSessions;
+                });
+                setSelectedAgentId(uniqueAgentId);
+                setAcpPanelVisible(true);
+            } else {
+                console.error('Failed to start agent ', uniqueAgentId, ':', response.error);
+                alert('Failed to start agent ' + uniqueAgentId + ': ' + response.error);
+            }
+        });
+    };
+
+    const sendPrompt = (agentId: string, prompt: string) => {
+        if (!wsRef.current || !isConnected) return;
+
+        wsRef.current.emit('acp:prompt', { agent_id: agentId, prompt }, (response: any) => {
+            if (response.success) {
+
+            } else {
+                console.error('Failed to send prompt:', response.error);
+                alert('Failed to send prompt: ' + response.error);
+                // Clear processing state on error
+                setAcpSessions(prev => {
+                    const newSessions = new Map(prev);
+                    const existing = newSessions.get(agentId);
+                    if (!existing) return newSessions;
+                    newSessions.set(agentId, { ...existing, isProcessing: false });
+                    return newSessions;
+                });
+            }
+        });
+    };
+
+    const cancelPrompt = (agentId: string) => {
+        if (!wsRef.current || !isConnected) return;
+
+        wsRef.current.emit('acp:cancel', {
+            agent_id: agentId,
+        }, (response: any) => {
+            if (response.success) {
+                // Clear processing state
+                setAcpSessions(prev => {
+                    const newSessions = new Map(prev);
+                    const existing = newSessions.get(agentId);
+                    if (!existing) return newSessions;
+                    newSessions.set(agentId, { ...existing, isProcessing: false });
+                    return newSessions;
+                });
+            } else {
+                console.error('Failed to cancel prompt:', response.error);
+            }
+        });
+    };
+
+    const stopAgent = (agentId: string) => {
+        if (!wsRef.current || !isConnected) return;
+
+        wsRef.current.emit('acp:stop', {
+            agent_id: agentId,
+        }, (response: any) => {
+            if (response.success) {
+                setAcpSessions(prev => {
+                    const newSessions = new Map(prev);
+                    const existing = newSessions.get(agentId);
+                    if (!existing) return newSessions;
+                    newSessions.set(agentId, { ...existing, isActive: false });
+                    return newSessions;
+                });
+            }
+        });
+    };
+
+    const closeAgent = (agentId: string) => {
+        const wasSelected = selectedAgentId === agentId;
+        
+        // First stop the agent if it's active, then remove from sessions
+        const session = acpSessionsRef.current.get(agentId);
+        if (session && session.isActive && wsRef.current && isConnected) {
+            // Stop agent and remove after successful stop
+            wsRef.current.emit('acp:stop', {
+                agent_id: agentId,
+            }, (response: any) => {
+                if (response.success) {
+                    removeAgentFromSessions(agentId, wasSelected);
+                } else {
+                    console.error('Failed to stop agent:', response.error);
+                    // Remove anyway
+                    removeAgentFromSessions(agentId, wasSelected);
+                }
+            });
+        } else {
+            // Agent is not active, just remove
+            removeAgentFromSessions(agentId, wasSelected);
+        }
+    };
+
+    const removeAgentFromSessions = (agentId: string, wasSelected: boolean) => {
+        setAcpSessions(prev => {
+            const newSessions = new Map(prev);
+            const sessionToRemove = newSessions.get(agentId);
+            newSessions.delete(agentId);
+            
+            // Decrement counter for base agent ID if needed
+            if (sessionToRemove) {
+                const baseAgentId = agentId.split('-')[0];
+                const currentCounter = agentCounterRef.current.get(baseAgentId) || 0;
+                if (currentCounter > 0) {
+                    agentCounterRef.current.set(baseAgentId, currentCounter - 1);
+                }
+            }
+            
+            // If closed agent was selected, select another one or clear selection
+            if (wasSelected) {
+                const remainingSessions = Array.from(newSessions.values());
+                if (remainingSessions.length > 0) {
+                    setSelectedAgentId(remainingSessions[0].agentId);
+                } else {
+                    setSelectedAgentId(null);
+                }
+            }
+            return newSessions;
+        });
+    };
+
+    const closeAcpDialog = () => {
+        setAcpPanelVisible(false);
+    };
+
+    const reconnectToAcpAgents = () => {
+        if (!wsRef.current || !isConnected) return;
+
+        console.log('Reconnecting to ACP agents...');
+        
+        // Call backend reconnect handler to restore subscriptions
+        wsRef.current.emit('acp:reconnect', {}, (response: any) => {
+            if (response.success) {
+                console.log('ACP reconnect successful, active agents:', response.agents);
+                
+                // Restore all active agents from backend
+                const activeAgents = response.agents || [];
+                setAcpSessions(prev => {
+                    const newSessions = new Map(prev);
+                    activeAgents.forEach((agent: any) => {
+                        const existing = newSessions.get(agent.id);
+                        if (existing) {
+                            newSessions.set(agent.id, { ...existing, isActive: true });
+                        } else {
+                            newSessions.set(agent.id, {
+                                agentId: agent.id,
+                                agentName: agent.name,
+                                messages: [],
+                                isActive: true,
+                            });
+                        }
+                        
+                        // Update counter for base agent ID
+                        const baseAgentId = agent.id.split('-')[0];
+                        const match = agent.id.match(/-(\d+)$/);
+                        if (match) {
+                            const counter = parseInt(match[1], 10);
+                            const currentCounter = agentCounterRef.current.get(baseAgentId) || 0;
+                            agentCounterRef.current.set(baseAgentId, Math.max(currentCounter, counter));
+                        } else {
+                            // Base agent ID, ensure counter is at least 1
+                            const currentCounter = agentCounterRef.current.get(baseAgentId) || 0;
+                            if (currentCounter === 0) {
+                                agentCounterRef.current.set(baseAgentId, 1);
+                            }
+                        }
+                    });
+                    // Mark non-active sessions as inactive
+                    newSessions.forEach((session, agentId) => {
+                        if (!activeAgents.find((a: any) => a.id === agentId)) {
+                            newSessions.set(agentId, { ...session, isActive: false });
+                        }
+                    });
+                    return newSessions;
+                });
+                // Select first agent if none selected
+                if (!selectedAgentId && activeAgents.length > 0) {
+                    setSelectedAgentId(activeAgents[0].id);
+                }
+            } else {
+                console.error('ACP reconnect failed:', response.error);
+            }
+        });
+    };
+
+    // Sync selectedAgentId with acpSessions
+    useEffect(() => {
+        if (selectedAgentId && !acpSessions.has(selectedAgentId)) {
+            // Selected agent was removed, select another one or clear
+            const remainingSessions = Array.from(acpSessions.values());
+            if (remainingSessions.length > 0) {
+                setSelectedAgentId(remainingSessions[0].agentId);
+            } else {
+                setSelectedAgentId(null);
+            }
+        } else if (!selectedAgentId && acpSessions.size > 0) {
+            // No agent selected but there are sessions, select first one
+            const firstSession = Array.from(acpSessions.values())[0];
+            setSelectedAgentId(firstSession.agentId);
+        }
+    }, [acpSessions, selectedAgentId]);
+
     useEffect(() => {
         const file = files.find(f => f.id === activeFileId);
         if (file) {
@@ -973,8 +1370,13 @@ const App: React.FC = () => {
     }, [leftPanelVisible]);
 
     useEffect(() => {
+        localStorage.setItem('acpPanelVisible', JSON.stringify(acpPanelVisible));
+    }, [acpPanelVisible]);
+
+    useEffect(() => {
         localStorage.setItem('terminalSelected', JSON.stringify(terminalSelected));
     }, [terminalSelected]);
+
 
     // Connect to backend on component mount
     useEffect(() => {
@@ -994,138 +1396,236 @@ const App: React.FC = () => {
         };
     }, []);
 
+    // Layout components
+    const fileTreePanel = (
+        <div className="file-system-panel">
+            <div className="file-system-content">
+                {fileTree.length === 0 ? (
+                    <p className="file-system-empty"> </p>
+                ) : (
+                    <div className="file-tree">
+                        {fileTree.map(node => (
+                            <TreeNodeComponent 
+                                key={node.id} 
+                                node={node} 
+                                onToggle={toggleNode}
+                                onSelect={selectNode}
+                                onOpenFile={openFile}
+                                onLoadFolder={openFolder}
+                            />
+                        ))}
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+
+    const editorPanel = (
+        <div className="editor-container">
+            {activeFile && editorStates.has(activeFile.id) ? (
+                <AnycodeEditorReact
+                    key={activeFile.id}
+                    id={activeFile.id}
+                    editorState={editorStates.get(activeFile.id)!}
+                />
+            ) : (
+                <div className="no-editor">
+                </div>
+            )}
+        </div>
+    );
+
+    const handleSaveAgents = (agents: AcpAgent[], defaultAgentId: string | null) => {
+        updateAgents(agents, defaultAgentId);
+        setAgentsVersion(prev => prev + 1); // Force re-render
+    };
+
+    const acpPanel = (() => {
+        const sessionsArray = Array.from(acpSessions.values());
+        const currentSession = selectedAgentId ? acpSessions.get(selectedAgentId) : null;
+        const defaultAgent = getDefaultAgent();
+        
+        return (
+            <AcpDialog
+                agents={sessionsArray}
+                selectedAgentId={selectedAgentId}
+                onSelectAgent={setSelectedAgentId}
+                onCloseAgent={closeAgent}
+                onAddAgent={() => {
+                    const agent = defaultAgent;
+                    if (agent) {
+                        startAgent(agent.id, agent.name, agent.command, agent.args);
+                    }
+                }}
+                onOpenSettings={() => {
+                    ensureDefaultAgents(); // Ensure all default agents are present
+                    setIsAgentSettingsOpen(true);
+                }}
+                agentId={currentSession?.agentId || defaultAgent?.id || 'gemini'}
+                agentName={currentSession?.agentName || defaultAgent?.name || 'AI Agent'}
+                agentCommand={(() => {
+                    const agentId = currentSession?.agentId || defaultAgent?.id || 'gemini';
+                    const agent = getAllAgents().find(a => a.id === agentId);
+                    return agent?.command || '';
+                })()}
+                agentArgs={(() => {
+                    const agentId = currentSession?.agentId || defaultAgent?.id || 'gemini';
+                    const agent = getAllAgents().find(a => a.id === agentId);
+                    return agent?.args || [];
+                })()}
+                isOpen={true}
+                onClose={closeAcpDialog}
+                onSendPrompt={sendPrompt}
+                onStartAgent={startAgent}
+                onStopAgent={stopAgent}
+                onCancelPrompt={cancelPrompt}
+                messages={currentSession?.messages || []}
+                toolCalls={[]}
+                isConnected={currentSession ? (currentSession.isActive && isConnected) : false}
+                isProcessing={currentSession?.isProcessing || false}
+                showSettings={isAgentSettingsOpen}
+                settingsAgents={isAgentSettingsOpen ? getAllAgents() : []}
+                settingsDefaultAgentId={isAgentSettingsOpen ? getDefaultAgentId() : null}
+                onSaveSettings={handleSaveAgents}
+                onCloseSettings={() => setIsAgentSettingsOpen(false)}
+            />
+        );
+    })();
+
+
+    const terminalTabsPanel = (
+        <TerminalTabs
+            terminals={terminals}
+            terminalSelected={terminalSelected}
+            onSelectTerminal={setTerminalSelected}
+            onCloseTerminal={closeTerminal}
+            onAddTerminal={addTerminal}
+        />
+    );
+
+    const terminalContentPanel = (
+        <div className="terminal-content">
+            {terminals.map((term, index) => (
+                <div
+                    key={term.id}
+                    className="terminal-container"
+                    style={{
+                        visibility: index === terminalSelected ? "visible" : "hidden",
+                        opacity: index === terminalSelected ? 1 : 0,
+                        pointerEvents: index === terminalSelected ? "auto" : "none",
+                        height: '100%',
+                        position: index === terminalSelected ? 'relative' : 'absolute',
+                        width: '100%',
+                        top: 0,
+                        left: 0
+                    }}
+                >
+                    <TerminalComponent
+                        name={term.name}
+                        onData={handleTerminalData}
+                        onMessage={handleTerminalDataCallback}
+                        onResize={handleTerminalResize}
+                        rows={term.rows}
+                        cols={term.cols}
+                        isConnected={isConnected}
+                    />
+                </div>
+            ))}
+        </div>
+    );
+
+    const terminalPanel = (
+        <div className="terminal-panel">
+            <Allotment vertical={false} separator={false} defaultSizes={[20, 80]}>
+                <Allotment.Pane snap minSize={100}>
+                    {terminalTabsPanel}
+                </Allotment.Pane>
+                <Allotment.Pane>
+                    {terminalContentPanel}
+                </Allotment.Pane>
+            </Allotment>
+            {/* <div className="terminal-spacer"></div> */}
+        </div>
+    );
+
+    const toolbar = (
+        <div className="toolbar">
+            <span className={`backend-status ${isConnected ? 'connected' : 'disconnected'}`}>
+                Anycode
+            </span>
+
+            <button
+                onClick={() => setLeftPanelVisible(!leftPanelVisible)}
+                className={`toggle-tree-btn ${leftPanelVisible ? 'active' : ''}`}
+                title={leftPanelVisible ? 'Hide File Tree' : 'Show File Tree'}
+            >
+                Files
+            </button>
+
+            <button
+                onClick={() => setTerminalVisible(!terminalVisible)}
+                className={`terminal-toggle-btn ${terminalVisible ? 'active' : ''}`}
+                title={terminalVisible ? 'Hide Terminal' : 'Show Terminal'}
+            >
+               Terminals
+            </button>
+
+            <button
+                onClick={() => setAcpPanelVisible(!acpPanelVisible)}
+                className={`acp-toggle-btn ${acpPanelVisible ? 'active' : ''}`}
+                title={acpPanelVisible ? 'Hide AI Agent' : 'Show AI Agent'}
+            >
+               Agents
+            </button>
+
+            <div className="" style={{ display: 'flex', height: '100%' }}>
+                {files.map(file => (
+                    <div
+                        key={file.id}
+                        className={`tab ${activeFileId === file.id ? 'active' : ''}`}
+                        onClick={() => openTab(file)}
+                    >
+                        <span className={`tab-dirty-indicator ${dirtyFlags.get(file.id) ? 'dirty' : ''}`}> ● </span>
+                        <span className="tab-filename"> {file.name} </span>
+                        <button className="tab-close-button" onClick={(e) => { e.stopPropagation(); closeTab(file); }}> × </button>
+                    </div>
+                ))}                    
+            </div>
+
+            {/* <span className="language-indicator">{activeFile?.language.toUpperCase()}</span> */}
+        </div>
+    );
+
     return (
         <div className={`app-container ${terminalVisible ? 'terminal-visible' : ''}`}>
 
             <div className="main-content" style={{ flex: 1, display: 'flex' }}>
                 <Allotment vertical={true} defaultSizes={[70, 30]} separator={true} onVisibleChange={handleTerminalPanelVisibleChange}>
-                    <Allotment.Pane snap>
-                        <Allotment vertical={false} defaultSizes={[20,80]} separator={false}
-                            onVisibleChange={handleLeftPanelVisibleChange}>
+                    <Allotment.Pane >
+                        <Allotment vertical={false} defaultSizes={[20,80]} separator={false} onVisibleChange={handleLeftPanelVisibleChange}>
                             <Allotment.Pane snap visible={leftPanelVisible} minSize={MIN_LEFT_PANEL_SIZE}>
-                                <div className="file-system-panel">
-                                    <div className="file-system-content">
-                                        {fileTree.length === 0 ? (
-                                            <p className="file-system-empty"> </p>
-                                        ) : (
-                                            <div className="file-tree">
-                                                {fileTree.map(node => (
-                                                    <TreeNodeComponent 
-                                                        key={node.id} 
-                                                        node={node} 
-                                                        onToggle={toggleNode}
-                                                        onSelect={selectNode}
-                                                        onOpenFile={openFile}
-                                                        onLoadFolder={openFolder}
-                                                    />
-                                                ))}
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
+                                {fileTreePanel}
                             </Allotment.Pane>
-                            <Allotment.Pane>
-                                <div className="editor-container">
-                                    {activeFile && editorStates.has(activeFile.id) ? (
-                                        <AnycodeEditorReact
-                                            key={activeFile.id}
-                                            id={activeFile.id}
-                                            editorState={editorStates.get(activeFile.id)!}
-                                        />
-                                    ) : (
-                                        <div className="no-editor">
-                                        </div>
-                                    )}
-                                </div>
+                            <Allotment.Pane snap>
+                                <Allotment vertical={false} defaultSizes={[60,40]} separator={false}>
+                                    <Allotment.Pane snap>
+                                        {editorPanel}
+                                    </Allotment.Pane>
+                                    <Allotment.Pane snap visible={acpPanelVisible} minSize={100}>
+                                        {acpPanel}
+                                    </Allotment.Pane>
+                                </Allotment>
                             </Allotment.Pane>
                         </Allotment>
                     </Allotment.Pane>
                     <Allotment.Pane snap visible={terminalVisible}>
-                        <div className="terminal-panel">
-                            <Allotment vertical={false} separator={false} defaultSizes={[20, 80]}>
-                                <Allotment.Pane snap minSize={100}>
-                                    <TerminalTabs
-                                        terminals={terminals}
-                                        terminalSelected={terminalSelected}
-                                        onSelectTerminal={setTerminalSelected}
-                                        onCloseTerminal={closeTerminal}
-                                        onAddTerminal={addTerminal}
-                                    />
-                                </Allotment.Pane>
-                                <Allotment.Pane>
-                                    <div className="terminal-content">
-                                        {terminals.map((term, index) => (
-                                            <div
-                                                key={term.id}
-                                                className="terminal-container"
-                                                style={{
-                                                    visibility: index === terminalSelected ? "visible" : "hidden",
-                                                    opacity: index === terminalSelected ? 1 : 0,
-                                                    pointerEvents: index === terminalSelected ? "auto" : "none",
-                                                    height: '100%',
-                                                    position: index === terminalSelected ? 'relative' : 'absolute',
-                                                    width: '100%',
-                                                    top: 0,
-                                                    left: 0
-                                                }}
-                                            >
-                                                <TerminalComponent
-                                                    name={term.name}
-                                                    onData={handleTerminalData}
-                                                    onMessage={handleTerminalDataCallback}
-                                                    onResize={handleTerminalResize}
-                                                    rows={term.rows}
-                                                    cols={term.cols}
-                                                    isConnected={isConnected}
-                                                />
-                                            </div>
-                                        ))}
-                                    </div>
-                                </Allotment.Pane>
-                            </Allotment>
-                            {/* <div className="terminal-spacer"></div> */}
-                        </div>
+                        {terminalPanel}
                     </Allotment.Pane>
                 </Allotment>
             </div>
         
-            <div className="toolbar">
-                <span className={`backend-status ${isConnected ? 'connected' : 'disconnected'}`}>
-                    Anycode
-                </span>
+            {toolbar}
 
-                <button
-                    onClick={() => setLeftPanelVisible(!leftPanelVisible)}
-                    className={`toggle-tree-btn ${leftPanelVisible ? 'active' : ''}`}
-                    title={leftPanelVisible ? 'Hide File Tree' : 'Show File Tree'}
-                >
-                    Files
-                </button>
-
-                <button
-                    onClick={() => setTerminalVisible(!terminalVisible)}
-                    className={`terminal-toggle-btn ${terminalVisible ? 'active' : ''}`}
-                    title={terminalVisible ? 'Hide Terminal' : 'Show Terminal'}
-                >
-                   Terminals
-                </button>
-
-                <div className="" style={{ display: 'flex', height: '100%' }}>
-                    {files.map(file => (
-                        <div
-                            key={file.id}
-                            className={`tab ${activeFileId === file.id ? 'active' : ''}`}
-                            onClick={() => openTab(file)}
-                        >
-                            <span className={`tab-dirty-indicator ${dirtyFlags.get(file.id) ? 'dirty' : ''}`}> ● </span>
-                            <span className="tab-filename"> {file.name} </span>
-                            <button className="tab-close-button" onClick={(e) => { e.stopPropagation(); closeTab(file); }}> × </button>
-                        </div>
-                    ))}                    
-                </div>
-
-                {/* <span className="language-indicator">{activeFile?.language.toUpperCase()}</span> */}
-            </div>
         </div>
     );
 };
