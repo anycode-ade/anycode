@@ -3,6 +3,7 @@ use tokio::sync::mpsc;
 use std::io::{Read, Write};
 use anyhow::Result;
 use std::path::{Path, PathBuf};
+use crate::utils::current_dir;
 
 pub struct Terminal {
     name: String,
@@ -34,7 +35,7 @@ impl Terminal {
         let command_str = cmd.unwrap_or_else(Self::default_shell);
         let mut cmd_builder = CommandBuilder::new(command_str);
 
-        let working_dir = cwd.unwrap_or_else(|| Self::get_current_dir());
+        let working_dir = cwd.unwrap_or_else(|| current_dir());
         cmd_builder.cwd(working_dir);
 
         let child = pair.slave.spawn_command(cmd_builder)?;
@@ -76,13 +77,6 @@ impl Terminal {
             .find(|path| Path::new(path).exists())
             .unwrap_or(&"/bin/sh")
             .to_string()
-    }
-
-    fn get_current_dir() -> PathBuf {
-        std::env::current_dir().unwrap_or_else(|_| {
-            // Fallback to home directory or root
-            dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"))
-        })
     }
 
     fn spawn_pty_reader(

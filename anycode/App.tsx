@@ -1,20 +1,32 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { io, Socket } from 'socket.io-client';
-import { AnycodeEditorReact, AnycodeEditor, Edit, Operation } from 'anycode-react';
+import { AnycodeEditorReact, AnycodeEditor } from 'anycode-react';
 import type { Change, Position } from '../anycode-base/src/code';
-import { WatcherCreate, WatcherEdits, WatcherRemove, type Cursor, type CursorHistory, type Terminal, type AcpSession, type AcpMessage, type AcpToolCall, type AcpPromptStateMessage} from './types';
-import { loadTerminals, loadTerminalSelected, loadTerminalVisible, loadLeftPanelVisible, loadAcpPanelVisible } from './storage';
+import { WatcherCreate, WatcherEdits, WatcherRemove, 
+    type CursorHistory, type Terminal, type AcpSession, 
+    type AcpMessage, type AcpPromptStateMessage
+} from './types';
+import { loadTerminals, loadTerminalSelected, loadTerminalVisible, 
+    loadLeftPanelVisible, loadAcpPanelVisible 
+} from './storage';
 import { Allotment } from 'allotment';
 import 'allotment/dist/style.css';
-import { TreeNodeComponent, TreeNode, FileState, TerminalComponent, TerminalTabs, AcpDialog, AgentSettingsDialog } from './components';
-import { getAllAgents, getDefaultAgent, updateAgents, getDefaultAgentId, ensureDefaultAgents } from './agents';
+import { TreeNodeComponent, TreeNode, FileState, TerminalComponent, 
+    TerminalTabs, AcpDialog 
+} from './components';
+import { getAllAgents, getDefaultAgent, updateAgents, getDefaultAgentId,
+    ensureDefaultAgents 
+} from './agents';
 import { AcpAgent } from './types';
-import { DEFAULT_FILE, DEFAULT_FILE_CONTENT, BACKEND_URL, MIN_LEFT_PANEL_SIZE, LANGUAGE_EXTENSIONS } from './constants';
+import { DEFAULT_FILE, DEFAULT_FILE_CONTENT, BACKEND_URL } from './constants';
 import './App.css';
 import { 
     Completion, CompletionRequest, Diagnostic, DiagnosticResponse, 
     DefinitionRequest, DefinitionResponse 
 } from '../anycode-base/src/lsp';
+import { normalizePath, getFileName, getParentPath, joinPath,
+    getLanguageFromFileName 
+} from './utils';
 
 const App: React.FC = () => {
     console.log('App rendered');
@@ -342,36 +354,10 @@ const App: React.FC = () => {
             const ws = io(BACKEND_URL, { transports: ['websocket'] });
             wsRef.current = ws;
 
-            ws.on('connect', () => {
-                console.log('Connected to backend');
-                setIsConnected(true);
-                setConnectionError(null);
-                reconnectAttemptsRef.current = 0;
-                openFolder('.');
-
-                terminals.forEach(term => {
-                    console.log('App: Initializing terminal:', term.name);
-                    initializeTerminal(term);
-                    reattachTerminalListener(term.name);
-                });
-
-                // Reconnect to ACP agents
-                reconnectToAcpAgents();
-            });
-            ws.on('disconnect', (reason) => {
-                console.log('Disconnected from backend', reason);
-                setIsConnected(false);
-                attemptReconnect();
-            });
-            ws.on('connect_error', (error) => {
-                console.error('Socket connect error:', error);
-                setIsConnected(false);
-                setConnectionError('Failed to connect to backend');
-            });
-            ws.on('error', (data) => {
-                console.error('Backend error:', data);
-                setConnectionError(data.message);
-            });
+            ws.on('connect', handleSocketConnect);
+            ws.on('disconnect', handleSocketDisconnect);
+            ws.on('connect_error', handleSocketConnectError);
+            ws.on('error', handleSocketError);
             ws.on("lsp:diagnostics", handleDiagnostics);
             ws.on("watcher:edits", handleWatcherEdits);
             ws.on("watcher:create", handleWatcherCreate);
@@ -382,6 +368,39 @@ const App: React.FC = () => {
             console.error('Failed to connect to backend:', error);
             setConnectionError('Failed to connect to backend');
         }
+    };
+
+    const handleSocketConnect = () => {
+        console.log('Connected to backend');
+        setIsConnected(true);
+        setConnectionError(null);
+        reconnectAttemptsRef.current = 0;
+        openFolder('.');
+
+        terminals.forEach(term => {
+            console.log('App: Initializing terminal:', term.name);
+            initializeTerminal(term);
+            reattachTerminalListener(term.name);
+        });
+
+        reconnectToAcpAgents();
+    };
+
+    const handleSocketDisconnect = (reason: string) => {
+        console.log('Disconnected from backend', reason);
+        setIsConnected(false);
+        attemptReconnect();
+    };
+
+    const handleSocketConnectError = (error: Error) => {
+        console.error('Socket connect error:', error);
+        setIsConnected(false);
+        setConnectionError('Failed to connect to backend');
+    };
+
+    const handleSocketError = (data: { message: string }) => {
+        console.error('Backend error:', data);
+        setConnectionError(data.message);
     };
 
     const handleDiagnostics = (diagnosticsResponse: DiagnosticResponse) => {
@@ -644,7 +663,7 @@ const App: React.FC = () => {
     };
 
     const handleOpenFileResponse = (path: string, content: string) => {
-        const fileName = path.split('/').pop() || 'untitled';
+        const fileName = getFileName(path);
         const language = getLanguageFromFileName(fileName);
         savedFileContentsRef.current.set(path, content);
         const newFile: FileState = { id: path, name: fileName, language };
@@ -652,17 +671,12 @@ const App: React.FC = () => {
         setActiveFileId(newFile.id);
     };
 
-    const getLanguageFromFileName = (fileName: string): string => {
-        const ext = fileName.split('.').pop()?.toLowerCase();
-        return LANGUAGE_EXTENSIONS[ext || ''] || 'javascript';
-    };
-
     const convertToTree = (files: string[], dirs: string[], basePath: string): TreeNode[] => {
         const treeNodes: TreeNode[] = [];
         
         // Add directories first
         dirs.forEach(dirName => {
-            const dirPath = basePath === '.' ? dirName : `${basePath}/${dirName}`;
+            const dirPath = basePath === '.' ? dirName : joinPath(basePath, dirName);
             treeNodes.push({
                 id: dirPath,
                 name: dirName,
@@ -678,7 +692,7 @@ const App: React.FC = () => {
         
         // Add files
         files.forEach(fileName => {
-            const filePath = basePath === '.' ? fileName : `${basePath}/${fileName}`;
+            const filePath = basePath === '.' ? fileName : joinPath(basePath, fileName);
             treeNodes.push({
                 id: filePath,
                 name: fileName,
@@ -793,7 +807,7 @@ const App: React.FC = () => {
                     const line = range.start.line; const column = range.start.character;
                     
                     const filePath = uri.replace('file://', '');
-                    const fileName = filePath.split('/').pop() || '';
+                    const fileName = getFileName(filePath);
 
                     pendingPositions.current.set(filePath, { line, column });
                     
@@ -838,7 +852,7 @@ const App: React.FC = () => {
         
         if (prevPosition && prevPosition.file) {
             const filePath = prevPosition.file;
-            const fileName = filePath.split('/').pop() || '';
+            const fileName = getFileName(filePath);
             const { line, column } = prevPosition.cursor;
 
             pendingPositions.current.set(filePath, { line, column });
@@ -875,7 +889,7 @@ const App: React.FC = () => {
         const nextPosition = cursorHistory.current.redoStack.pop();        
         if (nextPosition && nextPosition.file) {
             const filePath = nextPosition.file;
-            const fileName = filePath.split('/').pop() || '';
+            const fileName = getFileName(filePath);
             const { line, column } = nextPosition.cursor;
 
             pendingPositions.current.set(filePath, { line, column });
@@ -908,9 +922,8 @@ const App: React.FC = () => {
         const { path, isFile } = watcherCreate;
 
         // Extract parent path and filename
-        const parts = path.split('/');
-        const fileName = parts[parts.length - 1];
-        const parentPath = parts.slice(0, -1).join('/') || ".";
+        const fileName = getFileName(path);
+        const parentPath = getParentPath(path);
 
         setFileTree(prevTree => {
             const addNode = (nodes: TreeNode[]): TreeNode[] => {
@@ -1544,7 +1557,6 @@ const App: React.FC = () => {
                     {terminalContentPanel}
                 </Allotment.Pane>
             </Allotment>
-            {/* <div className="terminal-spacer"></div> */}
         </div>
     );
 
@@ -1591,8 +1603,6 @@ const App: React.FC = () => {
                     </div>
                 ))}                    
             </div>
-
-            {/* <span className="language-indicator">{activeFile?.language.toUpperCase()}</span> */}
         </div>
     );
 
@@ -1603,7 +1613,7 @@ const App: React.FC = () => {
                 <Allotment vertical={true} defaultSizes={[70, 30]} separator={true} onVisibleChange={handleTerminalPanelVisibleChange}>
                     <Allotment.Pane >
                         <Allotment vertical={false} defaultSizes={[20,80]} separator={false} onVisibleChange={handleLeftPanelVisibleChange}>
-                            <Allotment.Pane snap visible={leftPanelVisible} minSize={MIN_LEFT_PANEL_SIZE}>
+                            <Allotment.Pane snap visible={leftPanelVisible}>
                                 {fileTreePanel}
                             </Allotment.Pane>
                             <Allotment.Pane snap>

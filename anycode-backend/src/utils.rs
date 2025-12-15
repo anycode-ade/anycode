@@ -139,9 +139,17 @@ pub fn relative_to_current_dir(path: &Path) -> Option<PathBuf> {
     path.strip_prefix(&current_dir).ok().map(|p| p.to_path_buf())
 }
 
-pub fn current_dir() -> String {
-    std::env::current_dir().unwrap()
-        .to_string_lossy().into_owned()
+pub fn current_dir() -> PathBuf {
+    std::env::current_dir().unwrap_or_else(|_| {
+        // Fallback to home directory or platform-specific root
+        dirs::home_dir().unwrap_or_else(|| {
+            if cfg!(target_os = "windows") {
+                PathBuf::from("C:\\")
+            } else {
+                PathBuf::from("/")
+            }
+        })
+    })
 }
 
 pub fn get_file_name(input: &str) -> String {

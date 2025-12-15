@@ -7,6 +7,7 @@ use crate::utils::{abs_file, is_ignored_path};
 use crate::app_state::*;
 use crate::error_ack;
 use lsp_types::{TextDocumentContentChangeEvent, Range, Position};
+use std::path::PathBuf;
 
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -64,7 +65,7 @@ pub async fn handle_dir_list(
     info!("Received dir:list: {:?}", request);
 
     let dir = match request.path.as_str().trim() {
-        "" | "." | "./" => crate::utils::current_dir(),
+        "" | "." | "./" => crate::utils::current_dir().to_string_lossy().into_owned(),
         d => d.to_string(),
     };
 
@@ -402,24 +403,26 @@ pub async fn handle_create(
     let name = &request.name;
     let is_file = request.is_file;
     
+    // Build path using PathBuf for cross-platform compatibility
     let full_path = if parent_path.is_empty() || parent_path == "." || parent_path == "./" {
-        name.clone()
+        PathBuf::from(name)
     } else {
-        format!("{}/{}", parent_path, name)
+        PathBuf::from(parent_path).join(name)
     };
 
     // For relative paths, we need to join with current directory
-    let full_path = if full_path.starts_with('/') {
+    let full_path = if full_path.is_absolute() {
         full_path
     } else {
         // Relative path, join with current directory
         let current_dir = std::env::current_dir().unwrap_or_default();
-        current_dir.join(&full_path).to_string_lossy().to_string()
+        current_dir.join(&full_path)
     };
+    
+    let full_path_str = full_path.to_string_lossy().to_string();
 
     // Create parent directories if they don't exist
-    let path_buf = std::path::PathBuf::from(&full_path);
-    if let Some(parent) = path_buf.parent() {
+    if let Some(parent) = full_path.parent() {
         if let Err(e) = std::fs::create_dir_all(parent) {
             error_ack!(ack, &request.name, "Failed to create parent directories: {:?}", e);
         }
@@ -429,15 +432,15 @@ pub async fn handle_create(
         // Create empty file
         match std::fs::File::create(&full_path) {
             Ok(_) => {
-                info!("File created successfully: {}", full_path);
+                info!("File created successfully: {}", full_path_str);
                 let mut f2c = state.file2code.lock().await;
-                let code = f2c.entry(full_path.clone()).or_insert_with(|| {
+                let code = f2c.entry(full_path_str.clone()).or_insert_with(|| {
                     Code::new()
                 });
-                code.set_file_name(full_path.clone());
+                code.set_file_name(full_path_str.clone());
                 
-                socket.broadcast().emit("file:created", &full_path).await.ok();
-                ack.send(&json!({ "success": true, "file": full_path, "is_file": true })).ok();
+                socket.broadcast().emit("file:created", &full_path_str).await.ok();
+                ack.send(&json!({ "success": true, "file": full_path_str, "is_file": true })).ok();
             },
             Err(e) => {
                 error_ack!(ack, &request.name, "Failed to create file: {:?}", e);
@@ -447,9 +450,9 @@ pub async fn handle_create(
         // Create directory
         match std::fs::create_dir(&full_path) {
             Ok(_) => {
-                info!("Directory created successfully: {}", full_path);
-                socket.broadcast().emit("dir:created", &full_path).await.ok();
-                ack.send(&json!({ "success": true, "dir": full_path, "is_file": false })).ok();
+                info!("Directory created successfully: {}", full_path_str);
+                socket.broadcast().emit("dir:created", &full_path_str).await.ok();
+                ack.send(&json!({ "success": true, "dir": full_path_str, "is_file": false })).ok();
             },
             Err(e) => {
                 error_ack!(ack, &request.name, "Failed to create directory: {:?}", e);

@@ -33,28 +33,3 @@ function hello() {
 // if curent port is 5173 then use 3000 else use current port
 const port = window.location.port === '5173' ? '3000' : window.location.port;
 export const BACKEND_URL = `${window.location.protocol}//${window.location.hostname}:${port}`;
-
-// Default panel sizes
-export const DEFAULT_LEFT_PANEL_SIZE = 30;
-export const DEFAULT_RIGHT_PANEL_SIZE = 70;
-export const MIN_LEFT_PANEL_SIZE = 0;
-
-// File extensions mapping
-export const LANGUAGE_EXTENSIONS: { [key: string]: string } = {
-    'js': 'javascript',
-    'ts': 'typescript',
-    'jsx': 'javascript',
-    'tsx': 'typescript',
-    'py': 'python',
-    'cpp': 'cpp',
-    'c': 'c',
-    'java': 'java',
-    'html': 'html',
-    'css': 'css',
-    'json': 'json',
-    'rs': 'rust',
-    'go': 'go',
-    'rb': 'ruby',
-    'php': 'php',
-    'sh': 'bash'
-};
