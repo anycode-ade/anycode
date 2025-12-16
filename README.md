@@ -12,7 +12,7 @@
 - **LSP integration**: LSP support for intelligent code completion, go-to-definition, hover information and real-time diagnostics.
 - **File system integration**: WebSocket-based backend for browsing and editing files from your local filesystem.
 - **Integrated terminal**: Full-featured terminal emulator with WebSocket-based communication, supporting real-time command execution and output.
-- **Search functionality**: Quickly find text within files using `Meta + f`.
+- **Search functionality**: Powerful search capabilities including local search within files and global search across project.
 - **ACP integration**: Agent Client Protocol (ACP) support for seamless integration with AI agents. Start, manage, and interact with multiple AI agents directly from the IDE, with support for tool calls, tool results, and real-time message streaming.
 
 ## Architecture
