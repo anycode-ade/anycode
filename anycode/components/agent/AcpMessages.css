@@ -1,0 +1,49 @@
+.acp-dialog-messages {
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.acp-empty-state {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: var(--text-color-secondary, #888);
+}
+
+.acp-tool-calls {
+    margin-top: 16px;
+    padding: 12px;
+    background-color: var(--tool-call-bg, #1a1a1a);
+    border-radius: 8px;
+    border: 1px solid var(--border-color, #333);
+}
+
+.acp-tool-calls h4 {
+    margin: 0 0 8px 0;
+    font-size: 14px;
+    color: var(--text-color, #ccc);
+}
+
+.acp-tool-call {
+    margin-bottom: 8px;
+}
+
+.acp-tool-call strong {
+    display: block;
+    margin-bottom: 4px;
+    color: var(--text-color, #ccc);
+}
+
+.acp-tool-call pre {
+    margin: 0;
+    padding: 8px;
+    background-color: var(--code-bg, #0d0d0d);
+    border-radius: 4px;
+    font-size: 12px;
+    overflow-x: auto;
+    color: var(--code-color, #d4d4d4);
+}
+

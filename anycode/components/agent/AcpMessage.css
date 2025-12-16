@@ -1,0 +1,138 @@
+.acp-message {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    max-width: 100%;
+    box-sizing: border-box;
+}
+
+.acp-message-user {
+    align-items: flex-end;
+}
+
+.acp-message-assistant {
+    align-items: flex-start;
+}
+
+.acp-message-role {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    color: var(--text-color-secondary, #888);
+    padding: 0 4px;
+}
+
+.acp-message-content {
+    padding: 8px 12px;
+    border-radius: 8px;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    word-break: break-word;
+    white-space: pre-wrap;
+    overflow-x: hidden;
+    max-width: 100%;
+    box-sizing: border-box;
+    width: 100%;
+}
+
+.acp-message-user .acp-message-content {
+    background-color: var(--user-message-bg, #474747);
+    color: white;
+}
+
+.acp-message-assistant .acp-message-content {
+    background-color: var(--assistant-message-bg, #2a2a2a);
+    color: var(--text-color, #ccc);
+}
+
+.acp-message-tool_call {
+    align-items: flex-start;
+}
+
+.acp-message-tool_call .acp-message-content {
+    background-color: var(--assistant-message-bg, #2a2a2a);
+    color: var(--text-color, #ccc);
+    border: 1px solid var(--border-color, #333);
+    max-width: 100%;
+    box-sizing: border-box;
+    overflow-x: hidden;
+}
+
+.acp-message-tool_result {
+    align-items: flex-start;
+}
+
+.acp-message-tool_result .acp-message-content {
+    background-color: var(--assistant-message-bg, #2a2a2a);
+    color: var(--text-color, #ccc);
+    border: 1px solid var(--border-color, #333);
+    max-width: 100%;
+    box-sizing: border-box;
+    overflow-x: hidden;
+}
+
+.acp-tool-call-indicator,
+.acp-tool-result-indicator {
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    user-select: none;
+}
+
+.acp-tool-call-indicator:hover,
+.acp-tool-result-indicator:hover {
+    color: var(--text-color, #ccc);
+}
+
+.acp-tool-call-header {
+    display: flex;
+    align-items: center;
+    font-size: 12px;
+}
+
+.acp-tool-call-name {
+    font-size: 11px;
+    font-weight: 400;
+    color: var(--text-color, #ccc);
+    word-break: break-word;
+    overflow-wrap: break-word;
+}
+
+.acp-toggle-icon {
+    display: inline-block;
+    width: 12px;
+    font-size: 10px;
+    color: var(--text-color-secondary, #888);
+}
+
+.acp-tool-call-section {
+    margin-top: 12px;
+}
+
+.acp-tool-call-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-color-secondary, #888);
+    margin-bottom: 4px;
+    text-transform: uppercase;
+}
+
+.acp-tool-call-command,
+.acp-tool-call-args,
+.acp-tool-result-content {
+    margin: 0;
+    border-radius: 4px;
+    font-size: 12px;
+    overflow-x: auto;
+    overflow-y: auto;
+    box-sizing: border-box;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    white-space: pre-wrap;
+}
+
+.acp-tool-call-command {
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+

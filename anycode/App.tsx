@@ -1135,15 +1135,19 @@ const App: React.FC = () => {
         return uniqueId;
     };
 
-    const startAgent = (agentId: string, agentName: string, command: string, args: string[]) => {
+    const startAgent = (agent: AcpAgent | undefined) => {
+        if (!agent) return;
+
         if (!wsRef.current || !isConnected) return;
 
+        const { id, name, command, args } = agent;
+
         // Generate unique agent ID
-        const uniqueAgentId = generateUniqueAgentId(agentId);
+        const uniqueAgentId = generateUniqueAgentId(id);
 
         wsRef.current.emit('acp:start', {
             agent_id: uniqueAgentId,
-            agent_name: agentName,
+            agent_name: name,
             command,
             args,
         }, (response: any) => {
@@ -1152,7 +1156,7 @@ const App: React.FC = () => {
                     const newSessions = new Map(prev);
                     newSessions.set(uniqueAgentId, {
                         agentId: uniqueAgentId,
-                        agentName,
+                        agentName: name,
                         messages: [],
                         isActive: true,
                     });
@@ -1464,33 +1468,15 @@ const App: React.FC = () => {
                 selectedAgentId={selectedAgentId}
                 onSelectAgent={setSelectedAgentId}
                 onCloseAgent={closeAgent}
-                onAddAgent={() => {
-                    const agent = defaultAgent;
-                    if (agent) {
-                        startAgent(agent.id, agent.name, agent.command, agent.args);
-                    }
-                }}
+                onAddAgent={() => startAgent(defaultAgent)}
                 onOpenSettings={() => {
-                    ensureDefaultAgents(); // Ensure all default agents are present
+                    ensureDefaultAgents(); 
                     setIsAgentSettingsOpen(true);
                 }}
                 agentId={currentSession?.agentId || defaultAgent?.id || 'gemini'}
-                agentName={currentSession?.agentName || defaultAgent?.name || 'AI Agent'}
-                agentCommand={(() => {
-                    const agentId = currentSession?.agentId || defaultAgent?.id || 'gemini';
-                    const agent = getAllAgents().find(a => a.id === agentId);
-                    return agent?.command || '';
-                })()}
-                agentArgs={(() => {
-                    const agentId = currentSession?.agentId || defaultAgent?.id || 'gemini';
-                    const agent = getAllAgents().find(a => a.id === agentId);
-                    return agent?.args || [];
-                })()}
                 isOpen={true}
                 onClose={closeAcpDialog}
                 onSendPrompt={sendPrompt}
-                onStartAgent={startAgent}
-                onStopAgent={stopAgent}
                 onCancelPrompt={cancelPrompt}
                 messages={currentSession?.messages || []}
                 toolCalls={[]}

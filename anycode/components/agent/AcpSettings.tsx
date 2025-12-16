@@ -1,15 +1,16 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { AcpAgent } from '../types';
-import './AgentSettingsDialog.css';
+import { AcpAgent } from '../../types';
+import './AcpSettings.css';
+import { AcpIcons } from './AcpIcons';
 
-interface AgentSettingsDialogProps {
+interface AcpSettingsProps {
   agents: AcpAgent[];
   defaultAgentId: string | null;
   onSave: (agents: AcpAgent[], defaultAgentId: string | null) => void;
   onClose: () => void;
 }
 
-export const AgentSettingsDialog: React.FC<AgentSettingsDialogProps> = ({
+export const AcpSettings: React.FC<AcpSettingsProps> = ({
   agents: initialAgents,
   defaultAgentId: initialDefaultAgentId,
   onSave,
@@ -151,9 +152,7 @@ export const AgentSettingsDialog: React.FC<AgentSettingsDialogProps> = ({
             </>
           )}
           <button className="agent-settings-close-btn" onClick={onClose}>
-            <svg width="16" height="16" viewBox="0 0 20 20" fill="none">
-              <path d="M5 5L15 15M15 5L5 15" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-            </svg>
+            <AcpIcons.CloseMedium />
           </button>
         </div>
       </div>
@@ -179,9 +178,7 @@ export const AgentSettingsDialog: React.FC<AgentSettingsDialogProps> = ({
                     onClick={() => handleRemoveAgent(index)}
                     title="Remove agent"
                   >
-                    <svg width="14" height="14" viewBox="0 0 20 20" fill="none">
-                      <path d="M5 5L15 15M15 5L5 15" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                    </svg>
+                    <AcpIcons.CloseSmall />
                   </button>
                 )}
               </div>
@@ -222,12 +219,11 @@ export const AgentSettingsDialog: React.FC<AgentSettingsDialogProps> = ({
         ))}
 
         <button className="agent-settings-add-btn" onClick={handleAddAgent}>
-          <svg width="16" height="16" viewBox="0 0 20 20" fill="none">
-            <path d="M10 5V15M5 10H15" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-          </svg>
+          <AcpIcons.Add />
           Add agent
         </button>
       </div>
     </div>
   );
 };
+
