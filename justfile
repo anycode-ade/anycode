@@ -13,3 +13,6 @@ run-backend:
 
 build-backend: build-frontend
     cd anycode-backend && cargo build --release
+
+install: build-frontend
+    cd anycode-backend && cargo install --path .

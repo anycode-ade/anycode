@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use tokio_util::sync::CancellationToken;
 use tokio::sync::{mpsc};
 use anyhow::Result;
-use crate::utils::{is_ignored_path, relative_to_current_dir};
+use crate::utils::{is_ignored_path, is_search_ignored_dir, relative_path, relative_to_current_dir};
 use tokio::sync::Semaphore;
 use std::sync::Arc;
 
@@ -15,7 +15,8 @@ pub fn collect_files_recursively(dir_path: &Path) -> Result<Vec<PathBuf>> {
 }
 
 fn collect_files_inner(dir_path: &Path, collected: &mut Vec<PathBuf>) -> Result<()> {
-    if is_ignored_path(dir_path) {
+    // Use search-specific ignore for directories
+    if is_search_ignored_dir(dir_path) {
         return Ok(());
     }
 
@@ -23,13 +24,17 @@ fn collect_files_inner(dir_path: &Path, collected: &mut Vec<PathBuf>) -> Result<
         let entry = entry_result?;
         let path = entry.path();
 
-        if is_ignored_path(&path) {
-            continue;
-        }
-
         if path.is_dir() {
+            // Check directory with search-specific ignore
+            if is_search_ignored_dir(&path) {
+                continue;
+            }
             collect_files_inner(&path, collected)?;
         } else {
+            // Check file with regular ignore (for file extensions, etc.)
+            if is_ignored_path(&path) {
+                continue;
+            }
             collected.push(path);
         }
     }
@@ -69,6 +74,51 @@ pub fn line_search(
     results
 }
 
+pub fn multiline_search(
+    content: &str,
+    pattern: &str,
+) -> Vec<SearchResult> {
+    let mut results = Vec::new();
+    let mut search_start = 0;
+    
+    // Find all occurrences of the pattern in the content
+    while let Some(byte_index) = content[search_start..].find(pattern) {
+        let match_start = search_start + byte_index;
+        
+        // Count lines and characters up to the match start to find line number and column
+        let mut line_number = 0;
+        let mut column = 0;
+        
+        for ch in content[..match_start].chars() {
+            if ch == '\n' {
+                line_number += 1;
+                column = 0;
+            } else {
+                column += 1;
+            }
+        }
+        
+        // Create preview: extract surrounding context (up to 50 chars before and after)
+        let chars: Vec<char> = content.chars().collect();
+        let match_char_start = content[..match_start].chars().count();
+        let match_char_end = match_char_start + pattern.chars().count();
+        let preview_start = match_char_start.saturating_sub(50);
+        let preview_end = (match_char_end + 50).min(chars.len());
+        let preview: String = chars[preview_start..preview_end].iter().collect();
+
+        results.push(SearchResult {
+            line: line_number,
+            column,
+            preview,
+        });
+
+        // Move forward in the content, search for the next match
+        search_start += byte_index + pattern.len();
+    }
+
+    results
+}
+
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct SearchResult {
@@ -83,36 +133,66 @@ pub async fn file_search(
     cancel_token: CancellationToken,
     result_tx: mpsc::Sender<SearchResult>,
 ) -> Result<()> {
-    let path = Path::new(file_path);
-    let file = tokio::fs::File::open(path).await?;
-    let reader = BufReader::new(file);
-
-    let mut lines = reader.lines();
-    let mut line_number = 0;
-
-    loop {
-        tokio::select! {
-            line = lines.next_line() => {
-                match line? {
-                    Some(content) => {
-                        if cancel_token.is_cancelled() { break }
-
-                        let line_results = line_search(&content, pattern, line_number);
-
-                        for result in line_results {
-                            if let Err(e) = result_tx.send(result).await {
-                                eprintln!("Failed to send result: {}", e);
-                                break;
-                            }
-                        }
-
-                        line_number += 1;
-                    }
-                    // End of file reached
-                    None => { break }
-                }
+    // Check if pattern is multi-line (contains newline)
+    let is_multiline = pattern.contains('\n');
+    
+    if is_multiline {
+        // For multi-line patterns, read entire file content
+        if cancel_token.is_cancelled() {
+            return Ok(());
+        }
+        
+        let content = tokio::fs::read_to_string(file_path).await?;
+        
+        if cancel_token.is_cancelled() {
+            return Ok(());
+        }
+        
+        let results = multiline_search(&content, pattern);
+        
+        for result in results {
+            if cancel_token.is_cancelled() {
+                break;
             }
-            _ = cancel_token.cancelled() => { break }
+            
+            if let Err(e) = result_tx.send(result).await {
+                eprintln!("Failed to send result: {}", e);
+                break;
+            }
+        }
+    } else {
+        // For single-line patterns, use line-by-line processing (more memory efficient)
+        let path = Path::new(file_path);
+        let file = tokio::fs::File::open(path).await?;
+        let reader = BufReader::new(file);
+
+        let mut lines = reader.lines();
+        let mut line_number = 0;
+
+        loop {
+            tokio::select! {
+                line = lines.next_line() => {
+                    match line? {
+                        Some(content) => {
+                            if cancel_token.is_cancelled() { break }
+
+                            let line_results = line_search(&content, pattern, line_number);
+
+                            for result in line_results {
+                                if let Err(e) = result_tx.send(result).await {
+                                    eprintln!("Failed to send result: {}", e);
+                                    break;
+                                }
+                            }
+
+                            line_number += 1;
+                        }
+                        // End of file reached
+                        None => { break }
+                    }
+                }
+                _ = cancel_token.cancelled() => { break }
+            }
         }
     }
 
@@ -125,32 +205,43 @@ pub struct FileSearchResult {
     pub matches: Vec<SearchResult>,
 }
 
-pub async fn dir_search(
+pub async fn global_search(
     dir_path: &Path,
     pattern: &str,
-    cancel_token: CancellationToken,
+    cancel: CancellationToken,
     result_tx: mpsc::Sender<FileSearchResult>,
 ) -> Result<()> {
-    let files = collect_files_recursively(dir_path)?;
-    let semaphore = Arc::new(Semaphore::new(32));
+    let mut files = collect_files_recursively(dir_path)?;
+    
+    // Sort files by depth
+    files.sort_by(|a, b| {
+        let depth_a = a.components().count();
+        let depth_b = b.components().count();
+        match depth_a.cmp(&depth_b) {
+            std::cmp::Ordering::Equal => a.cmp(b),
+            other => other,
+        }
+    });
+
+    let semaphore = Arc::new(Semaphore::new(8));
     let mut handles = Vec::new();
 
     for file_path in files {
-        if cancel_token.is_cancelled() {
+        if cancel.is_cancelled() {
             break;
         }
 
         let permit = semaphore.clone().acquire_owned().await.unwrap();
         let path_buf = file_path.clone();
         let pattern = pattern.to_string();
-        let cancel_token = cancel_token.clone();
+        let cancel_token = cancel.clone();
         let result_tx = result_tx.clone();
 
         let handle = tokio::spawn(async move {
             let _permit = permit;
 
             let (search_result_tx, mut search_result_rx) = mpsc::channel(100);
-            let file_cancel_token = cancel_token.clone();
+            let cancel = cancel_token.clone();
 
             let file_path_str = path_buf.to_string_lossy().to_string();
             let display_path = relative_to_current_dir(&path_buf)
@@ -158,9 +249,9 @@ pub async fn dir_search(
                 .unwrap_or_else(|| file_path_str.clone());
 
             tokio::select! {
-                res = file_search(&file_path_str, &pattern, file_cancel_token, search_result_tx) => {
+                res = file_search(&file_path_str, &pattern, cancel, search_result_tx) => {
                     if let Err(err) = res {
-                        eprintln!("Error searching in file {}: {}", file_path_str, err);
+                        // eprintln!("Error searching in file {}: {}", file_path_str, err);
                         return;
                     }
                 }
@@ -403,7 +494,7 @@ pub mod search_exp {
         // Run batch search with a cancellation token
         let pattern = "search_term";
         tokio::spawn(async move {
-            let search_result = dir_search(
+            let search_result = global_search(
                 &dir_path, pattern, cancel_clone, result_tx
             ).await;
 
@@ -436,6 +527,114 @@ pub mod search_exp {
         // Check that all matches contain the search pattern in their preview
         for search_result in &file1_results.matches {
             assert!(search_result.preview.contains(pattern), "Preview should contain the pattern");
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_multiline_search() {
+        let content = "line 1\nline 2\nline 3 with pattern\nline 4\nline 5";
+        let pattern = "line 2\nline 3";
+        let results = multiline_search(content, pattern);
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].line, 1); // line 2 is at index 1 (0-indexed)
+        assert!(results[0].preview.contains(pattern));
+    }
+
+    #[tokio::test]
+    async fn test_file_search_multiline() -> Result<()> {
+        let mut temp_file = tempfile::NamedTempFile::new()?;
+        
+        use std::io::Write;
+        writeln!(
+            temp_file,
+            "first line\nsecond line\nthird line\nfourth line\ntest\ntest"
+        )?;
+        
+        let temp_file_path = temp_file.path().to_path_buf();
+        let pattern = "second line\nthird line";
+        
+        let cancel = CancellationToken::new();
+        let (result_tx, mut result_rx) = mpsc::channel(10);
+        
+        let handle = tokio::spawn(async move {
+            file_search(
+                temp_file_path.to_string_lossy().as_ref(),
+                pattern,
+                cancel,
+                result_tx,
+            ).await.unwrap();
+        });
+        
+        let mut results = Vec::new();
+        while let Some(result) = result_rx.recv().await {
+            results.push(result);
+        }
+        
+        handle.await?;
+        
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].line, 1); // second line is at index 1
+        assert!(results[0].preview.contains("second line"));
+        assert!(results[0].preview.contains("third line"));
+        
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_global_search_specific_directory_with_timing() -> Result<()> {
+        use std::path::PathBuf;
+        use std::time::Instant;
+
+        let home_dir = std::env::var("HOME").unwrap_or_else(|_| "/".to_string());
+        let mut rust_dir = PathBuf::from(home_dir);
+        rust_dir.push("dev/rust");
+
+        // Skip test if directory doesn't exist
+        if !rust_dir.exists() {
+            println!("Skipping test: directory {:?} does not exist", rust_dir);
+            return Ok(());
+        }
+
+        let pattern = "upstream_monomorphization";
+        let cancel = CancellationToken::new();
+        let (result_tx, mut result_rx) = mpsc::channel::<FileSearchResult>(1000);
+
+        let start = Instant::now();
+        
+        // Run the search
+        global_search(&rust_dir, pattern, cancel, result_tx).await?;
+        
+        let elapsed = start.elapsed();
+
+        // Collect all results
+        let mut all_results = Vec::new();
+        while let Some(file_result) = result_rx.recv().await {
+            all_results.push(file_result);
+        }
+
+        let total_matches: usize = all_results.iter().map(|r| r.matches.len()).sum();
+
+        println!(
+            "Global search in {:?} took {:.2?} seconds and found {} files with {} total matches.",
+            rust_dir,
+            elapsed,
+            all_results.len(),
+            total_matches
+        );
+
+        for file_result in &all_results {
+            for r in &file_result.matches {
+                println!(
+                    "File: {}, Line: {}, Col: {}, preview: {}",
+                    file_result.file_path,
+                    r.line,
+                    r.column,
+                    r.preview
+                );
+            }
         }
 
         Ok(())

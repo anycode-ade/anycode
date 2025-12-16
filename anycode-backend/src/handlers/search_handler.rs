@@ -4,7 +4,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::info;
 use crate::{app_state::{AppState, SocketData}};
 use serde::{Deserialize, Serialize};
-use crate::search::{dir_search, FileSearchResult};
+use crate::search::{global_search, FileSearchResult};
 use tokio::sync::mpsc;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -46,7 +46,7 @@ pub async fn handle_search(
 
     // Start the search in the background
     tokio::spawn(async move {
-        let search_result = dir_search(
+        let search_result = global_search(
             &current_dir, &search_request.pattern, cancel, result_tx
         ).await;
 
@@ -71,4 +71,25 @@ pub async fn handle_search(
             "matches": matches
         }));
     });
+}
+
+pub async fn handle_search_cancel(
+    socket: SocketRef,
+    state: State<AppState>
+) {
+    info!("Received handle_search_cancel");
+
+    let sid = socket.id.as_str();
+    let mut sockets_data = state.socket2data.lock().await;
+
+    // Get the socket data
+    if let Some(data) = sockets_data.get_mut(sid) {
+        // Cancel the current search if any
+        if let Some(cancel) = &data.search_cancel {
+            cancel.cancel();
+            info!("Search cancelled for socket {}", sid);
+        }
+        // Clear the cancel token
+        data.search_cancel = None;
+    }
 }

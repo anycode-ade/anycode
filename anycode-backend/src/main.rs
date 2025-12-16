@@ -62,6 +62,7 @@ async fn on_connect(socket: SocketRef, state: State<AppState>) {
     socket.on("lsp:hover", handle_hover);
 
     socket.on("search:start", handle_search);
+    socket.on("search:cancel", handle_search_cancel);
 
     socket.on("terminal:start", handle_terminal_start);
     socket.on("terminal:input", handle_terminal_input);

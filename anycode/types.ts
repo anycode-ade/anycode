@@ -154,3 +154,20 @@ export interface AcpSession {
     isActive: boolean;
     isProcessing?: boolean;
 }
+
+// Search types
+export interface SearchMatch {
+    line: number;
+    column: number;
+    preview: string;
+}
+
+export interface SearchResult {
+    file_path: string;
+    matches: SearchMatch[];
+}
+
+export interface SearchEnd {
+    elapsed: number;
+    matches: number;
+}

@@ -350,6 +350,16 @@
     background: linear-gradient(to bottom, transparent, #555, transparent);
 }
 
+.search-container::after {
+    content: '';
+    position: absolute;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    width: 1.5px;
+    background: linear-gradient(to bottom, transparent, #555, transparent);
+}
+
 .file-system-content {
     padding: 1px 4px 4px 4px;
     flex: 1;
@@ -376,6 +386,10 @@
     margin-bottom: var(--toolbar-total-space);
 }
 
+/* Add bottom padding only when terminal is closed - same approach as file-system-content */
+.app-container:not(.terminal-visible) .search-results {
+    padding-bottom: var(--toolbar-total-space);
+}
 
 .acp-dialog::after {
     content: '';

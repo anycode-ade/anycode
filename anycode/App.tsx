@@ -4,7 +4,8 @@ import { AnycodeEditorReact, AnycodeEditor } from 'anycode-react';
 import type { Change, Position } from '../anycode-base/src/code';
 import { WatcherCreate, WatcherEdits, WatcherRemove, 
     type CursorHistory, type Terminal, type AcpSession, 
-    type AcpMessage, type AcpPromptStateMessage
+    type AcpMessage, type AcpPromptStateMessage,
+    type SearchResult, type SearchEnd, type SearchMatch
 } from './types';
 import { loadTerminals, loadTerminalSelected, loadTerminalVisible, 
     loadLeftPanelVisible, loadAcpPanelVisible 
@@ -14,6 +15,7 @@ import 'allotment/dist/style.css';
 import { TreeNodeComponent, TreeNode, FileState, TerminalComponent, 
     TerminalTabs, AcpDialog 
 } from './components';
+import Search from './components/Search';
 import { getAllAgents, getDefaultAgent, updateAgents, getDefaultAgentId,
     ensureDefaultAgents 
 } from './agents';
@@ -51,6 +53,10 @@ const App: React.FC = () => {
     const [leftPanelVisible, setLeftPanelVisible] = useState<boolean>(loadLeftPanelVisible());
     const [terminalVisible, setTerminalVisible] = useState<boolean>(loadTerminalVisible());
     const [acpPanelVisible, setAcpPanelVisible] = useState<boolean>(loadAcpPanelVisible());
+    
+    const [searchActive, setSearchActive] = useState<boolean>(false);
+    const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+    const [searchEnded, setSearchEnded] = useState<boolean>(true);
 
     const [terminals, setTerminals] = useState<Terminal[]>(loadTerminals);
     const [terminalSelected, setTerminalSelected] = useState<number>(loadTerminalSelected());
@@ -364,6 +370,8 @@ const App: React.FC = () => {
             ws.on("watcher:remove", handleWatcherRemove);
             ws.on("acp:message", handleAcpMessage);
             ws.on("acp:history", handleAcpHistory);
+            ws.on("search:result", handleSearchResult);
+            ws.on("search:end", handleSearchEnd);
         } catch (error) {
             console.error('Failed to connect to backend:', error);
             setConnectionError('Failed to connect to backend');
@@ -1347,6 +1355,61 @@ const App: React.FC = () => {
         });
     };
 
+    const handleSearch = ({ id, pattern }: { id: string; pattern: string }) => {
+        if (!pattern) return;
+        console.log(`Start searching: ${pattern}`);
+        if (wsRef.current && isConnected) {
+            wsRef.current.emit("search:start", { pattern });
+            setSearchResults([]);
+            setSearchEnded(false);
+        }
+    };
+
+    const handleSearchResult = (message: SearchResult) => {
+        console.debug('search:result', message);
+        setSearchResults((prevResults) => {
+            const resultsMap = new Map(prevResults.map((result) => [result.file_path, result]));
+            resultsMap.set(message.file_path, message); // Replace or add the new message
+            return Array.from(resultsMap.values()); // Convert back to an array
+        });
+    };
+
+    const handleSearchEnd = (result: SearchEnd) => {
+        console.debug("search:end ", result);
+        setSearchEnded(true);
+    };
+
+    const handleSearchCancel = () => {
+        console.log("Cancel search");
+        if (wsRef.current && isConnected) {
+            wsRef.current.emit("search:cancel");
+            setSearchEnded(true);
+        }
+    };
+
+    const handleSearchResultClick = (filePath: string, match: SearchMatch) => {
+        console.log('Search result clicked:', filePath, match);
+        
+        // Check if file is already open
+        const existingFile = files.find(f => f.id === filePath);
+        
+        if (existingFile) {
+            // File is already open, just switch to it and set cursor position
+            setActiveFileId(existingFile.id);
+            const editor = editorRefs.current.get(existingFile.id);
+            if (editor) {
+                editor.requestFocus(match.line, match.column, true);
+            } else {
+                // Editor not ready yet, save position for later
+                pendingPositions.current.set(existingFile.id, { line: match.line, column: match.column });
+            }
+        } else {
+            // File is not open, open it first
+            pendingPositions.current.set(filePath, { line: match.line, column: match.column });
+            openFile(filePath);
+        }
+    };
+
     // Sync selectedAgentId with acpSessions
     useEffect(() => {
         if (selectedAgentId && !acpSessions.has(selectedAgentId)) {
@@ -1435,6 +1498,19 @@ const App: React.FC = () => {
                 )}
             </div>
         </div>
+    );
+
+    const leftPanel = searchActive ? (
+        <Search
+            id="search"
+            onEnter={handleSearch}
+            onCancel={handleSearchCancel}
+            results={searchResults}
+            searchEnded={searchEnded}
+            onMatchClick={handleSearchResultClick}
+        />
+    ) : (
+        fileTreePanel
     );
 
     const editorPanel = (
@@ -1560,6 +1636,17 @@ const App: React.FC = () => {
                 Files
             </button>
 
+            {leftPanelVisible && (
+                <button
+                        onClick={() => setSearchActive(!searchActive)}
+                        className={`acp-toggle-btn ${searchActive ? 'active' : ''}`}
+                        title={searchActive ? 'Hide Search' : 'Search'}
+                    >
+                    {searchActive ? 'Tree' : 'Search'}
+                </button>
+
+            )}
+
             <button
                 onClick={() => setTerminalVisible(!terminalVisible)}
                 className={`terminal-toggle-btn ${terminalVisible ? 'active' : ''}`}
@@ -1600,7 +1687,7 @@ const App: React.FC = () => {
                     <Allotment.Pane >
                         <Allotment vertical={false} defaultSizes={[20,80]} separator={false} onVisibleChange={handleLeftPanelVisibleChange}>
                             <Allotment.Pane snap visible={leftPanelVisible}>
-                                {fileTreePanel}
+                                {leftPanel}
                             </Allotment.Pane>
                             <Allotment.Pane snap>
                                 <Allotment vertical={false} defaultSizes={[60,40]} separator={false}>

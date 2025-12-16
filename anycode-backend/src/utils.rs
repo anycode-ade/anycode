@@ -22,6 +22,37 @@ pub const DEFAULT_IGNORE_FILES: &[&str] = &[
     "*.zip", "*.tar", "*.gz", "*.bz2", "*.xz", "*.7z",
 ];
 
+// Directories that should be ignored during search (even if shown in tree)
+pub const SEARCH_IGNORE_DIRS: &[&str] = &[
+    // Build artifacts and output directories
+    "target",
+    "node_modules",
+    "dist",
+    "build",
+    "out",
+    "bin",
+    "obj",
+    // Version control
+    ".git",
+    // Python
+    ".venv",
+    "venv",
+    "env",
+    ".mypy_cache",
+    ".tox",
+    // JavaScript/TypeScript
+    ".next",
+    ".nuxt",
+    ".output",
+    "coverage",
+    // Java
+    ".gradle",
+    ".m2",
+    "classes",
+    // System files
+    ".DS_Store",
+];
+
 
 /// Get ignore directories with support for environment variable extension
 pub fn get_ignore_dirs() -> Vec<&'static str> {
@@ -98,6 +129,12 @@ pub fn is_ignored_path(path: &std::path::Path) -> bool {
     }
 
     false
+}
+
+/// Checks if a directory should be ignored during search
+pub fn is_search_ignored_dir(path: &std::path::Path) -> bool {
+    path.iter()
+        .any(|p| SEARCH_IGNORE_DIRS.contains(&p.to_string_lossy().as_ref()))
 }
 
 pub fn hex_to_rgb(hex_color: &str) -> (u8, u8, u8) {
