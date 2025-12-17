@@ -23,6 +23,7 @@ The project consists of several packages:
 - **`anycode-base/`** - Core editor library with tree-sitter support
 - **`anycode-react/`** - React wrapper for the editor
 - **`anycode-backend/`** - Rust backend for file system access
+- **`anycode-example/`** - Example application demonstrating anycode usage
 
 ## Installation
 ### From releases
