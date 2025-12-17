@@ -208,6 +208,13 @@
 .search-preview {
     color: #888;
 }
+
+.search-preview mark.search-match {
+    background-color: rgba(92, 92, 92, 0.977);
+    color: inherit;
+    padding: 0;
+    font-weight: 500;
+}
 .search-item:hover {
     color: #888;
     text-shadow: 0 0 6px rgba(255, 255, 255, 0.8);

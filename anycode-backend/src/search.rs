@@ -35,6 +35,13 @@ fn collect_files_inner(dir_path: &Path, collected: &mut Vec<PathBuf>) -> Result<
             if is_ignored_path(&path) {
                 continue;
             }
+            // Ignore files larger than 100 MB to avoid blocking search
+            const MAX_FILE_SIZE: u64 = 100 * 1024 * 1024; // 100 MB
+            if let Ok(metadata) = std::fs::metadata(&path) {
+                if metadata.len() > MAX_FILE_SIZE {
+                    continue;
+                }
+            }
             collected.push(path);
         }
     }
@@ -131,35 +138,25 @@ pub async fn file_search(
     file_path: &str,
     pattern: &str,
     cancel_token: CancellationToken,
-    result_tx: mpsc::Sender<SearchResult>,
-) -> Result<()> {
+) -> Result<Vec<SearchResult>> {
+    let mut results = Vec::new();
+    
     // Check if pattern is multi-line (contains newline)
     let is_multiline = pattern.contains('\n');
     
     if is_multiline {
         // For multi-line patterns, read entire file content
         if cancel_token.is_cancelled() {
-            return Ok(());
+            return Ok(results);
         }
         
         let content = tokio::fs::read_to_string(file_path).await?;
         
         if cancel_token.is_cancelled() {
-            return Ok(());
+            return Ok(results);
         }
         
-        let results = multiline_search(&content, pattern);
-        
-        for result in results {
-            if cancel_token.is_cancelled() {
-                break;
-            }
-            
-            if let Err(e) = result_tx.send(result).await {
-                eprintln!("Failed to send result: {}", e);
-                break;
-            }
-        }
+        results = multiline_search(&content, pattern);
     } else {
         // For single-line patterns, use line-by-line processing (more memory efficient)
         let path = Path::new(file_path);
@@ -171,32 +168,31 @@ pub async fn file_search(
 
         loop {
             tokio::select! {
-                line = lines.next_line() => {
-                    match line? {
+                line_result = lines.next_line() => {
+                    match line_result? {
                         Some(content) => {
-                            if cancel_token.is_cancelled() { break }
-
-                            let line_results = line_search(&content, pattern, line_number);
-
-                            for result in line_results {
-                                if let Err(e) = result_tx.send(result).await {
-                                    eprintln!("Failed to send result: {}", e);
-                                    break;
-                                }
+                            if cancel_token.is_cancelled() { 
+                                break;
                             }
 
+                            let line_results = line_search(&content, pattern, line_number);
+                            results.extend(line_results);
                             line_number += 1;
                         }
                         // End of file reached
-                        None => { break }
+                        None => { 
+                            break;
+                        }
                     }
                 }
-                _ = cancel_token.cancelled() => { break }
+                _ = cancel_token.cancelled() => { 
+                    break;
+                }
             }
         }
     }
 
-    Ok(())
+    Ok(results)
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -240,37 +236,25 @@ pub async fn global_search(
         let handle = tokio::spawn(async move {
             let _permit = permit;
 
-            let (search_result_tx, mut search_result_rx) = mpsc::channel(100);
-            let cancel = cancel_token.clone();
-
             let file_path_str = path_buf.to_string_lossy().to_string();
             let display_path = relative_to_current_dir(&path_buf)
                 .map(|p| p.to_string_lossy().to_string())
                 .unwrap_or_else(|| file_path_str.clone());
-
-            tokio::select! {
-                res = file_search(&file_path_str, &pattern, cancel, search_result_tx) => {
-                    if let Err(err) = res {
-                        // eprintln!("Error searching in file {}: {}", file_path_str, err);
-                        return;
-                    }
-                }
-                _ = cancel_token.cancelled() => {
+            
+            let matches = match file_search(&file_path_str, &pattern, cancel_token.clone()).await {
+                Ok(m) => m,
+                Err(_err) => {
+                    // Error reading/searching file, skip it
                     return;
                 }
-            }
-
-            let mut matches = Vec::new();
-            while let Some(result) = search_result_rx.recv().await {
-                matches.push(result);
-            }
+            };
 
             if !matches.is_empty() {
                 if result_tx.send(FileSearchResult {
                     file_path: display_path,
                     matches,
                 }).await.is_err() {
-                    eprintln!("Global receiver dropped. Skipping results");
+                    // Global receiver dropped, skip results
                 }
             }
         });
@@ -375,23 +359,12 @@ pub mod search_exp {
         let temp_file_path = temp_file.path().to_path_buf();
     
         let cancel = CancellationToken::new();
-        let (result_tx, mut result_rx) = mpsc::channel(10);
     
-        let handle = tokio::spawn(async move {
-            file_search(
-                temp_file_path.to_string_lossy().as_ref(),
-                pattern,
-                cancel,
-                result_tx,
-            ).await.unwrap();
-        });
-    
-        let mut results = Vec::new();
-        while let Some(result) = result_rx.recv().await {
-            results.push(result);
-        }
-    
-        handle.await?;
+        let results = file_search(
+            temp_file_path.to_string_lossy().as_ref(),
+            pattern,
+            cancel,
+        ).await?;
     
         println!("Results: {:?}", results);
     
@@ -422,31 +395,16 @@ pub mod search_exp {
         let temp_file_path = temp_file.path().to_path_buf();
         
         let cancel = CancellationToken::new();
-        let (result_tx, mut result_rx) = mpsc::channel(10);
-
-        let cancel_clone = cancel.clone();
         
-        // Spawn the function in a task
-        let handle = tokio::spawn(async move {
-            file_search(
-                temp_file_path.to_string_lossy().as_ref(),
-                pattern,
-                cancel_clone,
-                result_tx,
-            ).await.unwrap();
-        });
+        // Send cancellation signal immediately
+        cancel.cancel();
 
-        // Send cancellation signal after a short delay
-        tokio::spawn(async move {
-            // sleep(Duration::from_millis(10)).await; // Adjust the delay as needed
-            cancel.cancel();
-        });
-
-        // Collect results until cancellation
-        let mut results = Vec::new();
-        while let Some(result) = result_rx.recv().await {
-            results.push(result);
-        }
+        // Search should return empty results when cancelled
+        let results = file_search(
+            temp_file_path.to_string_lossy().as_ref(),
+            pattern,
+            cancel,
+        ).await?;
 
         println!("Results len: {}", results.len());
         println!("Results: {:?}", results);
@@ -454,9 +412,6 @@ pub mod search_exp {
         // Assert that processing stopped before completing
         // We expect 0 results to be returned.
         assert!(results.len() == 0);
-
-        // Ensure the search task completes
-        handle.await?;
         
         Ok(())
     }
@@ -557,23 +512,12 @@ pub mod search_exp {
         let pattern = "second line\nthird line";
         
         let cancel = CancellationToken::new();
-        let (result_tx, mut result_rx) = mpsc::channel(10);
         
-        let handle = tokio::spawn(async move {
-            file_search(
-                temp_file_path.to_string_lossy().as_ref(),
-                pattern,
-                cancel,
-                result_tx,
-            ).await.unwrap();
-        });
-        
-        let mut results = Vec::new();
-        while let Some(result) = result_rx.recv().await {
-            results.push(result);
-        }
-        
-        handle.await?;
+        let results = file_search(
+            temp_file_path.to_string_lossy().as_ref(),
+            pattern,
+            cancel,
+        ).await?;
         
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].line, 1); // second line is at index 1

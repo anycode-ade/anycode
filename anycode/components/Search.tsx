@@ -14,6 +14,60 @@ const StopIcon = () => (
     </svg>
 );
 
+interface SearchPreviewProps {
+    match: SearchMatch;
+    pattern: string;
+    maxLength?: number;
+}
+
+const SearchPreview = ({ match, pattern, maxLength = 100 }: SearchPreviewProps) => {
+    const displayPreview = maxLength > 0 ? match.preview.slice(0, maxLength) : match.preview;
+    
+    if (!pattern.trim()) {
+        return <span className="search-preview" title={match.preview}>{displayPreview}</span>;
+    }
+
+    // Preview is created as: chars[preview_start..preview_end] 
+    // where preview_start = max(0, match.column - 50)
+    // So the match position in preview is: match.column - preview_start = min(50, match.column)
+    const previewStart = Math.max(0, match.column - 50);
+    const matchPositionInPreview = match.column - previewStart;
+    const patternLength = pattern.length;
+    
+    // Ensure we don't go beyond preview bounds
+    if (matchPositionInPreview < 0 || matchPositionInPreview + patternLength > displayPreview.length) {
+        // Fallback: try to find pattern in preview
+        const matchIndex = displayPreview.indexOf(pattern);
+        if (matchIndex === -1) {
+            return <span className="search-preview" title={match.preview}>{displayPreview}</span>;
+        }
+        const beforeMatch = displayPreview.slice(0, matchIndex);
+        const matchText = displayPreview.slice(matchIndex, matchIndex + patternLength);
+        const afterMatch = displayPreview.slice(matchIndex + patternLength);
+        
+        return (
+            <span className="search-preview" title={match.preview}>
+                {beforeMatch}
+                <mark className="search-match">{matchText}</mark>
+                {afterMatch}
+            </span>
+        );
+    }
+    
+    // Split preview using match.column position
+    const beforeMatch = displayPreview.slice(0, matchPositionInPreview);
+    const matchText = displayPreview.slice(matchPositionInPreview, matchPositionInPreview + patternLength);
+    const afterMatch = displayPreview.slice(matchPositionInPreview + patternLength);
+    
+    return (
+        <span className="search-preview" title={match.preview}>
+            {beforeMatch}
+            <mark className="search-match">{matchText}</mark>
+            {afterMatch}
+        </span>
+    );
+};
+
 interface SearchProps {
     id: string;
     onEnter: (data: { id: string; pattern: string }) => void;
@@ -25,6 +79,7 @@ interface SearchProps {
 
 const Search = ({ id, onEnter, onCancel, onMatchClick, results, searchEnded }: SearchProps) => {
     const [input, setInput] = useState("");
+    const searchPatternRef = useRef("");
     const [visibleMatches, setVisibleMatches] = useState<Record<string, Set<string> | undefined>>({});
     const [elapsedTime, setElapsedTime] = useState<number>(0);
     const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -84,6 +139,7 @@ const Search = ({ id, onEnter, onCancel, onMatchClick, results, searchEnded }: S
         // Enter submits the search, Shift+Enter inserts newline
         if (e.key === "Enter" && !e.shiftKey) {
             e.preventDefault();
+            searchPatternRef.current = input; // Save the pattern used for search
             if (onEnter) {
                 onEnter({ id: id, pattern: input });
             }
@@ -145,6 +201,7 @@ const Search = ({ id, onEnter, onCancel, onMatchClick, results, searchEnded }: S
                         <button 
                             className="search-button replay"
                             onClick={() => {
+                                searchPatternRef.current = input; // Save the pattern used for search
                                 onEnter({ id: id, pattern: input });
                             }}
                             title="Replay search"
@@ -186,7 +243,7 @@ const Search = ({ id, onEnter, onCancel, onMatchClick, results, searchEnded }: S
                                                 onClick={() => handleMatchClick(fileResult.file_path, match)}
                                             >
                                                 <strong>{match.line + 1}:{match.column + 1} </strong>
-                                                <span className="search-preview" title={match.preview}>{match.preview.slice(0, 100)}</span>
+                                                <SearchPreview match={match} pattern={searchPatternRef.current} />
                                             </div>
                                         );
                                     })}
