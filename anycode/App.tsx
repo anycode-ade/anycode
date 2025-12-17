@@ -7,8 +7,8 @@ import { WatcherCreate, WatcherEdits, WatcherRemove,
     type AcpMessage, type AcpPromptStateMessage,
     type SearchResult, type SearchEnd, type SearchMatch
 } from './types';
-import { loadTerminals, loadTerminalSelected, loadTerminalVisible, 
-    loadLeftPanelVisible, loadAcpPanelVisible 
+import { loadTerminals, loadTerminalSelected, loadBottomVisible, 
+    loadLeftPanelVisible, loadRightPanelVisible, loadCenterPaneVisible 
 } from './storage';
 import { Allotment } from 'allotment';
 import 'allotment/dist/style.css';
@@ -16,6 +16,7 @@ import { TreeNodeComponent, TreeNode, FileState, TerminalComponent,
     TerminalTabs, AcpDialog 
 } from './components';
 import Search from './components/Search';
+import { Icons } from './components/Icons';
 import { getAllAgents, getDefaultAgent, updateAgents, getDefaultAgentId,
     ensureDefaultAgents 
 } from './agents';
@@ -51,8 +52,9 @@ const App: React.FC = () => {
     const [connectionError, setConnectionError] = useState<string | null>(null);
 
     const [leftPanelVisible, setLeftPanelVisible] = useState<boolean>(loadLeftPanelVisible());
-    const [terminalVisible, setTerminalVisible] = useState<boolean>(loadTerminalVisible());
-    const [acpPanelVisible, setAcpPanelVisible] = useState<boolean>(loadAcpPanelVisible());
+    const [bottomPanelVisible, setBottomPanelVisible] = useState<boolean>(loadBottomVisible());
+    const [rightPanelVisible, setRightPanelVisible] = useState<boolean>(loadRightPanelVisible());
+    const [centerPanelVisible, setCenterPanelVisible] = useState<boolean>(loadCenterPaneVisible());
     
     const [searchActive, setSearchActive] = useState<boolean>(false);
     const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
@@ -100,10 +102,20 @@ const App: React.FC = () => {
         }
     };
 
-    const handleTerminalPanelVisibleChange = (index: number, visible: boolean) => {
+    const handleBottomPanelVisibleChange = (index: number, visible: boolean) => {
         console.log('handleTerminalPanelVisibleChange', index, visible);
         if (index === 1) {
-            setTerminalVisible(visible);
+            setBottomPanelVisible(visible);
+        }
+    };
+
+    const handleRightPanelVisibleChange = (index: number, visible: boolean) => {
+        console.log('handleRightPanelVisibleChange', index, visible);
+        if (index === 0) {
+            setCenterPanelVisible(visible);
+        }
+        if (index === 1) {
+            setRightPanelVisible(visible);
         }
     };
 
@@ -185,7 +197,9 @@ const App: React.FC = () => {
                 }
             }
             if (e.ctrlKey && e.key === "1") setLeftPanelVisible(prev => !prev)
-            if (e.ctrlKey && e.key === "2") setTerminalVisible(prev => !prev)
+            if (e.ctrlKey && e.key === "2") setBottomPanelVisible(prev => !prev)
+            if (e.ctrlKey && e.key === "3") setCenterPanelVisible(prev => !prev)
+            if (e.ctrlKey && e.key === "4") setRightPanelVisible(prev => !prev)
             
             if (e.ctrlKey && e.key === "-") {
                 e.preventDefault();
@@ -485,7 +499,7 @@ const App: React.FC = () => {
     }, [isConnected, terminals]);
 
     const handleTerminalResize = useCallback((name: string, cols: number, rows: number) => {
-        if (!terminalVisible) return;
+        if (!bottomPanelVisible) return;
 
         const terminal = terminals.find(t => t.name === name);
         if (!terminal) return;
@@ -559,9 +573,9 @@ const App: React.FC = () => {
         setTerminals(prev => [...prev, newTerminal]);
         setTerminalSelected(terminals.length);
 
-        if (terminalVisible && wsRef.current && isConnected) 
+        if (bottomPanelVisible && wsRef.current && isConnected) 
             initializeTerminal(newTerminal);
-    }, [terminals, terminalVisible, isConnected]);
+    }, [terminals, bottomPanelVisible, isConnected]);
 
     const closeTerminal = useCallback((index: number) => {
         const terminalToRemove = terminals[index];
@@ -1171,7 +1185,7 @@ const App: React.FC = () => {
                     return newSessions;
                 });
                 setSelectedAgentId(uniqueAgentId);
-                setAcpPanelVisible(true);
+                setRightPanelVisible(true);
             } else {
                 console.error('Failed to start agent ', uniqueAgentId, ':', response.error);
                 alert('Failed to start agent ' + uniqueAgentId + ': ' + response.error);
@@ -1292,7 +1306,7 @@ const App: React.FC = () => {
     };
 
     const closeAcpDialog = () => {
-        setAcpPanelVisible(false);
+        setRightPanelVisible(false);
     };
 
     const reconnectToAcpAgents = () => {
@@ -1442,16 +1456,20 @@ const App: React.FC = () => {
       }, [isConnected]);
 
     useEffect(() => {
-        localStorage.setItem('terminalVisible', JSON.stringify(terminalVisible));
-    }, [terminalVisible]);
+        localStorage.setItem('bottomPanelVisible', JSON.stringify(bottomPanelVisible));
+    }, [bottomPanelVisible]);
 
     useEffect(() => {
         localStorage.setItem('leftPanelVisible', JSON.stringify(leftPanelVisible));
     }, [leftPanelVisible]);
 
     useEffect(() => {
-        localStorage.setItem('acpPanelVisible', JSON.stringify(acpPanelVisible));
-    }, [acpPanelVisible]);
+        localStorage.setItem('rightPanelVisible', JSON.stringify(rightPanelVisible));
+    }, [rightPanelVisible]);
+
+    useEffect(() => {
+        localStorage.setItem('centerPanelVisible', JSON.stringify(centerPanelVisible));
+    }, [centerPanelVisible]);
 
     useEffect(() => {
         localStorage.setItem('terminalSelected', JSON.stringify(terminalSelected));
@@ -1624,46 +1642,54 @@ const App: React.FC = () => {
 
     const toolbar = (
         <div className="toolbar">
-            <span className={`backend-status ${isConnected ? 'connected' : 'disconnected'}`}>
-                Anycode
-            </span>
-
-            <button
-                onClick={() => setLeftPanelVisible(!leftPanelVisible)}
-                className={`toggle-tree-btn ${leftPanelVisible ? 'active' : ''}`}
-                title={leftPanelVisible ? 'Hide File Tree' : 'Show File Tree'}
-            >
-                Files
-            </button>
-
-            {leftPanelVisible && (
+            <div className="toolbar-buttons">
                 <button
-                        onClick={() => setSearchActive(!searchActive)}
-                        className={`acp-toggle-btn ${searchActive ? 'active' : ''}`}
-                        title={searchActive ? 'Hide Search' : 'Search'}
-                    >
-                    {searchActive ? 'Tree' : 'Search'}
+                    onClick={() => setLeftPanelVisible(!leftPanelVisible)}
+                    className={`toggle-tree-btn ${leftPanelVisible ? 'active' : ''}`}
+                    title={leftPanelVisible ? 'Hide File Tree' : 'Show File Tree'}
+                >
+                    {leftPanelVisible ? <Icons.LeftPanelOpened /> : <Icons.LeftPanelClosed />}
                 </button>
 
-            )}
+                {leftPanelVisible && (
+                    <button
+                            onClick={() => setSearchActive(!searchActive)}
+                            className={`acp-toggle-btn ${searchActive ? 'active' : ''}`}
+                            title={searchActive ? 'Hide Search' : 'Search'}
+                        >
+                        {searchActive ? <Icons.Tree /> : <Icons.Search />}
+                    </button>
 
-            <button
-                onClick={() => setTerminalVisible(!terminalVisible)}
-                className={`terminal-toggle-btn ${terminalVisible ? 'active' : ''}`}
-                title={terminalVisible ? 'Hide Terminal' : 'Show Terminal'}
-            >
-               Terminals
-            </button>
+                )}
 
-            <button
-                onClick={() => setAcpPanelVisible(!acpPanelVisible)}
-                className={`acp-toggle-btn ${acpPanelVisible ? 'active' : ''}`}
-                title={acpPanelVisible ? 'Hide AI Agent' : 'Show AI Agent'}
-            >
-               Agents
-            </button>
+                <button
+                    onClick={() => setBottomPanelVisible(!bottomPanelVisible)}
+                    className={`terminal-toggle-btn ${bottomPanelVisible ? 'active' : ''}`}
+                    title={bottomPanelVisible ? 'Hide Terminal' : 'Show Terminal'}
+                >
+                   {bottomPanelVisible ? <Icons.BottomPanelOpened /> : <Icons.BottomPanelClosed />}
+                </button>
 
-            <div className="" style={{ display: 'flex', height: '100%' }}>
+                <button
+                    onClick={() => setCenterPanelVisible(!centerPanelVisible)}
+                    className={`editor-toggle-btn ${centerPanelVisible ? 'active' : ''}`}
+                    title={centerPanelVisible ? 'Hide Editor' : 'Show Editor'}
+                >
+                   {centerPanelVisible ? <Icons.EditorOpened /> : <Icons.EditorClosed />}
+                </button>
+
+                <button
+                    onClick={() => setRightPanelVisible(!rightPanelVisible)}
+                    className={`acp-toggle-btn ${rightPanelVisible ? 'active' : ''}`}
+                    title={rightPanelVisible ? 'Hide AI Agent' : 'Show AI Agent'}
+                >
+                   {rightPanelVisible ? <Icons.RightPanelOpened /> : <Icons.RightPanelClosed />}
+                </button>
+
+
+            </div>
+
+            <div className="toolbar-tabs">
                 {files.map(file => (
                     <div
                         key={file.id}
@@ -1680,28 +1706,28 @@ const App: React.FC = () => {
     );
 
     return (
-        <div className={`app-container ${terminalVisible ? 'terminal-visible' : ''}`}>
+        <div className={`app-container ${bottomPanelVisible ? 'terminal-visible' : ''}`}>
 
             <div className="main-content" style={{ flex: 1, display: 'flex' }}>
-                <Allotment vertical={true} defaultSizes={[70, 30]} separator={true} onVisibleChange={handleTerminalPanelVisibleChange}>
+                <Allotment vertical={true} defaultSizes={[70, 30]} separator={true} onVisibleChange={handleBottomPanelVisibleChange}>
                     <Allotment.Pane >
                         <Allotment vertical={false} defaultSizes={[20,80]} separator={false} onVisibleChange={handleLeftPanelVisibleChange}>
                             <Allotment.Pane snap visible={leftPanelVisible}>
                                 {leftPanel}
                             </Allotment.Pane>
                             <Allotment.Pane snap>
-                                <Allotment vertical={false} defaultSizes={[60,40]} separator={false}>
-                                    <Allotment.Pane snap>
+                                <Allotment vertical={false} defaultSizes={[60,40]} separator={false} onVisibleChange={handleRightPanelVisibleChange}>
+                                    <Allotment.Pane snap visible={centerPanelVisible}>
                                         {editorPanel}
                                     </Allotment.Pane>
-                                    <Allotment.Pane snap visible={acpPanelVisible} minSize={100}>
+                                    <Allotment.Pane snap visible={rightPanelVisible} minSize={100}>
                                         {acpPanel}
                                     </Allotment.Pane>
                                 </Allotment>
                             </Allotment.Pane>
                         </Allotment>
                     </Allotment.Pane>
-                    <Allotment.Pane snap visible={terminalVisible}>
+                    <Allotment.Pane snap visible={bottomPanelVisible}>
                         {terminalPanel}
                     </Allotment.Pane>
                 </Allotment>

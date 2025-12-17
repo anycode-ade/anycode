@@ -41,8 +41,8 @@
 }
 
 .acp-message-assistant .acp-message-content {
-    background-color: var(--assistant-message-bg, #2a2a2a);
-    color: var(--text-color, #ccc);
+    /* background-color: var(--assistant-message-bg, #2a2a2a); */
+    /* color: var(--text-color, #ccc); */
 }
 
 .acp-message-tool_call {
@@ -51,7 +51,7 @@
 
 .acp-message-tool_call .acp-message-content {
     background-color: var(--assistant-message-bg, #2a2a2a);
-    color: var(--text-color, #ccc);
+    /* color: var(--text-color, #ccc); */
     border: 1px solid var(--border-color, #333);
     max-width: 100%;
     box-sizing: border-box;

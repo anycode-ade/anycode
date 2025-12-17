@@ -8,8 +8,8 @@ export function loadLeftPanelVisible(): boolean {
     }
     return false;
 }
-export function loadTerminalVisible(): boolean {
-    const stored = localStorage.getItem('terminalVisible');
+export function loadBottomVisible(): boolean {
+    const stored = localStorage.getItem('bottomPanelVisible');
     if (stored) {
         return JSON.parse(stored);
     }
@@ -36,8 +36,16 @@ export function loadTerminalSelected(): number {
     return 0;
 }
 
-export function loadAcpPanelVisible(): boolean {
-    const stored = localStorage.getItem('acpPanelVisible');
+export function loadRightPanelVisible(): boolean {
+    const stored = localStorage.getItem('rightPanelVisible');
+    if (stored) {
+        return JSON.parse(stored);
+    }
+    return true;
+}
+
+export function loadCenterPaneVisible(): boolean {
+    const stored = localStorage.getItem('centerPanelVisible');
     if (stored) {
         return JSON.parse(stored);
     }

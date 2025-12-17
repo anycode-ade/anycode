@@ -12,18 +12,23 @@
     display: flex;
     align-items: center;
     cursor: pointer;
-    border-radius: 12px;
+    border-radius: 6px;
     min-height: 20px;
     position: relative;
 }
 
 .tree-item-content:hover {
     background-color: #4a4a4a;
+    
+    /* text-shadow: 0 0 6px rgba(255, 255, 255, 0.8) */
 }
 
 .tree-item-content.selected {
     background-color: #3c3c3c;
+    /* text-shadow: 0 0 6px rgba(255, 255, 255, 0.8); */
+    /* border-bottom: 1px solid #ffffff; */
     color: #fff;
+    transition: all 0.1s ease;
 }
 
 .tree-toggle {
@@ -32,7 +37,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    margin-right: 4px;
+    /* margin-right: 4px; */
     color: #888;
     font-size: 12px;
     transition: transform 0.2s ease;
@@ -66,6 +71,7 @@
     white-space: nowrap;
     color: #e0e0e0;
     user-select: none;
+    padding-left: 5px;
 }
 
 .tree-item-content .tree-name {

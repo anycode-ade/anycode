@@ -1,5 +1,5 @@
 :root {
-    --toolbar-height: 25px;
+    --toolbar-height: 20px;
     --toolbar-bottom-margin: 10px;
     --toolbar-total-space: calc(var(--toolbar-height) + var(--toolbar-bottom-margin) + 16px);
     --floating-terminal-height: 0px;
@@ -26,27 +26,33 @@
 .tab {
     display: flex;
     align-items: center;
-    color: #ccc;
+    /* color: #ccc; */
+    color: #888888;
     cursor: pointer;
     position: relative;
     white-space: nowrap;
+    gap: 4px;
 }
 
+.tab.active > .tab-filename {
+    text-shadow: 0 0 6px rgba(255, 255, 255, 0.8)
+}
 .tab.active {
-    background-color: rgba(105, 98, 98, 0.33);
+    /* background-color: rgba(105, 98, 98, 0.33); */
     color: #fff;
-    border-radius: 12px;
+    /* text-shadow: 0 0 6px rgba(255, 255, 255, 0.8) */
+    /* border-radius: 12px; */
     /* border: 1px solid rgb(70, 70, 70); */
 }
 
 .tab-dirty-indicator {
-    margin-right: 8px;
-    margin-left: 8px;
+    /* margin-right: 8px; */
+    /* margin-left: 8px; */
     color: transparent;
 }
 
 .tab-dirty-indicator.dirty {
-    color: #ffa500;
+    color: #ffffff;
 }
 
 .tab-filename {
@@ -54,7 +60,9 @@
     overflow: hidden;
     /* text-overflow: ellipsis; */
     /* height: 100%; */
-    
+    padding-left: 4px;
+    padding-right: 4px;
+
 }
 
 .tab-close-button {
@@ -62,8 +70,8 @@
     border: none;
     color: #888;
     cursor: pointer;
-    padding: 2px 6px;
-    margin-left: 8px;
+    padding: 0;
+    /* margin-left: 8px; */
     border-radius: 3px;
     opacity: 0;
     transition: opacity 0.2s ease;
@@ -121,7 +129,7 @@
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
     height: var(--toolbar-height);
     border: 1px solid rgb(70, 70, 70);
-    overflow-y: scroll;
+    overflow-y: hidden;
 }
 
 /* .toolbar::after {
@@ -133,6 +141,28 @@
     height: 1px;
     background: linear-gradient(to right, transparent, #555, transparent);
 } */
+
+.toolbar-buttons {
+    display: flex;
+    gap: 0px;
+    align-items: center;
+    flex-shrink: 0;
+}
+
+.toolbar-tabs {
+    display: flex;
+    height: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    flex: 1;
+    min-width: 0;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+}
+
+.toolbar-tabs::-webkit-scrollbar {
+    display: none;
+}
 
 .toolbar button:focus {
     outline: none;
@@ -162,6 +192,10 @@
     border-radius: 12px;
     font-weight: bold;
     transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 4px;
 }
 
 .terminal-toggle-btn:hover {
@@ -183,6 +217,10 @@
     border-radius: 12px;
     transition: all 0.2s ease;
     font-weight: bold;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 4px;
 }
 
 .toggle-tree-btn:hover {
@@ -203,6 +241,10 @@
     border-radius: 12px;
     font-weight: bold;
     transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 4px;
 }
 
 .acp-toggle-btn:hover {
@@ -212,6 +254,29 @@
 
 .acp-toggle-btn.active {
     /* background-color: #444; */
+    color: #fff;
+    text-shadow: 0 0 6px rgba(255, 255, 255, 0.8);
+}
+
+.editor-toggle-btn {
+    background: none;
+    border: none;
+    color: #888;
+    cursor: pointer;
+    border-radius: 12px;
+    font-weight: bold;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 4px;
+}
+
+.editor-toggle-btn:hover {
+    color: #fff;
+}
+
+.editor-toggle-btn.active {
     color: #fff;
     text-shadow: 0 0 6px rgba(255, 255, 255, 0.8);
 }
@@ -491,3 +556,32 @@
     font-size: 14px;
 }
 
+@media (max-width: 768px) and (pointer: coarse) {
+    :root {
+        --toolbar-height: 32px;
+        --toolbar-bottom-margin: 8px;
+    }
+    
+    .toolbar button svg {
+        width: 32px;
+        height: 32px;
+    }
+
+    .toolbar {
+        padding: 4px 8px;
+        left: 4px;
+        right: 4px;
+    }
+    .toolbar-buttons button {
+        padding: 0px;
+    }
+    .tab-filename {
+        font-size: 16px;
+    }
+
+
+
+
+
+
+}

@@ -13,7 +13,7 @@
     border: none;
    
     padding: 8px;
-    color: var(--text-color, #ccc);
+    /* color: var(--text-color, #ccc); */
     font-family: inherit;
     font-size: 14px;
     resize: none;
@@ -106,3 +106,9 @@
     cursor: not-allowed;
 }
 
+/* Mobile styles for buttons */
+@media (max-width: 768px) {
+    .acp-dialog-input textarea {
+        font-size: 16px;
+    }
+}

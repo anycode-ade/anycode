@@ -159,9 +159,12 @@ impl Lsp {
         Ok(())
     }
 
-    pub async fn stop(&mut self) {
+    pub async fn stop(&mut self) -> anyhow::Result<()> {
         if let Some(kill_send) = self.kill_send.take() {
-            kill_send.send(()).await.expect("Failed to send kill signal");
+            kill_send.send(()).await.map_err(|e| anyhow::anyhow!("Failed to send kill signal: {}", e))?;
+            Ok(())
+        } else {
+            Ok(())
         }
     }
 
