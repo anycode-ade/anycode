@@ -17,6 +17,7 @@ use lsp_types::*;
 use lsp_types::notification::*;
 
 use crate::config::Config;
+use crate::utils::path_to_uri;
 
 pub struct Lsp {
     lang: String,
@@ -300,7 +301,7 @@ impl Lsp {
 
         let params = DidOpenTextDocumentParams {
             text_document: TextDocumentItem {
-                uri: format!("file://{}", path).parse().unwrap(),
+                uri: path_to_uri(path).unwrap(),
                 language_id: lang.to_string(),
                 version: 0,
                 text: text.to_string(),
@@ -315,7 +316,7 @@ impl Lsp {
         }
         let params = DidCloseTextDocumentParams {
             text_document: TextDocumentIdentifier {
-                uri: format!("file://{}", path).parse().unwrap()
+                uri: path_to_uri(path).unwrap()
             },
         };
         self.send_notification::<DidCloseTextDocument>(params);
@@ -324,7 +325,7 @@ impl Lsp {
     pub fn did_save(&mut self, path: &str, text: Option<&str>) {
         let params = DidSaveTextDocumentParams {
             text_document: TextDocumentIdentifier {
-                uri: format!("file://{}", path).parse().unwrap()
+                uri: path_to_uri(path).unwrap()
             },
             text: text.map(|s| s.to_string()),
         };
@@ -367,7 +368,7 @@ impl Lsp {
     ) {
         let params = DidChangeTextDocumentParams {
             text_document: VersionedTextDocumentIdentifier {
-                uri: format!("file://{}", path).parse().unwrap(),
+                uri: path_to_uri(path).unwrap(),
                 version: self.get_next_version(path) as i32,
             },
             content_changes,
@@ -383,7 +384,7 @@ impl Lsp {
         let params = CompletionParams {
             text_document_position: TextDocumentPositionParams {
                 text_document: TextDocumentIdentifier {
-                    uri: format!("file://{}", path).parse().unwrap(),
+                    uri: path_to_uri(path)?,
                 },
                 position: Position::new(line as u32, character as u32),
             },
@@ -414,7 +415,7 @@ impl Lsp {
         let params = lsp_types::GotoDefinitionParams {
             text_document_position_params: TextDocumentPositionParams {
                 text_document: TextDocumentIdentifier {
-                    uri: format!("file://{}", path).parse()?,
+                    uri: path_to_uri(path)?,
                 },
                 position: Position::new(line as u32, character as u32),
             },
@@ -446,7 +447,7 @@ impl Lsp {
         let params = ReferenceParams {
             text_document_position: TextDocumentPositionParams {
                 text_document: TextDocumentIdentifier {
-                    uri: format!("file://{}", path).parse()?,
+                    uri: path_to_uri(path)?,
                 },
                 position: Position::new(line as u32, character as u32),
             },
@@ -472,7 +473,7 @@ impl Lsp {
         let params = HoverParams {
             text_document_position_params: TextDocumentPositionParams {
                 text_document: TextDocumentIdentifier {
-                    uri: format!("file://{}", path).parse()?,
+                    uri: path_to_uri(path)?,
                 },
                 position: Position::new(line as u32, character as u32),
             },
@@ -548,6 +549,7 @@ pub mod lsp_messages {
     use super::*;
     use serde_json::to_string;
     use std::path::PathBuf;
+    use crate::utils::path_to_uri;
 
     #[derive(Deserialize)]
     pub struct LspRawResponse {
@@ -626,16 +628,19 @@ pub mod lsp_messages {
     }
 
     pub fn initialize(dir: &str, lsp_name: Option<&str>) -> String {
-        let uri: Uri = format!("file://{}", dir).parse().unwrap();
+        let uri: Uri = path_to_uri(dir).unwrap();
+
+        let path = std::path::Path::new(dir);
+        let folder_name = path
+            .file_name()
+            .or_else(|| path.file_stem())
+            .and_then(|n| n.to_str())
+            .unwrap_or("workspace")
+            .to_string();
 
         let workspace_folders = Some(vec![
             WorkspaceFolder {
-                name: std::path::Path::new(dir)
-                    .file_name()
-                    .unwrap()
-                    .to_str()
-                    .unwrap()
-                    .to_string(),
+                name: folder_name,
                 uri: uri.clone(),
             }
         ]);
@@ -786,7 +791,7 @@ impl LspManager {
     pub async fn stop_by_lang(&mut self, lang: &str) {
         if let Some(mut lsp) = self.lang2lsp.remove(lang) {
             lsp.stop().await;
-            info!("Stopped LSP server for language: {}", lang);
+            info!("stopped lsp: {}", lang);
         }
     }
 }

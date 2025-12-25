@@ -1,5 +1,6 @@
 use pathdiff::diff_paths;
 use std::path::{Path, PathBuf};
+use lsp_types::Uri;
 
 pub const DEFAULT_IGNORE_DIRS: &[&str] = &[
     // Version control and IDEs
@@ -209,4 +210,25 @@ pub fn offset_to_byte(o: usize, s: &str) -> usize {
     }
 
     byte_index
+}
+
+pub fn path_to_uri(path: &str) -> anyhow::Result<Uri> {
+    let path_obj = std::path::Path::new(path);
+    let canonical_path = path_obj.canonicalize()
+        .unwrap_or_else(|_| path_obj.to_path_buf());
+    
+    let path_str = canonical_path.to_string_lossy().replace('\\', "/");
+    
+    let uri_str = if path_str.len() > 2 && &path_str[1..2] == ":" {
+        // Windows path like C:/... -> file:///C:/...
+        format!("file:///{}", path_str)
+    } else if path_str.starts_with('/') {
+        // Unix absolute path /path -> file:///path
+        format!("file://{}", path_str)
+    } else {
+        // Relative path -> file:///path
+        format!("file:///{}", path_str)
+    };
+    
+    uri_str.parse().map_err(|e| anyhow::anyhow!("Failed to parse URI: {}", e))
 }
