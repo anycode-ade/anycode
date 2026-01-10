@@ -1,7 +1,6 @@
 .acp-agents-list {
     display: flex;
     align-items: center;
-    gap: 8px;
     overflow-x: auto;
     overflow-y: hidden;
     flex: 1;
@@ -49,6 +48,7 @@
 
 .acp-agent-name {
     font-size: 15px;
+    margin-left: 4px;
 }
 
 .acp-agent-close-btn {

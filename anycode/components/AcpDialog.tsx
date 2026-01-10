@@ -6,6 +6,7 @@ import {
   AcpToolResultMessage,
   AcpUserMessage,
   AcpAssistantMessage,
+  AcpThoughtMessage,
   AcpSession,
   AcpAgent
 } from '../types';
@@ -138,6 +139,29 @@ const TextMessage: React.FC<TextMessageProps> = ({ message }) => (
   </div>
 );
 
+interface ThoughtMessageProps {
+  message: AcpThoughtMessage;
+}
+
+const ThoughtMessage: React.FC<ThoughtMessageProps> = ({ message }) => {
+  if (!message.content || message.content.trim() === '') {
+    return null;
+  }
+  return (
+    <div className="acp-message acp-message-thought">
+      <div className="acp-message-content">
+        <div className="acp-thought-indicator">Thought:</div>
+        {message.content.split('\n').map((line, i, lines) => (
+          <React.Fragment key={i}>
+            {line}
+            {i < lines.length - 1 && <br />}
+          </React.Fragment>
+        ))}
+      </div>
+    </div>
+  );
+};
+
 const useAutoScroll = (messages: AcpMessage[]) => {
   const contentRef = useRef<HTMLDivElement>(null);
   const isScrolledToBottomRef = useRef(true);
@@ -254,7 +278,7 @@ export const AcpDialog: React.FC<AcpDialogProps> = ({
   if (showSettings && onSaveSettings && onCloseSettings) {
     return (
       <div className="acp-dialog" style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-        <AgentSettingsDialog
+        <AcpSettings
           agents={settingsAgents}
           defaultAgentId={settingsDefaultAgentId}
           onSave={onSaveSettings}
@@ -280,6 +304,7 @@ export const AcpDialog: React.FC<AcpDialogProps> = ({
 
 
   const renderMessage = (message: AcpMessage, index: number) => {
+
     switch (message.role) {
       case 'tool_call':
         return (
@@ -302,6 +327,8 @@ export const AcpDialog: React.FC<AcpDialogProps> = ({
       case 'user':
       case 'assistant':
         return <TextMessage key={index} message={message} />;
+      case 'thought':
+        return <ThoughtMessage key={index} message={message} />;
       case 'prompt_state':
         // Skip rendering prompt_state messages in the chat
         return null;

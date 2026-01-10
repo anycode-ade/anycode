@@ -18,6 +18,7 @@ import {
 
 import './styles.css';
 import { Search } from "./search";
+import { computeGitChanges, ChangeType } from "./diff";
 
 export interface EditorSettings {
     lineHeight: number;
@@ -31,6 +32,7 @@ export interface EditorState {
     runLines: number[];
     errorLines: Map<number, string>;
     settings: EditorSettings;
+    diffResult?: Map<number, ChangeType>;
 }
 
 export class AnycodeEditor {
@@ -67,6 +69,10 @@ export class AnycodeEditor {
 
     private search: Search = new Search();
 
+    private diffEnabled: boolean = true;
+    private originalCode?: string;
+    private diffResult?: Map<number, ChangeType>;
+
     constructor(
         initialText = '', 
         filename: string = 'test.txt', 
@@ -83,6 +89,12 @@ export class AnycodeEditor {
         }
         
         this.settings = { lineHeight: 20, buffer: 30 };
+        
+        if (this.diffEnabled) {
+            this.originalCode = initialText;
+            const currentText = this.code.getContent();
+            this.diffResult = computeGitChanges(this.originalCode, currentText);
+        }
         
         const theme = options.theme || vesper;
         const css = generateCssClasses(theme);
@@ -131,6 +143,11 @@ export class AnycodeEditor {
     
     public setText(newText: string) {
         this.code.setContent(newText);
+        if (this.diffEnabled && this.originalCode !== undefined) {
+            this.diffResult = computeGitChanges(this.originalCode, newText);
+        } else {
+            this.diffResult = undefined;
+        }
     }
 
     public getText(): string {
@@ -283,6 +300,7 @@ export class AnycodeEditor {
                 lineHeight: this.settings.lineHeight,
                 buffer: this.settings.buffer,
             },
+            diffResult: this.diffResult,
         };
     }
 
@@ -306,7 +324,7 @@ export class AnycodeEditor {
 
 
         const o = this.code.getOffset(pos.row, pos.col);
-        if (o == this.offset) { return; }
+        //if (o == this.offset) { return; }
 
         this.offset = o;
         
@@ -681,7 +699,17 @@ export class AnycodeEditor {
         
         if (!textChanged && !offsetChanged && !selectionChanged) return;
     
-        if (textChanged) this.code = result.ctx.code;
+        if (textChanged) {
+            this.code = result.ctx.code;
+            // calculate diff when text changes
+            if (this.diffEnabled && this.originalCode !== undefined) {
+                const currentText = this.code.getContent();
+                this.diffResult = computeGitChanges(this.originalCode, currentText);
+                console.log('diffResult', this.diffResult);
+            } else {
+                this.diffResult = undefined;
+            }
+        }
         if (offsetChanged) this.offset = result.ctx.offset;
         if (selectionChanged) this.selection = result.ctx.selection || null;
     
@@ -694,9 +722,11 @@ export class AnycodeEditor {
             }
             this.renderer.renderChanges(state, this.search);
             let focused = this.renderer.focus(state);
+            this.verifyDiffRendering();
         } else if (offsetChanged || selectionChanged) {
             this.renderer.renderCursorOrSelection(state);
             let focused = this.renderer.focus(state);
+            this.verifyDiffRendering();
         }
     }
     
@@ -1024,11 +1054,6 @@ export class AnycodeEditor {
         if (change.edits.length === 0) return;
 
         this.code.tx();
-        
-        // sort edits by start in reverse order
-        // change.edits.sort((a, b) => b.start - a.start);
-        
-        this.code.tx();
         this.code.setStateBefore(this.offset, this.selection || undefined);
         for (const edit of change.edits) {
             if (edit.operation === Operation.Insert) {
@@ -1040,7 +1065,42 @@ export class AnycodeEditor {
         this.code.setStateAfter(this.offset, this.selection || undefined);
         this.code.commit();
         
+        if (this.diffEnabled && this.originalCode !== undefined) {
+            const currentText = this.code.getContent();
+            this.diffResult = computeGitChanges(this.originalCode, currentText);
+        } else {
+            this.diffResult = undefined;
+        }
+        
         this.renderer.renderChanges(this.getEditorState(), this.search);
+        this.verifyDiffRendering();
+    }
+
+    public setDiffEnabled(enabled: boolean): void {
+        this.diffEnabled = enabled;
+        if (enabled && this.originalCode === undefined) {
+            this.originalCode = this.code.getContent();
+        }
+        
+        if (enabled && this.originalCode !== undefined) {
+            const currentText = this.code.getContent();
+            this.diffResult = computeGitChanges(this.originalCode, currentText);
+        }
+
+        if (!enabled) {
+            this.renderer.clearAllDiffs();
+        }
+
+        this.renderer.renderChanges(this.getEditorState(), this.search);
+        this.verifyDiffRendering();
+    }
+
+    private verifyDiffRendering(): void {
+        if (!this.diffEnabled || !this.diffResult || this.diffResult.size === 0) {
+            return;
+        }
+
+        this.renderer.verifyDiffRendering(this.diffResult);
     }
 
 }

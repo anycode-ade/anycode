@@ -14,6 +14,10 @@
     align-items: flex-start;
 }
 
+.acp-message-thought {
+    align-items: flex-start;
+}
+
 .acp-message-role {
     font-size: 11px;
     font-weight: 600;
@@ -43,6 +47,14 @@
 .acp-message-assistant .acp-message-content {
     /* background-color: var(--assistant-message-bg, #2a2a2a); */
     /* color: var(--text-color, #ccc); */
+}
+
+.acp-message-thought .acp-message-content {
+    background-color: var(--assistant-message-bg, #2a2a2a);
+    color: var(--text-color-secondary, #888);
+    border: 1px solid var(--border-color, #333);
+    font-size: 11px;
+    font-style: normal;
 }
 
 .acp-message-tool_call {
@@ -134,5 +146,109 @@
 .acp-tool-call-command {
     white-space: pre-wrap;
     word-break: break-all;
+}
+
+.acp-thought-indicator {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-color-secondary, #888);
+    margin-bottom: 4px;
+    font-style: normal;
+}
+
+.acp-thought-content {
+    margin-top: 8px;
+    font-size: 11px;
+    color: var(--text-color-secondary, #888);
+    line-height: 1.4;
+}
+
+/* Permission Request Styles */
+.acp-message-permission_request {
+    align-items: flex-start;
+}
+
+.acp-message-permission_request .acp-message-content {
+    background-color: var(--warning-bg, #3d3522);
+    border: 1px solid var(--warning-border, #665c3a);
+    max-width: 100%;
+    box-sizing: border-box;
+    overflow-x: hidden;
+}
+
+.acp-permission-header {
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    user-select: none;
+}
+
+.acp-permission-header:hover {
+    color: var(--text-color, #ccc);
+}
+
+.acp-permission-buttons {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+    flex-wrap: wrap;
+}
+
+.acp-permission-button {
+    padding: 6px 16px;
+    border: none;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background-color 0.15s, transform 0.1s;
+}
+
+.acp-permission-button:hover {
+    transform: translateY(-1px);
+}
+
+.acp-permission-button:active {
+    transform: translateY(0);
+}
+
+.acp-permission-allow {
+    background-color: var(--success-bg, #2d5a3d);
+    color: var(--success-text, #8fdf9f);
+}
+
+.acp-permission-allow:hover {
+    background-color: var(--success-bg-hover, #3a7a4f);
+}
+
+.acp-permission-deny {
+    background-color: var(--error-bg, #5a2d2d);
+    color: var(--error-text, #df8f8f);
+}
+
+.acp-permission-deny:hover {
+    background-color: var(--error-bg-hover, #7a3a3a);
+}
+
+/* Error Message Styles */
+.acp-message-error {
+    align-items: flex-start;
+}
+
+.acp-message-error .acp-message-content {
+    background-color: var(--error-bg, #5a2d2d);
+    border: 1px solid var(--error-border, #7a3a3a);
+    color: var(--error-text, #df8f8f);
+}
+
+.acp-error-indicator {
+    font-size: 12px;
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+
+.acp-error-content {
+    font-size: 12px;
+    line-height: 1.4;
 }
 

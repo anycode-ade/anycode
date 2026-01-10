@@ -8,8 +8,13 @@ interface AcpMessagesProps {
   toolCalls: AcpToolCall[];
   expandedToolCalls: Set<number>;
   expandedToolResults: Set<number>;
+  expandedThoughts: Set<number>;
+  expandedPermissions: Set<number>;
   onToggleToolCall: (index: number) => void;
   onToggleToolResult: (index: number) => void;
+  onToggleThought: (index: number) => void;
+  onTogglePermission: (index: number) => void;
+  onPermissionResponse: (permissionId: string, optionId: string) => void;
 }
 
 export const AcpMessages: React.FC<AcpMessagesProps> = ({
@@ -17,8 +22,13 @@ export const AcpMessages: React.FC<AcpMessagesProps> = ({
   toolCalls,
   expandedToolCalls,
   expandedToolResults,
+  expandedThoughts,
+  expandedPermissions,
   onToggleToolCall,
   onToggleToolResult,
+  onToggleThought,
+  onTogglePermission,
+  onPermissionResponse,
 }) => {
   if (messages.length === 0) {
     return (
@@ -41,15 +51,21 @@ export const AcpMessages: React.FC<AcpMessagesProps> = ({
         } else if (message.role === 'tool_result') {
           isExpanded = expandedToolResults.has(index);
           onToggle = () => onToggleToolResult(index);
+        } else if (message.role === 'thought') {
+          isExpanded = expandedThoughts.has(index);
+          onToggle = () => onToggleThought(index);
+        } else if (message.role === 'permission_request') {
+          isExpanded = expandedPermissions.has(index);
+          onToggle = () => onTogglePermission(index);
         }
 
         return (
           <AcpMessage
             key={index}
             message={message}
-            index={index}
             isExpanded={isExpanded}
             onToggle={onToggle}
+            onPermissionResponse={onPermissionResponse}
           />
         );
       })}

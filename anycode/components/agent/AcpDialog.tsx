@@ -84,6 +84,7 @@ interface AcpDialogProps {
   onClose: () => void;
   onSendPrompt: (agentId: string, prompt: string) => void;
   onCancelPrompt: (agentId: string) => void;
+  onPermissionResponse: (agentId: string, permissionId: string, optionId: string) => void;
   messages: AcpMessage[];
   toolCalls: AcpToolCall[];
   isConnected: boolean;
@@ -93,6 +94,10 @@ interface AcpDialogProps {
   settingsDefaultAgentId?: string | null;
   onSaveSettings?: (agents: AcpAgent[], defaultAgentId: string | null) => void;
   onCloseSettings?: () => void;
+  diffEnabled?: boolean;
+  onToggleDiff?: () => void;
+  followEnabled?: boolean;
+  onToggleFollow?: () => void;
 }
 
 export const AcpDialog: React.FC<AcpDialogProps> = ({
@@ -106,6 +111,7 @@ export const AcpDialog: React.FC<AcpDialogProps> = ({
   isOpen,
   onSendPrompt,
   onCancelPrompt,
+  onPermissionResponse,
   messages,
   toolCalls,
   isConnected,
@@ -115,10 +121,16 @@ export const AcpDialog: React.FC<AcpDialogProps> = ({
   settingsDefaultAgentId = null,
   onSaveSettings,
   onCloseSettings,
+  diffEnabled = false,
+  onToggleDiff,
+  followEnabled = false,
+  onToggleFollow,
 }) => {
   const [inputValue, setInputValue] = useState('');
   const { expanded: expandedToolCalls, toggle: toggleToolCall } = useExpandableItems();
   const { expanded: expandedToolResults, toggle: toggleToolResult } = useExpandableItems();
+  const { expanded: expandedThoughts, toggle: toggleThought } = useExpandableItems();
+  const { expanded: expandedPermissions, toggle: togglePermission } = useExpandableItems();
   const contentRef = useAutoScroll(messages);
 
   if (!isOpen) return null;
@@ -161,6 +173,24 @@ export const AcpDialog: React.FC<AcpDialogProps> = ({
           >
             <AcpIcons.Add />
           </button>
+          {onToggleFollow && (
+            <button
+              className={`acp-follow-btn ${followEnabled ? 'active' : ''}`}
+              onClick={onToggleFollow}
+              title={followEnabled ? 'Disable Follow Mode' : 'Enable Follow Mode'}
+            >
+              <AcpIcons.Follow />
+            </button>
+          )}
+          {onToggleDiff && (
+            <button
+              className={`acp-diff-btn ${diffEnabled ? 'active' : ''}`}
+              onClick={onToggleDiff}
+              title={diffEnabled ? 'Disable Diff Mode' : 'Enable Diff Mode'}
+            >
+              <AcpIcons.Diff />
+            </button>
+          )}
           <button
             className="acp-settings-btn"
             onClick={onOpenSettings}
@@ -178,8 +208,13 @@ export const AcpDialog: React.FC<AcpDialogProps> = ({
             toolCalls={toolCalls}
             expandedToolCalls={expandedToolCalls}
             expandedToolResults={expandedToolResults}
+            expandedThoughts={expandedThoughts}
+            expandedPermissions={expandedPermissions}
             onToggleToolCall={toggleToolCall}
             onToggleToolResult={toggleToolResult}
+            onToggleThought={toggleThought}
+            onTogglePermission={togglePermission}
+            onPermissionResponse={(permissionId, optionId) => onPermissionResponse(agentId, permissionId, optionId)}
           />
         </div>
       </div>

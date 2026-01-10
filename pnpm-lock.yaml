@@ -84,6 +84,9 @@ importers:
 
   anycode-base:
     dependencies:
+      diff:
+        specifier: ^8.0.2
+        version: 8.0.2
       vscode-textbuffer:
         specifier: ^1.0.0
         version: 1.0.0
@@ -783,6 +786,10 @@ packages:
 
   detect-node@2.1.0:
     resolution: {integrity: sha512-T0NIuQpnTvFDATNuHN5roPwSBG83rFsuO+MXXH9/3N1eFbn4wcPjttvjMLEPWJ0RGUYgQE7cGgS3tNxbqCGM7g==}
+
+  diff@8.0.2:
+    resolution: {integrity: sha512-sSuxWU5j5SR9QQji/o2qMvqRNYRDOcBTgsJ/DeCf4iSN4gW+gNMXM7wFIP+fdXZxoNiAnHUTGjCr+TSWXdRDKg==}
+    engines: {node: '>=0.3.1'}
 
   dir-glob@3.0.1:
     resolution: {integrity: sha512-WkrWp9GR4KXfKGYzOLmTuGVi1UWFfws377n9cc55/tb6DuqyF6pcQ5AbiHEshaDpY9v6oaSr2XCDidGmMwdzIA==}
@@ -2127,6 +2134,8 @@ snapshots:
 
   detect-node@2.1.0:
     optional: true
+
+  diff@8.0.2: {}
 
   dir-glob@3.0.1:
     dependencies:

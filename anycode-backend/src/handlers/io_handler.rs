@@ -139,6 +139,8 @@ pub async fn handle_file_close(
 ) {
     info!("Received file:close: {:?}", request);
 
+    let sid = socket.id.as_str().to_string();
+
     let abs_path = match abs_file(&request.file) {
         Ok(p) => p,
         Err(e) => error_ack!(ack, &request, "Failed to resolve file: {:?}", e),
@@ -154,29 +156,23 @@ pub async fn handle_file_close(
         code.lang.clone()
     };
 
-    // Close in LSP
-    let mut lsp_manager = state.lsp_manager.lock().await;
-    if let Some(lsp) = lsp_manager.get(&lang).await {
-        lsp.did_close(&abs_path);
+    // Close file in LSP
+    {
+        let mut lsp_manager = state.lsp_manager.lock().await;
+        if let Some(lsp) = lsp_manager.get(&lang).await {
+            lsp.did_close(&abs_path);
+        }
     }
-    drop(lsp_manager);
 
     // Remove from current socket's opened_files
-    let sid = socket.id.as_str().to_string();
-    let mut sockets_data = state.socket2data.lock().await;
-    let data = sockets_data.entry(sid).or_insert_with(SocketData::default);
-    data.opened_files.remove(&abs_path);
-
-    // Check if file is still opened by other sockets
-    let is_still_opened = sockets_data.values().any(|data| data.opened_files.contains(&abs_path));
+    let is_still_opened = {
+        let mut sockets_data = state.socket2data.lock().await;
+        let data = sockets_data.entry(sid).or_insert_with(SocketData::default);
+        data.opened_files.remove(&abs_path);
     
-    // Collect all opened file paths from all sockets
-    let all_opened_files: Vec<String> = sockets_data
-        .values()
-        .flat_map(|data| data.opened_files.iter())
-        .cloned()
-        .collect();
-    drop(sockets_data);
+        // Check if file is still opened by other sockets
+        sockets_data.values().any(|data| data.opened_files.contains(&abs_path))
+    };
 
     // Remove from file2code if no other sockets have it open
     if !is_still_opened {
@@ -185,20 +181,11 @@ pub async fn handle_file_close(
         info!("Removed file from file2code: {}", abs_path);
     }
 
-    // Check if there are any other files of this language opened by any socket
-    let f2c = state.file2code.lock().await;
-    let lang_still_opened = all_opened_files.iter().any(|file_path| {
-        f2c.get(file_path)
-            .map(|code| code.lang == lang)
-            .unwrap_or(false)
-    });
-    drop(f2c);
-
-    // Stop LSP server for this language if no files of this language are opened
-    if !lang_still_opened {
+    // Lsp autoclose 
+    if !is_language_opened(&lang, &state).await {
         let mut lsp_manager = state.lsp_manager.lock().await;
-        lsp_manager.stop_by_lang(&lang).await;
-        info!("Stopped LSP server for language '{}' - no files of this language are opened", lang);
+        lsp_manager.stop(&lang).await;
+        info!("Lsp autoclose: '{}'", lang);
     }
 }
 

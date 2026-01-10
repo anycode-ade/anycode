@@ -1,4 +1,4 @@
-use agent_client_protocol::{self as acp, Agent as _};
+use agent_client_protocol::{self as acp, Agent as _, Client};
 use agent_client_protocol_schema::ProtocolVersion;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -6,11 +6,12 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio::process::Command;
-use tokio::sync::{mpsc, broadcast};
+use tokio::sync::{mpsc, broadcast, Mutex, oneshot::Sender};
 use tokio::io::{self};
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 use tracing::{info, debug, error};
 use anyhow::{Result, anyhow};
+use crate::utils::relative_to_current_dir;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AcpUserMessage {
@@ -25,12 +26,28 @@ pub struct AcpAssistantMessage {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AcpThought {
+    pub content: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub is_chunk: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AcpLocation {
+    pub path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub line: Option<u32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AcpToolCall {
     pub id: String,
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub command: Option<String>,
     pub arguments: Value,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub locations: Option<Vec<AcpLocation>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -45,28 +62,70 @@ pub struct AcpPromptState {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AcpPermissionOption {
+    pub id: String,
+    pub name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AcpPermissionRequest {
+    pub id: String,
+    pub tool_call: AcpToolCall,
+    pub options: Vec<AcpPermissionOption>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AcpError {
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AcpOpenFile {
+    pub path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub line: Option<u32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "role")]
 pub enum AcpMessage {
     #[serde(rename = "user")]
     User(AcpUserMessage),
     #[serde(rename = "assistant")]
     Assistant(AcpAssistantMessage),
+    #[serde(rename = "thought")]
+    Thought(AcpThought),
     #[serde(rename = "tool_call")]
     ToolCall(AcpToolCall),
     #[serde(rename = "tool_result")]
     ToolResult(AcpToolResult),
     #[serde(rename = "prompt_state")]
     PromptState(AcpPromptState),
+    #[serde(rename = "permission_request")]
+    PermissionRequest(AcpPermissionRequest),
+    #[serde(rename = "error")]
+    Error(AcpError),
+    #[serde(rename = "open_file")]
+    OpenFile(AcpOpenFile),
+}
+
+/// Response to a permission request from frontend
+#[derive(Debug, Clone)]
+pub struct PermissionResponse {
+    pub permission_id: String,
+    pub option_id: String,
 }
 
 struct AcpClientImpl {
     agent_id: String,
     message_sender: broadcast::Sender<AcpMessage>,
     history: Arc<tokio::sync::Mutex<Vec<AcpMessage>>>,
+    /// Pending permission requests waiting for user response
+    pending_permissions: Arc<Mutex<HashMap<String, Sender<PermissionResponse>>>>,
 }
 
 #[async_trait::async_trait(?Send)]
-impl acp::Client for AcpClientImpl {
+impl Client for AcpClientImpl {
     async fn request_permission(
         &self,
         args: acp::RequestPermissionRequest,
@@ -85,7 +144,7 @@ impl acp::Client for AcpClientImpl {
                 (name, command)
             })
             .unwrap_or_else(|| ("unknown".to_string(), None));
-        
+
         // Try to extract arguments from raw_input or content
         let arguments = if let Some(raw_input) = &tool_call_update.fields.raw_input {
             raw_input.clone()
@@ -95,50 +154,143 @@ impl acp::Client for AcpClientImpl {
         } else {
             serde_json::json!({})
         };
-        
+
+        // Extract locations from tool call update (use relative path if possible)
+        let locations = tool_call_update.fields.locations.as_ref().map(|locs| {
+            locs.iter().map(|loc| AcpLocation {
+                path: relative_to_current_dir(&loc.path)
+                    .map(|p| p.to_string_lossy().to_string())
+                    .unwrap_or_else(|| loc.path.to_string_lossy().to_string()),
+                line: loc.line,
+            }).collect()
+        });
+
         let acp_tool_call = AcpToolCall {
-            id: tool_call_id,
+            id: tool_call_id.clone(),
             name: tool_name,
             command: tool_command,
             arguments,
+            locations,
         };
-        
+
+        // Generate unique permission request ID
+        let permission_id = format!("perm_{}", tool_call_id);
+
+        // Convert options to our format
+        let permission_options: Vec<AcpPermissionOption> = args.options.iter()
+            .map(|opt| AcpPermissionOption {
+                id: opt.option_id.to_string(),
+                name: opt.name.clone(),
+            })
+            .collect();
+
+        // Create permission request message
+        let permission_request = AcpPermissionRequest {
+            id: permission_id.clone(),
+            tool_call: acp_tool_call.clone(),
+            options: permission_options,
+        };
+
         // Add to history
         {
             let mut history = self.history.lock().await;
-            history.push(AcpMessage::ToolCall(acp_tool_call.clone()));
+            history.push(AcpMessage::PermissionRequest(permission_request.clone()));
         }
-        
-        // Send to frontend
-        self.send_message(AcpMessage::ToolCall(acp_tool_call)).await;
 
-        // Always allow - use Selected with the first "allow" option
-        let selected_option = args.options.iter()
-            .find(|opt| opt.name.contains("Allow") || opt.option_id.to_string().contains("proceed"))
-            .or_else(|| args.options.first());
-        
-        if let Some(option) = selected_option {
-            info!("Allowing permission for agent {} with option: {:?}", self.agent_id, option.option_id);
-            let selected_outcome = acp::SelectedPermissionOutcome::new(option.option_id.clone());
-            Ok(acp::RequestPermissionResponse::new(acp::RequestPermissionOutcome::Selected(selected_outcome)))
-        } else {
-            error!("No permission options available for agent {}", self.agent_id);
-            Ok(acp::RequestPermissionResponse::new(acp::RequestPermissionOutcome::Cancelled))
+        // Create oneshot channel for response
+        let (response_tx, response_rx) = tokio::sync::oneshot::channel::<PermissionResponse>();
+
+        // Register pending permission
+        {
+            let mut pending = self.pending_permissions.lock().await;
+            pending.insert(permission_id.clone(), response_tx);
+        }
+
+        // Send permission request to frontend
+        self.send_message(AcpMessage::PermissionRequest(permission_request)).await;
+
+        // Wait for user response
+        match response_rx.await {
+            Ok(response) => {
+                info!("Permission response received for agent {}: option_id={}", self.agent_id, response.option_id);
+
+                // Find the matching option from original args
+                if let Some(option) = args.options.iter().find(|opt| opt.option_id.to_string() == response.option_id) {
+                    let selected_outcome = acp::SelectedPermissionOutcome::new(option.option_id.clone());
+                    Ok(acp::RequestPermissionResponse::new(acp::RequestPermissionOutcome::Selected(selected_outcome)))
+                } else {
+                    // If option not found, treat as cancelled
+                    error!("Invalid option_id {} for agent {}", response.option_id, self.agent_id);
+                    Ok(acp::RequestPermissionResponse::new(acp::RequestPermissionOutcome::Cancelled))
+                }
+            }
+            Err(_) => {
+                // Channel was dropped (e.g., agent stopped)
+                error!("Permission request channel closed for agent {}", self.agent_id);
+                Ok(acp::RequestPermissionResponse::new(acp::RequestPermissionOutcome::Cancelled))
+            }
         }
     }
 
     async fn write_text_file(
-        &self, _args: acp::WriteTextFileRequest,
+        &self, args: acp::WriteTextFileRequest,
     ) -> acp::Result<acp::WriteTextFileResponse> {
-        info!("write_text_file called for agent {}: {:?}", self.agent_id, _args);
-        Err(acp::Error::method_not_found())
+        info!("write_text_file called for agent {}: path={:?}, content_len={}",
+            self.agent_id, args.path, args.content.len());
+
+        // Send open_file message to UI for follow mode
+        let relative_path = relative_to_current_dir(&args.path)
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|| args.path.to_string_lossy().to_string());
+
+        self.send_message(AcpMessage::OpenFile(AcpOpenFile {
+            path: relative_path,
+            line: None,
+        })).await;
+
+        // Write file to filesystem
+        let path = args.path.as_path();
+        match tokio::fs::write(path, &args.content).await {
+            Ok(_) => {
+                info!("Successfully wrote file for agent {}: {:?} ({} bytes)",
+                    self.agent_id, args.path, args.content.len());
+                Ok(acp::WriteTextFileResponse::new())
+            }
+            Err(e) => {
+                error!("Failed to write file {:?} for agent {}: {}", args.path, self.agent_id, e);
+                Err(acp::Error::internal_error())
+            }
+        }
     }
 
     async fn read_text_file(
-        &self, _args: acp::ReadTextFileRequest,
+        &self, args: acp::ReadTextFileRequest,
     ) -> acp::Result<acp::ReadTextFileResponse> {
-        info!("read_text_file called for agent {}: {:?}", self.agent_id, _args);
-        Err(acp::Error::method_not_found())
+        info!("read_text_file called for agent {}: path={:?}", self.agent_id, args.path);
+
+        // Send open_file message to UI for follow mode
+        let relative_path = relative_to_current_dir(&args.path)
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|| args.path.to_string_lossy().to_string());
+        
+        self.send_message(AcpMessage::OpenFile(AcpOpenFile {
+            path: relative_path,
+            line: None,
+        })).await;
+
+        // Read file from filesystem
+        let path = args.path.as_path();
+        match tokio::fs::read_to_string(path).await {
+            Ok(content) => {
+                info!("Successfully read file for agent {}: {:?} ({} bytes)",
+                    self.agent_id, args.path, content.len());
+                Ok(acp::ReadTextFileResponse::new(content))
+            }
+            Err(e) => {
+                error!("Failed to read file {:?} for agent {}: {}", args.path, self.agent_id, e);
+                Err(acp::Error::internal_error())
+            }
+        }
     }
 
     async fn create_terminal(
@@ -190,8 +342,9 @@ impl acp::Client for AcpClientImpl {
             acp::SessionUpdate::UserMessageChunk { .. } => {
                 info!("UserMessageChunk received for agent {}", self.agent_id);
             }
-            acp::SessionUpdate::AgentThoughtChunk { .. } => {
-                info!("AgentThoughtChunk received for agent {}", self.agent_id);
+            acp::SessionUpdate::AgentThoughtChunk(chunk) => {
+                debug!("AgentThoughtChunk received for agent {}: {:?}", self.agent_id, chunk);
+                self.handle_agent_thought_chunk(chunk).await?;
             }
             acp::SessionUpdate::ToolCallUpdate(update) => {
                 self.handle_tool_call_update(update).await;
@@ -260,6 +413,38 @@ impl AcpClientImpl {
         Ok(())
     }
 
+    async fn handle_agent_thought_chunk(
+        &self,
+        chunk: acp::ContentChunk,
+    ) -> acp::Result<()> {
+        let text = Self::extract_text_from_content(&chunk.content);
+        info!("💭 Received thought chunk from agent {}: {}", self.agent_id, text);
+        
+        let mut history = self.history.lock().await;
+        let is_chunk = Self::is_last_message_thought(&history);
+        
+        if is_chunk {
+            Self::append_to_last_thought_message(&mut history, &text);
+        } else {
+            let new_message = AcpMessage::Thought(AcpThought {
+                content: text.clone(),
+                is_chunk: None,
+            });
+            history.push(new_message);
+        }
+        drop(history);
+        
+        let message = AcpMessage::Thought(AcpThought {
+            content: text.clone(),
+            is_chunk: if is_chunk { Some(true) } else { None },
+        });
+
+        // Send message to clients
+        self.send_message(message).await;
+        
+        Ok(())
+    }
+
     async fn handle_tool_call(&self, tool_call: acp::ToolCall) {
         info!("Received tool call from agent {}: title={}, tool_call_id={:?}", 
             self.agent_id, tool_call.title, tool_call.tool_call_id);
@@ -300,17 +485,30 @@ impl AcpClientImpl {
                 })
             });
         
+        // Extract locations from tool call (use relative path if possible)
+        let locations = if tool_call.locations.is_empty() {
+            None
+        } else {
+            Some(tool_call.locations.iter().map(|loc| AcpLocation {
+                path: relative_to_current_dir(&loc.path)
+                    .map(|p| p.to_string_lossy().to_string())
+                    .unwrap_or_else(|| loc.path.to_string_lossy().to_string()),
+                line: loc.line,
+            }).collect())
+        };
+
         let acp_tool_call = AcpToolCall {
             id: tool_call_id,
             name: tool_name,
             command: tool_command,
             arguments,
+            locations,
         };
-        
+
         // Add to history
         let mut history = self.history.lock().await;
         history.push(AcpMessage::ToolCall(acp_tool_call.clone()));
-        
+
         // Send message to clients
         self.send_message(AcpMessage::ToolCall(acp_tool_call)).await;
     }
@@ -457,12 +655,31 @@ impl AcpClientImpl {
             .unwrap_or(false)
     }
 
+    fn is_last_message_thought(history: &[AcpMessage]) -> bool {
+        history.last()
+            .map(|item| matches!(item, AcpMessage::Thought(_)))
+            .unwrap_or(false)
+    }
+
     fn append_to_last_assistant_message(history: &mut Vec<AcpMessage>, text: &str) {
         if let Some(last_idx) = history.len().checked_sub(1) {
             if let AcpMessage::Assistant(AcpAssistantMessage { content, .. }) = &history[last_idx] {
                 let mut updated_content = content.clone();
                 updated_content.push_str(text);
                 history[last_idx] = AcpMessage::Assistant(AcpAssistantMessage {
+                    content: updated_content,
+                    is_chunk: Some(true),
+                });
+            }
+        }
+    }
+
+    fn append_to_last_thought_message(history: &mut Vec<AcpMessage>, text: &str) {
+        if let Some(last_idx) = history.len().checked_sub(1) {
+            if let AcpMessage::Thought(AcpThought { content, .. }) = &history[last_idx] {
+                let mut updated_content = content.clone();
+                updated_content.push_str(text);
+                history[last_idx] = AcpMessage::Thought(AcpThought {
                     content: updated_content,
                     is_chunk: Some(true),
                 });
@@ -486,6 +703,9 @@ impl AcpClientImpl {
     }
 }
 
+/// Type alias for pending permissions map
+pub type PendingPermissionsMap = Arc<tokio::sync::Mutex<HashMap<String, tokio::sync::oneshot::Sender<PermissionResponse>>>>;
+
 pub struct AcpAgent {
     agent_id: String,
     agent_name: String,
@@ -498,6 +718,7 @@ pub struct AcpAgent {
     process_handle: Option<tokio::task::JoinHandle<()>>,
     io_handle: Option<tokio::task::JoinHandle<()>>,
     history: Arc<tokio::sync::Mutex<Vec<AcpMessage>>>,
+    pending_permissions: PendingPermissionsMap,
 }
 
 impl AcpAgent {
@@ -514,6 +735,7 @@ impl AcpAgent {
             process_handle: None,
             io_handle: None,
             history: Arc::new(tokio::sync::Mutex::new(Vec::new())),
+            pending_permissions: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
         }
     }
 
@@ -541,7 +763,8 @@ impl AcpAgent {
         let agent_id_clone = self.agent_id.clone();
         let history_clone = self.history.clone();
         let message_sender_clone = history_tx.clone();
-        
+        let pending_permissions_clone = self.pending_permissions.clone();
+
         let local_set_handle = tokio::task::spawn_blocking(move || {
             tokio::runtime::Handle::current().block_on(async {
                 let local_set = tokio::task::LocalSet::new();
@@ -551,6 +774,7 @@ impl AcpAgent {
                         ready_clone,
                         history_clone,
                         message_sender_clone,
+                        pending_permissions_clone,
                         stdin,
                         stdout,
                         stderr,
@@ -609,6 +833,7 @@ impl AcpAgent {
         ready: Arc<AtomicBool>,
         history: Arc<tokio::sync::Mutex<Vec<AcpMessage>>>,
         message_sender: broadcast::Sender<AcpMessage>,
+        pending_permissions: PendingPermissionsMap,
         stdin: tokio::process::ChildStdin,
         stdout: tokio::process::ChildStdout,
         stderr: tokio::process::ChildStderr,
@@ -616,11 +841,16 @@ impl AcpAgent {
         mut cancel_rx: mpsc::Receiver<()>,
         session_tx: mpsc::Sender<acp::SessionId>,
     ) {
+        // Clone history before moving client_impl
+        let history_for_stderr = history.clone();
+        let history_for_prompt = history.clone();
+
         // Create client implementation
         let client_impl = AcpClientImpl {
             agent_id: agent_id.clone(),
             message_sender: message_sender.clone(),
             history,
+            pending_permissions,
         };
 
         // Create connection inside LocalSet
@@ -632,15 +862,19 @@ impl AcpAgent {
                 tokio::task::spawn_local(fut);
             },
         );
-        
+
         // Wrap connection in Rc to allow sharing for cancellation
         let conn = std::rc::Rc::new(conn);
 
         // Handle I/O in the background
         tokio::task::spawn_local(handle_io);
-        
+
         // Read stderr for debugging
-        Self::spawn_stderr_reader(stderr);
+        Self::spawn_stderr_reader(
+            stderr,
+            message_sender.clone(),
+            history_for_stderr
+        );
         
         // Initialize connection and create session
         let session_id = match Self::initialize_connection(&conn, &agent_id).await {
@@ -661,6 +895,7 @@ impl AcpAgent {
                 &conn,
                 &agent_id,
                 &message_sender,
+                history_for_prompt,
                 session_id,
                 &mut prompt_rx,
                 &mut cancel_rx,
@@ -674,13 +909,33 @@ impl AcpAgent {
         }
     }
 
-    fn spawn_stderr_reader(stderr: tokio::process::ChildStderr) {
+    fn spawn_stderr_reader(
+        stderr: tokio::process::ChildStderr,
+        message_sender: broadcast::Sender<AcpMessage>,
+        history: Arc<tokio::sync::Mutex<Vec<AcpMessage>>>,
+    ) {
         tokio::task::spawn_local(async move {
             use tokio::io::{AsyncBufReadExt, BufReader};
             let mut reader = BufReader::new(stderr);
             let mut buf = String::new();
             while reader.read_line(&mut buf).await.is_ok() && !buf.is_empty() {
-                error!("ACP stderr: {}", buf.trim());
+                let error_msg = buf.trim().to_string();
+                error!("ACP stderr: {}", error_msg);
+
+                // Create error message
+                let error_message = AcpMessage::Error(AcpError {
+                    message: error_msg,
+                });
+
+                // Save to history
+                {
+                    let mut history = history.lock().await;
+                    history.push(error_message.clone());
+                }
+
+                // Send error message to UI
+                let _ = message_sender.send(error_message);
+
                 buf.clear();
             }
         });
@@ -691,12 +946,25 @@ impl AcpAgent {
         agent_id: &str,
     ) -> Result<acp::SessionId> {
         let client_info = acp::Implementation::new("anycode", "1.0.0").title("Anycode Editor");
-        let init_message = acp::InitializeRequest::new(ProtocolVersion::V1).client_info(client_info);
 
-        conn.initialize(init_message).await
+        // Define client capabilities
+        let fs_capabilities = acp::FileSystemCapability::new()
+            .read_text_file(true)
+            .write_text_file(true);
+
+        let client_capabilities = acp::ClientCapabilities::new()
+            .fs(fs_capabilities);
+
+        let init_message = acp::InitializeRequest::new(ProtocolVersion::V1)
+            .client_info(client_info)
+            .client_capabilities(client_capabilities);
+
+        info!("Initializing ACP agent {} with capabilities: fs.readTextFile=true, fs.writeTextFile=true", agent_id);
+
+        let init_response = conn.initialize(init_message).await
             .map_err(|e| anyhow!("Failed to initialize: {}", e))?;
-        
-        info!("ACP agent {} initialized successfully", agent_id);
+
+        info!("ACP agent {} initialized successfully. Agent capabilities: {:?}", agent_id, init_response.agent_capabilities);
         
         // Create new session
         let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
@@ -711,6 +979,7 @@ impl AcpAgent {
         conn: &std::rc::Rc<acp::ClientSideConnection>,
         agent_id: &str,
         message_sender: &broadcast::Sender<AcpMessage>,
+        history: Arc<tokio::sync::Mutex<Vec<AcpMessage>>>,
         session_id: acp::SessionId,
         prompt_rx: &mut mpsc::Receiver<String>,
         cancel_rx: &mut mpsc::Receiver<()>,
@@ -728,10 +997,11 @@ impl AcpAgent {
                     }));
                     
                     // Handle prompt with cancellation support
-                    Self::   handle_prompt_with_cancellation(
+                    Self::handle_prompt_with_cancellation(
                         conn,
                         agent_id,
                         message_sender,
+                        &history,
                         &session_id,
                         prompt,
                         cancel_rx,
@@ -756,7 +1026,8 @@ impl AcpAgent {
     async fn handle_prompt_with_cancellation(
         conn: &std::rc::Rc<acp::ClientSideConnection>,
         agent_id: &str,
-        _message_sender: &broadcast::Sender<AcpMessage>,
+        message_sender: &broadcast::Sender<AcpMessage>,
+        history: &Arc<tokio::sync::Mutex<Vec<AcpMessage>>>,
         session_id: &acp::SessionId,
         prompt: String,
         cancel_rx: &mut mpsc::Receiver<()>,
@@ -786,6 +1057,19 @@ impl AcpAgent {
                         }
                         Err(e) => {
                             error!("Failed to end prompt for agent {}, error: {}", agent_id, e);
+                            // Create error message
+                            let error_message = AcpMessage::Error(AcpError {
+                                message: e.to_string(),
+                            });
+
+                            // Save to history
+                            {
+                                let mut hist = history.lock().await;
+                                hist.push(error_message.clone());
+                            }
+
+                            // Send error message to UI
+                            let _ = message_sender.send(error_message);
                         }
                     }
                     break;
@@ -870,6 +1154,23 @@ impl AcpAgent {
     /// Returns None if the agent hasn't been started yet.
     pub fn get_message_sender(&self) -> Option<broadcast::Sender<AcpMessage>> {
         self.message_sender.clone()
+    }
+
+    /// Send permission response for a pending permission request.
+    /// Returns Ok(true) if the permission was found and response sent, Ok(false) if not found.
+    pub async fn send_permission_response(&self, permission_id: &str, option_id: String) -> Result<bool> {
+        let mut pending = self.pending_permissions.lock().await;
+        if let Some(sender) = pending.remove(permission_id) {
+            let response = PermissionResponse {
+                permission_id: permission_id.to_string(),
+                option_id,
+            };
+            // Send response (ignore error if receiver dropped)
+            let _ = sender.send(response);
+            Ok(true)
+        } else {
+            Ok(false)
+        }
     }
 }
 

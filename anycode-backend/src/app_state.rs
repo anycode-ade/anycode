@@ -4,7 +4,7 @@ use crate::code::Code;
 use crate::config::Config;
 use crate::lsp::LspManager;
 use crate::acp::AcpManager;
-use socketioxide::{extract::SocketRef};
+use socketioxide::{extract::{SocketRef, State}};
 use std::collections::HashSet;
 use tokio_util::sync::CancellationToken;
 use crate::terminal::Terminal;
@@ -61,4 +61,35 @@ pub fn get_or_create_code<'a>(
             Ok(v.insert(c))
         }
     }
+}
+
+/// Get languages for files opened by a socket
+/// Returns None if socket was not found
+pub async fn get_socket_languages(
+    socket_id: &str, state: &State<AppState>,
+) -> Option<HashSet<String>> {
+    let sockets_data = state.socket2data.lock().await;
+    let socket_data = sockets_data.get(socket_id)?;
+    
+    let f2c = state.file2code.lock().await;
+    Some(socket_data.opened_files.iter()
+        .filter_map(|path| f2c.get(path).map(|code| code.lang.clone()))
+        .collect::<HashSet<_>>())
+}
+
+/// Check if a language has any opened files across all sockets
+pub async fn is_language_opened(
+    lang: &str, state: &State<AppState>,
+) -> bool {
+    let sockets_data = state.socket2data.lock().await;
+    let all_opened_files: Vec<String> = sockets_data.values()
+        .flat_map(|data| data.opened_files.iter())
+        .cloned().collect();
+    
+    let f2c = state.file2code.lock().await;
+    all_opened_files.iter().any(|file_path| {
+        f2c.get(file_path)
+            .map(|code| code.lang == lang)
+            .unwrap_or(false)
+    })
 }
