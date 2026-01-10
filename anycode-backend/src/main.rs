@@ -25,7 +25,7 @@ use std::collections::{HashMap, HashSet};
 use tokio::sync::mpsc;
 
 mod app_state;
-use app_state::{AppState, SocketData};
+use app_state::{*};
 
 mod diff;
 
@@ -76,59 +76,129 @@ async fn on_connect(socket: SocketRef, state: State<AppState>) {
     socket.on("acp:cancel", handle_acp_cancel);
     socket.on("acp:list", handle_acp_list);
     socket.on("acp:reconnect", handle_acp_reconnect);
+    socket.on("acp:permission_response", handle_acp_permission_response);
     
     socket.on_disconnect(on_disconnect)
 }
 
+// async fn on_disconnect(socket: SocketRef, state: State<AppState>) {
+//     info!("Socket.IO disconnected: {}", socket.id);
+
+//     let sid = socket.id.as_str().to_string();
+    
+//     // Get languages for files opened by this socket
+//     let languages = {
+//         let mut sockets_data = state.socket2data.lock().await;
+//         let socket_data = match sockets_data.remove(&sid) {
+//             Some(data) => data,
+//             None => return,
+//         };
+        
+//         let f2c = state.file2code.lock().await;
+//         socket_data.opened_files.iter()
+//             .filter_map(|path| f2c.get(path).map(|code| code.lang.clone()))
+//             .collect::<Vec<_>>()
+//     };
+    
+//     // Get all opened files from remaining sockets
+//     let all_opened_files = {
+//         let sockets_data = state.socket2data.lock().await;
+//         sockets_data.values()
+//             .flat_map(|data| data.opened_files.iter())
+//             .cloned()
+//             .collect::<Vec<_>>()
+//     };
+    
+//     // Stop LSP servers for languages that have no files opened by other sockets
+//     let f2c = state.file2code.lock().await;
+//     let mut lsp_manager = state.lsp_manager.lock().await;
+//     for lang in languages {
+//         let lang_still_opened = all_opened_files.iter().any(|file_path| {
+//             f2c.get(file_path)
+//                 .map(|code| code.lang == lang)
+//                 .unwrap_or(false)
+//         });
+//         if !lang_still_opened {
+//             lsp_manager.stop(&lang).await;
+//             info!("Lsp autoclose: '{}'", lang);
+//         }
+//     }
+// }
+
 async fn on_disconnect(socket: SocketRef, state: State<AppState>) {
     info!("Socket.IO disconnected: {}", socket.id);
-    
+
     let sid = socket.id.as_str().to_string();
     
+    // Get opened files for this socket before removing socket data
+    let opened_files = {
+        let sockets_data = state.socket2data.lock().await;
+        match sockets_data.get(&sid) {
+            Some(socket_data) => socket_data.opened_files.clone(),
+            None => return,
+        }
+    };
+
     // Get languages for files opened by this socket
     let languages = {
-        let mut sockets_data = state.socket2data.lock().await;
-        let socket_data = match sockets_data.remove(&sid) {
-            Some(data) => data,
-            None => return,
-        };
-        
         let f2c = state.file2code.lock().await;
-        socket_data.opened_files.iter()
+        opened_files.iter()
             .filter_map(|path| f2c.get(path).map(|code| code.lang.clone()))
             .collect::<HashSet<_>>()
     };
+
+    // Remove socket data
+    let mut sockets_data = state.socket2data.lock().await;
+    sockets_data.remove(&sid);
+    drop(sockets_data);
     
     // Get all opened files from remaining sockets
-    let all_opened_files = {
+    let all_opened_files: HashSet<String> = {
         let sockets_data = state.socket2data.lock().await;
         sockets_data.values()
             .flat_map(|data| data.opened_files.iter())
             .cloned()
-            .collect::<Vec<_>>()
+            .collect()
     };
+
+    // Clean up files that are no longer opened by any socket
+    let files_to_close: Vec<(String, String)> = {
+        let f2c = state.file2code.lock().await;
+        opened_files.iter()
+            .filter(|path| !all_opened_files.contains(*path))
+            .filter_map(|path| {
+                f2c.get(path).map(|code| (path.clone(), code.lang.clone()))
+            })
+            .collect()
+    };
+
+    // Close files
+    {
+        let mut lsp_manager = state.lsp_manager.lock().await;
+        let mut f2c = state.file2code.lock().await;
+
+        for (file_path, lang) in &files_to_close {
+            if let Some(lsp) = lsp_manager.get(lang).await {
+                lsp.did_close(file_path);
+                f2c.remove(file_path);
+            }
+        }
+    }
     
     // Stop LSP servers for languages that have no files opened by other sockets
-    let f2c = state.file2code.lock().await;
-    let mut lsp_manager = state.lsp_manager.lock().await;
     for lang in languages {
-        let lang_still_opened = all_opened_files.iter().any(|file_path| {
-            f2c.get(file_path)
-                .map(|code| code.lang == lang)
-                .unwrap_or(false)
-        });
-        if !lang_still_opened {
-            lsp_manager.stop_by_lang(&lang).await;
+        if !is_language_opened(&lang, &state).await {
+            info!("Lsp autoclose: '{}'", lang);
+            let mut lsp_manager = state.lsp_manager.lock().await;
+            lsp_manager.stop(&lang).await;
         }
     }
 }
 
-
 fn build_app_state() -> (AppState, Receiver<PublishDiagnosticsParams>) {
-
     let config = crate::config::get();
 
-    let (diagnostic_send,  diagnostic_recv) = mpsc::channel::<PublishDiagnosticsParams>(1);
+    let (diagnostic_send, diagnostic_recv) = mpsc::channel::<PublishDiagnosticsParams>(1);
     let mut lsp_manager = LspManager::new(config.clone());
     lsp_manager.set_diagnostics_sender(diagnostic_send);
 

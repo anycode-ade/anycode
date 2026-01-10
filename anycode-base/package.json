@@ -19,6 +19,7 @@
     "test": "vitest"
   },
   "dependencies": {
+    "diff": "^8.0.2",
     "vscode-textbuffer": "^1.0.0",
     "web-tree-sitter": "^0.21.0"
   },

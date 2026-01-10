@@ -1,5 +1,4 @@
 packages:
-  - '*'
-
-ignoredBuiltDependencies:
-  - electron
+  - anycode-base
+  - anycode-react
+  - anycode

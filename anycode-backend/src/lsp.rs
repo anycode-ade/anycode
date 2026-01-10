@@ -788,9 +788,9 @@ impl LspManager {
         }
     }
 
-    pub async fn stop_by_lang(&mut self, lang: &str) {
+    pub async fn stop(&mut self, lang: &str) {
         if let Some(mut lsp) = self.lang2lsp.remove(lang) {
-            lsp.stop().await;
+            let _ = lsp.stop().await;
             info!("stopped lsp: {}", lang);
         }
     }

@@ -9,7 +9,7 @@ build-frontend:
     cd anycode && pnpm run build
 
 run-backend:
-    cd anycode-backend && cargo run --release
+    cargo run --manifest-path ./anycode-backend/Cargo.toml
 
 build-backend: build-frontend
     cd anycode-backend && cargo build --release

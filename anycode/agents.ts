@@ -18,6 +18,13 @@ export const DEFAULT_AGENTS: AcpAgent[] = [
         args: ["--experimental-acp", "--yolo"],
         description: 'Google Gemini AI coding agent',
     },
+    {
+        id: 'claude',
+        name: 'Claude',
+        command: 'claude-code-acp',
+        args: ["--experimental-acp", "--yolo"],
+        description: 'Cluade AI coding agent',
+    },
 ];
 
 let cachedAgents: AcpAgent[] | null = null;

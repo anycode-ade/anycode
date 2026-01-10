@@ -147,6 +147,48 @@
     height: 20px;
 }
 
+.acp-diff-btn,
+.acp-follow-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-color, #ccc);
+    cursor: pointer;
+    padding: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 28px;
+    min-width: 28px;
+    border-radius: 4px;
+    flex-shrink: 0;
+    transition: background-color 0.2s;
+    outline: none;
+}
+
+.acp-diff-btn:hover,
+.acp-follow-btn:hover {
+    background-color: var(--hover-bg, #2a2a2a);
+}
+
+.acp-diff-btn.active,
+.acp-follow-btn.active {
+    color: var(--accent-color, #4fc3f7);
+}
+
+.acp-diff-btn:focus,
+.acp-diff-btn:active,
+.acp-follow-btn:focus,
+.acp-follow-btn:active {
+    outline: none;
+    border: none;
+}
+
+.acp-diff-btn svg,
+.acp-follow-btn svg {
+    width: 20px;
+    height: 20px;
+}
+
 /* Mobile styles for buttons */
 @media (max-width: 768px) {
     .acp-add-agent-btn {
@@ -167,6 +209,19 @@
     }
 
     .acp-settings-btn svg {
+        width: 20px;
+        height: 20px;
+    }
+
+    .acp-diff-btn,
+    .acp-follow-btn {
+        height: 36px;
+        min-width: 36px;
+        padding: 6px;
+    }
+
+    .acp-diff-btn svg,
+    .acp-follow-btn svg {
         width: 20px;
         height: 20px;
     }

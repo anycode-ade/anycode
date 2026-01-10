@@ -5,14 +5,17 @@ import {
   AcpToolResultMessage,
   AcpUserMessage,
   AcpAssistantMessage,
+  AcpThoughtMessage,
+  AcpPermissionRequestMessage,
+  AcpErrorMessage,
 } from '../../types';
 import './AcpMessage.css';
 
 interface AcpMessageProps {
   message: AcpMessageType;
-  index: number;
   isExpanded?: boolean;
   onToggle?: () => void;
+  onPermissionResponse?: (permissionId: string, optionId: string) => void;
 }
 
 const ToolCallMessage: React.FC<{
@@ -93,11 +96,111 @@ const TextMessage: React.FC<{
   </div>
 );
 
+const ThoughtMessage: React.FC<{
+  message: AcpThoughtMessage;
+  isExpanded: boolean;
+  onToggle: () => void;
+}> = ({ message, isExpanded, onToggle }) => {
+  if (!message.content || message.content.trim() === '') {
+    return null;
+  }
+  return (
+    <div className="acp-message acp-message-thought">
+      <div className="acp-message-content">
+        <div className="acp-thought-indicator" onClick={onToggle} style={{ cursor: 'pointer' }}>
+          <div className="acp-tool-call-header">
+            <span className="acp-toggle-icon">{isExpanded ? '▼' : '▶'}</span>
+            Thought:
+          </div>
+        </div>
+        {isExpanded && (
+          <div className="acp-thought-content">
+            {message.content.split('\n').map((line, i, lines) => (
+              <React.Fragment key={i}>
+                {line}
+                {i < lines.length - 1 && <br />}
+              </React.Fragment>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const ErrorMessage: React.FC<{
+  message: AcpErrorMessage;
+}> = ({ message }) => (
+  <div className="acp-message acp-message-error">
+    <div className="acp-message-content">
+      <div className="acp-error-indicator">Error</div>
+      <div className="acp-error-content">{message.message}</div>
+    </div>
+  </div>
+);
+
+const PermissionRequestMessage: React.FC<{
+  message: AcpPermissionRequestMessage;
+  isExpanded: boolean;
+  onToggle: () => void;
+  onPermissionResponse: (permissionId: string, optionId: string) => void;
+}> = ({ message, isExpanded, onToggle, onPermissionResponse }) => {
+  const toolCall = message.tool_call;
+  const hasArguments = toolCall.arguments &&
+    JSON.stringify(toolCall.arguments) !== '{}' &&
+    JSON.stringify(toolCall.arguments) !== '[]';
+
+  return (
+    <div className="acp-message acp-message-permission_request">
+      <div className="acp-message-content">
+        <div className="acp-permission-header" onClick={onToggle} style={{ cursor: 'pointer' }}>
+          <div className="acp-tool-call-header">
+            <span className="acp-toggle-icon">{isExpanded ? '▼' : '▶'}</span>
+            🔐 Permission Required:
+          </div>
+          <div className="acp-tool-call-name">{toolCall.name}</div>
+        </div>
+
+        {isExpanded && (
+          <>
+            {toolCall.command && (
+              <div className="acp-tool-call-section">
+                <div className="acp-tool-call-label">Command:</div>
+                <pre className="acp-tool-call-command">{toolCall.command}</pre>
+              </div>
+            )}
+            {hasArguments && (
+              <div className="acp-tool-call-section">
+                <div className="acp-tool-call-label">Arguments:</div>
+                <pre className="acp-tool-call-args">
+                  {JSON.stringify(toolCall.arguments, null, 2)}
+                </pre>
+              </div>
+            )}
+          </>
+        )}
+
+        <div className="acp-permission-buttons">
+          {message.options.map((option) => (
+            <button
+              key={option.id}
+              className={`acp-permission-button ${option.name.toLowerCase().includes('allow') ? 'acp-permission-allow' : 'acp-permission-deny'}`}
+              onClick={() => onPermissionResponse(message.id, option.id)}
+            >
+              {option.name}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 export const AcpMessage: React.FC<AcpMessageProps> = ({
   message,
-  index,
   isExpanded = false,
   onToggle,
+  onPermissionResponse,
 }) => {
   switch (message.role) {
     case 'tool_call':
@@ -121,10 +224,32 @@ export const AcpMessage: React.FC<AcpMessageProps> = ({
     case 'user':
     case 'assistant':
       return <TextMessage message={message} />;
+    case 'thought':
+      if (!onToggle) return null;
+      return (
+        <ThoughtMessage
+          message={message}
+          isExpanded={isExpanded}
+          onToggle={onToggle}
+        />
+      );
+    case 'permission_request':
+      if (!onToggle || !onPermissionResponse) return null;
+      return (
+        <PermissionRequestMessage
+          message={message}
+          isExpanded={isExpanded}
+          onToggle={onToggle}
+          onPermissionResponse={onPermissionResponse}
+        />
+      );
     case 'prompt_state':
       // Skip rendering prompt_state messages in the chat
       return null;
+    case 'error':
+      return <ErrorMessage message={message} />;
     default:
+      console.warn('Unknown message role:', message);
       return null;
   }
 };

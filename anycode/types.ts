@@ -103,12 +103,27 @@ export interface AcpPromptStateMessage {
     is_processing: boolean;
 }
 
-export type AcpMessage = 
+export interface AcpErrorMessage {
+    role: 'error';
+    message: string;
+}
+
+export interface AcpOpenFileMessage {
+    role: 'open_file';
+    path: string;
+    line?: number;
+}
+
+export type AcpMessage =
     | AcpUserMessage
     | AcpAssistantMessage
+    | AcpThoughtMessage
     | AcpToolCallMessage
     | AcpToolResultMessage
-    | AcpPromptStateMessage;
+    | AcpPromptStateMessage
+    | AcpPermissionRequestMessage
+    | AcpErrorMessage
+    | AcpOpenFileMessage;
 
 export interface AcpUserMessage {
     role: 'user';
@@ -122,18 +137,48 @@ export interface AcpAssistantMessage {
     is_chunk?: boolean;
 }
 
+export interface AcpThoughtMessage {
+    role: 'thought';
+    content: string;
+    is_chunk?: boolean;
+}
+
+export interface AcpLocation {
+    path: string;
+    line?: number;
+}
+
 export interface AcpToolCallMessage {
     role: 'tool_call';
     id: string;
     name: string;
     command?: string;
     arguments: any;
+    locations?: AcpLocation[];
 }
 
 export interface AcpToolResultMessage {
     role: 'tool_result';
     id: string;
     result: any;
+}
+
+export interface AcpPermissionOption {
+    id: string;
+    name: string;
+}
+
+export interface AcpPermissionRequestMessage {
+    role: 'permission_request';
+    id: string;
+    tool_call: {
+        id: string;
+        name: string;
+        command?: string;
+        arguments: any;
+        locations?: AcpLocation[];
+    };
+    options: AcpPermissionOption[];
 }
 
 export interface AcpToolCall {

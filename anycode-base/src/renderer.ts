@@ -2,6 +2,7 @@ import { Code, HighlighedNode } from "./code";
 import { AnycodeLine, objectHash, minimize, findNodeAndOffset, findPrevWord } from "./utils";
 import { moveCursor, removeCursor } from "./cursor";
 import { EditorState, EditorSettings } from "./editor";
+import { ChangeType } from "./diff";
 import {
     Selection, getSelection,
     setSelectionFromOffsets as renderSelection,
@@ -34,7 +35,7 @@ export class Renderer {
     public render(state: EditorState, search?: Search) {
         console.log("render");
 
-        const { code, offset, selection, runLines, errorLines, settings } = state;
+        const { code, offset, selection, runLines, errorLines, settings, diffResult } = state;
 
         const totalLines = code.linesLength();
         const { startLine, endLine } = this.getVisibleRange(totalLines, settings);
@@ -56,8 +57,8 @@ export class Renderer {
             // get syntax highlight nodes (cache supported)
             const syntaxNodes: HighlighedNode[] = code.getLineNodes(i);
 
-            const lineWrapper = this.createLineWrapper(i, syntaxNodes, errorLines, settings);
-            const lineNumberEl = this.createLineNumber(i, settings);
+            const lineWrapper = this.createLineWrapper(i, syntaxNodes, errorLines, settings, diffResult);
+            const lineNumberEl = this.createLineNumber(i, settings, diffResult);
             const lineButtonEl = this.createLineButtons(i, runLines, errorLines, settings);
 
             codeFrag.appendChild(lineWrapper);
@@ -94,7 +95,7 @@ export class Renderer {
     public renderScroll(state: EditorState, search?: Search) {
         // console.log("renderScroll");
 
-        const { code, offset, selection, settings } = state;
+        const { code, offset, selection, settings, diffResult } = state;
         const totalLines = code.linesLength();
         const lineHeight = settings.lineHeight;
         const buffer = settings.buffer;
@@ -153,13 +154,13 @@ export class Renderer {
         while (currentStartLine > startLine) {
             currentStartLine--;
             const nodes = code.getLineNodes(currentStartLine);
-            const lineEl = this.createLineWrapper(currentStartLine, nodes, state.errorLines, settings);
+            const lineEl = this.createLineWrapper(currentStartLine, nodes, state.errorLines, settings, diffResult);
     
             this.container.appendChild(lineEl);
             this.container.removeChild(lineEl);
     
             this.codeContent.insertBefore(lineEl, this.codeContent.children[1]);
-            this.gutter.insertBefore(this.createLineNumber(currentStartLine, settings), this.gutter.children[1]);
+            this.gutter.insertBefore(this.createLineNumber(currentStartLine, settings, diffResult), this.gutter.children[1]);
             this.buttonsColumn.insertBefore(
                 this.createLineButtons(currentStartLine, state.runLines, state.errorLines, settings),
                 this.buttonsColumn.children[1]
@@ -171,13 +172,13 @@ export class Renderer {
         // add rows below
         while (currentEndLine < endLine) {
             const nodes = code.getLineNodes(currentEndLine);
-            const lineEl = this.createLineWrapper(currentEndLine, nodes, state.errorLines, settings);
+            const lineEl = this.createLineWrapper(currentEndLine, nodes, state.errorLines, settings, diffResult);
     
             this.container.appendChild(lineEl);
             this.container.removeChild(lineEl);
     
             this.codeContent.insertBefore(lineEl, bottomSpacer);
-            this.gutter.insertBefore(this.createLineNumber(currentEndLine, settings), gutterBottomSpacer);
+            this.gutter.insertBefore(this.createLineNumber(currentEndLine, settings, diffResult), gutterBottomSpacer);
             this.buttonsColumn.insertBefore(
                 this.createLineButtons(currentEndLine, state.runLines, state.errorLines, settings),
                 btnBottomSpacer
@@ -222,7 +223,7 @@ export class Renderer {
         console.log("renderChanges");
         // console.time('updateChanges');
     
-        const { code, offset, selection, errorLines, settings } = state;
+        const { code, offset, selection, errorLines, settings, diffResult } = state;
         const totalLines = code.linesLength();
         const { startLine, endLine } = this.getVisibleRange(totalLines, settings);
     
@@ -254,8 +255,14 @@ export class Renderer {
             if (existingLine) {
                 const existingHash = existingLine.hash;
                 if (existingHash !== newHash) {
-                    const newLineEl = this.createLineWrapper(i, nodes, errorLines, settings);
+                    const newLineEl = this.createLineWrapper(i, nodes, errorLines, settings, diffResult);
                     existingLine.replaceWith(newLineEl);
+                // Replace the line number (gutter) to reflect changes, too
+                if (this.gutter?.children && this.gutter.children.length > i + 1) {
+                    const newGutterLine = this.createLineNumber(i, settings, diffResult);
+                    const oldGutterLine = this.gutter.children[i + 1] as HTMLElement;
+                    this.gutter.replaceChild(newGutterLine, oldGutterLine);
+                }
                 }
             } else {
                 // Fallback to full render if line is missing
@@ -303,14 +310,27 @@ export class Renderer {
         return spacer;
     }
 
-    private createLineNumber(lineNumber: number, settings: EditorSettings): HTMLDivElement {
+    private createLineNumber(lineNumber: number, settings: EditorSettings, diffResult?: Map<number, ChangeType>): HTMLDivElement {
         const div = document.createElement('div');
         div.className = "ln";
         div.textContent = (lineNumber + 1).toString();
         div.style.height = `${settings.lineHeight}px`;
         div.setAttribute('data-line', lineNumber.toString());
+        
+        if (diffResult) {
+            const changeType = diffResult.get(lineNumber + 1);
+            if (changeType === 'modified') {
+                div.classList.add('diff-changed');
+            } else if (changeType === 'added') {
+                div.classList.add('diff-added');
+            } else if (changeType === 'deleted') {
+                div.classList.add('diff-deleted');
+            }
+        }
+        
         return div;
     }
+
 
     private createLineButtons(
         lineNumber: number,
@@ -344,7 +364,8 @@ export class Renderer {
         lineNumber: number,
         nodes: HighlighedNode[],
         errorLines: Map<number, string>,
-        settings: EditorSettings
+        settings: EditorSettings,
+        diffResult?: Map<number, ChangeType>
     ): AnycodeLine {
         const wrapper = document.createElement('div') as AnycodeLine;
 
@@ -355,6 +376,16 @@ export class Renderer {
         // Add hash for change tracking
         const hash = objectHash(nodes).toString();
         wrapper.hash = hash;
+
+        // Check if this line was changed in diff mode
+        if (diffResult) {
+            const changeType = diffResult.get(lineNumber + 1);
+            if (changeType === 'modified') {
+                wrapper.classList.add('diff-changed');
+            } else if (changeType === 'added') {
+                wrapper.classList.add('diff-added');
+            }
+        }
 
         if (nodes.length === 0 || (nodes.length === 1 && nodes[0].text === "\u200B")) {
             wrapper.appendChild(document.createElement('br'));
@@ -1053,5 +1084,113 @@ export class Renderer {
         if (this.searchMatchLabel.textContent !== text) {
             this.searchMatchLabel.textContent = text;
         }
+    }
+
+    public verifyDiffRendering(diffResult: Map<number, ChangeType>): void {
+        const currentDiffLines = new Map<number, ChangeType>();
+        
+        const gutterLines = this.gutter.querySelectorAll('.ln');
+        gutterLines.forEach((gutterLine) => {
+            const lineIndex = parseInt(gutterLine.getAttribute('data-line') || '-1', 10);
+            if (lineIndex < 0) return;
+            
+            const lineNumber = lineIndex + 1;
+            
+            if (gutterLine.classList.contains('diff-changed')) {
+                currentDiffLines.set(lineNumber, 'modified');
+            } else if (gutterLine.classList.contains('diff-added')) {
+                currentDiffLines.set(lineNumber, 'added');
+            } else if (gutterLine.classList.contains('diff-deleted')) {
+                currentDiffLines.set(lineNumber, 'deleted');
+            }
+        });
+
+        const linesToRemove: number[] = [];
+        for (const [lineNumber] of currentDiffLines.entries()) {
+            if (!diffResult.has(lineNumber)) {
+                linesToRemove.push(lineNumber);
+            }
+        }
+
+        for (const lineNumber of linesToRemove) {
+            const lineIndex = lineNumber - 1;
+            this.removeDiffGutter(lineIndex);
+            this.removeDiffCodeLine(lineIndex);
+        }
+
+        for (const [lineNumber, changeType] of diffResult.entries()) {
+            const lineIndex = lineNumber - 1;
+            
+            const currentType = currentDiffLines.get(lineNumber);
+            if (currentType !== changeType) {
+                this.addDiffGutter(lineIndex, changeType);
+            }
+
+            if (changeType === 'added' || changeType === 'modified') {
+                const codeLine = this.getLine(lineIndex);
+                if (codeLine) {
+                    const expectedCodeClass = changeType === 'modified' ? 'diff-changed' : 'diff-added';
+                    codeLine.classList.remove('diff-changed', 'diff-added', 'diff-deleted');
+                    codeLine.classList.add(expectedCodeClass);
+                }
+            } else if (changeType === 'deleted') {
+                this.removeDiffCodeLine(lineIndex);
+            }
+        }
+    }
+
+    public addDiffGutter(lineIndex: number, changeType: ChangeType): void {
+        const gutterLine = this.gutter.querySelector(`.ln[data-line="${lineIndex}"]`) as HTMLElement | null;
+        if (!gutterLine) {
+            return;
+        }
+
+        gutterLine.classList.remove('diff-changed', 'diff-added', 'diff-deleted');
+        
+        const diffClass = this.getDiffClassForChangeType(changeType);
+        if (diffClass) {
+            gutterLine.classList.add(diffClass);
+        }
+    }
+
+    private removeDiffGutter(lineIndex: number): void {
+        const gutterLine = this.gutter.querySelector(`.ln[data-line="${lineIndex}"]`) as HTMLElement | null;
+        if (!gutterLine) {
+            return;
+        }
+
+        gutterLine.classList.remove('diff-changed', 'diff-added', 'diff-deleted');
+    }
+
+    private removeDiffCodeLine(lineIndex: number): void {
+        const codeLine = this.getLine(lineIndex);
+        if (codeLine) {
+            codeLine.classList.remove('diff-changed', 'diff-added', 'diff-deleted');
+        }
+    }
+
+    private getDiffClassForChangeType(changeType: ChangeType): string {
+        switch (changeType) {
+            case 'modified':
+                return 'diff-changed';
+            case 'added':
+                return 'diff-added';
+            case 'deleted':
+                return 'diff-deleted';
+            default:
+                return '';
+        }
+    }
+
+    public clearAllDiffs(): void {
+        const gutterLines = this.gutter.querySelectorAll('.ln.diff-changed, .ln.diff-added, .ln.diff-deleted');
+        gutterLines.forEach((gutterLine) => {
+            gutterLine.classList.remove('diff-changed', 'diff-added', 'diff-deleted');
+        });
+
+        const codeLines = this.codeContent.querySelectorAll('.line.diff-changed, .line.diff-added, .line.diff-deleted');
+        codeLines.forEach((codeLine: Element) => {
+            codeLine.classList.remove('diff-changed', 'diff-added', 'diff-deleted');
+        });
     }
 }

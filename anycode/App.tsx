@@ -2,10 +2,10 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { AnycodeEditorReact, AnycodeEditor } from 'anycode-react';
 import type { Change, Position } from '../anycode-base/src/code';
-import { WatcherCreate, WatcherEdits, WatcherRemove, 
-    type CursorHistory, type Terminal, type AcpSession, 
-    type AcpMessage, type AcpPromptStateMessage,
-    type SearchResult, type SearchEnd, type SearchMatch
+import { WatcherCreate, WatcherEdits, WatcherRemove,
+    type CursorHistory, type Terminal, type AcpSession,
+    type AcpMessage, type AcpPromptStateMessage, type AcpToolCallMessage,
+    type AcpOpenFileMessage, type SearchResult, type SearchEnd, type SearchMatch
 } from './types';
 import { loadTerminals, loadTerminalSelected, loadBottomVisible, 
     loadLeftPanelVisible, loadRightPanelVisible, loadCenterPaneVisible 
@@ -59,6 +59,10 @@ const App: React.FC = () => {
     const [searchActive, setSearchActive] = useState<boolean>(false);
     const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
     const [searchEnded, setSearchEnded] = useState<boolean>(true);
+    const [diffEnabled, setDiffEnabled] = useState<boolean>(true);
+    const [followEnabled, setFollowEnabled] = useState<boolean>(true);
+    const followEnabledRef = useRef<boolean>(true);
+    const pendingOpenFilesRef = useRef<Set<string>>(new Set());
 
     const [terminals, setTerminals] = useState<Terminal[]>(loadTerminals);
     const [terminalSelected, setTerminalSelected] = useState<number>(loadTerminalSelected());
@@ -90,6 +94,10 @@ const App: React.FC = () => {
     useEffect(() => {
         selectedAgentIdRef.current = selectedAgentId;
     }, [selectedAgentId]);
+
+    useEffect(() => {
+        followEnabledRef.current = followEnabled;
+    }, [followEnabled]);
 
     useEffect(() => {
         localStorage.setItem('terminals', JSON.stringify(terminals));
@@ -134,6 +142,7 @@ const App: React.FC = () => {
         
         const editor = new AnycodeEditor(content, filename, language, options);
         await editor.init();
+        editor.setDiffEnabled(diffEnabled);
         editor.setOnChange((change: Change) => handleChange(filename, change));
         editor.setOnCursorChange((newState: any, oldState: any) => handleCursorChange(filename, newState, oldState));
         editor.setCompletionProvider(handleCompletion);
@@ -662,9 +671,10 @@ const App: React.FC = () => {
 
     const openFile = (path: string) => {
         console.log('Open file:', path);
-        
-        const existingFile = files.find(file => file.id === path);
-        
+
+        // Use filesRef.current to get the latest state (avoid stale closure)
+        const existingFile = filesRef.current.find(file => file.id === path);
+
         if (existingFile) {
             console.log('File already open, switching to:', existingFile.name);
             if (existingFile.id !== activeFileId) {
@@ -672,11 +682,18 @@ const App: React.FC = () => {
             }
             return;
         }
-                
+
+        if (pendingOpenFilesRef.current.has(path)) {
+            console.log('File already pending open:', path);
+            return;
+        }
+
         if (wsRef.current && isConnected) {
-            wsRef.current.emit('file:open', { path }, (response: any) => { 
+            pendingOpenFilesRef.current.add(path);
+            wsRef.current.emit('file:open', { path }, (response: any) => {
+                pendingOpenFilesRef.current.delete(path);
                 if (response.success) {
-                    handleOpenFileResponse(path, response.content) 
+                    handleOpenFileResponse(path, response.content)
                 } else {
                     console.error('Failed to open file:', response.error);
                 }
@@ -689,7 +706,13 @@ const App: React.FC = () => {
         const language = getLanguageFromFileName(fileName);
         savedFileContentsRef.current.set(path, content);
         const newFile: FileState = { id: path, name: fileName, language };
-        setFiles(prev => [...prev, newFile]);
+        setFiles(prev => {
+            // Check if file already exists to prevent duplicates
+            if (prev.some(f => f.id === path)) {
+                return prev;
+            }
+            return [...prev, newFile];
+        });
         setActiveFileId(newFile.id);
     };
 
@@ -934,7 +957,11 @@ const App: React.FC = () => {
         const { file, edits } = watcherEdits;
 
         const editor = editorRefs.current.get(file);
-        if (!editor) return;
+        if (!editor) {
+            console.log('watcher:edits - editor not found for file:', file);
+            console.log('watcher:edits - available editors:', Array.from(editorRefs.current.keys()));
+            return;
+        }
 
         editor.applyChange({ edits });
     }
@@ -1037,8 +1064,31 @@ const App: React.FC = () => {
             return;
         }
         
-        // Handle tool_call and tool_result messages
-        if (data.item.role === 'tool_call' || data.item.role === 'tool_result') {
+        // Handle open_file messages for follow mode (not stored in session)
+        if (data.item.role === 'open_file' && followEnabledRef.current) {
+            const openFileMsg = data.item as AcpOpenFileMessage;
+            if (openFileMsg.line !== undefined) {
+                pendingPositions.current.set(openFileMsg.path, { line: openFileMsg.line, column: 0 });
+            }
+            openFile(openFileMsg.path);
+            return;
+        }
+
+        // Handle tool_call, tool_result, and permission_request messages
+        if (data.item.role === 'tool_call' || data.item.role === 'tool_result' || data.item.role === 'permission_request') {
+            // Follow mode: open file when tool_call has locations
+            if (data.item.role === 'tool_call' && followEnabledRef.current) {
+                const toolCall = data.item as AcpToolCallMessage;
+                if (toolCall.locations && toolCall.locations.length > 0) {
+                    const loc = toolCall.locations[0];
+                    const filePath = loc.path;
+                    if (loc.line !== undefined) {
+                        pendingPositions.current.set(filePath, { line: loc.line, column: 0 });
+                    }
+                    openFile(filePath);
+                }
+            }
+
             setAcpSessions(prev => {
                 const newSessions = new Map(prev);
                 const existing = newSessions.get(data.agent_id);
@@ -1060,12 +1110,33 @@ const App: React.FC = () => {
             return;
         }
         
-        // At this point, TypeScript knows it's either 'user' or 'assistant'
-        if (data.item.role !== 'user' && data.item.role !== 'assistant') {
+        // Handle error messages separately
+        if (data.item.role === 'error') {
+            setAcpSessions(prev => {
+                const newSessions = new Map(prev);
+                const existing = newSessions.get(data.agent_id);
+                if (!existing) {
+                    newSessions.set(data.agent_id, {
+                        agentId: data.agent_id,
+                        agentName: '',
+                        messages: [data.item],
+                        isActive: true,
+                    });
+                } else {
+                    newSessions.set(data.agent_id, {
+                        ...existing,
+                        messages: [...existing.messages, data.item],
+                    });
+                }
+                return newSessions;
+            });
             return;
         }
-        
-        // Now we can safely access content and is_chunk
+
+        if (data.item.role !== 'user' && data.item.role !== 'assistant' && data.item.role !== 'thought') {
+            return;
+        }
+
         const message = data.item;
         const isChunk = message.is_chunk || false;
         
@@ -1080,10 +1151,10 @@ const App: React.FC = () => {
                     isActive: true,
                 });
             } else {
-                // If it's a chunk and last message is from assistant, update it
+                // If it's a chunk and last message is from assistant or thought, update it
                 if (isChunk && existing.messages.length > 0) {
                     const lastMessage = existing.messages[existing.messages.length - 1];
-                    if (lastMessage.role === 'assistant') {
+                    if (lastMessage.role === 'assistant' || lastMessage.role === 'thought') {
                         // Update last message by appending chunk content
                         const updatedMessages = [...existing.messages];
                         updatedMessages[updatedMessages.length - 1] = {
@@ -1097,10 +1168,14 @@ const App: React.FC = () => {
                         return newSessions;
                     }
                 }
-                // Otherwise, add as new message
+                
+                const messageToAdd = isChunk && (message.role === 'thought' || message.role === 'assistant') 
+                    ? { ...message, is_chunk: undefined } 
+                    : message;
+                
                 newSessions.set(data.agent_id, {
                     ...existing,
-                    messages: [...existing.messages, message],
+                    messages: [...existing.messages, messageToAdd],
                 });
             }
             return newSessions;
@@ -1210,6 +1285,20 @@ const App: React.FC = () => {
                     newSessions.set(agentId, { ...existing, isProcessing: false });
                     return newSessions;
                 });
+            }
+        });
+    };
+
+    const sendPermissionResponse = (agentId: string, permissionId: string, optionId: string) => {
+        if (!wsRef.current || !isConnected) return;
+
+        wsRef.current.emit('acp:permission_response', {
+            agent_id: agentId,
+            permission_id: permissionId,
+            option_id: optionId,
+        }, (response: any) => {
+            if (!response.success) {
+                console.error('Failed to send permission response:', response.error);
             }
         });
     };
@@ -1439,6 +1528,19 @@ const App: React.FC = () => {
             const firstSession = Array.from(acpSessions.values())[0];
             setSelectedAgentId(firstSession.agentId);
         }
+
+        // Toggle diff mode based on agents presence
+        if (acpSessions.size === 0) {
+            setDiffEnabled(false);
+            editorRefs.current.forEach((editor) => {
+                editor.setDiffEnabled(false);
+            });
+        } else {
+            setDiffEnabled(true);
+            editorRefs.current.forEach((editor) => {
+                editor.setDiffEnabled(true);
+            });
+        }
     }, [acpSessions, selectedAgentId]);
 
     useEffect(() => {
@@ -1551,6 +1653,19 @@ const App: React.FC = () => {
         setAgentsVersion(prev => prev + 1); // Force re-render
     };
 
+    const toggleDiffMode = () => {
+        const newDiffEnabled = !diffEnabled;
+        setDiffEnabled(newDiffEnabled);
+        // Update all open editors
+        editorRefs.current.forEach((editor) => {
+            editor.setDiffEnabled(newDiffEnabled);
+        });
+    };
+
+    const toggleFollowMode = () => {
+        setFollowEnabled(prev => !prev);
+    };
+
     const acpPanel = (() => {
         const sessionsArray = Array.from(acpSessions.values());
         const currentSession = selectedAgentId ? acpSessions.get(selectedAgentId) : null;
@@ -1564,7 +1679,7 @@ const App: React.FC = () => {
                 onCloseAgent={closeAgent}
                 onAddAgent={() => startAgent(defaultAgent)}
                 onOpenSettings={() => {
-                    ensureDefaultAgents(); 
+                    ensureDefaultAgents();
                     setIsAgentSettingsOpen(true);
                 }}
                 agentId={currentSession?.agentId || defaultAgent?.id || 'gemini'}
@@ -1572,6 +1687,7 @@ const App: React.FC = () => {
                 onClose={closeAcpDialog}
                 onSendPrompt={sendPrompt}
                 onCancelPrompt={cancelPrompt}
+                onPermissionResponse={sendPermissionResponse}
                 messages={currentSession?.messages || []}
                 toolCalls={[]}
                 isConnected={currentSession ? (currentSession.isActive && isConnected) : false}
@@ -1581,6 +1697,10 @@ const App: React.FC = () => {
                 settingsDefaultAgentId={isAgentSettingsOpen ? getDefaultAgentId() : null}
                 onSaveSettings={handleSaveAgents}
                 onCloseSettings={() => setIsAgentSettingsOpen(false)}
+                diffEnabled={diffEnabled}
+                onToggleDiff={toggleDiffMode}
+                followEnabled={followEnabled}
+                onToggleFollow={toggleFollowMode}
             />
         );
     })();
@@ -1685,7 +1805,6 @@ const App: React.FC = () => {
                 >
                    {rightPanelVisible ? <Icons.RightPanelOpened /> : <Icons.RightPanelClosed />}
                 </button>
-
 
             </div>
 

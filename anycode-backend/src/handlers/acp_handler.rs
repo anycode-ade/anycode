@@ -191,6 +191,46 @@ pub async fn handle_acp_list(
 }
 
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct AcpPermissionResponseRequest {
+    pub agent_id: String,
+    pub permission_id: String,
+    pub option_id: String,
+}
+
+pub async fn handle_acp_permission_response(
+    Data(request): Data<AcpPermissionResponseRequest>,
+    ack: AckSender,
+    state: State<AppState>
+) {
+    info!("handle_acp_permission_response {:?}", request);
+    let AcpPermissionResponseRequest { agent_id, permission_id, option_id } = request;
+
+    let mut acp_manager = state.acp_manager.lock().await;
+
+    let agent = match acp_manager.get_agent(&agent_id) {
+        Some(agent) => agent,
+        None => {
+            error_ack!(ack, &agent_id, "Agent {} not found", agent_id);
+        }
+    };
+
+    match agent.send_permission_response(&permission_id, option_id).await {
+        Ok(true) => {
+            info!("Permission response sent for agent {} permission {}", agent_id, permission_id);
+            ack.send(&json!({ "success": true })).ok();
+        }
+        Ok(false) => {
+            error!("Permission {} not found for agent {}", permission_id, agent_id);
+            error_ack!(ack, &agent_id, "Permission {} not found", permission_id);
+        }
+        Err(e) => {
+            error!("Permission response failed for agent {}: {}", agent_id, e);
+            error_ack!(ack, &agent_id, "Permission response failed: {}", e);
+        }
+    }
+}
+
 pub async fn handle_acp_reconnect(
     socket: SocketRef,
     ack: AckSender,

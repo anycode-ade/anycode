@@ -25,7 +25,7 @@ export function loadTerminals(): Terminal[] {
             console.error('Failed to parse terminals from localStorage', e);
         }
     }
-    return [{ id: '0', name: 'terminal1', session: 'anycode', cols: 60, rows: 20 }];
+    return [];
 };
 
 export function loadTerminalSelected(): number {

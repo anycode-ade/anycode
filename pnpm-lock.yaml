@@ -14,9 +14,6 @@ importers:
       '@types/react-dom':
         specifier: ^19.1.6
         version: 19.1.6(@types/react@19.1.8)
-      electron:
-        specifier: 37.6.0
-        version: 37.6.0
       typescript:
         specifier: ^5.8.3
         version: 5.8.3
@@ -84,6 +81,9 @@ importers:
 
   anycode-base:
     dependencies:
+      diff:
+        specifier: ^8.0.2
+        version: 8.0.2
       vscode-textbuffer:
         specifier: ^1.0.0
         version: 1.0.0
@@ -97,16 +97,6 @@ importers:
       vitest:
         specifier: ^3.1.4
         version: 3.2.4(@types/node@22.18.8)(tsx@4.20.4)
-
-  anycode-example:
-    dependencies:
-      anycode-base:
-        specifier: 1.0.4
-        version: 1.0.4
-    devDependencies:
-      vite:
-        specifier: ^7.0.5
-        version: 7.0.5(@types/node@22.18.8)(tsx@4.20.4)
 
   anycode-react:
     dependencies:
@@ -653,9 +643,6 @@ packages:
     resolution: {integrity: sha512-4Dj6M28JB+oAH8kFkTLUo+a2jwOFkuqb3yucU0CANcRRUbxS0cP0nZYCGjcc3BNXwRIsUVmDGgzawme7zvJHvg==}
     engines: {node: '>=12'}
 
-  anycode-base@1.0.4:
-    resolution: {integrity: sha512-XL5jTfii/pRPg6OrjYRX8tzPX9k31ZxnWSQhU+4wctXGm4cq7Ys3VaOjveNsLTbCmN55xL8TSG6QmmWUTcQ1Vg==}
-
   arrify@3.0.0:
     resolution: {integrity: sha512-tLkvA81vQG/XqE2mjDkGQHoOINtMHtysSnemrmoGe6PydDPMRbVugqyk4A6V/WDWEfm3l+0d8anA9r8cv/5Jaw==}
     engines: {node: '>=12'}
@@ -783,6 +770,10 @@ packages:
 
   detect-node@2.1.0:
     resolution: {integrity: sha512-T0NIuQpnTvFDATNuHN5roPwSBG83rFsuO+MXXH9/3N1eFbn4wcPjttvjMLEPWJ0RGUYgQE7cGgS3tNxbqCGM7g==}
+
+  diff@8.0.2:
+    resolution: {integrity: sha512-sSuxWU5j5SR9QQji/o2qMvqRNYRDOcBTgsJ/DeCf4iSN4gW+gNMXM7wFIP+fdXZxoNiAnHUTGjCr+TSWXdRDKg==}
+    engines: {node: '>=0.3.1'}
 
   dir-glob@3.0.1:
     resolution: {integrity: sha512-WkrWp9GR4KXfKGYzOLmTuGVi1UWFfws377n9cc55/tb6DuqyF6pcQ5AbiHEshaDpY9v6oaSr2XCDidGmMwdzIA==}
@@ -1996,11 +1987,6 @@ snapshots:
 
   ansi-styles@6.2.3: {}
 
-  anycode-base@1.0.4:
-    dependencies:
-      vscode-textbuffer: 1.0.0
-      web-tree-sitter: 0.21.0
-
   arrify@3.0.0: {}
 
   assertion-error@2.0.1: {}
@@ -2127,6 +2113,8 @@ snapshots:
 
   detect-node@2.1.0:
     optional: true
+
+  diff@8.0.2: {}
 
   dir-glob@3.0.1:
     dependencies:
