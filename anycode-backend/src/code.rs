@@ -1,29 +1,38 @@
 use ropey::Rope;
-use std::fs;
 use std::fs::File;
 use std::io::{BufReader, BufWriter};
-use std::path::Path;
-
 use crate::config::{Config};
 use crate::utils::{self};
-use log2::*;
-
 use serde::{Deserialize, Serialize};
+use crate::history::History;
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Operation {
     Insert,
     Remove,
-    Start,
-    End,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct Change {
-    pub start: usize,
-    pub operation: Operation,
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Edit {
+    pub start: usize, // UTF-16 offset
     pub text: String,
+    pub operation: Operation,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct Change {
+    pub edits: Vec<Edit>,
+    pub timestamp: usize,
+}
+
+impl Change {
+    pub fn new() -> Self {
+        Self { 
+            edits: Vec::new(),
+            timestamp: 0,
+        }
+    }
 }
 
 pub struct Code {
@@ -32,8 +41,9 @@ pub struct Code {
     pub lang: String,
     pub text: ropey::Rope,
     pub changed: bool,
-    pub undo_history: Vec<Change>,
-    pub redo_history: Vec<Change>,
+    pub applying_history: bool,
+    pub history: History,
+    pub change: Change,
     pub self_updated: bool,
 }
 
@@ -45,15 +55,22 @@ impl Code {
             abs_path: String::new(),
             changed: false,
             lang: String::new(),
-            undo_history: Vec::new(),
-            redo_history: Vec::new(),
+            applying_history: true,
+            history: History::new(1000),
+            change: Change::new(),
             self_updated: false,
         }
     }
 
+    pub fn get_content(&self) -> String {
+        self.text.to_string()
+    }
+
     pub fn from_str(text: &str) -> Self {
         let mut code = Self::new();
-        code.insert_text(text, 0, 0);
+        code.applying_history = false;
+        code.insert_text(text, 0);
+        code.applying_history = true;
         code
     }
 
@@ -79,19 +96,12 @@ impl Code {
             abs_path,
             changed: false,
             lang,
-            undo_history: Vec::new(),
-            redo_history: Vec::new(),
+            applying_history: true,
+            history: History::new(1000),
+            change: Change::new(),
             self_updated: false,
         })
     }
-
-
-    pub fn set_text(&mut self, text: &str) {
-        self.text = Rope::new();
-        self.text.insert(0, text);
-        self.changed = true;
-    }
-
 
     pub fn save_file(&mut self) -> std::io::Result<()> {
         if !self.changed {
@@ -107,17 +117,6 @@ impl Code {
 
     pub fn set_file_name(&mut self, file_name: String) {
         self.file_name = file_name;
-    }
-
-    pub fn ensure_file_exists(&mut self) -> std::io::Result<()> {
-        if !Path::new(&self.file_name).exists() {
-            fs::create_dir_all(Path::new(&self.file_name).parent().unwrap())?;
-            fs::File::create(&self.file_name)?;
-
-            self.abs_path = utils::abs_file(&self.file_name)
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;       
-        }
-        Ok(())
     }
 
     pub fn position(&self, offset: usize) -> (usize, usize) {
@@ -147,29 +146,14 @@ impl Code {
         self.changed = true;
     }
 
-    pub fn insert_text(&mut self, text: &str, row: usize, column: usize) {
-        let from = self.text.line_to_char(row) + column;
-        self.insert(text, from);
-
-        self.undo_history.push(Change {
-            start: from,
-            operation: Operation::Insert,
-            text: text.to_string(),
-        });
-
-        self.redo_history.clear();
-    }
-
-    pub fn insert_text_at(&mut self, text: &str, offset: usize) {
+    pub fn insert_text(&mut self, text: &str, offset: usize) {
         self.insert(text, offset);
 
-        self.undo_history.push(Change {
-            start: offset,
-            operation: Operation::Insert,
-            text: text.to_string(),
-        });
-
-        self.redo_history.clear();
+        if self.applying_history {
+            self.change.edits.push(Edit {
+                start: offset, text: text.to_string(), operation: Operation::Insert,
+            });
+        }
     }
 
     fn remove(&mut self, from: usize, to: usize)  {
@@ -177,47 +161,37 @@ impl Code {
         self.changed = true;
     }
 
-    pub fn remove_text(&mut self, row: usize, col: usize, row1: usize, col1: usize) {
-        let from = self.text.line_to_char(row) + col;
-        let to = self.text.line_to_char(row1) + col1;
+    pub fn remove_text(&mut self, from: usize, to: usize) {
         let text = self.text.slice(from..to).to_string();
 
         self.remove(from, to);
 
-        self.undo_history.push(Change {
-            start: from,
-            operation: Operation::Remove,
-            text: text.to_string(),
-        });
-
-        self.redo_history.clear();
-    }
-
-    pub fn remove_text2(&mut self, from: usize, to: usize) {
-        let text = self.text.slice(from..to).to_string();
-
-        self.remove(from, to);
-
-        self.undo_history.push(Change {
-            start: from,
-            operation: Operation::Remove,
-            text: text.to_string(),
-        });
-
-        self.redo_history.clear();
-    }
-
-
-    pub fn line_len(&self, idx: usize) -> usize {
-        let line = self.text.line(idx);
-        let len = line.len_chars();
-        if idx == self.text.len_lines() - 1 {
-            len
-        } else {
-            len.saturating_sub(1)
+        if self.applying_history {
+            self.change.edits.push(Edit {
+                start: from, text: text.to_string(), operation: Operation::Remove,
+            });
         }
     }
 
+    pub fn tx(&mut self) {
+        self.change = Change::new();
+        self.applying_history = true;
+    }
+
+    pub fn commit(&mut self) {
+        if !self.change.edits.is_empty() {
+            self.history.push(self.change.clone());
+            self.change = Change::new();
+        }
+    }
+
+    pub fn undo_change(&mut self) -> Option<Change> {
+        self.history.undo()
+    }
+
+    pub fn redo_change(&mut self) -> Option<Change> {
+        self.history.redo()
+    }
 }
 
 
@@ -240,8 +214,8 @@ mod code_undo_tests {
     #[test]
     fn test_code_insert() {
         let mut buffer = Code::new();
-        buffer.insert_text("hello", 0, 0);
-        buffer.insert_text(" world", 0, 5);
+        buffer.insert_text("hello", 0);
+        buffer.insert_text(" world", 5);
         assert_eq!(buffer.text.to_string(), "hello world");
     }
 
@@ -249,10 +223,10 @@ mod code_undo_tests {
     fn test_code_remove() {
         let mut buffer = Code::new();
         
-        buffer.insert_text("hello world", 0, 0);
+        buffer.insert_text("hello world", 0);
         assert_eq!(buffer.text.to_string(), "hello world");
     
-        buffer.remove_text(0, 5, 0, 11);
+        buffer.remove_text(5, 11);
         assert_eq!(buffer.text.to_string(), "hello");
     }
 
@@ -262,5 +236,61 @@ mod code_undo_tests {
         let buffer = Code::from_str(text);
         assert_eq!(buffer.char_to_position(0), (0, 0));
         assert_eq!(buffer.char_to_position(text.len()), (0, text.len()));
+    }
+
+    #[test]
+    fn test_undo() {
+        let mut code = Code::new();
+
+        code.tx();
+        code.insert_text("Hello ", 0);
+        code.commit();
+
+        code.tx();
+        code.insert_text("World", 6);
+        code.commit();
+
+        assert_eq!(code.get_content().to_string(), "Hello World");
+        assert_eq!(code.history.index, 2);
+
+        let batch = code.undo_change().expect("undo should return batch");
+        assert_eq!(code.history.index, 1);
+        assert_eq!(batch.edits[0], Edit {
+            start: 6, text: "World".to_string(), operation: Operation::Insert 
+        });
+
+        let batch = code.undo_change().expect("undo should return batch");
+        assert_eq!(code.history.index, 0);
+        assert_eq!(batch.edits[0], Edit {
+            start: 0, text: "Hello ".to_string(), operation: Operation::Insert 
+        });
+
+        assert!(code.undo_change().is_none());
+    }
+
+    #[test]
+    fn test_redo() {
+        let mut code = Code::new();
+
+        code.tx();
+        code.insert_text("Hello", 0);
+        code.commit();
+
+        assert_eq!(code.history.index, 1);
+
+        let batch = code.undo_change().expect("undo should return batch");
+        assert_eq!(code.history.index, 0);
+        assert_eq!(batch.edits[0], Edit { 
+            start: 0, text: "Hello".to_string(), operation: Operation::Insert 
+        });
+
+        let batch = code.redo_change().expect("redo should return batch");
+        assert_eq!(code.history.index, 1);
+        assert_eq!(batch.edits[0], Edit { 
+            start: 0, text: "Hello".to_string(), operation: Operation::Insert 
+        });
+
+        let batch = code.redo_change();
+        assert!(batch.is_none());
     }
 }

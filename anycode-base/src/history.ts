@@ -54,4 +54,9 @@ export default class History<T> {
         this.items = [];
         this.index = 0;
     }
+
+    setRawHistory(items: T[], index: number): void {
+        this.items = items;
+        this.index = index;
+    }
 }

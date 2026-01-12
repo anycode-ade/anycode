@@ -41,6 +41,7 @@ use handlers::{
 
 mod search;
 mod terminal;
+mod history;
 
 use lsp_types::PublishDiagnosticsParams;
 use notify::{recommended_watcher, Event, RecursiveMode, Watcher};
@@ -50,9 +51,8 @@ async fn on_connect(socket: SocketRef, state: State<AppState>) {
 
     socket.on("file:open", handle_file_open);
     socket.on("dir:list", handle_dir_list);
-    socket.on("file:change", handle_change);
+    socket.on("file:change", handle_file_change);
     socket.on("file:save", handle_file_save);
-    socket.on("file:set", handle_file_set);
     socket.on("file:create", handle_create);
     socket.on("file:close", handle_file_close);
 
@@ -175,12 +175,12 @@ async fn on_disconnect(socket: SocketRef, state: State<AppState>) {
     // Close files
     {
         let mut lsp_manager = state.lsp_manager.lock().await;
-        let mut f2c = state.file2code.lock().await;
+        // let mut f2c = state.file2code.lock().await;
 
         for (file_path, lang) in &files_to_close {
             if let Some(lsp) = lsp_manager.get(lang).await {
                 lsp.did_close(file_path);
-                f2c.remove(file_path);
+                // f2c.remove(file_path);
             }
         }
     }

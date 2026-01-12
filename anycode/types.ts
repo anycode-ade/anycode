@@ -1,4 +1,4 @@
-import { Edit } from 'anycode-base';
+import { Change, Edit } from 'anycode-base';
 
 export interface TreeNode {
     id: string;
@@ -17,6 +17,10 @@ export interface FileState {
     id: string;
     name: string;
     language: string;
+    history?: {
+        changes: Change[];
+        index: number;
+    };
 }
 
 export interface FileSystemItem {

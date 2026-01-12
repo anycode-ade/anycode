@@ -225,7 +225,7 @@ export const handleUndo = (ctx: ActionContext): ActionResult => {
             for (const edit of change.edits) {
                 if (edit.operation === Operation.Insert) {
                     ctx.offset = edit.start;
-                } else if (edit.operation === Operation.Delete) {
+                } else if (edit.operation === Operation.Remove) {
                     ctx.offset = edit.start + edit.text.length;
                 }
             }
@@ -250,7 +250,7 @@ export const handleRedo = (ctx: ActionContext): ActionResult => {
             for (const edit of change.edits) {
                 if (edit.operation === Operation.Insert) {
                     ctx.offset = edit.start + edit.text.length;
-                } else if (edit.operation === Operation.Delete) {
+                } else if (edit.operation === Operation.Remove) {
                     ctx.offset = edit.start;
                 }
             }

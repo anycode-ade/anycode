@@ -140,6 +140,10 @@ export class AnycodeEditor {
     public setOnChange(func: (t: Change) => void ) {
         this.code.setOnChange(func);
     }
+
+    public setHistory(changes: Change[], index: number) {
+        this.code.setHistory(changes, index);
+    }
     
     public setText(newText: string) {
         this.code.setContent(newText);
@@ -1058,7 +1062,7 @@ export class AnycodeEditor {
         for (const edit of change.edits) {
             if (edit.operation === Operation.Insert) {
                 this.code.insert(edit.text, edit.start);
-            } else if (edit.operation === Operation.Delete) {
+            } else if (edit.operation === Operation.Remove) {
                 this.code.remove(edit.start, edit.text.length);
             }
         }

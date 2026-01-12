@@ -8,7 +8,7 @@ use crate::app_state::*;
 use crate::error_ack;
 use lsp_types::{TextDocumentContentChangeEvent, Range, Position};
 use std::path::PathBuf;
-
+use crate::code::{Operation, Edit};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct FileOpenRequest {
@@ -37,7 +37,10 @@ pub async fn handle_file_open(
     let content = code.text.to_string();
 
     ack.send(&json!({
-        "content": content, "path": request.path, "success": true 
+        "content": content, 
+        "path": request.path, 
+        "success": true, 
+        "history": code.history,
     })).ok();
 
     let mut lsp_manager = state.lsp_manager.lock().await;
@@ -191,28 +194,18 @@ pub async fn handle_file_close(
 
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(rename_all = "lowercase")]
-pub enum Operation {
-    Insert,
-    Delete,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct Edit {
-    pub operation: Operation,
-    pub start: usize,
-    pub text: String,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct Change {
+pub struct FileChange {
     pub file: String,
     pub edits: Vec<Edit>,
+    #[serde(rename = "isUndo")]
+    pub is_undo: Option<bool>,
+    #[serde(rename = "isRedo")]
+    pub is_redo: Option<bool>,
 }
 
-pub async fn handle_change(
+pub async fn handle_file_change(
     socket: SocketRef,
-    Data(change): Data<Change>,
+    Data(change): Data<FileChange>,
     state: State<AppState>,
     _ack: AckSender,
 ) {
@@ -238,13 +231,29 @@ pub async fn handle_change(
     let mut lsp_manager = state.lsp_manager.lock().await;
     let mut lsp_changes = Vec::new();
 
+    let edits = change.edits.clone();
+
+    let mut apply_tx = true;
+
+    if let Some(true) = change.is_undo {
+        let _undo = code.undo_change();
+        apply_tx = false;
+    }
+
+    if let Some(true) = change.is_redo {
+        let _redo = code.redo_change();
+        apply_tx = false;
+    }
+
     // Apply all edits to code and collect LSP changes
-    for e in change.edits.iter() {
+    if apply_tx { code.tx(); }
+
+    for e in edits.iter() {
         match e.operation {
             Operation::Insert => {
                 let start_char = code.utf16_to_char_offset(e.start);
                 let (line, col_utf16) = code.char_to_position(start_char);
-                code.insert_text_at(&e.text, start_char);
+                code.insert_text(&e.text, start_char); 
 
                 lsp_changes.push(TextDocumentContentChangeEvent {
                     range: Some(Range {
@@ -255,13 +264,13 @@ pub async fn handle_change(
                     text: e.text.clone(),
                 });
             }
-            Operation::Delete => {
+            Operation::Remove => {
                 let start_char = code.utf16_to_char_offset(e.start);
                 let end_char = code.utf16_to_char_offset(e.start + e.text.encode_utf16().count());
                 let (start_line, start_col_utf16) = code.char_to_position(start_char);
                 let (end_line, end_col_utf16) = code.char_to_position(end_char);
 
-                code.remove_text2(start_char, end_char);
+                code.remove_text(start_char, end_char);
 
                 lsp_changes.push(TextDocumentContentChangeEvent {
                     range: Some(Range {
@@ -274,6 +283,8 @@ pub async fn handle_change(
             }
         }
     }
+
+    if apply_tx { code.commit(); }
 
     // Send all changes to LSP in a single notification
     if !lsp_changes.is_empty() {
@@ -324,52 +335,6 @@ pub async fn handle_file_save(
     ack.send(&json!({ "success": true, "file": abs_path })).ok();
 }
 
-
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct FileSetRequest {
-    pub file: String, 
-    pub text: String, 
-}
-
-pub async fn handle_file_set(
-    socket: SocketRef,
-    Data(file_set_request): Data<FileSetRequest>,
-    state: State<AppState>,
-    ack: AckSender,
-) {
-    info!("Received file:set: {:?}", file_set_request);
-
-    let abs_path = match abs_file(&file_set_request.file) {
-        Ok(p) => p,
-        Err(e) => error_ack!(ack, &file_set_request.file, "Failed to resolve file: {:?}", e),
-    };
-
-    let mut f2c = state.file2code.lock().await;
-    let code = f2c.entry(abs_path.clone()).or_insert_with(|| Code::new());
-
-    code.set_file_name(abs_path.clone());
-    code.ensure_file_exists().ok();
-    code.set_text(&file_set_request.text);
-
-    if let Err(e) = code.save_file() {
-        error_ack!(ack, &abs_path, "Failed to set file: {:?}", e);
-    }
-
-    info!("File set successfully: {}", abs_path);
-
-    let mut lsp_manager = state.lsp_manager.lock().await;
-    if let Some(lsp) = lsp_manager.get(&code.lang).await {
-        lsp.did_save(&abs_path, Some(&file_set_request.text));
-    }
-
-    socket.broadcast().emit(
-        "file:changed",
-        &(abs_path.clone(), file_set_request.text.clone())
-    ).await.ok();
-
-    ack.send(&json!({ "success": true, "file": abs_path })).ok();
-}
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct CreateRequest {

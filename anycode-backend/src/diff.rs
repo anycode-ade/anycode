@@ -1,20 +1,6 @@
 use unicode_segmentation::UnicodeSegmentation;
 use similar::{Algorithm, ChangeTag};
-use serde::{Deserialize, Serialize};
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Operation {
-    Insert,
-    Delete,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Edit {
-    pub start: usize, // UTF-16 offset
-    pub text: String,
-    pub operation: Operation,
-}
+use crate::code::{Operation, Edit};
 
 /// Calculate text edits with offsets in UTF-16 code units
 pub fn compute_text_edits(old: &str, new: &str) -> Vec<Edit> {
@@ -42,7 +28,7 @@ pub fn compute_text_edits(old: &str, new: &str) -> Vec<Edit> {
                 edits.push(Edit {
                     start: utf16_offset,
                     text: text.clone(),
-                    operation: Operation::Delete,
+                    operation: Operation::Remove,
                 });
                 // Deletion does not move offset forward
             }
@@ -78,7 +64,7 @@ mod tests {
         assert_eq!(
             edits,
             vec![
-                Edit { start: 14, text: "2".to_string(), operation: Operation::Delete },
+                Edit { start: 14, text: "2".to_string(), operation: Operation::Remove },
                 Edit { start: 14, text: "5".to_string(), operation: Operation::Insert },
                 Edit { start: 17, text: "aaaa ".to_string(), operation: Operation::Insert },
             ]
@@ -105,7 +91,7 @@ mod tests {
         let edits = compute_text_edits(before, after);
 
         assert_eq!(edits, vec![
-            Edit { start: 0, text: "tes".to_string(), operation: Operation::Delete },
+            Edit { start: 0, text: "tes".to_string(), operation: Operation::Remove },
             Edit { start: 0, text: "prin".to_string(), operation: Operation::Insert },
             Edit { start: 5, text: "()".to_string(), operation: Operation::Insert },
         ])
@@ -119,9 +105,9 @@ mod tests {
         let edits = compute_text_edits(before, after);
 
         assert_eq!(edits, vec![
-            Edit { start: 0, text: "pr".to_string(), operation: Operation::Delete },
+            Edit { start: 0, text: "pr".to_string(), operation: Operation::Remove },
             Edit { start: 0, text: "h".to_string(), operation: Operation::Insert },
-            Edit { start: 2, text: "nt()".to_string(), operation: Operation::Delete },
+            Edit { start: 2, text: "nt()".to_string(), operation: Operation::Remove },
         ])
     }
 
@@ -144,9 +130,9 @@ mod tests {
         let edits = compute_text_edits(before, after);
 
         assert_eq!(edits, vec![
-            Edit { start: 0, text: "pr".to_string(), operation: Operation::Delete },
+            Edit { start: 0, text: "pr".to_string(), operation: Operation::Remove },
             Edit { start: 0, text: "h".to_string(), operation: Operation::Insert },
-            Edit { start: 2, text: "nt()".to_string(), operation: Operation::Delete },
+            Edit { start: 2, text: "nt()".to_string(), operation: Operation::Remove },
         ])
     }
 
@@ -158,7 +144,7 @@ mod tests {
         let edits = compute_text_edits(before, after);
 
         assert_eq!(edits, vec![
-            Edit { start: 18, text: "значение".to_string(), operation: Operation::Delete },
+            Edit { start: 18, text: "значение".to_string(), operation: Operation::Remove },
             Edit { start: 18, text: "value".to_string(), operation: Operation::Insert },
         ])
     }
@@ -171,7 +157,7 @@ mod tests {
         let edits = compute_text_edits(before, after);
 
         assert_eq!(edits, vec![
-            Edit { start: 33, text: "i".to_string(), operation: Operation::Delete },
+            Edit { start: 33, text: "i".to_string(), operation: Operation::Remove },
             Edit { start: 33, text: "иии".to_string(), operation: Operation::Insert },
         ])
     }

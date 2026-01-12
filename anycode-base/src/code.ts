@@ -33,7 +33,7 @@ import cpp from './langs/cpp';
 
 export enum Operation {
     Insert = "insert",
-    Delete = "delete"
+    Remove = "remove"
 }
 
 export type Edit = {
@@ -51,12 +51,15 @@ export type Change = {
     edits: Edit[];
     stateBefore?: EditState;
     stateAfter?: EditState;
+    isUndo?: boolean;
+    isRedo?: boolean;
 };
 
 export type Position = {
     line: number;
     column: number;
 }
+
 
 interface Indent {
     width: number,
@@ -389,7 +392,7 @@ export class Code {
         ));
 
         let edit: Edit = {
-            operation: Operation.Delete,
+            operation: Operation.Remove,
             start: offset,
             text
         };
@@ -493,17 +496,17 @@ export class Code {
 
         const edits = [...change.edits].reverse();
 
-        let undoChange: Change = { edits: [] };
+        let undoChange: Change = { edits: [], isUndo: true };
 
         for (const edit of edits) {
             if (edit.operation === Operation.Insert) {
                 undoChange.edits.push({
-                    operation: Operation.Delete,
+                    operation: Operation.Remove,
                     start: edit.start,
                     text: edit.text
                 });
                 this.remove(edit.start, edit.text.length);
-            } else if (edit.operation === Operation.Delete) {
+            } else if (edit.operation === Operation.Remove) {
                 undoChange.edits.push({
                     operation: Operation.Insert,
                     start: edit.start,
@@ -523,7 +526,7 @@ export class Code {
         if (!change) return null;
         const edits = change.edits;
 
-        let redoChange: Change = { edits: [] };
+        let redoChange: Change = { edits: [], isRedo: true };
 
         for (const edit of edits) {
             if (edit.operation === Operation.Insert) {
@@ -533,9 +536,9 @@ export class Code {
                     text: edit.text
                 });
                 this.insert(edit.text, edit.start);
-            } else if (edit.operation === Operation.Delete) {
+            } else if (edit.operation === Operation.Remove) {
                 redoChange.edits.push({
-                    operation: Operation.Delete,
+                    operation: Operation.Remove,
                     start: edit.start,
                     text: edit.text
                 });
@@ -546,6 +549,10 @@ export class Code {
         if (this.onChange) this.onChange(redoChange);
 
         return change;
+    }
+
+    public setHistory(changes: Change[], index: number) {
+        this.history.setRawHistory(changes, index);
     }
 
     getLang(lang: string): Lang | null {

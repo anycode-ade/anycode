@@ -128,20 +128,24 @@ const App: React.FC = () => {
     };
 
     const createEditor = async (
-        content: string, 
-        language: string, 
-        filename: string, 
+        content: string,
+        language: string,
+        filename: string,
         initialPosition?: { line: number; column: number },
-        errors?: { line: number; message: string }[]
+        errors?: { line: number; message: string }[],
+        history?: { changes: Change[], index: number },
     ): Promise<AnycodeEditor> => {
         const options: any = {};
         if (initialPosition) {
             options.line = initialPosition.line;
             options.column = initialPosition.column;
         }
-        
+
         const editor = new AnycodeEditor(content, filename, language, options);
         await editor.init();
+        if (history) {
+            editor.setHistory(history.changes, history.index);
+        }
         editor.setDiffEnabled(diffEnabled);
         editor.setOnChange((change: Change) => handleChange(filename, change));
         editor.setOnCursorChange((newState: any, oldState: any) => handleCursorChange(filename, newState, oldState));
@@ -167,7 +171,7 @@ const App: React.FC = () => {
                     const errors = pendingDiagnostics ? pendingDiagnostics
                         .map(d => ({ line: d.range.start.line, message: d.message })) : undefined;
 
-                    const editor = await createEditor(content, file.language, file.id, pendingPosition, errors);
+                    const editor = await createEditor(content, file.language, file.id, pendingPosition, errors, file.history);
                     newEditorStates.set(file.id, editor);
                     savedFileContentsRef.current.set(file.id, content);
                     editorRefs.current.set(file.id, editor);
@@ -693,7 +697,7 @@ const App: React.FC = () => {
             wsRef.current.emit('file:open', { path }, (response: any) => {
                 pendingOpenFilesRef.current.delete(path);
                 if (response.success) {
-                    handleOpenFileResponse(path, response.content)
+                    handleOpenFileResponse(path, response.content, response.history)
                 } else {
                     console.error('Failed to open file:', response.error);
                 }
@@ -701,11 +705,11 @@ const App: React.FC = () => {
         }
     };
 
-    const handleOpenFileResponse = (path: string, content: string) => {
+    const handleOpenFileResponse = (path: string, content: string, history: { changes: Change[], index: number }) => {
         const fileName = getFileName(path);
         const language = getLanguageFromFileName(fileName);
         savedFileContentsRef.current.set(path, content);
-        const newFile: FileState = { id: path, name: fileName, language };
+        const newFile: FileState = { id: path, name: fileName, language, history };
         setFiles(prev => {
             // Check if file already exists to prevent duplicates
             if (prev.some(f => f.id === path)) {
