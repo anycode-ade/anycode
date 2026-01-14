@@ -12,7 +12,7 @@ export function moveCursor(
 ) {
     // Ensure the lineDiv is connected to the DOM before proceeding
     if (!lineDiv.isConnected) {
-        console.warn('moveCursor: lineDiv is not connected to DOM');
+        // console.warn('moveCursor: lineDiv is not connected to DOM');
         return;
     }
     

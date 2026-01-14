@@ -16,6 +16,7 @@ interface AcpMessageProps {
   isExpanded?: boolean;
   onToggle?: () => void;
   onPermissionResponse?: (permissionId: string, optionId: string) => void;
+  onUndo?: () => void;
 }
 
 const ToolCallMessage: React.FC<{
@@ -83,15 +84,25 @@ const ToolResultMessage: React.FC<{
 
 const TextMessage: React.FC<{
   message: AcpUserMessage | AcpAssistantMessage;
-}> = ({ message }) => (
+  onUndo?: () => void;
+}> = ({ message, onUndo }) => (
   <div className={`acp-message acp-message-${message.role}`}>
-    <div className="acp-message-content">
-      {message.content.split('\n').map((line, i) => (
-        <React.Fragment key={i}>
-          {line}
-          {i < message.content.split('\n').length - 1 && <br />}
-        </React.Fragment>
-      ))}
+    <div className="acp-message-content acp-message-content-with-actions">
+      <div className="acp-message-text">
+        {message.content.split('\n').map((line, i, lines) => (
+          <React.Fragment key={i}>
+            {line}
+            {i < lines.length - 1 && <br />}
+          </React.Fragment>
+        ))}
+      </div>
+      {message.role === 'user' && onUndo && (
+        <div className="acp-message-actions">
+          <button className="acp-undo-button" onClick={onUndo} title="Undo">
+            Undo
+          </button>
+        </div>
+      )}
     </div>
   </div>
 );
@@ -201,6 +212,7 @@ export const AcpMessage: React.FC<AcpMessageProps> = ({
   isExpanded = false,
   onToggle,
   onPermissionResponse,
+  onUndo,
 }) => {
   switch (message.role) {
     case 'tool_call':
@@ -222,6 +234,7 @@ export const AcpMessage: React.FC<AcpMessageProps> = ({
         />
       );
     case 'user':
+      return <TextMessage message={message} onUndo={onUndo} />;
     case 'assistant':
       return <TextMessage message={message} />;
     case 'thought':
@@ -253,4 +266,3 @@ export const AcpMessage: React.FC<AcpMessageProps> = ({
       return null;
   }
 };
-

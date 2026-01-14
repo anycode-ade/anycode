@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{self, json};
 use socketioxide::{extract::{AckSender, Data, SocketRef, State}};
 use tracing::{info, error};
+use anyhow::anyhow;
 use crate::app_state::AppState;
 use crate::error_ack;
 use crate::acp::AcpMessage;
@@ -268,6 +269,45 @@ pub async fn handle_acp_reconnect(
     let agents_json: Vec<serde_json::Value> = agents.iter()
         .map(|(id, name)| json!({ "id": id, "name": name }))
         .collect();
-    
+
     ack.send(&json!({ "success": true, "agents": agents_json })).ok();
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct AcpUndoRequest {
+    pub agent_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub checkpoint_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prompt: Option<String>,
+}
+
+pub async fn handle_acp_undo(
+    Data(request): Data<AcpUndoRequest>,
+    ack: AckSender,
+    state: State<AppState>
+) {
+    info!("handle_acp_undo {:?}", request);
+    let AcpUndoRequest { agent_id, checkpoint_id, prompt } = request;
+
+    let acp_manager = state.acp_manager.lock().await;
+
+    let result = if let Some(checkpoint_id) = checkpoint_id {
+        acp_manager.restore_to_checkpoint_id(&agent_id, &checkpoint_id).await
+    } else if let Some(prompt) = prompt {
+        acp_manager.restore_to_prompt(&agent_id, &prompt).await
+    } else {
+        Err(anyhow::anyhow!("Missing checkpoint_id or prompt"))
+    };
+
+    match result {
+        Ok(_) => {
+            info!("Restored agent {} to checkpoint", agent_id);
+            ack.send(&json!({ "success": true })).ok();
+        }
+        Err(e) => {
+            error!("Undo failed for agent {}: {}", agent_id, e);
+            error_ack!(ack, &agent_id, "Undo failed: {}", e);
+        }
+    }
 }

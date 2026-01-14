@@ -228,7 +228,7 @@ const App: React.FC = () => {
         // ensure active file is selection in the tree
         const file = files.find(f => f.id === activeFileId);
         if (file) {
-            const node = findNodeByFileName(fileTree, file.name);
+            const node = findNodeByPath(fileTree, file.id);
             if (node) {
                 selectNode(node.id);
             }
@@ -246,7 +246,7 @@ const App: React.FC = () => {
             wsRef.current.emit("file:change", { file: filename, ...change});
         }
 
-        const file = files.find(f => f.name === filename);
+        const file = files.find(f => f.id === filename);
         if (!file) return;
 
         const editor = editorRefs.current.get(file.id);
@@ -321,7 +321,7 @@ const App: React.FC = () => {
         
         // Unselect the closed file in the tree
         if (fileToClose) {
-            const nodeId = findNodeByFileName(fileTree, fileToClose.name);
+            const nodeId = findNodeByPath(fileTree, fileToClose.id);
             if (nodeId) {
                 // Unselect the file, setting isSelected: false for all nodes
                 setFileTree(prevTree => {
@@ -774,13 +774,13 @@ const App: React.FC = () => {
         });
     };
 
-    const findNodeByFileName = (nodes: TreeNode[], fileName: string): TreeNode | null => {
+    const findNodeByPath = (nodes: TreeNode[], filePath: string): TreeNode | null => {
         for (const node of nodes) {
-            if (node.name === fileName && node.type === 'file') {
+            if (node.path === filePath && node.type === 'file') {
                 return node;
             }
             if (node.children) {
-                const found = findNodeByFileName(node.children, fileName);
+                const found = findNodeByPath(node.children, filePath);
                 if (found) return found;
             }
         }
@@ -1293,6 +1293,17 @@ const App: React.FC = () => {
         });
     };
 
+    const undoPrompt = (agentId: string, checkpointId?: string, prompt?: string) => {
+        if (!wsRef.current || !isConnected) return;
+
+        wsRef.current.emit('acp:undo', { agent_id: agentId, checkpoint_id: checkpointId, prompt }, (response: any) => {
+            if (!response.success) {
+                console.error('Failed to undo prompt:', response.error);
+                alert('Failed to undo prompt: ' + response.error);
+            }
+        });
+    };
+
     const sendPermissionResponse = (agentId: string, permissionId: string, optionId: string) => {
         if (!wsRef.current || !isConnected) return;
 
@@ -1550,7 +1561,7 @@ const App: React.FC = () => {
     useEffect(() => {
         const file = files.find(f => f.id === activeFileId);
         if (file) {
-            const node = findNodeByFileName(fileTree, file.name);
+            const node = findNodeByPath(fileTree, file.id);
             if (node && !node.isSelected) {
                 selectNode(node.id);
             }
@@ -1692,6 +1703,7 @@ const App: React.FC = () => {
                 onSendPrompt={sendPrompt}
                 onCancelPrompt={cancelPrompt}
                 onPermissionResponse={sendPermissionResponse}
+                onUndoPrompt={undoPrompt}
                 messages={currentSession?.messages || []}
                 toolCalls={[]}
                 isConnected={currentSession ? (currentSession.isActive && isConnected) : false}

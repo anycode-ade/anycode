@@ -5,17 +5,21 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::path::PathBuf;
 use tokio::process::Command;
-use tokio::sync::{mpsc, broadcast, Mutex, oneshot::Sender};
+use tokio::sync::{mpsc, broadcast, Mutex, oneshot::Sender, RwLock};
 use tokio::io::{self};
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 use tracing::{info, debug, error};
 use anyhow::{Result, anyhow};
 use crate::utils::relative_to_current_dir;
+use crate::acp_history::AcpHistoryManager;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AcpUserMessage {
     pub content: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub checkpoint_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -719,10 +723,19 @@ pub struct AcpAgent {
     io_handle: Option<tokio::task::JoinHandle<()>>,
     history: Arc<tokio::sync::Mutex<Vec<AcpMessage>>>,
     pending_permissions: PendingPermissionsMap,
+    /// History manager for undo/redo support
+    history_manager: Arc<RwLock<AcpHistoryManager>>,
 }
 
 impl AcpAgent {
     pub fn new(agent_id: String, agent_name: String) -> Self {
+        // Initialize history manager with current working directory and agent ID
+        let project_root = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        let mut history_manager = AcpHistoryManager::new(&project_root, &agent_id);
+        if let Err(e) = history_manager.init() {
+            error!("Failed to initialize history manager: {}", e);
+        }
+
         Self {
             agent_id,
             agent_name,
@@ -736,6 +749,7 @@ impl AcpAgent {
             io_handle: None,
             history: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             pending_permissions: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+            history_manager: Arc::new(RwLock::new(history_manager)),
         }
     }
 
@@ -1104,13 +1118,27 @@ impl AcpAgent {
         self.session_id = None;
     }
 
-    pub async fn send_prompt(&mut self, prompt: String) -> Result<()> {
+    pub async fn send_prompt(&mut self, prompt: String) -> Result<String> {
         let prompt_tx = match &self.prompt_sender {
             Some(tx) => tx,
             None => return Err(anyhow!("Prompt sender not initialized"))
         };
 
-        let user_message = AcpMessage::User(AcpUserMessage { content: prompt.clone() });
+        // Create checkpoint before processing the message
+        let mut manager = self.history_manager.write().await;
+        let checkpoint_id = match manager.create_checkpoint(&prompt) {
+            Ok(id) => Some(id),
+            Err(e) => {
+                error!("Failed to create checkpoint: {}", e);
+                None
+            }
+        };
+        drop(manager);
+
+        let user_message = AcpMessage::User(AcpUserMessage {
+            content: prompt.clone(),
+            checkpoint_id,
+        });
 
         // Save user message to history
         let mut history = self.history.lock().await;
@@ -1127,7 +1155,34 @@ impl AcpAgent {
         // Send prompt to agent
         prompt_tx.send(prompt).await?;
 
+        Ok(String::new())
+    }
+
+    /// Restore project to state before a specific prompt was processed
+    pub async fn restore_to_prompt(&self, prompt: &str) -> Result<()> {
+        let manager = self.history_manager.read().await;
+        manager.restore_to_checkpoint(prompt)?;
+
+        info!("Restored project to state before prompt");
         Ok(())
+    }
+
+    /// Restore project to state at a checkpoint id (commit hash)
+    pub async fn restore_to_checkpoint_id(&self, checkpoint_id: &str) -> Result<()> {
+        let manager = self.history_manager.read().await;
+        manager.restore_to_commit(checkpoint_id)?;
+
+        info!("Restored project to checkpoint {}", checkpoint_id);
+        Ok(())
+    }
+
+    /// Get all available checkpoints
+    pub async fn get_checkpoints(&self) -> Vec<String> {
+        let manager = self.history_manager.read().await;
+        manager.get_all_checkpoints()
+            .iter()
+            .map(|cp| cp.prompt.clone())
+            .collect()
     }
 
     pub async fn cancel_prompt(&self) -> Result<()> {
@@ -1189,7 +1244,6 @@ impl AcpManager {
     pub async fn start_agent(
         &mut self, agent_id: String, agent_name: String, cmd: &str, args: &[String],
     ) -> Result<()> {
-
         if self.agents.contains_key(&agent_id) {
             return Err(anyhow::anyhow!("Agent {} already running", agent_id));
         }
@@ -1249,5 +1303,29 @@ impl AcpManager {
             .iter()
             .map(|(id, agent)| (id.clone(), agent.agent_name().to_string()))
             .collect()
+    }
+
+    /// Restore agent's project to state before a specific prompt was processed
+    pub async fn restore_to_prompt(&self, agent_id: &str, prompt: &str) -> Result<()> {
+        let agent = self.agents.get(agent_id)
+            .ok_or_else(|| anyhow!("Agent {} not found", agent_id))?;
+
+        agent.restore_to_prompt(prompt).await
+    }
+
+    /// Restore agent's project to state at a checkpoint id (commit hash)
+    pub async fn restore_to_checkpoint_id(&self, agent_id: &str, checkpoint_id: &str) -> Result<()> {
+        let agent = self.agents.get(agent_id)
+            .ok_or_else(|| anyhow!("Agent {} not found", agent_id))?;
+
+        agent.restore_to_checkpoint_id(checkpoint_id).await
+    }
+
+    /// Get all checkpoints for an agent. Returns Vec of prompts
+    pub async fn get_checkpoints(&self, agent_id: &str) -> Result<Vec<String>> {
+        let agent = self.agents.get(agent_id)
+            .ok_or_else(|| anyhow!("Agent {} not found", agent_id))?;
+
+        Ok(agent.get_checkpoints().await)
     }
 }

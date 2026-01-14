@@ -85,6 +85,7 @@ interface AcpDialogProps {
   onSendPrompt: (agentId: string, prompt: string) => void;
   onCancelPrompt: (agentId: string) => void;
   onPermissionResponse: (agentId: string, permissionId: string, optionId: string) => void;
+  onUndoPrompt: (agentId: string, checkpointId?: string, prompt?: string) => void;
   messages: AcpMessage[];
   toolCalls: AcpToolCall[];
   isConnected: boolean;
@@ -112,6 +113,7 @@ export const AcpDialog: React.FC<AcpDialogProps> = ({
   onSendPrompt,
   onCancelPrompt,
   onPermissionResponse,
+  onUndoPrompt,
   messages,
   toolCalls,
   isConnected,
@@ -215,6 +217,7 @@ export const AcpDialog: React.FC<AcpDialogProps> = ({
             onToggleThought={toggleThought}
             onTogglePermission={togglePermission}
             onPermissionResponse={(permissionId, optionId) => onPermissionResponse(agentId, permissionId, optionId)}
+            onUndoMessage={(message) => onUndoPrompt(agentId, message.checkpoint_id, message.content)}
           />
         </div>
       </div>

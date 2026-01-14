@@ -1,7 +1,9 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::collections::HashMap;
+use std::time::{Instant, Duration};
 use tokio::sync::Mutex;
+use tokio::time::sleep;
 use serde_json::json;
 use tracing::info;
 use anyhow::Result;
@@ -9,6 +11,17 @@ use anyhow::Result;
 use crate::app_state::SocketData;
 use crate::code::Code;
 use crate::diff::compute_text_edits;
+
+#[derive(Clone, Debug, PartialEq)]
+enum FileState {
+    Exists,
+    DoesNotExist,
+}
+
+pub struct FileWatchState {
+    pub state: FileState,
+    pub last_event_time: Instant,
+}
 
 async fn is_parent_dir_opened(
     path: &PathBuf,
@@ -80,23 +93,89 @@ pub async fn handle_watch_event(
     event: &notify::Event,
     socket: &Arc<socketioxide::SocketIo>,
     file2code: &Arc<Mutex<HashMap<String, Code>>>,
-    socket2data: &Arc<Mutex<HashMap<String, SocketData>>>
+    socket2data: &Arc<Mutex<HashMap<String, SocketData>>>,
+    file_states: &Arc<Mutex<HashMap<String, FileWatchState>>>
 ) {
     let path_str = match path.to_str() {
         Some(s) => s,
         None => return,
     };
 
-    match event.kind {
-        notify::EventKind::Create(_) | notify::EventKind::Remove(_) => {
-            handle_create_remove_event(path, path_str, &event.kind, socket, socket2data).await;
-        },
-        notify::EventKind::Modify(notify::event::ModifyKind::Data(_)) |
-        notify::EventKind::Modify(notify::event::ModifyKind::Name(_)) => {
-            handle_modify_event(path, path_str, socket, file2code, socket2data).await;
+    // Debounce: ignore events if less than 100ms since the last one
+    {
+        let states = file_states.lock().await;
+        if let Some(watch_state) = states.get(path_str) {
+            if watch_state.last_event_time.elapsed() < Duration::from_millis(100) {
+                info!("Debouncing event for path: {:?}", path);
+                return;
+            }
         }
-        _ => {},
+    }
+
+    // Wait 100ms before checking the actual state
+    sleep(Duration::from_millis(100)).await;
+
+    let current_state = if path.exists() {
+        FileState::Exists
+    } else {
+        FileState::DoesNotExist
     };
+
+    let last_state = {
+        let mut states = file_states.lock().await;
+        let watch_state = states.entry(path_str.to_string()).or_insert(FileWatchState {
+            state: if path.exists() { FileState::Exists } else { FileState::DoesNotExist },
+            last_event_time: Instant::now(),
+        });
+        let last = watch_state.state.clone();
+        watch_state.last_event_time = Instant::now();
+        last
+    };
+
+    info!("File state transition: {:?} -> {:?} for path: {:?}", last_state, current_state, path);
+
+    // Only handle when the state changes
+    match (&last_state, &current_state) {
+        (&FileState::DoesNotExist, &FileState::Exists) => {
+            // File created/restored
+            handle_create_remove_event(
+                path,
+                path_str,
+                &notify::EventKind::Create(notify::event::CreateKind::File),
+                socket,
+                socket2data,
+            ).await;
+        },
+        (&FileState::Exists, &FileState::DoesNotExist) => {
+            // File removed
+            handle_create_remove_event(
+                path,
+                path_str,
+                &notify::EventKind::Remove(notify::event::RemoveKind::File),
+                socket,
+                socket2data,
+            ).await;
+        },
+        (&FileState::Exists, &FileState::Exists) => {
+            // File exists - treat as modify
+            handle_modify_event(path, path_str, socket, file2code, socket2data).await;
+        },
+        _ => {
+            info!("Ignoring state transition: {:?} -> {:?}", last_state, current_state);
+        }
+    }
+
+    // Update state
+    {
+        let mut states = file_states.lock().await;
+        states.insert(
+            path_str.to_string(),
+            FileWatchState {
+                state: current_state,
+                last_event_time: Instant::now(),
+            },
+        );
+    }
 }
 
 async fn handle_file_modification(
@@ -119,12 +198,19 @@ async fn handle_file_modification(
         }
 
         code.text.to_string()
-    }; 
+    };
 
     let new_text = tokio::fs::read_to_string(path).await
         .map_err(|e| anyhow::anyhow!("Failed to read file {:?}: {}", path, e))?;
 
+    if old_text == new_text {
+        return Ok(());
+    }
+
     let edits = compute_text_edits(&old_text, &new_text);
+    if edits.is_empty() {
+        return Ok(());
+    }
 
     let file = crate::utils::relative_path(path_str);
 
@@ -133,4 +219,3 @@ async fn handle_file_modification(
 
     Ok(())
 }
-

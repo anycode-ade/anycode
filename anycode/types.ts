@@ -133,6 +133,7 @@ export interface AcpUserMessage {
     role: 'user';
     content: string;
     is_chunk?: boolean;
+    checkpoint_id?: string;
 }
 
 export interface AcpAssistantMessage {

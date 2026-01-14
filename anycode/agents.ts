@@ -8,7 +8,7 @@ export const DEFAULT_AGENTS: AcpAgent[] = [
         id: 'qwen',
         name: 'Qwen',
         command: 'qwen',
-        args: ["--experimental-acp", "--yolo"],
+        args: [],
         description: 'Qwen AI coding agent',
     },
     {
@@ -24,6 +24,20 @@ export const DEFAULT_AGENTS: AcpAgent[] = [
         command: 'claude-code-acp',
         args: ["--experimental-acp", "--yolo"],
         description: 'Cluade AI coding agent',
+    },
+    {
+        id: 'codex',
+        name: 'codex',
+        command: 'codex-acp',
+        args: [],
+        description: 'codex',
+    },
+    {
+        id: 'opencode',
+        name: 'opencode',
+        command: 'opencode',
+        args: ["acp"],
+        description: 'opencode',
     },
 ];
 

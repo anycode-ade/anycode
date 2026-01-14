@@ -1,7 +1,7 @@
 .acp-message {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 2px;
     max-width: 100%;
     box-sizing: border-box;
 }
@@ -27,7 +27,7 @@
 }
 
 .acp-message-content {
-    padding: 8px 12px;
+    padding: 6px 10px;
     border-radius: 8px;
     word-wrap: break-word;
     overflow-wrap: break-word;
@@ -37,6 +37,47 @@
     max-width: 100%;
     box-sizing: border-box;
     width: 100%;
+}
+
+.acp-message-content-with-actions {
+    position: relative;
+}
+
+.acp-message-actions {
+    position: absolute;
+    top: 4px;
+    right: 6px;
+    display: flex;
+    justify-content: flex-end;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.15s;
+}
+
+.acp-message:hover .acp-message-actions {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.acp-undo-button {
+    border: none;
+    background: rgba(0, 0, 0, 0);
+    color: inherit;
+    padding: 2px 6px;
+    font-size: 10px;
+    border-radius: 999px;
+    cursor: pointer;
+    opacity: 0.9;
+    transition: opacity 0.15s, border-color 0.15s, background-color 0.15s;
+}
+
+.acp-undo-button:hover {
+    opacity: 1;
+    border-color: var(--text-color, #ccc);
+}
+
+.acp-message-user .acp-undo-button {
+    background: rgba(255, 255, 255, 0);
 }
 
 .acp-message-user .acp-message-content {
@@ -251,4 +292,3 @@
     font-size: 12px;
     line-height: 1.4;
 }
-

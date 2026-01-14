@@ -16,8 +16,10 @@ mod config;
 mod utils;
 mod lsp;
 mod acp;
+mod acp_history;
 use lsp::LspManager;
 use acp::AcpManager;
+use acp_history::AcpHistoryManager;
 
 use std::sync::Arc;
 use tokio::sync::{mpsc::Receiver, Mutex};
@@ -31,11 +33,11 @@ mod diff;
 
 mod handlers;
 use handlers::{
-    io_handler::*, 
-    search_handler::*, 
-    lsp_handler::*, 
+    io_handler::*,
+    search_handler::*,
+    lsp_handler::*,
     terminal_handler::*,
-    watch_handler::handle_watch_event,
+    watch_handler::{handle_watch_event},
     acp_handler::*,
 };
 
@@ -77,53 +79,10 @@ async fn on_connect(socket: SocketRef, state: State<AppState>) {
     socket.on("acp:list", handle_acp_list);
     socket.on("acp:reconnect", handle_acp_reconnect);
     socket.on("acp:permission_response", handle_acp_permission_response);
-    
+    socket.on("acp:undo", handle_acp_undo);
+
     socket.on_disconnect(on_disconnect)
 }
-
-// async fn on_disconnect(socket: SocketRef, state: State<AppState>) {
-//     info!("Socket.IO disconnected: {}", socket.id);
-
-//     let sid = socket.id.as_str().to_string();
-    
-//     // Get languages for files opened by this socket
-//     let languages = {
-//         let mut sockets_data = state.socket2data.lock().await;
-//         let socket_data = match sockets_data.remove(&sid) {
-//             Some(data) => data,
-//             None => return,
-//         };
-        
-//         let f2c = state.file2code.lock().await;
-//         socket_data.opened_files.iter()
-//             .filter_map(|path| f2c.get(path).map(|code| code.lang.clone()))
-//             .collect::<Vec<_>>()
-//     };
-    
-//     // Get all opened files from remaining sockets
-//     let all_opened_files = {
-//         let sockets_data = state.socket2data.lock().await;
-//         sockets_data.values()
-//             .flat_map(|data| data.opened_files.iter())
-//             .cloned()
-//             .collect::<Vec<_>>()
-//     };
-    
-//     // Stop LSP servers for languages that have no files opened by other sockets
-//     let f2c = state.file2code.lock().await;
-//     let mut lsp_manager = state.lsp_manager.lock().await;
-//     for lang in languages {
-//         let lang_still_opened = all_opened_files.iter().any(|file_path| {
-//             f2c.get(file_path)
-//                 .map(|code| code.lang == lang)
-//                 .unwrap_or(false)
-//         });
-//         if !lang_still_opened {
-//             lsp_manager.stop(&lang).await;
-//             info!("Lsp autoclose: '{}'", lang);
-//         }
-//     }
-// }
 
 async fn on_disconnect(socket: SocketRef, state: State<AppState>) {
     info!("Socket.IO disconnected: {}", socket.id);
@@ -330,6 +289,7 @@ async fn main() -> Result<()> {
     let dir = std::path::Path::new(".");
     watcher.watch(dir, RecursiveMode::Recursive)?;
 
+    let file_states = Arc::new(Mutex::new(HashMap::new()));
     let socket = io.clone();
     tokio::spawn(async move {
         while let Some(res) = watch_rx.recv().await {
@@ -338,7 +298,7 @@ async fn main() -> Result<()> {
                     for path in &event.paths {
                         if crate::utils::is_ignored_dir(path) { continue }
                         else {
-                            handle_watch_event(path, &event, &socket, &file2code, &socket2data).await
+                            handle_watch_event(path, &event, &socket, &file2code, &socket2data, &file_states).await
                         }
                     }
                 },

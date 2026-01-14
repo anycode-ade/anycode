@@ -1,5 +1,5 @@
 import React from 'react';
-import { AcpMessage as AcpMessageType, AcpToolCall } from '../../types';
+import { AcpMessage as AcpMessageType, AcpToolCall, AcpUserMessage } from '../../types';
 import { AcpMessage } from './AcpMessage';
 import './AcpMessages.css';
 
@@ -15,6 +15,7 @@ interface AcpMessagesProps {
   onToggleThought: (index: number) => void;
   onTogglePermission: (index: number) => void;
   onPermissionResponse: (permissionId: string, optionId: string) => void;
+  onUndoMessage?: (message: AcpUserMessage) => void;
 }
 
 export const AcpMessages: React.FC<AcpMessagesProps> = ({
@@ -29,6 +30,7 @@ export const AcpMessages: React.FC<AcpMessagesProps> = ({
   onToggleThought,
   onTogglePermission,
   onPermissionResponse,
+  onUndoMessage,
 }) => {
   if (messages.length === 0) {
     return (
@@ -66,6 +68,11 @@ export const AcpMessages: React.FC<AcpMessagesProps> = ({
             isExpanded={isExpanded}
             onToggle={onToggle}
             onPermissionResponse={onPermissionResponse}
+            onUndo={
+              message.role === 'user' && onUndoMessage
+                ? () => onUndoMessage(message)
+                : undefined
+            }
           />
         );
       })}
@@ -84,4 +91,3 @@ export const AcpMessages: React.FC<AcpMessagesProps> = ({
     </>
   );
 };
-
