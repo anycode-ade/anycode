@@ -124,6 +124,7 @@ export type AcpMessage =
     | AcpThoughtMessage
     | AcpToolCallMessage
     | AcpToolResultMessage
+    | AcpToolUpdateMessage
     | AcpPromptStateMessage
     | AcpPermissionRequestMessage
     | AcpErrorMessage
@@ -168,6 +169,12 @@ export interface AcpToolResultMessage {
     result: any;
 }
 
+export interface AcpToolUpdateMessage {
+    role: 'tool_update';
+    id: string;
+    update: any;
+}
+
 export interface AcpPermissionOption {
     id: string;
     name: string;
@@ -195,6 +202,11 @@ export interface AcpToolCall {
 export interface AcpToolResult {
     id: string;
     result: any;
+}
+
+export interface AcpToolUpdate {
+    id: string;
+    update: any;
 }
 
 export interface AcpSession {

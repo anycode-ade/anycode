@@ -1,5 +1,11 @@
 import React from 'react';
-import { AcpMessage as AcpMessageType, AcpToolCall, AcpUserMessage } from '../../types';
+import {
+  AcpMessage as AcpMessageType,
+  AcpToolCall,
+  AcpToolResultMessage,
+  AcpToolUpdateMessage,
+  AcpUserMessage,
+} from '../../types';
 import { AcpMessage } from './AcpMessage';
 import './AcpMessages.css';
 
@@ -40,17 +46,70 @@ export const AcpMessages: React.FC<AcpMessagesProps> = ({
     );
   }
 
+  const toolCallIndexesById = new Map<string, number>();
+  const toolResultsById = new Map<string, { message: AcpToolResultMessage; index: number }>();
+  const toolUpdatesById = new Map<string, { message: AcpToolUpdateMessage; index: number }>();
+  for (let i = 0; i < messages.length; i += 1) {
+    const message = messages[i];
+    if (message.role === 'tool_call') {
+      if (!toolCallIndexesById.has(message.id)) {
+        toolCallIndexesById.set(message.id, i);
+      }
+    } else if (message.role === 'tool_result') {
+      toolResultsById.set(message.id, { message, index: i });
+    } else if (message.role === 'tool_update') {
+      toolUpdatesById.set(message.id, { message, index: i });
+    }
+  }
+
+  const toolResultIndexesToSkip = new Set<number>();
+  const toolUpdateIndexesToSkip = new Set<number>();
+  for (let i = 0; i < messages.length; i += 1) {
+    const message = messages[i];
+    if (message.role === 'tool_result') {
+      const toolCallIndex = toolCallIndexesById.get(message.id);
+      if (toolCallIndex !== undefined && toolCallIndex < i) {
+        toolResultIndexesToSkip.add(i);
+      }
+    } else if (message.role === 'tool_update') {
+      const toolCallIndex = toolCallIndexesById.get(message.id);
+      if (toolCallIndex !== undefined && toolCallIndex < i) {
+        toolUpdateIndexesToSkip.add(i);
+      }
+    }
+  }
+
   return (
     <>
       {messages.map((message, index) => {
         // Determine if this message should be expandable
         let isExpanded = false;
         let onToggle: (() => void) | undefined = undefined;
+        let toolResult: AcpToolResultMessage | undefined = undefined;
+        let toolUpdate: AcpToolUpdateMessage | undefined = undefined;
 
         if (message.role === 'tool_call') {
           isExpanded = expandedToolCalls.has(index);
           onToggle = () => onToggleToolCall(index);
+          const toolResultEntry = toolResultsById.get(message.id);
+          if (toolResultEntry && toolResultEntry.index > index) {
+            toolResult = toolResultEntry.message;
+          } else {
+            const toolUpdateEntry = toolUpdatesById.get(message.id);
+            if (toolUpdateEntry && toolUpdateEntry.index > index) {
+              toolUpdate = toolUpdateEntry.message;
+            }
+          }
         } else if (message.role === 'tool_result') {
+          if (toolResultIndexesToSkip.has(index)) {
+            return null;
+          }
+          isExpanded = expandedToolResults.has(index);
+          onToggle = () => onToggleToolResult(index);
+        } else if (message.role === 'tool_update') {
+          if (toolUpdateIndexesToSkip.has(index)) {
+            return null;
+          }
           isExpanded = expandedToolResults.has(index);
           onToggle = () => onToggleToolResult(index);
         } else if (message.role === 'thought') {
@@ -67,6 +126,8 @@ export const AcpMessages: React.FC<AcpMessagesProps> = ({
             message={message}
             isExpanded={isExpanded}
             onToggle={onToggle}
+            toolResult={toolResult}
+            toolUpdate={toolUpdate}
             onPermissionResponse={onPermissionResponse}
             onUndo={
               message.role === 'user' && onUndoMessage

@@ -61,6 +61,12 @@ pub struct AcpToolResult {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AcpToolUpdate {
+    pub id: String,
+    pub update: Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AcpPromptState {
     pub is_processing: bool,
 }
@@ -103,6 +109,8 @@ pub enum AcpMessage {
     ToolCall(AcpToolCall),
     #[serde(rename = "tool_result")]
     ToolResult(AcpToolResult),
+    #[serde(rename = "tool_update")]
+    ToolUpdate(AcpToolUpdate),
     #[serde(rename = "prompt_state")]
     PromptState(AcpPromptState),
     #[serde(rename = "permission_request")]
@@ -521,27 +529,35 @@ impl AcpClientImpl {
         info!("ToolCallUpdate received for agent {}: tool_call_id={:?}, status={:?}", 
             self.agent_id, update.tool_call_id, update.fields.status);
         
-        // If tool call is completed, send tool result
-        if let Some(acp::ToolCallStatus::Completed) = update.fields.status {
-            let tool_call_id = update.tool_call_id.to_string();
-            
-            // Serialize entire update to JSON string and put in result
-            let result = serde_json::to_value(&update)
-                .unwrap_or_else(|_| serde_json::json!({}));
-            
-            let acp_tool_result = AcpToolResult {
-                id: tool_call_id,
-                result: result,
-            };
-            
-            // Add to history
-            {
-                let mut history = self.history.lock().await;
-                history.push(AcpMessage::ToolResult(acp_tool_result.clone()));
+        let tool_call_id = update.tool_call_id.to_string();
+
+        // Serialize entire update to JSON string and put in payload
+        let payload = serde_json::to_value(&update)
+            .unwrap_or_else(|_| serde_json::json!({}));
+
+        match update.fields.status {
+            Some(acp::ToolCallStatus::Completed) => {
+                let acp_tool_result = AcpToolResult {
+                    id: tool_call_id,
+                    result: payload,
+                };
+
+                // Add to history only when completed
+                {
+                    let mut history = self.history.lock().await;
+                    history.push(AcpMessage::ToolResult(acp_tool_result.clone()));
+                }
+                self.send_message(AcpMessage::ToolResult(acp_tool_result)).await;
             }
-            
-            // Send to frontend
-            self.send_message(AcpMessage::ToolResult(acp_tool_result)).await;
+            Some(_) => {
+                let acp_tool_update = AcpToolUpdate {
+                    id: tool_call_id,
+                    update: payload,
+                };
+                // Stream intermediate updates without persisting
+                self.send_message(AcpMessage::ToolUpdate(acp_tool_update)).await;
+            }
+            None => {}
         }
     }
 

@@ -1078,8 +1078,8 @@ const App: React.FC = () => {
             return;
         }
 
-        // Handle tool_call, tool_result, and permission_request messages
-        if (data.item.role === 'tool_call' || data.item.role === 'tool_result' || data.item.role === 'permission_request') {
+        // Handle tool_call, tool_result, tool_update, and permission_request messages
+        if (data.item.role === 'tool_call' || data.item.role === 'tool_result' || data.item.role === 'tool_update' || data.item.role === 'permission_request') {
             // Follow mode: open file when tool_call has locations
             if (data.item.role === 'tool_call' && followEnabledRef.current) {
                 const toolCall = data.item as AcpToolCallMessage;
