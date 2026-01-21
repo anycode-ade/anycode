@@ -18,7 +18,7 @@ import {
 
 import './styles.css';
 import { Search } from "./search";
-import { computeGitChanges, ChangeType } from "./diff";
+import { computeGitChangesDetailed, ChangeType, DiffInfo } from "./diff";
 
 export interface EditorSettings {
     lineHeight: number;
@@ -26,13 +26,13 @@ export interface EditorSettings {
 }
 
 export interface EditorState {
-    code: Code; 
+    code: Code;
     offset: number;
     selection: Selection | null;
     runLines: number[];
     errorLines: Map<number, string>;
     settings: EditorSettings;
-    diffResult?: Map<number, ChangeType>;
+    diffResult?: Map<number, DiffInfo>;
 }
 
 export class AnycodeEditor {
@@ -71,7 +71,7 @@ export class AnycodeEditor {
 
     private diffEnabled: boolean = true;
     private originalCode?: string;
-    private diffResult?: Map<number, ChangeType>;
+    private diffResult?: Map<number, DiffInfo>;
 
     constructor(
         initialText = '', 
@@ -93,7 +93,7 @@ export class AnycodeEditor {
         if (this.diffEnabled) {
             this.originalCode = initialText;
             const currentText = this.code.getContent();
-            this.diffResult = computeGitChanges(this.originalCode, currentText);
+            this.diffResult = computeGitChangesDetailed(this.originalCode, currentText);
         }
         
         const theme = options.theme || vesper;
@@ -148,7 +148,7 @@ export class AnycodeEditor {
     public setText(newText: string) {
         this.code.setContent(newText);
         if (this.diffEnabled && this.originalCode !== undefined) {
-            this.diffResult = computeGitChanges(this.originalCode, newText);
+            this.diffResult = computeGitChangesDetailed(this.originalCode, newText);
         } else {
             this.diffResult = undefined;
         }
@@ -708,15 +708,18 @@ export class AnycodeEditor {
             // calculate diff when text changes
             if (this.diffEnabled && this.originalCode !== undefined) {
                 const currentText = this.code.getContent();
-                this.diffResult = computeGitChanges(this.originalCode, currentText);
+                this.diffResult = computeGitChangesDetailed(this.originalCode, currentText);
                 console.log('diffResult', this.diffResult);
+                // Update renderer with fresh diffResult immediately
+                this.renderer.updateDiffResult(this.diffResult);
             } else {
                 this.diffResult = undefined;
+                this.renderer.updateDiffResult(undefined);
             }
         }
         if (offsetChanged) this.offset = result.ctx.offset;
         if (selectionChanged) this.selection = result.ctx.selection || null;
-    
+
         const state = this.getEditorState();
     
         if (textChanged) {
@@ -1071,7 +1074,7 @@ export class AnycodeEditor {
         
         if (this.diffEnabled && this.originalCode !== undefined) {
             const currentText = this.code.getContent();
-            this.diffResult = computeGitChanges(this.originalCode, currentText);
+            this.diffResult = computeGitChangesDetailed(this.originalCode, currentText);
         } else {
             this.diffResult = undefined;
         }
@@ -1082,13 +1085,16 @@ export class AnycodeEditor {
 
     public setDiffEnabled(enabled: boolean): void {
         this.diffEnabled = enabled;
+        this.renderer.setDiffEnabled(enabled);
+
         if (enabled && this.originalCode === undefined) {
             this.originalCode = this.code.getContent();
         }
-        
+
         if (enabled && this.originalCode !== undefined) {
             const currentText = this.code.getContent();
-            this.diffResult = computeGitChanges(this.originalCode, currentText);
+            this.diffResult = computeGitChangesDetailed(this.originalCode, currentText);
+            this.renderer.updateDiffResult(this.diffResult);
         }
 
         if (!enabled) {

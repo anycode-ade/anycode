@@ -85,36 +85,6 @@
   background-color: rgba(48, 123, 215, 0.8);
 }
 
-.diff-changed::after {
-  content: attr(data-diff-old);
-  display: block;
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 100%;
-  padding: 2px 0;
-  padding-left: 3px;
-  margin-top: 2px;
-  background-color: rgba(244, 67, 54, 0.1);
-  color: rgba(244, 67, 54, 0.9);
-  font-size: inherit;
-  line-height: inherit;
-  white-space: pre;
-  border-left: 3px solid rgba(244, 67, 54, 0.6);
-  z-index: 10;
-  pointer-events: none;
-  opacity: 0;
-  max-height: 0;
-  overflow: hidden;
-  transition: opacity 0.2s ease, max-height 0.2s ease;
-  text-decoration: line-through;
-}
-
-.diff-changed:hover::after {
-  opacity: 1;
-  max-height: 100px;
-}
-
 .diff-added {
   background-color: rgba(76, 175, 80, 0.15);
   position: relative;
@@ -185,6 +155,22 @@
   border-radius: 10px;
 }
 
+.diff-tooltip {
+  position: absolute;
+  z-index: 10000;
+  color: #f44336;
+  font-family: monospace;
+  font-size: 14px;
+  line-height: 20px;
+  white-space: pre;
+  pointer-events: none;
+  background: rgba(45, 45, 45, 0.5);
+  z-index: inherit;
+  width: 100%;
+  /* border-radius: 4px; */
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+}
 
 .search {
   position: absolute;

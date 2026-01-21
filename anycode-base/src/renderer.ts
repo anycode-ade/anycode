@@ -2,7 +2,7 @@ import { Code, HighlighedNode } from "./code";
 import { AnycodeLine, objectHash, minimize, findNodeAndOffset, findPrevWord } from "./utils";
 import { moveCursor, removeCursor } from "./cursor";
 import { EditorState, EditorSettings } from "./editor";
-import { ChangeType } from "./diff";
+import { ChangeType, DiffInfo } from "./diff";
 import {
     Selection, getSelection,
     setSelectionFromOffsets as renderSelection,
@@ -19,6 +19,10 @@ export class Renderer {
     private completionContainer: HTMLDivElement | null = null;
     private searchContainer: HTMLDivElement | null = null;
     private searchMatchLabel: HTMLDivElement | null = null;
+    private diffTooltipContainer: HTMLDivElement | null = null;
+    private currentHoveredHunkId: number | null = null;
+    private currentDiffResult: Map<number, DiffInfo> | undefined = undefined;
+    private diffEnabled: boolean = false;
 
     constructor(
         container: HTMLDivElement,
@@ -30,6 +34,18 @@ export class Renderer {
         this.buttonsColumn = buttonsColumn;
         this.gutter = gutter;
         this.codeContent = codeContent;
+    }
+
+    public updateDiffResult(diffResult: Map<number, DiffInfo> | undefined) {
+        this.currentDiffResult = diffResult;
+        this.hideDiffTooltip();
+    }
+
+    public setDiffEnabled(enabled: boolean) {
+        this.diffEnabled = enabled;
+        if (!enabled) {
+            this.hideDiffTooltip();
+        }
     }
 
     public render(state: EditorState, search?: Search) {
@@ -222,8 +238,11 @@ export class Renderer {
     public renderChanges(state: EditorState, search?: Search) {
         console.log("renderChanges");
         // console.time('updateChanges');
-    
+
         const { code, offset, selection, errorLines, settings, diffResult } = state;
+
+        // Store current diffResult for tooltip to use
+        this.currentDiffResult = diffResult;
         const totalLines = code.linesLength();
         const { startLine, endLine } = this.getVisibleRange(totalLines, settings);
     
@@ -310,24 +329,24 @@ export class Renderer {
         return spacer;
     }
 
-    private createLineNumber(lineNumber: number, settings: EditorSettings, diffResult?: Map<number, ChangeType>): HTMLDivElement {
+    private createLineNumber(lineNumber: number, settings: EditorSettings, diffResult?: Map<number, DiffInfo>): HTMLDivElement {
         const div = document.createElement('div');
         div.className = "ln";
         div.textContent = (lineNumber + 1).toString();
         div.style.height = `${settings.lineHeight}px`;
         div.setAttribute('data-line', lineNumber.toString());
-        
+
         if (diffResult) {
-            const changeType = diffResult.get(lineNumber + 1);
-            if (changeType === 'modified') {
+            const diffInfo = diffResult.get(lineNumber + 1);
+            if (diffInfo?.changeType === 'modified') {
                 div.classList.add('diff-changed');
-            } else if (changeType === 'added') {
+            } else if (diffInfo?.changeType === 'added') {
                 div.classList.add('diff-added');
-            } else if (changeType === 'deleted') {
+            } else if (diffInfo?.changeType === 'deleted') {
                 div.classList.add('diff-deleted');
             }
         }
-        
+
         return div;
     }
 
@@ -365,7 +384,7 @@ export class Renderer {
         nodes: HighlighedNode[],
         errorLines: Map<number, string>,
         settings: EditorSettings,
-        diffResult?: Map<number, ChangeType>
+        diffResult?: Map<number, DiffInfo>
     ): AnycodeLine {
         const wrapper = document.createElement('div') as AnycodeLine;
 
@@ -379,10 +398,10 @@ export class Renderer {
 
         // Check if this line was changed in diff mode
         if (diffResult) {
-            const changeType = diffResult.get(lineNumber + 1);
-            if (changeType === 'modified') {
+            const diffInfo = diffResult.get(lineNumber + 1);
+            if (diffInfo?.changeType === 'modified') {
                 wrapper.classList.add('diff-changed');
-            } else if (changeType === 'added') {
+            } else if (diffInfo?.changeType === 'added') {
                 wrapper.classList.add('diff-added');
             }
         }
@@ -404,6 +423,18 @@ export class Renderer {
             let smallError = minimize(errorMessage);
             wrapper.classList.add('has-error');
             wrapper.setAttribute('data-error', smallError);
+        }
+
+        // Attach diff hover listeners for modified lines
+        if (diffResult) {
+            const diffInfo = diffResult.get(lineNumber + 1);
+            if (diffInfo?.changeType === 'modified') {
+                // Only attach if not already attached (avoid duplicate listeners)
+                if (!(wrapper as any)._diffListenerAttached) {
+                    this.attachDiffHoverListeners(wrapper, lineNumber);
+                    (wrapper as any)._diffListenerAttached = true;
+                }
+            }
         }
 
         return wrapper;
@@ -1086,16 +1117,16 @@ export class Renderer {
         }
     }
 
-    public verifyDiffRendering(diffResult: Map<number, ChangeType>): void {
+    public verifyDiffRendering(diffResult: Map<number, DiffInfo>): void {
         const currentDiffLines = new Map<number, ChangeType>();
-        
+
         const gutterLines = this.gutter.querySelectorAll('.ln');
         gutterLines.forEach((gutterLine) => {
             const lineIndex = parseInt(gutterLine.getAttribute('data-line') || '-1', 10);
             if (lineIndex < 0) return;
-            
+
             const lineNumber = lineIndex + 1;
-            
+
             if (gutterLine.classList.contains('diff-changed')) {
                 currentDiffLines.set(lineNumber, 'modified');
             } else if (gutterLine.classList.contains('diff-added')) {
@@ -1118,9 +1149,10 @@ export class Renderer {
             this.removeDiffCodeLine(lineIndex);
         }
 
-        for (const [lineNumber, changeType] of diffResult.entries()) {
+        for (const [lineNumber, diffInfo] of diffResult.entries()) {
             const lineIndex = lineNumber - 1;
-            
+            const changeType = diffInfo.changeType;
+
             const currentType = currentDiffLines.get(lineNumber);
             if (currentType !== changeType) {
                 this.addDiffGutter(lineIndex, changeType);
@@ -1191,6 +1223,108 @@ export class Renderer {
         const codeLines = this.codeContent.querySelectorAll('.line.diff-changed, .line.diff-added, .line.diff-deleted');
         codeLines.forEach((codeLine: Element) => {
             codeLine.classList.remove('diff-changed', 'diff-added', 'diff-deleted');
+            // Clear the listener flag when removing diff classes
+            (codeLine as any)._diffListenerAttached = false;
+        });
+    }
+
+    private showDiffTooltip(lineDiv: HTMLElement, lineNumber: number): void {
+        // Don't show tooltip if diff mode is disabled
+        if (!this.diffEnabled) {
+            return;
+        }
+
+        // Hide previous tooltip
+        this.hideDiffTooltip();
+
+        // Use current diffResult from render state
+        if (!this.currentDiffResult) {
+            return;
+        }
+
+        // Get diffInfo for this line to get hunkId
+        const diffInfo = this.currentDiffResult.get(lineNumber + 1);
+        if (!diffInfo || !diffInfo.oldLines || diffInfo.oldLines.length === 0) {
+            return;
+        }
+
+        const hunkId = diffInfo.hunkId;
+
+        // If tooltip already showing for this hunk, do nothing
+        if (this.currentHoveredHunkId === hunkId && this.diffTooltipContainer) {
+            return;
+        }
+
+
+
+        // Collect all lines with this hunkId and find the first one
+        let oldLines: string[] = [];
+        let firstLineInHunk: HTMLElement | null = null;
+        let minLineNum = Infinity;
+        const lineHeight = 20; // Standard line height
+
+        for (const [lineNum, info] of this.currentDiffResult) {
+            if (info.hunkId === hunkId) {
+                // Track the first (minimum) line number in this hunk
+                if (lineNum < minLineNum) {
+                    minLineNum = lineNum;
+                    firstLineInHunk = this.getLine(lineNum - 1);
+                    // Get oldLines from this line (all lines in hunk have same oldLines)
+                    // Make a copy to avoid reference issues
+                    if (info.oldLines) {
+                        oldLines = [...info.oldLines];
+                    }
+                }
+            }
+        }
+
+        if (oldLines.length === 0) {
+            return;
+        }
+
+        // Create tooltip element
+        const tooltip = document.createElement('div');
+        tooltip.className = 'diff-tooltip glass';
+        // Map each line, replacing empty strings with non-breaking space for visibility
+        const displayLines = oldLines.map(line => line === '' ? '\u00A0' : line);
+        const tooltipText = displayLines.join('\n');
+        tooltip.textContent = tooltipText;
+
+        // Position tooltip above the first line in the hunk with extra space
+        const targetLine = firstLineInHunk || lineDiv;
+        const rect = targetLine.getBoundingClientRect();
+        const containerRect = this.container.getBoundingClientRect();
+
+        // Position above first line + space for old lines + extra offset for visibility
+        const tooltipHeight = oldLines.length * lineHeight;
+        const topOffset = rect.top - containerRect.top - tooltipHeight + this.container.scrollTop;
+
+        tooltip.style.position = 'absolute';
+        tooltip.style.top = `${topOffset}px`;
+        tooltip.style.left = `${rect.left - containerRect.left}px`;
+
+        this.container.appendChild(tooltip);
+        this.diffTooltipContainer = tooltip;
+        this.currentHoveredHunkId = hunkId;
+    }
+
+    private hideDiffTooltip(): void {
+        if (this.diffTooltipContainer) {
+            this.diffTooltipContainer.remove();
+            this.diffTooltipContainer = null;
+        }
+        this.currentHoveredHunkId = null;
+    }
+
+    private attachDiffHoverListeners(lineDiv: HTMLElement, lineNumber: number): void {
+        lineDiv.addEventListener('mouseenter', (e) => {
+            e.stopPropagation();
+            this.showDiffTooltip(lineDiv, lineNumber);
+        });
+
+        lineDiv.addEventListener('mouseleave', (e) => {
+            e.stopPropagation();
+            this.hideDiffTooltip();
         });
     }
 }

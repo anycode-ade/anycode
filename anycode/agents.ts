@@ -8,7 +8,7 @@ export const DEFAULT_AGENTS: AcpAgent[] = [
         id: 'qwen',
         name: 'Qwen',
         command: 'qwen',
-        args: [],
+        args: ["--acp"],
         description: 'Qwen AI coding agent',
     },
     {
