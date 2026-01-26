@@ -1,8 +1,6 @@
-
-
-import { Code, Edit, Change, Position, Operation } from "./code";
+import { Code, Change, Position, Operation } from "./code";
 import { vesper } from './theme';
-import { Renderer } from './renderer';
+import { Renderer } from './renderer/Renderer';
 import { getPosFromMouse } from './mouse';
 import { Selection } from "./selection";
 import { Completion, CompletionRequest, DefinitionRequest, DefinitionResponse } from "./lsp";
@@ -18,7 +16,7 @@ import {
 
 import './styles.css';
 import { Search } from "./search";
-import { computeGitChangesDetailed as computeGitChanges, ChangeType, DiffInfo } from "./diff";
+import { computeGitChanges, DiffInfo } from "./diff";
 
 export interface EditorSettings {
     lineHeight: number;
@@ -32,7 +30,7 @@ export interface EditorState {
     runLines: number[];
     errorLines: Map<number, string>;
     settings: EditorSettings;
-    diffResult?: Map<number, DiffInfo>;
+    diffs?: Map<number, DiffInfo>;
 }
 
 export class AnycodeEditor {
@@ -44,8 +42,6 @@ export class AnycodeEditor {
     private buttonsColumn!: HTMLDivElement;
     private gutter!: HTMLDivElement;
     private codeContent!: HTMLDivElement;
-    private isFocused: boolean;
-    private maxLineWidth = 0;
     
     private isMouseSelecting: boolean = false;
     private selection: Selection | null = null;
@@ -101,7 +97,6 @@ export class AnycodeEditor {
         addCssToDocument(css, 'anyeditor-theme');
         this.createDomElements();
         this.renderer = new Renderer(this.container, this.buttonsColumn, this.gutter, this.codeContent);
-        this.isFocused = true;
     }
     
     private createDomElements() {
@@ -304,7 +299,7 @@ export class AnycodeEditor {
                 lineHeight: this.settings.lineHeight,
                 buffer: this.settings.buffer,
             },
-            diffResult: this.diffs,
+            diffs: this.diffs,
         };
     }
 
@@ -383,7 +378,6 @@ export class AnycodeEditor {
         // console.log('Editor lost focus');
         this.isMouseSelecting = false;
         this.isWordSelection = false;
-        this.isFocused = false;
         
         if (this.autoScrollTimer) {
             cancelAnimationFrame(this.autoScrollTimer);
@@ -393,7 +387,6 @@ export class AnycodeEditor {
 
     private handleFocus(e: FocusEvent) {
         // console.log('Editor focus');
-        this.isFocused = true;
         this.search.setNeedsFocus(false);
     }
     
@@ -1109,7 +1102,7 @@ export class AnycodeEditor {
             this.renderer.clearAllDiffs();
         }
 
-        this.renderer.verifyDiffRendering(this.diffs);
+        this.renderer.verifyDiffs(this.diffs);
     }
 
 }

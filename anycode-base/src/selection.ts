@@ -183,7 +183,7 @@ function resolveDOMPosition(
     return null;
 }
 
-export function setSelectionFromOffsets(
+export function renderSelection(
     selection: Selection, lines: AnycodeLine[], code: Code
 ) {    
     // console.log("setSelectionFromOffsets ", selection);

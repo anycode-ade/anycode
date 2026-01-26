@@ -21,7 +21,7 @@ export type DiffInfo = {
   hunkId: number;
 };
 
-export function computeGitChangesDetailed(
+export function computeGitChanges(
   original: string, current: string
 ): Map<number, DiffInfo> {
   const changes = new Map<number, DiffInfo>();
