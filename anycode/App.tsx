@@ -8,7 +8,9 @@ import { WatcherCreate, WatcherEdits, WatcherRemove,
     type AcpOpenFileMessage, type SearchResult, type SearchEnd, type SearchMatch
 } from './types';
 import { loadTerminals, loadTerminalSelected, loadBottomVisible, 
-    loadLeftPanelVisible, loadRightPanelVisible, loadCenterPaneVisible 
+    loadLeftPanelVisible, loadRightPanelVisible, loadCenterPaneVisible,
+    loadDiffEnabled, loadFollowEnabled,
+    loadItem, saveItem,
 } from './storage';
 import { Allotment } from 'allotment';
 import 'allotment/dist/style.css';
@@ -59,8 +61,8 @@ const App: React.FC = () => {
     const [searchActive, setSearchActive] = useState<boolean>(false);
     const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
     const [searchEnded, setSearchEnded] = useState<boolean>(true);
-    const [diffEnabled, setDiffEnabled] = useState<boolean>(true);
-    const [followEnabled, setFollowEnabled] = useState<boolean>(true);
+    const [diffEnabled, setDiffEnabled] = useState<boolean>(loadDiffEnabled());
+    const [followEnabled, setFollowEnabled] = useState<boolean>(loadFollowEnabled());
     const followEnabledRef = useRef<boolean>(true);
     const pendingOpenFilesRef = useRef<Set<string>>(new Set());
 
@@ -82,26 +84,6 @@ const App: React.FC = () => {
     const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const reconnectAttemptsRef = useRef<number>(0);
     const reconnectDelay = 1000;
-
-    useEffect(() => {
-        filesRef.current = files;
-    }, [files]);
-
-    useEffect(() => {
-        acpSessionsRef.current = acpSessions;
-    }, [acpSessions]);
-
-    useEffect(() => {
-        selectedAgentIdRef.current = selectedAgentId;
-    }, [selectedAgentId]);
-
-    useEffect(() => {
-        followEnabledRef.current = followEnabled;
-    }, [followEnabled]);
-
-    useEffect(() => {
-        localStorage.setItem('terminals', JSON.stringify(terminals));
-    }, [terminals]);
 
     const handleLeftPanelVisibleChange = (index: number, visible: boolean) => {
         console.log('handleLeftPanelVisibleChange', index, visible);
@@ -1209,7 +1191,7 @@ const App: React.FC = () => {
         });
     };
 
-    const generateUniqueAgentId = (baseAgentId: string): string => {
+    const generateAgentId = (baseAgentId: string): string => {
         // Check if base agent ID already exists in sessions
         const existingSessions = acpSessionsRef.current;
         let uniqueId = baseAgentId;
@@ -1243,31 +1225,26 @@ const App: React.FC = () => {
 
         const { id, name, command, args } = agent;
 
-        // Generate unique agent ID
-        const uniqueAgentId = generateUniqueAgentId(id);
+        const aid = generateAgentId(id);
 
         wsRef.current.emit('acp:start', {
-            agent_id: uniqueAgentId,
-            agent_name: name,
-            command,
-            args,
+            agent_id: aid, agent_name: name, command, args,
         }, (response: any) => {
             if (response.success) {
                 setAcpSessions(prev => {
                     const newSessions = new Map(prev);
-                    newSessions.set(uniqueAgentId, {
-                        agentId: uniqueAgentId,
-                        agentName: name,
-                        messages: [],
-                        isActive: true,
+                    newSessions.set(aid, {
+                        agentId: aid, agentName: name, messages: [], isActive: true,
                     });
                     return newSessions;
                 });
-                setSelectedAgentId(uniqueAgentId);
+                setSelectedAgentId(aid);
                 setRightPanelVisible(true);
+                setDiffEnabled(true);
+                setFollowEnabled(true);
             } else {
-                console.error('Failed to start agent ', uniqueAgentId, ':', response.error);
-                alert('Failed to start agent ' + uniqueAgentId + ': ' + response.error);
+                console.error('Failed to start agent ', aid, ':', response.error);
+                alert('Failed to start agent ' + aid + ': ' + response.error);
             }
         });
     };
@@ -1475,7 +1452,7 @@ const App: React.FC = () => {
 
     const handleSearch = ({ id, pattern }: { id: string; pattern: string }) => {
         if (!pattern) return;
-        console.log(`Start searching: ${pattern}`);
+        // console.log(`Start searching: ${pattern}`);
         if (wsRef.current && isConnected) {
             wsRef.current.emit("search:start", { pattern });
             setSearchResults([]);
@@ -1484,7 +1461,7 @@ const App: React.FC = () => {
     };
 
     const handleSearchResult = (message: SearchResult) => {
-        console.debug('search:result', message);
+        // console.debug('search:result', message);
         setSearchResults((prevResults) => {
             const resultsMap = new Map(prevResults.map((result) => [result.file_path, result]));
             resultsMap.set(message.file_path, message); // Replace or add the new message
@@ -1493,7 +1470,7 @@ const App: React.FC = () => {
     };
 
     const handleSearchEnd = (result: SearchEnd) => {
-        console.debug("search:end ", result);
+        // console.debug("search:end ", result);
         setSearchEnded(true);
     };
 
@@ -1544,18 +1521,6 @@ const App: React.FC = () => {
             setSelectedAgentId(firstSession.agentId);
         }
 
-        // Toggle diff mode based on agents presence
-        if (acpSessions.size === 0) {
-            setDiffEnabled(false);
-            editorRefs.current.forEach((editor) => {
-                editor.setDiffEnabled(false);
-            });
-        } else {
-            setDiffEnabled(true);
-            editorRefs.current.forEach((editor) => {
-                editor.setDiffEnabled(true);
-            });
-        }
     }, [acpSessions, selectedAgentId]);
 
     useEffect(() => {
@@ -1568,30 +1533,21 @@ const App: React.FC = () => {
         }
     }, [fileTree])
 
-    useEffect(() => {
-        if (isConnected && wsRef.current) openFolder('.');
-      }, [isConnected]);
+    useEffect(() => { if (isConnected && wsRef.current) openFolder('.') }, [isConnected]);
 
-    useEffect(() => {
-        localStorage.setItem('bottomPanelVisible', JSON.stringify(bottomPanelVisible));
-    }, [bottomPanelVisible]);
-
-    useEffect(() => {
-        localStorage.setItem('leftPanelVisible', JSON.stringify(leftPanelVisible));
-    }, [leftPanelVisible]);
-
-    useEffect(() => {
-        localStorage.setItem('rightPanelVisible', JSON.stringify(rightPanelVisible));
-    }, [rightPanelVisible]);
-
-    useEffect(() => {
-        localStorage.setItem('centerPanelVisible', JSON.stringify(centerPanelVisible));
-    }, [centerPanelVisible]);
-
-    useEffect(() => {
-        localStorage.setItem('terminalSelected', JSON.stringify(terminalSelected));
-    }, [terminalSelected]);
-
+    useEffect(() => { filesRef.current = files; }, [files]);
+    useEffect(() => { acpSessionsRef.current = acpSessions; }, [acpSessions]);
+    useEffect(() => { selectedAgentIdRef.current = selectedAgentId; }, [selectedAgentId]);
+    useEffect(() => { followEnabledRef.current = followEnabled; }, [followEnabled]);
+    
+    useEffect(() => { saveItem('bottomPanelVisible', bottomPanelVisible) }, [bottomPanelVisible]);
+    useEffect(() => { saveItem('leftPanelVisible', leftPanelVisible) }, [leftPanelVisible]);
+    useEffect(() => { saveItem('rightPanelVisible', rightPanelVisible) }, [rightPanelVisible]);
+    useEffect(() => { saveItem('centerPanelVisible', centerPanelVisible) }, [centerPanelVisible]);
+    useEffect(() => { saveItem('terminalSelected', terminalSelected) }, [terminalSelected]);
+    useEffect(() => { saveItem('diffEnabled', diffEnabled) }, [diffEnabled]);
+    useEffect(() => { saveItem('followEnabled', followEnabled) }, [followEnabled]);
+    useEffect(() => { saveItem('terminals', terminals) }, [terminals]);
 
     // Connect to backend on component mount
     useEffect(() => {

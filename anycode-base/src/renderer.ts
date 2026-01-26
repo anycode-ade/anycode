@@ -8,6 +8,7 @@ import {
     setSelectionFromOffsets as renderSelection,
 } from "./selection";
 import { Completion, completionKindMap } from "./lsp";
+
 import { Search, SearchMatch } from "./search";
 
 export class Renderer {
@@ -19,9 +20,7 @@ export class Renderer {
     private completionContainer: HTMLDivElement | null = null;
     private searchContainer: HTMLDivElement | null = null;
     private searchMatchLabel: HTMLDivElement | null = null;
-    private diffTooltipContainer: HTMLDivElement | null = null;
-    private currentHoveredHunkId: number | null = null;
-    private currentDiffResult: Map<number, DiffInfo> | undefined = undefined;
+
     private diffEnabled: boolean = false;
 
     constructor(
@@ -36,16 +35,8 @@ export class Renderer {
         this.codeContent = codeContent;
     }
 
-    public updateDiffResult(diffResult: Map<number, DiffInfo> | undefined) {
-        this.currentDiffResult = diffResult;
-        this.hideDiffTooltip();
-    }
-
     public setDiffEnabled(enabled: boolean) {
         this.diffEnabled = enabled;
-        if (!enabled) {
-            this.hideDiffTooltip();
-        }
     }
 
     public render(state: EditorState, search?: Search) {
@@ -69,9 +60,26 @@ export class Renderer {
         gutterFrag.appendChild(this.createSpacer(paddingTop));
         codeFrag.appendChild(this.createSpacer(paddingTop));
 
+        // Track which hunks we've already rendered ghost lines for
+        const renderedHunks = new Set<number>();
+
         for (let i = startLine; i < endLine; i++) {
             // get syntax highlight nodes (cache supported)
             const syntaxNodes: HighlighedNode[] = code.getLineNodes(i);
+
+            // Delegate ghost line rendering to DiffRenderer
+            if (diffResult && this.diffEnabled) {
+                const ghosts = this.renderGhostsForLine(
+                    i, diffResult, renderedHunks, settings
+                );
+                if (ghosts) {
+                    for (const ghost of ghosts) {
+                        codeFrag.appendChild(ghost.code);
+                        gutterFrag.appendChild(ghost.gutter);
+                        btnFrag.appendChild(ghost.btn);
+                    }
+                }
+            }
 
             const lineWrapper = this.createLineWrapper(i, syntaxNodes, errorLines, settings, diffResult);
             const lineNumberEl = this.createLineNumber(i, settings, diffResult);
@@ -116,94 +124,118 @@ export class Renderer {
         const lineHeight = settings.lineHeight;
         const buffer = settings.buffer;
         const { startLine, endLine } = this.getVisibleRange(totalLines, settings);
-    
+
         this.ensureSpacers(this.codeContent);
         this.ensureSpacers(this.gutter);
         this.ensureSpacers(this.buttonsColumn);
-    
+
         const topSpacer = this.codeContent.firstChild as HTMLElement;
         const bottomSpacer = this.codeContent.lastChild as HTMLElement;
-    
+
         const gutterTopSpacer = this.gutter.firstChild as HTMLElement;
         const gutterBottomSpacer = this.gutter.lastChild as HTMLElement;
-    
+
         const btnTopSpacer = this.buttonsColumn.firstChild as HTMLElement;
         const btnBottomSpacer = this.buttonsColumn.lastChild as HTMLElement;
-    
-        let currentStartLine = (this.codeContent.children[1] as AnycodeLine)?.lineNumber ?? -1;
-        let currentEndLine = ((this.codeContent.children[this.codeContent.children.length - 2] as AnycodeLine)?.lineNumber ?? -1) + 1; // exclusive
-    
+
+        // Find first and last real lines (skip spacers and ghost lines)
+        const realLines = this.getLines();
+        let currentStartLine = realLines.length > 0 ? realLines[0].lineNumber : -1;
+        let currentEndLine = realLines.length > 0 ? realLines[realLines.length - 1].lineNumber + 1 : -1; // exclusive
+
         let changed = false;
-    
+
         const needFullRerender =
             currentStartLine === -1 ||
             startLine >= currentEndLine ||
             endLine <= currentStartLine ||
             Math.abs(startLine - currentStartLine) > buffer * 2 ||
             Math.abs(endLine - currentEndLine) > buffer * 2;
-    
+
         if (needFullRerender) {
             this.render(state, search);
             return;
         }
-    
-        // delete rows above
+
+        // delete rows above - remove elements until we reach the target line
         while (currentStartLine < startLine && this.codeContent.children.length > 2) {
-            this.codeContent.removeChild(this.codeContent.children[1]);
-            this.gutter.removeChild(this.gutter.children[1]);
-            this.buttonsColumn.removeChild(this.buttonsColumn.children[1]);
-            currentStartLine++;
+            const child = this.codeContent.children[1];
+
+            // Always remove matching elements from all three columns
+            this.codeContent.removeChild(child);
+            if (this.gutter.children[1]) {
+                this.gutter.removeChild(this.gutter.children[1]);
+            }
+            if (this.buttonsColumn.children[1]) {
+                this.buttonsColumn.removeChild(this.buttonsColumn.children[1]);
+            }
+
+            // Only increment currentStartLine if we removed a real line (not ghost)
+            if (!child.hasAttribute('data-ghost')) {
+                currentStartLine++;
+            }
             changed = true;
         }
-    
-        // delete rows below
+
+        // delete rows below - similar logic
         while (currentEndLine > endLine && this.codeContent.children.length > 2) {
-            this.codeContent.removeChild(this.codeContent.children[this.codeContent.children.length - 2]);
-            this.gutter.removeChild(this.gutter.children[this.gutter.children.length - 2]);
-            this.buttonsColumn.removeChild(this.buttonsColumn.children[this.buttonsColumn.children.length - 2]);
-            currentEndLine--;
+            const index = this.codeContent.children.length - 2;
+            const child = this.codeContent.children[index];
+
+            this.codeContent.removeChild(child);
+            if (this.gutter.children[index]) {
+                this.gutter.removeChild(this.gutter.children[index]);
+            }
+            if (this.buttonsColumn.children[index]) {
+                this.buttonsColumn.removeChild(this.buttonsColumn.children[index]);
+            }
+
+            // Only decrement currentEndLine if we removed a real line (not ghost)
+            if (!child.hasAttribute('data-ghost')) {
+                currentEndLine--;
+            }
             changed = true;
         }
-    
-    
+
+
         // add roes above 
         while (currentStartLine > startLine) {
             currentStartLine--;
             const nodes = code.getLineNodes(currentStartLine);
             const lineEl = this.createLineWrapper(currentStartLine, nodes, state.errorLines, settings, diffResult);
-    
+
             this.container.appendChild(lineEl);
             this.container.removeChild(lineEl);
-    
+
             this.codeContent.insertBefore(lineEl, this.codeContent.children[1]);
             this.gutter.insertBefore(this.createLineNumber(currentStartLine, settings, diffResult), this.gutter.children[1]);
             this.buttonsColumn.insertBefore(
                 this.createLineButtons(currentStartLine, state.runLines, state.errorLines, settings),
                 this.buttonsColumn.children[1]
             );
-    
+
             changed = true;
         }
-    
+
         // add rows below
         while (currentEndLine < endLine) {
             const nodes = code.getLineNodes(currentEndLine);
             const lineEl = this.createLineWrapper(currentEndLine, nodes, state.errorLines, settings, diffResult);
-    
+
             this.container.appendChild(lineEl);
             this.container.removeChild(lineEl);
-    
+
             this.codeContent.insertBefore(lineEl, bottomSpacer);
             this.gutter.insertBefore(this.createLineNumber(currentEndLine, settings, diffResult), gutterBottomSpacer);
             this.buttonsColumn.insertBefore(
                 this.createLineButtons(currentEndLine, state.runLines, state.errorLines, settings),
                 btnBottomSpacer
             );
-    
+
             currentEndLine++;
             changed = true;
         }
-        
+
         // render cursor or selection
         if (!search || !search.isActive() || !search.isFocused()) {
             if (!selection || selection.isEmpty()) {
@@ -218,21 +250,27 @@ export class Renderer {
         if (search && search.isActive()) {
             this.updateSearchHighlights(search);
         }
-        
+
         if (!changed) return;
-    
+
         // update spacers
         const topHeight = Math.round(startLine * lineHeight);
         const bottomHeight = Math.round(Math.max(0, (totalLines - endLine) * lineHeight));
-    
+
         topSpacer.style.height = `${topHeight}px`;
         bottomSpacer.style.height = `${bottomHeight}px`;
-    
+
         gutterTopSpacer.style.height = `${topHeight}px`;
         gutterBottomSpacer.style.height = `${bottomHeight}px`;
-    
+
         btnTopSpacer.style.height = `${topHeight}px`;
         btnBottomSpacer.style.height = `${bottomHeight}px`;
+
+        // Update ghost lines after scroll if diff mode is enabled
+        if (this.diffEnabled && diffResult && diffResult.size > 0) {
+            const lines = this.getLines();
+            this.syncVisibleGhosts(startLine, endLine, diffResult, settings, lines);
+        }
     }
 
     public renderChanges(state: EditorState, search?: Search) {
@@ -241,54 +279,85 @@ export class Renderer {
 
         const { code, offset, selection, errorLines, settings, diffResult } = state;
 
-        // Store current diffResult for tooltip to use
-        this.currentDiffResult = diffResult;
         const totalLines = code.linesLength();
         const { startLine, endLine } = this.getVisibleRange(totalLines, settings);
-    
+
         const lines = this.getLines();
-    
-        if (lines.length === 0) { 
-            this.render(state); 
-            // console.timeEnd('updateChanges');
-            return; 
-        }
-    
-        const oldStartLine = lines[0].lineNumber;
-        const oldEndLine = lines[lines.length - 1].lineNumber + 1;
-    
-        if (oldStartLine !== startLine || oldEndLine !== endLine) {
-            // Full render if viewport changed
-            this.render(state);
+
+        if (lines.length === 0) {
+            this.render(state, search);
             // console.timeEnd('updateChanges');
             return;
         }
-        
+
+        const oldStartLine = lines[0].lineNumber;
+        const oldEndLine = lines[lines.length - 1].lineNumber + 1;
+
+        if (oldStartLine !== startLine || oldEndLine !== endLine) {
+            // Full render if viewport changed
+            this.render(state, search);
+            // console.timeEnd('updateChanges');
+            return;
+        }
+
         // Update only changed lines
         for (let i = startLine; i < endLine; i++) {
             const nodes = code.getLineNodes(i);
             const newHash = objectHash(nodes).toString();
-    
+
             const existingLine = lines.find(line => line.lineNumber === i);
-    
+
             if (existingLine) {
                 const existingHash = existingLine.hash;
                 if (existingHash !== newHash) {
                     const newLineEl = this.createLineWrapper(i, nodes, errorLines, settings, diffResult);
                     existingLine.replaceWith(newLineEl);
-                // Replace the line number (gutter) to reflect changes, too
-                if (this.gutter?.children && this.gutter.children.length > i + 1) {
-                    const newGutterLine = this.createLineNumber(i, settings, diffResult);
-                    const oldGutterLine = this.gutter.children[i + 1] as HTMLElement;
-                    this.gutter.replaceChild(newGutterLine, oldGutterLine);
-                }
+
+                    // Replace the line number (gutter) to reflect changes
+                    // Find the gutter element by data-line attribute (not by index, due to ghost lines)
+                    const oldGutterLine = this.gutter.querySelector(`.ln[data-line="${i}"]`) as HTMLElement;
+                    if (oldGutterLine) {
+                        const newGutterLine = this.createLineNumber(i, settings, diffResult);
+                        this.gutter.replaceChild(newGutterLine, oldGutterLine);
+                    }
                 }
             } else {
                 // Fallback to full render if line is missing
-                this.render(state);
+                this.render(state, search);
                 console.timeEnd('updateChanges');
                 return;
             }
+        }
+
+        // Update gutter for all visible lines to ensure diff classes are correct
+        // (even if line content hash didn't change, diffInfo might have changed)
+        if (diffResult) {
+            for (let i = startLine; i < endLine; i++) {
+                const oldGutterLine = this.gutter.querySelector(`.ln[data-line="${i}"]`) as HTMLElement;
+                if (oldGutterLine) {
+                    const hasDiffClass = oldGutterLine.classList.contains('diff-changed') ||
+                        oldGutterLine.classList.contains('diff-added') ||
+                        oldGutterLine.classList.contains('diff-deleted');
+                    const diffInfo = diffResult.get(i + 1);
+
+                    // Only update if the diff state changed
+                    if (hasDiffClass || diffInfo) {
+                        const expectedClass = diffInfo ? this.getDiffClass(diffInfo.changeType) : '';
+                        const hasCorrectClass = expectedClass ? oldGutterLine.classList.contains(expectedClass) : !hasDiffClass;
+
+                        if (!hasCorrectClass) {
+                            const newGutterLine = this.createLineNumber(i, settings, diffResult);
+                            this.gutter.replaceChild(newGutterLine, oldGutterLine);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Update ghost lines if diff mode is enabled
+        if (this.diffEnabled && diffResult && diffResult.size > 0) {
+            const lines = this.getLines();
+            this.syncVisibleGhosts(startLine, endLine, diffResult, settings, lines);
         }
 
         // render search highlights
@@ -312,11 +381,11 @@ export class Renderer {
     private ensureSpacers(container: HTMLElement) {
         const first = container.firstChild as HTMLElement | null;
         const last = container.lastChild as HTMLElement | null;
-    
+
         if (!first || !first.classList?.contains('spacer')) {
             container.insertBefore(this.createSpacer(0), container.firstChild);
         }
-    
+
         if (!last || !last.classList?.contains('spacer')) {
             container.appendChild(this.createSpacer(0));
         }
@@ -379,6 +448,8 @@ export class Renderer {
         return div;
     }
 
+
+
     private createLineWrapper(
         lineNumber: number,
         nodes: HighlighedNode[],
@@ -425,17 +496,7 @@ export class Renderer {
             wrapper.setAttribute('data-error', smallError);
         }
 
-        // Attach diff hover listeners for modified lines
-        if (diffResult) {
-            const diffInfo = diffResult.get(lineNumber + 1);
-            if (diffInfo?.changeType === 'modified') {
-                // Only attach if not already attached (avoid duplicate listeners)
-                if (!(wrapper as any)._diffListenerAttached) {
-                    this.attachDiffHoverListeners(wrapper, lineNumber);
-                    (wrapper as any)._diffListenerAttached = true;
-                }
-            }
-        }
+
 
         return wrapper;
     }
@@ -507,16 +568,22 @@ export class Renderer {
 
     public getLines(): AnycodeLine[] {
         return Array.from(this.codeContent.children)
-            .filter((child) => !child.classList.contains('spacer')) as AnycodeLine[];
+            .filter((child) => !child.classList.contains('spacer') && !child.hasAttribute('data-ghost')) as AnycodeLine[];
     }
 
     public getLine(lineNumber: number): AnycodeLine | null {
-        if (this.codeContent.children.length <= 2) return null;
-        const firstLine = this.codeContent.children[1] as AnycodeLine;
-        const firstLineNumber = firstLine.lineNumber;
-        const idx = lineNumber - firstLineNumber;
-        if (idx < 0 || idx >= this.codeContent.children.length - 2) return null;
-        return this.codeContent.children[idx + 1] as AnycodeLine;
+        // Iterate through children, skipping spacers and ghost lines
+        for (let i = 0; i < this.codeContent.children.length; i++) {
+            const child = this.codeContent.children[i];
+            if (child.classList.contains('spacer') || child.hasAttribute('data-ghost')) {
+                continue;
+            }
+            const line = child as AnycodeLine;
+            if (line.lineNumber === lineNumber) {
+                return line;
+            }
+        }
+        return null;
     }
 
     public getStartLine(): AnycodeLine | null {
@@ -532,63 +599,63 @@ export class Renderer {
     public focus(state: EditorState, focusLine: number | null = null): boolean {
         const { code, offset, settings } = state;
         if (!code) return false;
-    
+
         let { line } = code.getPosition(offset);
         if (focusLine !== null) line = focusLine;
-    
+
         const cursorTop = line * settings.lineHeight;
         const cursorBottom = cursorTop + settings.lineHeight;
-    
+
         const viewportTop = this.container.scrollTop;
         const viewportBottom = viewportTop + this.container.clientHeight;
-        
+
         const bottomPaddingLines = 3;
         const padding = settings.lineHeight * bottomPaddingLines;
         let targetScrollTop = viewportTop;
-    
+
         if (cursorTop < viewportTop) {
             targetScrollTop = cursorTop;
         } else if (cursorBottom > viewportBottom - padding) {
             targetScrollTop = cursorBottom - this.container.clientHeight + padding;
         }
-    
+
         const tolerance = 2;
         if (Math.abs(targetScrollTop - viewportTop) > tolerance) {
             this.container.scrollTo({ top: targetScrollTop });
             return true;
         }
-    
+
         return false;
     }
 
     public focusCenter(state: EditorState): boolean {
         const { code, offset, settings } = state;
         if (!code) return false;
-    
+
         const { line } = code.getPosition(offset);
-    
+
         const cursorTop = line * settings.lineHeight;
         const cursorCenter = cursorTop + settings.lineHeight / 2;
-    
+
         const viewportHeight = this.container.clientHeight;
         const targetScrollTop = cursorCenter - viewportHeight / 2;
-    
+
         const maxScroll = this.container.scrollHeight - viewportHeight;
         const clampedScrollTop = Math.max(0, Math.min(targetScrollTop, maxScroll));
-    
+
         this.container.scrollTo({ top: clampedScrollTop });
-    
+
         return true;
     }
 
     public renderErrors(errorLines: Map<number, string>) {
         const lines = this.getLines();
         if (!lines.length) return;
-            
+
         for (let i = 0; i < lines.length; i++) {
             const lineDiv = lines[i];
             const lineNumber = lineDiv.lineNumber;
-        
+
             if (errorLines.has(lineNumber)) {
                 const dm = errorLines.get(lineNumber)!;
                 // Only update attribute if value is different or missing
@@ -616,7 +683,7 @@ export class Renderer {
     }
 
     public renderCompletion(
-        completions: Completion[], selectedIndex: number, code: Code, offset: number, 
+        completions: Completion[], selectedIndex: number, code: Code, offset: number,
         onCompletionClick: (index: number) => void
     ) {
         if (!this.completionContainer) {
@@ -633,7 +700,7 @@ export class Renderer {
             completionDiv.className = 'completion-item';
             completionDiv.textContent = completion.label;
 
-            if (completion.kind) {  
+            if (completion.kind) {
                 const kindText = document.createElement('span');
                 kindText.className = 'completion-kind';
                 kindText.textContent = completionKindMap[completion.kind] || 'Unknown';
@@ -662,7 +729,7 @@ export class Renderer {
         var completion = this.completionContainer;
 
         const startLineDiv = this.getLine(line);
-        const startPos = findNodeAndOffset(startLineDiv!, prev+1);
+        const startPos = findNodeAndOffset(startLineDiv!, prev + 1);
 
         if (startPos) {
             // move completion to previous word position around cursor
@@ -677,7 +744,7 @@ export class Renderer {
             const startRect = calculateBoundingRect(node);
             const paddingLeft = parseInt(getComputedStyle(completion!).paddingLeft || "10");
             const containerRect = this.container.getBoundingClientRect();
-            const left = startRect.left - containerRect.left + this.container.scrollLeft - paddingLeft*2;
+            const left = startRect.left - containerRect.left + this.container.scrollLeft - paddingLeft * 2;
             const top = startRect.bottom - containerRect.top + this.container.scrollTop + 1;
 
             if (completion && completion.style) {
@@ -719,25 +786,25 @@ export class Renderer {
     }
 
     renderHighlights(
-        lineDiv: AnycodeLine, 
-        startColumn: number, 
-        endColumn: number, 
+        lineDiv: AnycodeLine,
+        startColumn: number,
+        endColumn: number,
         selected: boolean
     ) {
         const spans = Array.from(lineDiv.querySelectorAll('span'));
         let charCount = 0;
-        
+
         for (let span of spans) {
             if (!span.textContent) continue;
-            
+
             const textLength = span.textContent.length;
-    
+
             // Check if the current span is fully within the range
             if (charCount + textLength <= startColumn || charCount >= endColumn) {
                 charCount += textLength; // Skip spans outside the range
                 continue;
             }
-    
+
             if (charCount >= startColumn && charCount + textLength <= endColumn) {
                 // Fully matched span
                 if (!span.classList.contains('highlight'))
@@ -748,19 +815,19 @@ export class Renderer {
                 // Partially matched span
                 const startOffset = Math.max(0, startColumn - charCount);
                 const endOffset = Math.min(textLength, endColumn - charCount);
-    
+
                 const beforeText = span.textContent.slice(0, startOffset);
                 const highlightedText = span.textContent.slice(startOffset, endOffset);
                 const afterText = span.textContent.slice(endOffset);
-    
+
                 const fragment = document.createDocumentFragment();
-    
+
                 if (beforeText) {
                     const beforeSpan = span.cloneNode(false);
                     beforeSpan.textContent = beforeText;
                     fragment.appendChild(beforeSpan);
                 }
-    
+
                 if (highlightedText) {
                     const highlightSpan = span.cloneNode(false) as HTMLElement;
                     if (!highlightSpan.classList.contains('highlight'))
@@ -770,16 +837,16 @@ export class Renderer {
                     highlightSpan.textContent = highlightedText;
                     fragment.appendChild(highlightSpan);
                 }
-    
+
                 if (afterText) {
                     const afterSpan = span.cloneNode(false);
                     afterSpan.textContent = afterText;
                     fragment.appendChild(afterSpan);
                 }
-    
+
                 span.replaceWith(fragment);
             }
-    
+
             charCount += textLength;
         }
     }
@@ -789,10 +856,10 @@ export class Renderer {
         const patternLines = pattern.split(/\r?\n/);
         const isMultiline = patternLines.length > 1;
         const matches = search.getMatches();
-        
+
         for (let index = 0; index < matches.length; index++) {
             const m = matches[index];
-            
+
             if (!isMultiline) {
                 // Single-line: remove highlight from first line only
                 let line = this.getLine(m.line);
@@ -805,7 +872,7 @@ export class Renderer {
                 if (firstLine) {
                     this.removeHighlights(firstLine);
                 }
-                
+
                 // Remove highlights from intermediate and last lines
                 for (let j = 1; j < patternLines.length; j++) {
                     const lineIndex = m.line + j;
@@ -828,7 +895,7 @@ export class Renderer {
         // Only remove the highlight from the currently selected match
         if (selectedIndex >= 0 && selectedIndex < matches.length) {
             const match = matches[selectedIndex];
-            
+
             if (!isMultiline) {
                 // Single-line: remove .selected class from first line only
                 let line = this.getLine(match.line);
@@ -842,7 +909,7 @@ export class Renderer {
                 if (firstLine) {
                     this.removeHighlights(firstLine, true);
                 }
-                
+
                 // Remove .selected class from intermediate and last lines
                 for (let j = 1; j < patternLines.length; j++) {
                     const lineIndex = match.line + j;
@@ -857,7 +924,7 @@ export class Renderer {
 
     private removeHighlights(lineDiv: AnycodeLine, selectedOnly: boolean = false) {
         const highlightedSpans = Array.from(lineDiv.querySelectorAll('span.highlight, span.selected'));
-    
+
         for (const span of highlightedSpans) {
             span.classList.remove('highlight');
             if (selectedOnly) span.classList.remove('selected');
@@ -869,7 +936,7 @@ export class Renderer {
         while (i < lineDiv.childNodes.length - 1) {
             const current = lineDiv.childNodes[i] as ChildNode;
             const next = lineDiv.childNodes[i + 1] as ChildNode;
-            
+
             if (
                 current.nodeType === Node.ELEMENT_NODE &&
                 next.nodeType === Node.ELEMENT_NODE
@@ -1065,7 +1132,7 @@ export class Renderer {
         controlsRow.style.display = 'flex';
         controlsRow.style.alignItems = 'center';
         controlsRow.style.justifyContent = 'space-between';
-        
+
         // Left side: close button and up and down buttons
         const leftControls = document.createElement('div');
         leftControls.style.display = 'flex';
@@ -1073,15 +1140,15 @@ export class Renderer {
         leftControls.appendChild(prevButton);
         leftControls.appendChild(nextButton);
         leftControls.appendChild(closeButton);
-        
+
         controlsRow.appendChild(matchLabel);
         controlsRow.appendChild(leftControls);
-        
+
         this.searchMatchLabel = matchLabel;
 
         // Wire input and keyboard handlers
         if (handlers && handlers.onKeyDown) {
-            inputField.addEventListener('keydown', (e) => 
+            inputField.addEventListener('keydown', (e) =>
                 handlers!.onKeyDown!(e, inputField as HTMLTextAreaElement));
         }
 
@@ -1162,6 +1229,13 @@ export class Renderer {
                 const codeLine = this.getLine(lineIndex);
                 if (codeLine) {
                     const expectedCodeClass = changeType === 'modified' ? 'diff-changed' : 'diff-added';
+
+                    // Check if already has the correct class
+                    if (codeLine.classList.contains(expectedCodeClass)) {
+                        continue;
+                    }
+
+                    // Update classes only if needed
                     codeLine.classList.remove('diff-changed', 'diff-added', 'diff-deleted');
                     codeLine.classList.add(expectedCodeClass);
                 }
@@ -1178,8 +1252,8 @@ export class Renderer {
         }
 
         gutterLine.classList.remove('diff-changed', 'diff-added', 'diff-deleted');
-        
-        const diffClass = this.getDiffClassForChangeType(changeType);
+
+        const diffClass = this.getDiffClass(changeType);
         if (diffClass) {
             gutterLine.classList.add(diffClass);
         }
@@ -1201,7 +1275,242 @@ export class Renderer {
         }
     }
 
-    private getDiffClassForChangeType(changeType: ChangeType): string {
+    public clearAllDiffs(): void {
+        const gutterLines = this.gutter.querySelectorAll('.ln.diff-changed, .ln.diff-added, .ln.diff-deleted');
+        gutterLines.forEach((gutterLine) => {
+            gutterLine.classList.remove('diff-changed', 'diff-added', 'diff-deleted');
+        });
+
+        const codeLines = this.codeContent.querySelectorAll('.line.diff-changed, .line.diff-added, .line.diff-deleted');
+        codeLines.forEach((codeLine: Element) => {
+            codeLine.classList.remove('diff-changed', 'diff-added', 'diff-deleted');
+        });
+
+        // Clear all ghost lines
+        this.clearAllGhostLines();
+    }
+
+    // ========== Diff / Ghost Lines Methods ==========
+
+    private renderGhostsForLine(
+        lineIndex: number,
+        diffResult: Map<number, DiffInfo>,
+        renderedHunks: Set<number>,
+        settings: EditorSettings
+    ): GhostLine[] | null {
+        const diffInfo = diffResult.get(lineIndex + 1);
+        if (diffInfo?.changeType === 'modified' && diffInfo.oldLines && diffInfo.oldLines.length > 0) {
+            const hunkId = diffInfo.hunkId;
+
+            // Check if this is the first line in the hunk within the visible range
+            // And we haven't rendered this hunk yet
+            if (!renderedHunks.has(hunkId)) {
+                renderedHunks.add(hunkId);
+
+                const lines: GhostLine[] = [];
+
+                // Add ghost lines for deleted content
+                for (const oldLine of diffInfo.oldLines) {
+                    const ghostLine = this.createDeletedGhostLine(oldLine, settings, hunkId);
+
+                    // Add empty gutter and button elements to keep alignment
+                    const emptyGutter = document.createElement('div');
+                    emptyGutter.className = 'ln';
+                    emptyGutter.style.height = `${settings.lineHeight}px`;
+                    emptyGutter.setAttribute('data-ghost', 'true');
+                    emptyGutter.setAttribute('data-hunk-id', hunkId.toString());
+
+                    const emptyButton = document.createElement('div');
+                    emptyButton.className = 'bt';
+                    emptyButton.style.height = `${settings.lineHeight}px`;
+                    emptyButton.setAttribute('data-ghost', 'true');
+                    emptyButton.setAttribute('data-hunk-id', hunkId.toString());
+
+                    lines.push({ code: ghostLine, gutter: emptyGutter, btn: emptyButton });
+                }
+                return lines;
+            }
+        }
+        return null;
+    }
+
+    private syncVisibleGhosts(
+        startLine: number,
+        endLine: number,
+        diffResult: Map<number, DiffInfo>,
+        settings: EditorSettings,
+        lines: AnycodeLine[]
+    ): void {
+        if (!diffResult || diffResult.size === 0) return;
+
+        const visibleHunks = new Set<number>();
+
+        // Collect all hunks in visible range
+        for (let i = startLine; i < endLine; i++) {
+            const diffInfo = diffResult.get(i + 1);
+            if (diffInfo?.changeType === 'modified' && diffInfo.oldLines && diffInfo.oldLines.length > 0) {
+                visibleHunks.add(diffInfo.hunkId);
+            }
+        }
+
+        // Update ghost lines for each visible hunk
+        for (const hunkId of visibleHunks) {
+            let oldLines: string[] | undefined;
+            for (const [_, info] of diffResult) {
+                if (info.hunkId === hunkId && info.oldLines) {
+                    oldLines = info.oldLines;
+                    break;
+                }
+            }
+            if (oldLines) {
+                this.updateGhostLinesForHunk(hunkId, oldLines, settings, diffResult, lines);
+            }
+        }
+
+        // Remove ghost lines for hunks that are no longer visible
+        const allGhostLines = this.codeContent.querySelectorAll('[data-ghost="true"]');
+        const ghostHunks = new Set<number>();
+        allGhostLines.forEach((ghost) => {
+            const hunkId = parseInt(ghost.getAttribute('data-hunk-id') || '-1', 10);
+            if (hunkId >= 0) {
+                ghostHunks.add(hunkId);
+            }
+        });
+
+        for (const hunkId of ghostHunks) {
+            if (!visibleHunks.has(hunkId)) {
+                this.removeGhostLinesForHunk(hunkId);
+            }
+        }
+    }
+
+    private updateGhostLinesForHunk(
+        hunkId: number, oldLines: string[],
+        settings: EditorSettings,
+        diffResult: Map<number, DiffInfo>,
+        lines: AnycodeLine[]
+    ): void {
+        // Find existing ghost lines for this hunk
+        const existingGhosts = this.findGhostLinesForHunk(hunkId);
+
+        // If content matches, no update needed
+        if (existingGhosts.length === oldLines.length) {
+            let match = true;
+            for (let i = 0; i < oldLines.length; i++) {
+                const expectedText = oldLines[i] === '' ? '\u00A0' : oldLines[i];
+                if (existingGhosts[i].textContent !== expectedText) {
+                    match = false;
+                    break;
+                }
+            }
+            if (match) return; // No changes needed
+        }
+
+        // Remove old ghost lines and corresponding gutter/button elements
+        this.removeGhostLinesForHunk(hunkId);
+
+        // Find the first line in this hunk
+        const firstLineNum = this.getFirstLineInHunk(hunkId, diffResult);
+        if (firstLineNum === null) return;
+
+        // Find firstLine from lines array instead of DOM query
+        const firstLine = lines.find(line => line.lineNumber === firstLineNum - 1);
+        if (!firstLine) return;
+
+        // Insert new ghost lines before the first line
+        const codeFrag = document.createDocumentFragment();
+        const gutterFrag = document.createDocumentFragment();
+        const btnFrag = document.createDocumentFragment();
+
+        for (const oldLine of oldLines) {
+            const ghostLine = this.createDeletedGhostLine(oldLine, settings, hunkId);
+            codeFrag.appendChild(ghostLine);
+
+            const emptyGutter = document.createElement('div');
+            emptyGutter.className = 'ln';
+            emptyGutter.style.height = `${settings.lineHeight}px`;
+            emptyGutter.setAttribute('data-ghost', 'true');
+            emptyGutter.setAttribute('data-hunk-id', hunkId.toString());
+            gutterFrag.appendChild(emptyGutter);
+
+            const emptyButton = document.createElement('div');
+            emptyButton.className = 'bt';
+            emptyButton.style.height = `${settings.lineHeight}px`;
+            emptyButton.setAttribute('data-ghost', 'true');
+            emptyButton.setAttribute('data-hunk-id', hunkId.toString());
+            btnFrag.appendChild(emptyButton);
+        }
+
+        // Find corresponding gutter and button elements by data-line attribute
+        const firstGutterEl = this.gutter.querySelector(`.ln[data-line="${firstLineNum - 1}"]`);
+        const firstBtnEl = this.buttonsColumn.querySelector(`.bt[data-line="${firstLineNum - 1}"]`);
+
+        // Insert at the correct positions in all three containers
+        this.codeContent.insertBefore(codeFrag, firstLine);
+
+        if (firstGutterEl) {
+            this.gutter.insertBefore(gutterFrag, firstGutterEl);
+        }
+        if (firstBtnEl) {
+            this.buttonsColumn.insertBefore(btnFrag, firstBtnEl);
+        }
+    }
+
+    private createDeletedGhostLine(
+        text: string, settings: EditorSettings, hunkId: number
+    ): HTMLDivElement {
+        const ghostLine = document.createElement('div');
+        ghostLine.className = "line line-deleted-ghost";
+        ghostLine.style.lineHeight = `${settings.lineHeight}px`;
+        ghostLine.setAttribute('data-ghost', 'true');
+        ghostLine.setAttribute('data-hunk-id', hunkId.toString());
+
+        if (text === '') {
+            ghostLine.textContent = '\u00A0'; // non-breaking space
+        } else {
+            ghostLine.textContent = text;
+        }
+
+        return ghostLine;
+    }
+
+    private findGhostLinesForHunk(hunkId: number): HTMLElement[] {
+        const ghostLines: HTMLElement[] = [];
+        const allGhostLines = this.codeContent.querySelectorAll('[data-ghost="true"]');
+        allGhostLines.forEach((ghost) => {
+            if (ghost.getAttribute('data-hunk-id') === hunkId.toString()) {
+                ghostLines.push(ghost as HTMLElement);
+            }
+        });
+        return ghostLines;
+    }
+
+    private removeGhostLinesForHunk(hunkId: number): void {
+        const ghostLines = this.findGhostLinesForHunk(hunkId);
+        ghostLines.forEach(ghost => ghost.remove());
+
+        const gutterGhosts = this.gutter.querySelectorAll(`[data-ghost="true"][data-hunk-id="${hunkId}"]`);
+        gutterGhosts.forEach(ghost => ghost.remove());
+
+        const btnGhosts = this.buttonsColumn.querySelectorAll(`[data-ghost="true"][data-hunk-id="${hunkId}"]`);
+        btnGhosts.forEach(ghost => ghost.remove());
+    }
+
+    private getFirstLineInHunk(
+        hunkId: number, diffResult: Map<number, DiffInfo>
+    ): number | null {
+        let minLine: number | null = null;
+        for (const [lineNum, info] of diffResult) {
+            if (info.hunkId === hunkId && info.changeType === 'modified') {
+                if (minLine === null || lineNum < minLine) {
+                    minLine = lineNum;
+                }
+            }
+        }
+        return minLine;
+    }
+
+    private getDiffClass(changeType: ChangeType): string {
         switch (changeType) {
             case 'modified':
                 return 'diff-changed';
@@ -1214,117 +1523,31 @@ export class Renderer {
         }
     }
 
-    public clearAllDiffs(): void {
-        const gutterLines = this.gutter.querySelectorAll('.ln.diff-changed, .ln.diff-added, .ln.diff-deleted');
-        gutterLines.forEach((gutterLine) => {
-            gutterLine.classList.remove('diff-changed', 'diff-added', 'diff-deleted');
+    private clearAllGhostLines(): void {
+        // Remove all ghost lines from code
+        const ghostLines = this.codeContent.querySelectorAll('[data-ghost="true"]');
+        ghostLines.forEach((ghostLine) => {
+            ghostLine.remove();
         });
 
-        const codeLines = this.codeContent.querySelectorAll('.line.diff-changed, .line.diff-added, .line.diff-deleted');
-        codeLines.forEach((codeLine: Element) => {
-            codeLine.classList.remove('diff-changed', 'diff-added', 'diff-deleted');
-            // Clear the listener flag when removing diff classes
-            (codeLine as any)._diffListenerAttached = false;
-        });
-    }
-
-    private showDiffTooltip(lineDiv: HTMLElement, lineNumber: number): void {
-        // Don't show tooltip if diff mode is disabled
-        if (!this.diffEnabled) {
-            return;
-        }
-
-        // Hide previous tooltip
-        this.hideDiffTooltip();
-
-        // Use current diffResult from render state
-        if (!this.currentDiffResult) {
-            return;
-        }
-
-        // Get diffInfo for this line to get hunkId
-        const diffInfo = this.currentDiffResult.get(lineNumber + 1);
-        if (!diffInfo || !diffInfo.oldLines || diffInfo.oldLines.length === 0) {
-            return;
-        }
-
-        const hunkId = diffInfo.hunkId;
-
-        // If tooltip already showing for this hunk, do nothing
-        if (this.currentHoveredHunkId === hunkId && this.diffTooltipContainer) {
-            return;
-        }
-
-
-
-        // Collect all lines with this hunkId and find the first one
-        let oldLines: string[] = [];
-        let firstLineInHunk: HTMLElement | null = null;
-        let minLineNum = Infinity;
-        const lineHeight = 20; // Standard line height
-
-        for (const [lineNum, info] of this.currentDiffResult) {
-            if (info.hunkId === hunkId) {
-                // Track the first (minimum) line number in this hunk
-                if (lineNum < minLineNum) {
-                    minLineNum = lineNum;
-                    firstLineInHunk = this.getLine(lineNum - 1);
-                    // Get oldLines from this line (all lines in hunk have same oldLines)
-                    // Make a copy to avoid reference issues
-                    if (info.oldLines) {
-                        oldLines = [...info.oldLines];
-                    }
-                }
-            }
-        }
-
-        if (oldLines.length === 0) {
-            return;
-        }
-
-        // Create tooltip element
-        const tooltip = document.createElement('div');
-        tooltip.className = 'diff-tooltip glass';
-        // Map each line, replacing empty strings with non-breaking space for visibility
-        const displayLines = oldLines.map(line => line === '' ? '\u00A0' : line);
-        const tooltipText = displayLines.join('\n');
-        tooltip.textContent = tooltipText;
-
-        // Position tooltip above the first line in the hunk with extra space
-        const targetLine = firstLineInHunk || lineDiv;
-        const rect = targetLine.getBoundingClientRect();
-        const containerRect = this.container.getBoundingClientRect();
-
-        // Position above first line + space for old lines + extra offset for visibility
-        const tooltipHeight = oldLines.length * lineHeight;
-        const topOffset = rect.top - containerRect.top - tooltipHeight + this.container.scrollTop;
-
-        tooltip.style.position = 'absolute';
-        tooltip.style.top = `${topOffset}px`;
-        tooltip.style.left = `${rect.left - containerRect.left}px`;
-
-        this.container.appendChild(tooltip);
-        this.diffTooltipContainer = tooltip;
-        this.currentHoveredHunkId = hunkId;
-    }
-
-    private hideDiffTooltip(): void {
-        if (this.diffTooltipContainer) {
-            this.diffTooltipContainer.remove();
-            this.diffTooltipContainer = null;
-        }
-        this.currentHoveredHunkId = null;
-    }
-
-    private attachDiffHoverListeners(lineDiv: HTMLElement, lineNumber: number): void {
-        lineDiv.addEventListener('mouseenter', (e) => {
-            e.stopPropagation();
-            this.showDiffTooltip(lineDiv, lineNumber);
+        // Remove ghost elements from gutter
+        const gutterGhosts = this.gutter.querySelectorAll('[data-ghost="true"]');
+        gutterGhosts.forEach((ghost) => {
+            ghost.remove();
         });
 
-        lineDiv.addEventListener('mouseleave', (e) => {
-            e.stopPropagation();
-            this.hideDiffTooltip();
+        // Remove ghost elements from buttons
+        const btnGhosts = this.buttonsColumn.querySelectorAll('[data-ghost="true"]');
+        btnGhosts.forEach((ghost) => {
+            ghost.remove();
         });
     }
+}
+
+
+
+interface GhostLine {
+    code: HTMLElement;
+    gutter: HTMLElement;
+    btn: HTMLElement;
 }

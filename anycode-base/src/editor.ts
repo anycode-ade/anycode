@@ -7,18 +7,18 @@ import { getPosFromMouse } from './mouse';
 import { Selection } from "./selection";
 import { Completion, CompletionRequest, DefinitionRequest, DefinitionResponse } from "./lsp";
 import {
-    Action, ActionContext, ActionResult, 
+    Action, ActionContext, ActionResult,
     executeAction, handlePasteText,
 } from './actions';
-import { 
+import {
     generateCssClasses, addCssToDocument,
-    findPrevWord, findNextWord, 
+    findPrevWord, findNextWord,
     getCompletionRange, scoreMatches
 } from './utils';
 
 import './styles.css';
 import { Search } from "./search";
-import { computeGitChangesDetailed, ChangeType, DiffInfo } from "./diff";
+import { computeGitChangesDetailed as computeGitChanges, ChangeType, DiffInfo } from "./diff";
 
 export interface EditorSettings {
     lineHeight: number;
@@ -71,15 +71,15 @@ export class AnycodeEditor {
 
     private diffEnabled: boolean = true;
     private originalCode?: string;
-    private diffResult?: Map<number, DiffInfo>;
+    private diffs?: Map<number, DiffInfo>;
 
     constructor(
-        initialText = '', 
-        filename: string = 'test.txt', 
-        language: string = 'javascript', 
+        initialText = '',
+        filename: string = 'test.txt',
+        language: string = 'javascript',
         options: any = {}
     ) {
-        this.code = new Code(initialText, filename, language);        
+        this.code = new Code(initialText, filename, language);
         // Set initial cursor position
         if (options.line !== undefined && options.column !== undefined) {
             this.offset = this.code.getOffset(options.line, options.column);
@@ -93,7 +93,7 @@ export class AnycodeEditor {
         if (this.diffEnabled) {
             this.originalCode = initialText;
             const currentText = this.code.getContent();
-            this.diffResult = computeGitChangesDetailed(this.originalCode, currentText);
+            this.diffs = computeGitChanges(this.originalCode, currentText);
         }
         
         const theme = options.theme || vesper;
@@ -137,7 +137,7 @@ export class AnycodeEditor {
         }
     }
 
-    public setOnChange(func: (t: Change) => void ) {
+    public setOnChange(func: (t: Change) => void) {
         this.code.setOnChange(func);
     }
 
@@ -148,9 +148,9 @@ export class AnycodeEditor {
     public setText(newText: string) {
         this.code.setContent(newText);
         if (this.diffEnabled && this.originalCode !== undefined) {
-            this.diffResult = computeGitChangesDetailed(this.originalCode, newText);
+            this.diffs = computeGitChanges(this.originalCode, newText);
         } else {
-            this.diffResult = undefined;
+            this.diffs = undefined;
         }
     }
 
@@ -208,7 +208,7 @@ export class AnycodeEditor {
         }
         this.renderer.renderErrors(this.errorLines);
     }
-    
+
     public setCompletions(completions: Completion[]) {
         this.completions = completions;
     }
@@ -229,7 +229,7 @@ export class AnycodeEditor {
         this.onCursorChangeCallback = callback;
     }
 
-    private setupEventListeners() {        
+    private setupEventListeners() {
         this.handleScroll = this.handleScroll.bind(this);
         this.container.addEventListener("scroll", this.handleScroll);
         
@@ -304,7 +304,7 @@ export class AnycodeEditor {
                 lineHeight: this.settings.lineHeight,
                 buffer: this.settings.buffer,
             },
-            diffResult: this.diffResult,
+            diffResult: this.diffs,
         };
     }
 
@@ -549,8 +549,8 @@ export class AnycodeEditor {
     }
     
     private selectWord(row: number, col: number) {
-        const line = this.code.line(row); 
-    
+        const line = this.code.line(row);
+
         const startCol = findPrevWord(line, col);
         const endCol = findNextWord(line, col);
     
@@ -625,7 +625,7 @@ export class AnycodeEditor {
         const result = await executeAction(action, ctx);
         this.applyEditResult(result);
 
-        if (this.isCompletionOpen){
+        if (this.isCompletionOpen) {
             await this.showCompletion();
         }
         
@@ -641,10 +641,10 @@ export class AnycodeEditor {
 
         // Shortcuts
         if (metaKey) {
-            if (shiftKey && key.toLowerCase() === 'z') 
+            if (shiftKey && key.toLowerCase() === 'z')
                 return Action.REDO;
-            if (key.toLowerCase() === '/') 
-                    return Action.COMMENT;
+            if (key.toLowerCase() === '/')
+                return Action.COMMENT;
             
             switch (key.toLowerCase()) {
                 case 'z': return Action.UNDO;
@@ -702,19 +702,15 @@ export class AnycodeEditor {
         const selectionChanged = this.selection !== result.ctx.selection;
         
         if (!textChanged && !offsetChanged && !selectionChanged) return;
-    
+        
         if (textChanged) {
             this.code = result.ctx.code;
             // calculate diff when text changes
             if (this.diffEnabled && this.originalCode !== undefined) {
                 const currentText = this.code.getContent();
-                this.diffResult = computeGitChangesDetailed(this.originalCode, currentText);
-                console.log('diffResult', this.diffResult);
-                // Update renderer with fresh diffResult immediately
-                this.renderer.updateDiffResult(this.diffResult);
+                this.diffs = computeGitChanges(this.originalCode, currentText);
             } else {
-                this.diffResult = undefined;
-                this.renderer.updateDiffResult(undefined);
+                this.diffs = undefined;
             }
         }
         if (offsetChanged) this.offset = result.ctx.offset;
@@ -1034,7 +1030,7 @@ export class AnycodeEditor {
             this.search.setNeedsFocus(false);
             return;
         }
-    
+        
         // Perform search
         const matches = this.getEditorState().code.search(pattern);
         this.search.clear();
@@ -1074,9 +1070,9 @@ export class AnycodeEditor {
         
         if (this.diffEnabled && this.originalCode !== undefined) {
             const currentText = this.code.getContent();
-            this.diffResult = computeGitChangesDetailed(this.originalCode, currentText);
+            this.diffs = computeGitChanges(this.originalCode, currentText);
         } else {
-            this.diffResult = undefined;
+            this.diffs = undefined;
         }
         
         this.renderer.renderChanges(this.getEditorState(), this.search);
@@ -1093,24 +1089,27 @@ export class AnycodeEditor {
 
         if (enabled && this.originalCode !== undefined) {
             const currentText = this.code.getContent();
-            this.diffResult = computeGitChangesDetailed(this.originalCode, currentText);
-            this.renderer.updateDiffResult(this.diffResult);
+            this.diffs = computeGitChanges(this.originalCode, currentText);
         }
 
         if (!enabled) {
             this.renderer.clearAllDiffs();
+        } else {
+            this.renderer.render(this.getEditorState(), this.search);
+            this.verifyDiffRendering();
         }
-
-        this.renderer.renderChanges(this.getEditorState(), this.search);
-        this.verifyDiffRendering();
     }
 
     private verifyDiffRendering(): void {
-        if (!this.diffEnabled || !this.diffResult || this.diffResult.size === 0) {
+        if (!this.diffEnabled || this.diffs === undefined) {
             return;
         }
 
-        this.renderer.verifyDiffRendering(this.diffResult);
+        if (this.diffs.size == 0) {
+            this.renderer.clearAllDiffs();
+        }
+
+        this.renderer.verifyDiffRendering(this.diffs);
     }
 
 }

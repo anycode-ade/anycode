@@ -1,55 +1,50 @@
 
 import { type Terminal, type AcpSession, type AcpAgent} from './types';
 
-export function loadLeftPanelVisible(): boolean {
-    const stored = localStorage.getItem('leftPanelVisible');
-    if (stored) {
-        return JSON.parse(stored);
+export function saveItem<T>(key: string, value: T): void {
+    try {
+        localStorage.setItem(key, JSON.stringify(value));
+    } catch (e) {
+        console.error(`Failed to save ${key} to localStorage`, e);
     }
-    return false;
-}
-export function loadBottomVisible(): boolean {
-    const stored = localStorage.getItem('bottomPanelVisible');
-    if (stored) {
-        return JSON.parse(stored);
-    }
-    return false;
 }
 
-export function loadTerminals(): Terminal[] {
-    const stored = localStorage.getItem('terminals');
+export function loadItem<T>(key: string): T | null {
+    const stored = localStorage.getItem(key);
     if (stored) {
         try {
             return JSON.parse(stored);
         } catch (e) {
-            console.error('Failed to parse terminals from localStorage', e);
+            console.error(`Failed to parse ${key} from localStorage`, e);
         }
     }
-    return [];
-};
+    return null;
+}
 
+
+export function loadLeftPanelVisible(): boolean {
+    return loadItem('leftPanelVisible') ?? false;
+}
+export function loadBottomVisible(): boolean {
+    return loadItem('bottomPanelVisible') ?? false;
+}
+export function loadTerminals(): Terminal[] {
+    return loadItem('terminals') ?? [];
+}
 export function loadTerminalSelected(): number {
-    const stored = localStorage.getItem('terminalSelected');
-    if (stored) {
-        return JSON.parse(stored);
-    }
-    return 0;
+    return loadItem('terminalSelected') ?? 0;
 }
-
 export function loadRightPanelVisible(): boolean {
-    const stored = localStorage.getItem('rightPanelVisible');
-    if (stored) {
-        return JSON.parse(stored);
-    }
-    return true;
+    return loadItem('rightPanelVisible') ?? true;
 }
-
 export function loadCenterPaneVisible(): boolean {
-    const stored = localStorage.getItem('centerPanelVisible');
-    if (stored) {
-        return JSON.parse(stored);
-    }
-    return true;
+    return loadItem('centerPanelVisible') ?? true;
+}
+export function loadDiffEnabled(): boolean {
+    return loadItem('diffEnabled') ?? false;
+}
+export function loadFollowEnabled(): boolean {
+    return loadItem('followEnabled') ?? false;
 }
 
 export function loadAcpSessions(): Map<string, AcpSession> {
@@ -69,50 +64,15 @@ export function loadAcpSessions(): Map<string, AcpSession> {
     return new Map();
 }
 
-export function loadOpenAcpDialog(): string | null {
-    const stored = localStorage.getItem('openAcpDialog');
-    if (stored) {
-        return JSON.parse(stored);
-    }
-    return null;
-}
-
 export function loadAgents(): AcpAgent[] {
-    const stored = localStorage.getItem('acpAgents');
-    if (stored) {
-        try {
-            return JSON.parse(stored);
-        } catch (e) {
-            console.error('Failed to parse acpAgents from localStorage', e);
-        }
-    }
-    return [];
+    return loadItem('acpAgents') ?? [];
 }
-
 export function saveAgents(agents: AcpAgent[]): void {
-    try {
-        localStorage.setItem('acpAgents', JSON.stringify(agents));
-    } catch (e) {
-        console.error('Failed to save acpAgents to localStorage', e);
-    }
+    saveItem('acpAgents', agents);
 }
-
 export function loadDefaultAgentId(): string | null {
-    const stored = localStorage.getItem('acpDefaultAgentId');
-    if (stored) {
-        try {
-            return JSON.parse(stored);
-        } catch (e) {
-            console.error('Failed to parse acpDefaultAgentId from localStorage', e);
-        }
-    }
-    return null;
+    return loadItem('acpDefaultAgentId') ?? null;
 }
-
 export function saveDefaultAgentId(agentId: string | null): void {
-    try {
-        localStorage.setItem('acpDefaultAgentId', JSON.stringify(agentId));
-    } catch (e) {
-        console.error('Failed to save acpDefaultAgentId to localStorage', e);
-    }
+    saveItem('acpDefaultAgentId', agentId);
 }
