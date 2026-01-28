@@ -10,6 +10,7 @@ import { LineRenderer } from "./LineRenderer";
 import { SearchRenderer } from "./SearchRenderer";
 import { DiffRenderer } from "./DiffRenderer";
 import { CompletionRenderer } from "./CompletionRenderer";
+import { DiagnosticRenderer } from "./DiagnosticRenderer";
 
 export class Renderer {
     private container: HTMLDivElement;
@@ -34,7 +35,8 @@ export class Renderer {
         this.codeContent = codeContent;
 
         // Initialize renderers
-        this.lineRenderer = new LineRenderer();
+        const diagnosticRenderer = new DiagnosticRenderer();
+        this.lineRenderer = new LineRenderer(diagnosticRenderer);
         this.searchRenderer = new SearchRenderer(
             container,
             (lineNumber) => this.getLine(lineNumber),
@@ -441,6 +443,7 @@ export class Renderer {
     }
 
     public renderCursor(line: number, column: number, focus: boolean = false) {
+        this.codeContent.classList.remove('selecting');
         const lineDiv = this.getLine(line);
         if (lineDiv) {
             if (lineDiv.isConnected) {
@@ -457,6 +460,7 @@ export class Renderer {
 
     public renderSelection(code: Code, selection: Selection) {
         if (selection.isEmpty()) return;
+        this.codeContent.classList.add('selecting');
 
         const lines = this.getLines();
         let attached = true;
@@ -562,20 +566,8 @@ export class Renderer {
             const lineDiv = lines[i];
             const lineNumber = lineDiv.lineNumber;
 
-            if (errorLines.has(lineNumber)) {
-                const dm = errorLines.get(lineNumber)!;
-                // Only update attribute if value is different or missing
-                if (lineDiv.getAttribute('data-error') !== dm) {
-                    lineDiv.setAttribute('data-error', dm);
-                    lineDiv.classList.add('has-error');
-                }
-            } else {
-                // Only remove attribute if it exists
-                if (lineDiv.hasAttribute('data-error')) {
-                    lineDiv.removeAttribute('data-error');
-                    lineDiv.classList.remove('has-error');
-                }
-            }
+            const message = errorLines.get(lineNumber);
+            this.lineRenderer.renderDiagnostics(lineDiv, message);
         }
     }
 

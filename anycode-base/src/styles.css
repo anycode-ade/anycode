@@ -58,18 +58,30 @@
   line-height: 20px;
 }
 
-.has-error::after {
-  content: attr(data-error);
+.diagnostic {
   color: #ff6b6b;
-  margin: 0px 0px 0px 3ch;
   border-radius: 4px;
   padding: 0 4px;
   vertical-align: middle;
   line-height: 1;
   display: inline-block;
   position: relative;
-  pointer-events: none;
   z-index: 1;
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: text;
+}
+
+.diagnostic::before {
+  content: "";
+  display: inline-block;
+  width: 3ch;
+  pointer-events: none;
+}
+
+.code.selecting .diagnostic {
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .diff-changed {

@@ -264,7 +264,8 @@ export class SearchRenderer {
         endColumn: number,
         selected: boolean
     ) {
-        const spans = Array.from(lineDiv.querySelectorAll('span'));
+        const spans = Array.from(lineDiv.querySelectorAll('span'))
+            .filter((span) => !span.classList.contains('diagnostic') && !span.closest('.diagnostic'));
         let charCount = 0;
 
         for (let span of spans) {

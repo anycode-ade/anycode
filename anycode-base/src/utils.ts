@@ -15,7 +15,7 @@ export function generateCssClasses(theme: any) {
     }
     return css;
 }
-    
+
 export function addCssToDocument(css: string, id: string) {
     let styleElement = document.getElementById(id) as HTMLStyleElement | null;
 
@@ -31,6 +31,27 @@ export function addCssToDocument(css: string, id: string) {
     styleElement.textContent = css;
 }
 
+export function isDiagnosticElement(node: Node | null): node is HTMLElement {
+    return !!node && node instanceof HTMLElement && node.classList.contains('diagnostic');
+}
+
+export function isInsideDiagnostic(node: Node | null): boolean {
+    if (!node) return false;
+    if (isDiagnosticElement(node)) return true;
+    if (node instanceof HTMLElement) {
+        return !!node.closest('.diagnostic');
+    }
+    return !!node.parentElement?.closest('.diagnostic');
+}
+
+export function getLineTextLength(lineDiv: AnycodeLine): number {
+    let length = 0;
+    for (const child of lineDiv.childNodes) {
+        if (isDiagnosticElement(child)) continue;
+        length += child.textContent?.length ?? 0;
+    }
+    return length;
+}
 
 export function isCharacter(event: KeyboardEvent): boolean {
     if (event.metaKey || event.ctrlKey) return false;
@@ -52,7 +73,7 @@ export function findNextWord(line: string, from: number): number {
     // Handle edge cases
     if (!line || from < 0) return 0;
     if (from >= line.length) return line.length;
-    
+
     // Find the next word boundary after the specified index
     for (let i = from; i < line.length; i++) {
         if (WORD_BREAK_CHARS.includes(line[i])) {
@@ -67,7 +88,7 @@ export function findPrevWord(line: string, from: number): number {
     if (!line) return 0;
     if (from <= 0) return 0;
     if (from > line.length) from = line.length;
-    
+
     // Start from the character before the cursor, looking backwards
     for (let i = from - 1; i >= 0; i--) {
         const ch = line[i];
@@ -86,18 +107,18 @@ export function findPrevWord(line: string, from: number): number {
  */
 export function getCompletionRange(line: string, column: number): { start: number; end: number } {
     if (!line) return { start: 0, end: 0 };
-    
+
     const lineLength = line.length;
-    
+
     // Ensure column is within bounds
     column = Math.max(0, Math.min(column, lineLength));
-    
+
     // If we're at the end of the line or only whitespace follows
     if (column >= lineLength || /^\s/.test(line.slice(column))) {
         const start = findPrevWord(line, column);
         return { start, end: column };
     }
-    
+
     // In the middle of a word - replace the entire word
     const start = findPrevWord(line, column);
     const end = findNextWord(line, column);
@@ -107,6 +128,7 @@ export function getCompletionRange(line: string, column: number): { start: numbe
 export function findNodeAndOffset(lineDiv: AnycodeLine, targetOffset: number) {
     let currentOffset = targetOffset;
     for (let chunkNode of lineDiv.children) {
+        if (isDiagnosticElement(chunkNode)) continue;
         if (!chunkNode.textContent) continue;
         const textLength = chunkNode.textContent.length;
         if (currentOffset <= textLength) {
@@ -197,14 +219,14 @@ export function getNextGraphemeIndex(line: string, fromColumn: number): number {
     return line.length;
 }
 
-export function minimize(str: string, maxLength:number = 100): string {
+export function minimize(str: string, maxLength: number = 100): string {
     const newlineIndex = str.indexOf('\n');
     let result = str;
-    
+
     if (newlineIndex !== -1) {
         result = str.slice(0, newlineIndex) + '…';
     }
-    
+
     if (result.length > maxLength) {
         result = result.slice(0, maxLength) + '…';
     }
@@ -285,17 +307,17 @@ export function getWasmPath(filename: string): string {
         // Custom path set by user
         return wasmBasePath.endsWith('/') ? wasmBasePath + filename : wasmBasePath;
     }
-    
+
     // Try to determine the base path for WASM files
     // In npm package: node_modules/anycode-base/wasm/tree-sitter-*.wasm
     // In local development: /tree-sitter-*.wasm (from public folder)
-    
+
     if (typeof import.meta !== 'undefined' && import.meta.url) {
         try {
             // Get the directory of the current module
             const moduleUrl = new URL(import.meta.url);
             const modulePath = moduleUrl.pathname;
-            
+
             // Check if we're in npm package (node_modules/anycode-base/dist/...)
             if (modulePath.includes('/node_modules/anycode-base/')) {
                 // Calculate relative path to wasm folder
@@ -307,7 +329,7 @@ export function getWasmPath(filename: string): string {
             // Fall through to default
         }
     }
-    
+
     // Default: assume WASM files are in public folder or current directory
     // This works for local development and if WASM files are served from public/
     return filename.startsWith('/') ? filename : `/${filename}`;

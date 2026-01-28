@@ -7,6 +7,8 @@ pub const DEFAULT_IGNORE_DIRS: &[&str] = &[
     ".git",
     // Python
     "__pycache__", ".pytest_cache", 
+    
+    "target", "node_modules",
 ];
 
 pub const DEFAULT_IGNORE_FILES: &[&str] = &[

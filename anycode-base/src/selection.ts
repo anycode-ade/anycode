@@ -1,24 +1,24 @@
-import { AnycodeLine, Pos } from "./utils"; 
+import { AnycodeLine, Pos, getLineTextLength, isDiagnosticElement, isInsideDiagnostic } from "./utils";
 import { Code } from "./code";
 
 export class Selection {
-    public anchor: number | null ;
-    public cursor: number | null ;
+    public anchor: number | null;
+    public cursor: number | null;
 
     constructor(anchor: number, cursor: number) {
         this.anchor = anchor;
         this.cursor = cursor;
     }
-    
+
     public reset(pos: number) {
         this.anchor = pos;
         this.cursor = pos;
     }
-    
+
     public updateCursor(pos: number) {
         this.cursor = pos;
     }
-    
+
     fromCursor(cursor: number): Selection {
         return new Selection(this.anchor!, cursor);
     }
@@ -26,14 +26,14 @@ export class Selection {
     public isEmpty(): boolean {
         return this.anchor === this.cursor;
     }
-    
+
     public nonEmpty(): boolean {
         return !this.isEmpty();
     }
 
     public sorted(): [number, number] {
-        return this.anchor! <= this.cursor! 
-            ? [this.anchor!, this.cursor!] 
+        return this.anchor! <= this.cursor!
+            ? [this.anchor!, this.cursor!]
             : [this.cursor!, this.anchor!];
     }
 
@@ -81,14 +81,24 @@ export function getSelection(): { start: Pos, end: Pos } | null {
     return { start, end };
 }
 
+export function hasDiagnosticSelection(): boolean {
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed) return false;
+    return isInsideDiagnostic(sel.anchorNode) || isInsideDiagnostic(sel.focusNode);
+}
+
 export function resolveAbsoluteOffset(node: Node, nodeOffset: number): Pos | null {
+    if (isInsideDiagnostic(node)) {
+        return null;
+    }
+
     // corner case, whole row selected
     if (
         node instanceof HTMLElement &&
         node.classList.contains("line")
     ) {
         const lineDiv = node as AnycodeLine;
-        return { row: lineDiv.lineNumber, col: 0 }; 
+        return { row: lineDiv.lineNumber, col: 0 };
     }
 
     const lineDiv = (
@@ -104,6 +114,7 @@ export function resolveAbsoluteOffset(node: Node, nodeOffset: number): Pos | nul
 
     for (const child of lineDiv.childNodes) {
         if (found) break;
+        if (isDiagnosticElement(child)) continue;
 
         if (child.contains(node)) {
             if (child === node) {
@@ -125,7 +136,7 @@ export function resolveAbsoluteOffset(node: Node, nodeOffset: number): Pos | nul
         }
     }
 
-    return { row: lineDiv.lineNumber, col: offset }; 
+    return { row: lineDiv.lineNumber, col: offset };
 }
 
 
@@ -140,31 +151,31 @@ function resolveDOMPosition(
 
     const pos = code.getPosition(offset);
     const lineLength = code.line(pos.line).length;
-    
+
     if (pos.column === 0 && lineLength === 0 && offset > 0) {
         offset = offset - 1;
     }
-    
+
     for (const line of lines) {
         const lineOffset = code.getOffset(line.lineNumber, 0);
-        const lineLength = Array.from(line.childNodes)
-            .map(n => n.textContent?.length ?? 0)
-            .reduce((a, b) => a + b, 0);
+        const lineLength = getLineTextLength(line);
 
         if (offset >= lineOffset && offset <= lineOffset + lineLength) {
             let remaining = offset - lineOffset;
 
             if (lineLength === 0 && remaining === 0) {
-                const firstSpan = line.firstChild;
-                if (firstSpan) {
-                    const textNode = firstSpan.firstChild || firstSpan;
+                const firstChild = Array.from(line.childNodes)
+                    .find(child => !isDiagnosticElement(child));
+                if (firstChild) {
+                    const textNode = firstChild.firstChild || firstChild;
                     return { node: textNode, offset: 0 };
                 }
             }
 
             for (const span of line.childNodes) {
+                if (isDiagnosticElement(span)) continue;
                 const len = span.textContent?.length ?? 0;
-                
+
                 if (remaining <= len) {
                     const textNode = span.firstChild || span;
                     return { node: textNode, offset: remaining };
@@ -172,7 +183,8 @@ function resolveDOMPosition(
                 remaining -= len;
             }
 
-            const lastSpan = line.lastChild;
+            const lineChildren = Array.from(line.childNodes).filter(child => !isDiagnosticElement(child));
+            const lastSpan = lineChildren[lineChildren.length - 1];
             if (lastSpan) {
                 const lastLen = lastSpan.textContent?.length ?? 0;
                 const textNode = lastSpan.firstChild || lastSpan;
@@ -185,7 +197,7 @@ function resolveDOMPosition(
 
 export function renderSelection(
     selection: Selection, lines: AnycodeLine[], code: Code
-) {    
+) {
     // console.log("setSelectionFromOffsets ", selection);
 
     if (lines.length === 0) return;
@@ -202,7 +214,7 @@ export function renderSelection(
             return;
         }
     }
-    
+
     // Ensure all lines are connected to the DOM before proceeding
     for (const line of lines) {
         if (!line.isConnected) {
@@ -217,9 +229,7 @@ export function renderSelection(
     const visibleStart = code.getOffset(firstLine.lineNumber, 0);
     const visibleEnd =
         code.getOffset(lastLine.lineNumber, 0) +
-        Array.from(lastLine.childNodes)
-            .map((n) => n.textContent?.length ?? 0)
-            .reduce((a, b) => a + b, 0);
+        getLineTextLength(lastLine);
 
     const [selectionStart, selectionEnd] = selection.sorted(); // DOM needs sorted
 

@@ -1,7 +1,7 @@
-import { AnycodeLine, Pos } from "./utils"; 
+import { AnycodeLine, Pos, getLineTextLength, isDiagnosticElement, isInsideDiagnostic } from "./utils";
 
 export function getPosFromMouse(e: MouseEvent): Pos | null {
-    
+
     const target = e.target as Node;
     if (!target) return null;
 
@@ -29,23 +29,26 @@ function resolvePosition(node: Node, nodeOffset: number): Pos | null {
     if (node instanceof HTMLElement && node.classList.contains("bt")) {
         const lineStr = node.getAttribute("data-line");
         if (!lineStr) return null;
-        let row = parseInt(lineStr) ; 
-        return { row, col: 0 }; 
+        let row = parseInt(lineStr);
+        return { row, col: 0 };
     }
 
     // corner case, out of row, on line numbers column
-    if (node.parentNode && node.parentNode instanceof HTMLElement 
+    if (node.parentNode && node.parentNode instanceof HTMLElement
         && node.parentNode.classList.contains("ln")) {
         const lineStr = node.parentNode.getAttribute("data-line");
         if (!lineStr) return null;
-        let row = parseInt(lineStr); 
-        return { row, col: 0 }; 
+        let row = parseInt(lineStr);
+        return { row, col: 0 };
     }
-    
+
     // corner case, whole row selected
     if (node instanceof HTMLElement && node.classList.contains("line")) {
         const lineDiv = node as AnycodeLine;
-        return { row: lineDiv.lineNumber, col: 0 }; 
+        if (nodeOffset > 0) {
+            return { row: lineDiv.lineNumber, col: getLineTextLength(lineDiv) };
+        }
+        return { row: lineDiv.lineNumber, col: 0 };
     }
 
     const lineDiv = (
@@ -55,12 +58,13 @@ function resolvePosition(node: Node, nodeOffset: number): Pos | null {
     ) as AnycodeLine | null;
 
     if (!lineDiv || typeof lineDiv.lineNumber !== "number") return null;
-    
-    if (lineDiv.childNodes.length === 1) {
-        const content = lineDiv.childNodes[0].textContent ?? '';
-        if (content === '' || content === '\u200B') {
-            return { row: lineDiv.lineNumber, col: 0 }; 
-        }
+    if (isInsideDiagnostic(node)) {
+        return { row: lineDiv.lineNumber, col: getLineTextLength(lineDiv) };
+    }
+
+    const lineLength = getLineTextLength(lineDiv);
+    if (lineLength === 0) {
+        return { row: lineDiv.lineNumber, col: 0 };
     }
 
     let offset = 0;
@@ -68,6 +72,7 @@ function resolvePosition(node: Node, nodeOffset: number): Pos | null {
 
     for (const child of lineDiv.childNodes) {
         if (found) break;
+        if (isDiagnosticElement(child)) continue;
 
         if (child.contains(node)) {
             if (child === node) {
@@ -89,5 +94,5 @@ function resolvePosition(node: Node, nodeOffset: number): Pos | null {
         }
     }
 
-    return { row: lineDiv.lineNumber, col: offset }; 
+    return { row: lineDiv.lineNumber, col: offset };
 }

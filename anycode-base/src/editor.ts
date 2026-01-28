@@ -2,7 +2,7 @@ import { Code, Change, Position, Operation } from "./code";
 import { vesper } from './theme';
 import { Renderer } from './renderer/Renderer';
 import { getPosFromMouse } from './mouse';
-import { Selection } from "./selection";
+import { Selection, hasDiagnosticSelection } from "./selection";
 import { Completion, CompletionRequest, DefinitionRequest, DefinitionResponse } from "./lsp";
 import {
     Action, ActionContext, ActionResult,
@@ -11,7 +11,8 @@ import {
 import {
     generateCssClasses, addCssToDocument,
     findPrevWord, findNextWord,
-    getCompletionRange, scoreMatches
+    getCompletionRange, scoreMatches,
+    isInsideDiagnostic
 } from './utils';
 
 import './styles.css';
@@ -42,18 +43,18 @@ export class AnycodeEditor {
     private buttonsColumn!: HTMLDivElement;
     private gutter!: HTMLDivElement;
     private codeContent!: HTMLDivElement;
-    
+
     private isMouseSelecting: boolean = false;
     private selection: Selection | null = null;
     private autoScrollTimer: number | null = null;
     private isWordSelection: boolean = false;
     private wordSelectionAnchor: number = 0;
-    
+
     private lastScrollTop = 0;
 
     private runLines: number[] = [];
     private errorLines: Map<number, string> = new Map();
-    
+
     private isCompletionOpen = false;
     private selectedCompletionIndex = 0;
     private completions: Completion[] = [];
@@ -83,39 +84,39 @@ export class AnycodeEditor {
         } else {
             this.offset = 0;
         }
-        
+
         this.settings = { lineHeight: 20, buffer: 30 };
-        
+
         if (this.diffEnabled) {
             this.originalCode = initialText;
             const currentText = this.code.getContent();
             this.diffs = computeGitChanges(this.originalCode, currentText);
         }
-        
+
         const theme = options.theme || vesper;
         const css = generateCssClasses(theme);
         addCssToDocument(css, 'anyeditor-theme');
         this.createDomElements();
         this.renderer = new Renderer(this.container, this.buttonsColumn, this.gutter, this.codeContent);
     }
-    
+
     private createDomElements() {
         this.container = document.createElement('div');
         this.container.className = 'anyeditor';
-        
+
         this.buttonsColumn = document.createElement('div');
         this.buttonsColumn.className = 'buttons';
-        
+
         this.gutter = document.createElement('div');
         this.gutter.className = 'gutter';
-        
+
         this.codeContent = document.createElement('div');
         this.codeContent.className = 'code';
         this.codeContent.setAttribute("contentEditable", "true");
         this.codeContent.setAttribute("spellcheck", "false");
         this.codeContent.setAttribute("autocorrect", "off");
         this.codeContent.setAttribute("autocapitalize", "off");
-        
+
         this.container.appendChild(this.buttonsColumn);
         this.container.appendChild(this.gutter);
         this.container.appendChild(this.codeContent);
@@ -126,7 +127,7 @@ export class AnycodeEditor {
         this.removeEventListeners();
         this.offset = 0;
         this.selection = null;
-        
+
         if (this.container && this.container.parentElement) {
             this.container.parentElement.removeChild(this.container);
         }
@@ -139,7 +140,7 @@ export class AnycodeEditor {
     public setHistory(changes: Change[], index: number) {
         this.code.setHistory(changes, index);
     }
-    
+
     public setText(newText: string) {
         this.code.setContent(newText);
         if (this.diffEnabled && this.originalCode !== undefined) {
@@ -227,25 +228,25 @@ export class AnycodeEditor {
     private setupEventListeners() {
         this.handleScroll = this.handleScroll.bind(this);
         this.container.addEventListener("scroll", this.handleScroll);
-        
+
         this.handleClick = this.handleClick.bind(this);
         this.codeContent.addEventListener('click', this.handleClick);
-        
+
         this.handleKeydown = this.handleKeydown.bind(this);
         this.codeContent.addEventListener('keydown', this.handleKeydown);
 
         this.handlePasteEvent = this.handlePasteEvent.bind(this);
         this.codeContent.addEventListener('paste', this.handlePasteEvent);
-        
+
         this.handleBeforeInput = this.handleBeforeInput.bind(this);
         this.container.addEventListener('beforeinput', this.handleBeforeInput);
-        
+
         this.handleMouseDown = this.handleMouseDown.bind(this);
         this.codeContent.addEventListener('mousedown', this.handleMouseDown);
 
         this.handleMouseUp = this.handleMouseUp.bind(this);
         this.container.addEventListener('mouseup', this.handleMouseUp);
-        
+
         this.handleMouseMove = this.handleMouseMove.bind(this);
         this.container.addEventListener('mousemove', this.handleMouseMove);
 
@@ -255,7 +256,7 @@ export class AnycodeEditor {
         this.handleFocus = this.handleFocus.bind(this);
         this.codeContent.addEventListener('focus', this.handleFocus);
     }
-    
+
     private removeEventListeners() {
         this.container.removeEventListener("scroll", this.handleScroll);
         this.codeContent.removeEventListener('click', this.handleClick);
@@ -310,14 +311,17 @@ export class AnycodeEditor {
     public renderCursorOrSelection() {
         this.renderer.renderCursorOrSelection(this.getEditorState());
     }
-    
+
     private handleClick(e: MouseEvent): void {
+        console.log("click", e);
+        
         const oldCursor = this.code.getPosition(this.offset);
 
         if (this.selection && this.selection.nonEmpty()) { return; }
-        
+        if (isInsideDiagnostic(e.target as Node)) { return; }
+
         e.preventDefault();
-        
+
         const pos = getPosFromMouse(e);
         if (!pos) { return; }
 
@@ -326,7 +330,7 @@ export class AnycodeEditor {
         //if (o == this.offset) { return; }
 
         this.offset = o;
-        
+
         const { line, column } = this.code.getPosition(this.offset);
         this.renderer.renderCursor(line, column);
 
@@ -334,7 +338,7 @@ export class AnycodeEditor {
             this.onCursorChangeCallback({ line, column }, oldCursor);
         }
 
-        if (this.isCompletionOpen){
+        if (this.isCompletionOpen) {
             this.renderer.closeCompletion();
             this.isCompletionOpen = false;
         }
@@ -362,12 +366,12 @@ export class AnycodeEditor {
             console.error('Failed to get definition:', error);
         }
     }
-    
+
     private handleMouseUp(e: MouseEvent) {
         // console.log('handleMouseUp ', this.selection);
         this.isMouseSelecting = false;
         this.isWordSelection = false;
-        
+
         if (this.autoScrollTimer) {
             cancelAnimationFrame(this.autoScrollTimer);
             this.autoScrollTimer = null;
@@ -378,7 +382,7 @@ export class AnycodeEditor {
         // console.log('Editor lost focus');
         this.isMouseSelecting = false;
         this.isWordSelection = false;
-        
+
         if (this.autoScrollTimer) {
             cancelAnimationFrame(this.autoScrollTimer);
             this.autoScrollTimer = null;
@@ -389,31 +393,32 @@ export class AnycodeEditor {
         // console.log('Editor focus');
         this.search.setNeedsFocus(false);
     }
-    
+
     private handleMouseDown(e: MouseEvent) {
         if (e.button !== 0) return;
+        if (isInsideDiagnostic(e.target as Node)) return;
         e.preventDefault();
-    
+
         this.isMouseSelecting = true;
-    
+
         const pos = getPosFromMouse(e);
         if (!pos) return;
-    
+
         if (e.detail === 2) { // double click
             this.selectWord(pos.row, pos.col);
             this.isWordSelection = true;
             this.wordSelectionAnchor = this.code.getOffset(pos.row, pos.col);
             return;
         }
-        
+
         if (e.detail === 3) { // triple click
             this.selectLine(pos.row);
             return;
         }
-    
+
         this.isWordSelection = false;
         const o = this.code.getOffset(pos.row, pos.col);
-    
+
         if (e.shiftKey && this.selection) {
             this.selection.updateCursor(o);
             this.renderer.renderSelection(this.code, this.selection);
@@ -425,40 +430,40 @@ export class AnycodeEditor {
             }
         }
     }
-    
-    private handleMouseMove(e: MouseEvent) {        
+
+    private handleMouseMove(e: MouseEvent) {
         e.preventDefault();
         if (!this.isMouseSelecting) return;
-        
+
         this.autoScroll(e);
-        
+
         let pos = getPosFromMouse(e);
 
         let oldSelection = this.selection?.clone();
-        
+
         if (pos && this.selection) {
             const { row, col } = pos;
             const currentOffset = this.code.getOffset(row, col);
-        
+
             if (this.isWordSelection) {
                 const line = this.code.line(row);
                 const currentPos = this.code.getPosition(currentOffset);
-        
+
                 const anchor = this.wordSelectionAnchor;
                 const anchorPos = this.code.getPosition(anchor);
                 const anchorLine = this.code.line(anchorPos.line);
-        
+
                 const direction = currentOffset < anchor ? 'backward' : 'forward';
-        
+
                 if (direction === 'backward') {
                     // Selection is moving left (backward) — find start of current word
                     const wordStartCol = findPrevWord(line, currentPos.column);
                     const newCursor = this.code.getOffset(row, wordStartCol);
-        
+
                     // Extend selection to the end of the anchor word
                     const anchorEndCol = findNextWord(anchorLine, anchorPos.column);
                     const anchorEnd = this.code.getOffset(anchorPos.line, anchorEndCol);
-        
+
                     // Update selection from new word start to anchor word end
                     this.selection = new Selection(newCursor, anchorEnd);
                     this.offset = newCursor;
@@ -466,11 +471,11 @@ export class AnycodeEditor {
                     // Selection is moving right (forward) — find end of current word
                     const wordEndCol = findNextWord(line, currentPos.column);
                     const newCursor = this.code.getOffset(row, wordEndCol);
-        
+
                     // Extend selection from the start of the anchor word
                     const anchorStartCol = findPrevWord(anchorLine, anchorPos.column);
                     const anchorStart = this.code.getOffset(anchorPos.line, anchorStartCol);
-        
+
                     // Update selection from anchor word start to new word end
                     this.selection = new Selection(anchorStart, newCursor);
                     this.offset = newCursor;
@@ -480,7 +485,7 @@ export class AnycodeEditor {
                     const endCol = findNextWord(line, currentPos.column);
                     const start = this.code.getOffset(row, startCol);
                     const end = this.code.getOffset(row, endCol);
-        
+
                     this.selection = new Selection(start, end);
                     this.offset = end;
                 }
@@ -488,7 +493,7 @@ export class AnycodeEditor {
                 // Standard selection mode — update the cursor directly
                 this.selection.updateCursor(currentOffset);
             }
-            
+
             if (oldSelection && !oldSelection.equals(this.selection)) {
                 // console.log('selection changed');
                 this.renderer.renderSelection(this.code, this.selection);
@@ -501,16 +506,16 @@ export class AnycodeEditor {
         const mouseY = e.clientY;
         const scrollThreshold = 20; // pixels from edge to trigger scroll
         const scrollSpeed = 5; // pixels to scroll per frame
-        
+
         // Clear existing timer
         if (this.autoScrollTimer) {
             cancelAnimationFrame(this.autoScrollTimer);
             this.autoScrollTimer = null;
         }
-        
+
         let shouldScroll = false;
         let scrollDirection = 0;
-        
+
         // Check if mouse is near the top or bottom edge
         if (mouseY < containerRect.top + scrollThreshold) {
             shouldScroll = true;
@@ -519,14 +524,14 @@ export class AnycodeEditor {
             shouldScroll = true;
             scrollDirection = 1; // scroll down
         }
-        
+
         if (shouldScroll) {
             const autoScroll = () => {
                 if (!this.isMouseSelecting) return;
-                
+
                 const currentScroll = this.container.scrollTop;
                 const maxScroll = this.container.scrollHeight - this.container.clientHeight;
-                
+
                 if (scrollDirection === -1) {  // Scroll up
                     this.container.scrollTop = Math.max(0, currentScroll - scrollSpeed);
                 } else {  // Scroll down
@@ -540,44 +545,50 @@ export class AnycodeEditor {
             this.autoScrollTimer = requestAnimationFrame(autoScroll);
         }
     }
-    
+
     private selectWord(row: number, col: number) {
         const line = this.code.line(row);
 
         const startCol = findPrevWord(line, col);
         const endCol = findNextWord(line, col);
-    
+
         const start = this.code.getOffset(row, startCol);
         const end = this.code.getOffset(row, endCol);
-    
+
         this.selection = new Selection(start, end);
-        
+
         this.offset = end;
         console.log('selectWord', end);
         this.renderer.renderSelection(this.code, this.selection);
     }
-    
+
     private selectLine(row: number) {
         const lineLen = this.code.lineLength(row);
         const start = this.code.getOffset(row, 0);
         const end = this.code.getOffset(row, lineLen);
-    
+
         this.selection = new Selection(start, end);
-    
+
         this.offset = end;
         console.log('selectLine', end);
         this.renderer.renderSelection(this.code, this.selection);
     }
-    
+
     private async handleKeydown(event: KeyboardEvent) {
         console.log('keydown', event);
+
+        if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'c') {
+            if (hasDiagnosticSelection()) {
+                return;
+            }
+        }
 
         if (event.metaKey && event.key === " ") {
             event.preventDefault();
             this.toggleCompletion();
             return;
         }
-    
+
         if (event.metaKey && event.key === "f" || this.search.isFocused()) {
             event.preventDefault();
             this.handleSearchKey(event);
@@ -588,10 +599,10 @@ export class AnycodeEditor {
             event.preventDefault();
             return;
         }
-        
+
         const action = this.getActionFromKey(event);
         if (!action) return;
-        
+
         // Special-case paste in non-secure context: let native paste flow,
         // which will be handled by the 'beforeinput' listener.
         if (action === Action.PASTE && !(navigator.clipboard && window.isSecureContext)) {
@@ -607,28 +618,28 @@ export class AnycodeEditor {
         }
 
         event.preventDefault();
-        
+
         const ctx: ActionContext = {
             offset: this.offset,
             code: this.code,
             selection: this.selection || undefined,
             event: event
         };
-        
+
         const result = await executeAction(action, ctx);
         this.applyEditResult(result);
 
         if (this.isCompletionOpen) {
             await this.showCompletion();
         }
-        
+
         if (this.search.isActive() && action === Action.ESC) {
             this.renderer.removeAllHighlights(this.search);
             this.renderer.removeSearch();
             this.search.clear();
         }
     }
-    
+
     private getActionFromKey(event: KeyboardEvent): Action | null {
         const { key, altKey, ctrlKey, metaKey, shiftKey } = event;
 
@@ -638,7 +649,7 @@ export class AnycodeEditor {
                 return Action.REDO;
             if (key.toLowerCase() === '/')
                 return Action.COMMENT;
-            
+
             switch (key.toLowerCase()) {
                 case 'z': return Action.UNDO;
                 case 'a': return Action.SELECT_ALL;
@@ -651,7 +662,7 @@ export class AnycodeEditor {
                 default: return null;
             }
         }
-        
+
         // Navigation
         if (altKey) {
             switch (key) {
@@ -665,13 +676,13 @@ export class AnycodeEditor {
                 case "ArrowUp": return Action.ARROW_UP;
                 case "ArrowDown": return Action.ARROW_DOWN;
             }
-        } 
-        
+        }
+
         // Editing
         if (shiftKey && key === 'Tab') {
             return Action.UNTAB;
-        } 
-        
+        }
+
         switch (key) {
             case "Backspace": return Action.BACKSPACE;
             case "Delete": return Action.DELETE;
@@ -680,22 +691,22 @@ export class AnycodeEditor {
             case "Escape": return Action.ESC;
             case "F12": return Action.GO_TO_DEFINITION;
         }
-        
+
         // Text input
         if (key.length === 1 && !ctrlKey) {
             return Action.TEXT_INPUT;
         }
-        
+
         return null;
     }
-    
+
     private applyEditResult(result: ActionResult) {
         const textChanged = result.changed;
         const offsetChanged = result.ctx.offset !== this.offset;
         const selectionChanged = this.selection !== result.ctx.selection;
-        
+
         if (!textChanged && !offsetChanged && !selectionChanged) return;
-        
+
         if (textChanged) {
             this.code = result.ctx.code;
             // calculate diff when text changes
@@ -710,7 +721,7 @@ export class AnycodeEditor {
         if (selectionChanged) this.selection = result.ctx.selection || null;
 
         const state = this.getEditorState();
-    
+
         if (textChanged) {
             if (this.search.isActive()) {
                 let matches = this.code.search(this.search.getPattern());
@@ -725,7 +736,7 @@ export class AnycodeEditor {
             this.verifyDiffRendering();
         }
     }
-    
+
     private async handleBeforeInput(e: InputEvent) {
         // this one is for mobile devices, support input and deletion
         e.preventDefault();
@@ -746,19 +757,19 @@ export class AnycodeEditor {
             // Default case for insertion or other input events
             let key = e.data ?? '';
             if (key === '') return;
-            
+
             const ctx: ActionContext = {
                 offset: this.offset,
                 code: this.code,
                 selection: this.selection || undefined,
                 event: { key } as KeyboardEvent
             };
-            
+
             const result = await executeAction(Action.TEXT_INPUT, ctx);
             this.applyEditResult(result);
         }
     }
-    
+
     private handlePasteEvent(e: ClipboardEvent) {
         // In secure contexts, paste is handled via Action.PASTE using navigator.clipboard
         if (navigator.clipboard && window.isSecureContext) {
@@ -780,7 +791,7 @@ export class AnycodeEditor {
         let result = handlePasteText(ctx, pastedText);
         this.applyEditResult(result);
     }
-    
+
     public async toggleCompletion() {
         console.log('anycode: toggle completion');
 
@@ -822,10 +833,10 @@ export class AnycodeEditor {
 
         this.completions = newCompletions;
         this.selectedCompletionIndex = 0;
-        
+
         this.renderer.renderCompletion(
-            this.completions, this.selectedCompletionIndex, 
-            this.code, this.offset, 
+            this.completions, this.selectedCompletionIndex,
+            this.code, this.offset,
             this.applyCompletion.bind(this)
         );
         this.isCompletionOpen = true;
@@ -838,9 +849,9 @@ export class AnycodeEditor {
         let { line, column } = this.code.getPosition(this.offset);
         let completionItem = this.completions[index];
         let text = completionItem.label;
-        
+
         let lineStr = this.code.line(line);
-        
+
         let { start: replaceStart, end: replaceEnd } = getCompletionRange(lineStr, column);
 
         this.code.tx();
@@ -897,7 +908,7 @@ export class AnycodeEditor {
 
         if (metaKey && key.toLowerCase() == 'f') {
             this.renderer.removeAllHighlights(this.search);
-        
+
             this.search.setActive(true);
             this.search.setNeedsFocus(true);
             let pattern = this.search.getPattern();
@@ -907,14 +918,14 @@ export class AnycodeEditor {
                 let content = this.code.getIntervalContent2(start, end);
                 pattern = content;
             }
-            
+
             let matches = this.code.search(pattern);
             this.search.setPattern(pattern);
             this.search.setMatches(matches);
 
             // Find the first match
             let { line, column } = this.code.getPosition(this.offset);
-            let foundIndex = matches.findIndex((match) => match.line > line || 
+            let foundIndex = matches.findIndex((match) => match.line > line ||
                 (match.line === line && match.column + pattern.length >= column)
             );
             if (foundIndex === -1 && matches.length > 0) { foundIndex = 0; }
@@ -926,9 +937,9 @@ export class AnycodeEditor {
             });
             isSearch = true;
         }
-        
 
-        if (event.key === "Escape" && this.search.isActive()) {    
+
+        if (event.key === "Escape" && this.search.isActive()) {
             this.renderer.removeAllHighlights(this.search);
             this.renderer.removeSearch();
             this.search.clear();
@@ -1015,7 +1026,7 @@ export class AnycodeEditor {
     private onSearchInputChange(pattern: string) {
         // Clear everything
         this.renderer.removeAllHighlights(this.search);
-        
+
         if (!pattern) {
             this.renderer.updateSearchLabel('');
             this.search.clear();
@@ -1023,14 +1034,14 @@ export class AnycodeEditor {
             this.search.setNeedsFocus(false);
             return;
         }
-        
+
         // Perform search
         const matches = this.getEditorState().code.search(pattern);
         this.search.clear();
         this.search.setActive(true);
         this.search.setMatches(matches);
-        this.search.setPattern(pattern);    
-    
+        this.search.setPattern(pattern);
+
         // Find first match after cursor
         const { line, column } = this.code.getPosition(this.offset);
         let foundIndex = matches.findIndex((match) =>
@@ -1040,7 +1051,7 @@ export class AnycodeEditor {
         if (foundIndex === -1 && matches.length > 0) {
             foundIndex = 0;
         }
-    
+
         this.search.setSelected(foundIndex);
         this.renderer.updateSearchHighlights(this.search);
         this.search.setNeedsFocus(true);
@@ -1060,14 +1071,14 @@ export class AnycodeEditor {
         }
         this.code.setStateAfter(this.offset, this.selection || undefined);
         this.code.commit();
-        
+
         if (this.diffEnabled && this.originalCode !== undefined) {
             const currentText = this.code.getContent();
             this.diffs = computeGitChanges(this.originalCode, currentText);
         } else {
             this.diffs = undefined;
         }
-        
+
         this.renderer.renderChanges(this.getEditorState(), this.search);
         this.verifyDiffRendering();
     }

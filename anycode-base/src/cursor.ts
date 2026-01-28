@@ -1,4 +1,4 @@
-import { AnycodeLine } from './utils';
+import { AnycodeLine, isDiagnosticElement } from './utils';
 
 export function removeCursor() {
     const sel = window.getSelection();
@@ -18,7 +18,10 @@ export function moveCursor(
     
     var character: number = column;
     
-    const chunks = Array.from(lineDiv.children).map(l => l as AnycodeLine);
+    const chunks = Array.from(lineDiv.children)
+        .filter((child) => !isDiagnosticElement(child))
+        .map(l => l as AnycodeLine);
+        
     let chunkCharacter = 0;
     let chunk: Element | null = null;
 

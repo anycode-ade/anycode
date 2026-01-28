@@ -1,13 +1,20 @@
 import { HighlighedNode } from "../code";
-import { AnycodeLine, objectHash, minimize } from "../utils";
+import { AnycodeLine, objectHash } from "../utils";
 import { EditorSettings } from "../editor";
 import { DiffInfo } from "../diff";
+import { DiagnosticRenderer } from "./DiagnosticRenderer";
 
 /**
  * LineRenderer is responsible for creating line elements.
  * It doesn't manage DOM or query lines - just creates elements.
  */
 export class LineRenderer {
+    private diagnosticRenderer: DiagnosticRenderer;
+
+    constructor(diagnosticRenderer: DiagnosticRenderer = new DiagnosticRenderer()) {
+        this.diagnosticRenderer = diagnosticRenderer;
+    }
+
     /**
      * Creates a line wrapper element with syntax highlighting and diff/error classes
      */
@@ -52,12 +59,14 @@ export class LineRenderer {
 
         const errorMessage = errorLines.get(lineNumber);
         if (errorMessage) {
-            let smallError = minimize(errorMessage);
-            wrapper.classList.add('has-error');
-            wrapper.setAttribute('data-error', smallError);
+            this.diagnosticRenderer.render(wrapper, errorMessage);
         }
 
         return wrapper;
+    }
+
+    public renderDiagnostics(line: AnycodeLine, message?: string | null) {
+        this.diagnosticRenderer.render(line, message);
     }
 
     /**
