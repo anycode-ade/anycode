@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { AnycodeEditorReact, AnycodeEditor } from 'anycode-react';
-import type { Change, Position } from '../anycode-base/src/code';
+import type { Change, Position, Edit } from '../anycode-base/src/code';
 import { WatcherCreate, WatcherEdits, WatcherRemove,
     type CursorHistory, type Terminal, type AcpSession,
     type AcpMessage, type AcpPromptStateMessage, type AcpToolCallMessage,
-    type AcpOpenFileMessage, type SearchResult, type SearchEnd, type SearchMatch
+    type AcpOpenFileMessage, type SearchResult, type SearchEnd, type SearchMatch,
+    type PendingBatch
 } from './types';
 import { loadTerminals, loadTerminalSelected, loadBottomVisible, 
     loadLeftPanelVisible, loadRightPanelVisible, loadCenterPaneVisible,
@@ -23,7 +24,7 @@ import { getAllAgents, getDefaultAgent, updateAgents, getDefaultAgentId,
     ensureDefaultAgents 
 } from './agents';
 import { AcpAgent } from './types';
-import { DEFAULT_FILE, DEFAULT_FILE_CONTENT, BACKEND_URL } from './constants';
+import { DEFAULT_FILE, DEFAULT_FILE_CONTENT, BACKEND_URL, BATCH_DELAY_MS } from './constants';
 import './App.css';
 import { 
     Completion, CompletionRequest, Diagnostic, DiagnosticResponse, 
@@ -84,6 +85,9 @@ const App: React.FC = () => {
     const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const reconnectAttemptsRef = useRef<number>(0);
     const reconnectDelay = 1000;
+
+    // Batching for file changes
+    const pendingChangesRef = useRef<Map<string, PendingBatch>>(new Map());
 
     const handleLeftPanelVisibleChange = (index: number, visible: boolean) => {
         console.log('handleLeftPanelVisibleChange', index, visible);
@@ -221,11 +225,55 @@ const App: React.FC = () => {
         }
     }, [activeFileId]);
 
+    const flushChanges = (filename: string) => {
+        const batch = pendingChangesRef.current.get(filename);
+        if (!batch || batch.changes.length === 0) return;
+
+        // Merge all edits from batched changes
+        const allEdits = batch.changes.flatMap(c => c.edits);
+
+        // Send all batched edits in one message
+        if (wsRef.current && isConnected) {
+            wsRef.current.emit("file:change", {
+                file: filename,
+                edits: allEdits
+            });
+        }
+
+        // Clear the batch
+        batch.changes = [];
+        batch.timerId = null;
+    };
+
     const handleChange = (filename: string, change: Change) => {
         console.log('handleChange', filename, change);
 
-        if (wsRef.current && isConnected) {
-            wsRef.current.emit("file:change", { file: filename, ...change});
+        // Handle undo/redo immediately (flush pending changes first)
+        if (change.isUndo || change.isRedo) {
+            flushChanges(filename);
+            if (wsRef.current && isConnected) {
+                wsRef.current.emit("file:change", { file: filename, ...change });
+            }
+        } else {
+            // Batch regular edits
+            let batch = pendingChangesRef.current.get(filename);
+            if (!batch) {
+                batch = { changes: [], timerId: null };
+                pendingChangesRef.current.set(filename, batch);
+            }
+
+            // Add change to batch
+            batch.changes.push(change);
+
+            // Clear old timer
+            if (batch.timerId) {
+                clearTimeout(batch.timerId);
+            }
+
+            // Set new timer to flush changes
+            batch.timerId = setTimeout(() => {
+                flushChanges(filename);
+            }, BATCH_DELAY_MS);
         }
 
         const file = files.find(f => f.id === filename);
@@ -269,6 +317,9 @@ const App: React.FC = () => {
     };
 
     const closeFile = (fileId: string) => {
+        // Flush any pending changes before closing
+        flushChanges(fileId);
+
         if (wsRef.current && isConnected) {
             wsRef.current.emit("file:close", { file: fileId });
         }
@@ -320,6 +371,9 @@ const App: React.FC = () => {
     };
 
     const saveFile = (fileId: string) => {
+        // Flush any pending changes before saving
+        flushChanges(fileId);
+
         const editor = editorRefs.current.get(fileId);
         if (!editor) return;
 
@@ -452,6 +506,14 @@ const App: React.FC = () => {
     };
 
     const disconnectFromBackend = () => {
+        // Flush all pending changes before disconnecting
+        pendingChangesRef.current.forEach((batch, filename) => {
+            if (batch.timerId) {
+                clearTimeout(batch.timerId);
+            }
+        });
+        pendingChangesRef.current.clear();
+
         if (reconnectTimeoutRef.current) {
             clearTimeout(reconnectTimeoutRef.current);
             reconnectTimeoutRef.current = null;

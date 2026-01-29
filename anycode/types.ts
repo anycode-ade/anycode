@@ -93,6 +93,11 @@ export interface WatcherRemove {
     isFile: boolean;
 }
 
+export interface PendingBatch {
+    changes: Change[];
+    timerId: number | null;
+}
+
 // ACP protocol types
 export interface AcpAgent {
     id: string;
