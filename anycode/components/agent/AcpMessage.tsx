@@ -29,8 +29,8 @@ const ToolCallMessage: React.FC<{
   isExpanded: boolean;
   onToggle: () => void;
 }> = ({ message, toolResult, toolUpdate, isExpanded, onToggle }) => {
-  const hasArguments = message.arguments && 
-    JSON.stringify(message.arguments) !== '{}' && 
+  const hasArguments = message.arguments &&
+    JSON.stringify(message.arguments) !== '{}' &&
     JSON.stringify(message.arguments) !== '[]';
 
   return (
@@ -40,7 +40,7 @@ const ToolCallMessage: React.FC<{
           <span className="acp-toggle-icon">{isExpanded ? '▼' : '▶'}</span>
           <div className="acp-tool-call-name">{message.name}</div>
         </div>
-        
+
         {isExpanded && (
           <>
             {message.command && (
@@ -137,9 +137,9 @@ const ToolResultDetails: React.FC<{ result: any }> = ({ result }) => {
 
   const contentText = Array.isArray(content)
     ? content
-        .map((item: any) => item?.content?.text)
-        .filter((text: any) => typeof text === 'string' && text.length > 0)
-        .join('')
+      .map((item: any) => item?.content?.text)
+      .filter((text: any) => typeof text === 'string' && text.length > 0)
+      .join('')
     : undefined;
 
   const normalizedContent = typeof contentText === 'string' ? contentText.trim() : undefined;
@@ -267,7 +267,7 @@ const ThoughtMessage: React.FC<{
   const isLong = message.content.length > 180;
   const shouldToggle = isLong;
   const expanded = shouldToggle ? isExpanded : true;
-  const lines = message.content.split('\n');
+  const lines = message.content.trim().split('\n');
   const previewLine = lines[0] || '';
   return (
     <div className="acp-message acp-message-thought">

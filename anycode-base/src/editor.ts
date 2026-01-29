@@ -49,6 +49,8 @@ export class AnycodeEditor {
     private autoScrollTimer: number | null = null;
     private isWordSelection: boolean = false;
     private wordSelectionAnchor: number = 0;
+    private isLineSelection: boolean = false;
+    private lineSelectionAnchor: number = 0;
 
     private lastScrollTop = 0;
 
@@ -314,7 +316,7 @@ export class AnycodeEditor {
 
     private handleClick(e: MouseEvent): void {
         console.log("click", e);
-        
+
         const oldCursor = this.code.getPosition(this.offset);
 
         if (this.selection && this.selection.nonEmpty()) { return; }
@@ -371,6 +373,7 @@ export class AnycodeEditor {
         // console.log('handleMouseUp ', this.selection);
         this.isMouseSelecting = false;
         this.isWordSelection = false;
+        this.isLineSelection = false;
 
         if (this.autoScrollTimer) {
             cancelAnimationFrame(this.autoScrollTimer);
@@ -382,6 +385,7 @@ export class AnycodeEditor {
         // console.log('Editor lost focus');
         this.isMouseSelecting = false;
         this.isWordSelection = false;
+        this.isLineSelection = false;
 
         if (this.autoScrollTimer) {
             cancelAnimationFrame(this.autoScrollTimer);
@@ -413,10 +417,13 @@ export class AnycodeEditor {
 
         if (e.detail === 3) { // triple click
             this.selectLine(pos.row);
+            this.isLineSelection = true;
+            this.lineSelectionAnchor = pos.row;
             return;
         }
 
         this.isWordSelection = false;
+        this.isLineSelection = false;
         const o = this.code.getOffset(pos.row, pos.col);
 
         if (e.shiftKey && this.selection) {
@@ -486,6 +493,22 @@ export class AnycodeEditor {
                     const start = this.code.getOffset(row, startCol);
                     const end = this.code.getOffset(row, endCol);
 
+                    this.selection = new Selection(start, end);
+                    this.offset = end;
+                }
+            } else if (this.isLineSelection) {
+                const anchorRow = this.lineSelectionAnchor;
+
+                if (row < anchorRow) {
+                    // Selection moving up
+                    const start = this.code.getOffset(row, 0);
+                    const end = this.code.getOffset(anchorRow, this.code.lineLength(anchorRow));
+                    this.selection = new Selection(start, end);
+                    this.offset = start;
+                } else {
+                    // Selection moving down or same line
+                    const start = this.code.getOffset(anchorRow, 0);
+                    const end = this.code.getOffset(row, this.code.lineLength(row));
                     this.selection = new Selection(start, end);
                     this.offset = end;
                 }
@@ -579,6 +602,7 @@ export class AnycodeEditor {
 
         if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'c') {
             if (hasDiagnosticSelection()) {
+                console.log('hasDiagnosticSelection');
                 return;
             }
         }
