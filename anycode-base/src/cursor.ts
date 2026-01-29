@@ -50,12 +50,32 @@ export function moveCursor(
         return
     }
 
-    const ch = chunk.firstChild || chunk;
+    // Special handling for BR elements: set cursor relative to parent, not inside BR
+    let ch: Node;
+    let chunkOffset: number;
+    
+    if (chunk.tagName === 'BR') {
+        // Find the index of the BR element within its parent
+        const parent = chunk.parentElement;
+        if (!parent) return;
+        
+        const childIndex = Array.from(parent.children)
+            .filter(child => !isDiagnosticElement(child))
+            .indexOf(chunk as Element);
+        
+        if (childIndex === -1) return;
+        
+        ch = parent;
+        chunkOffset = childIndex;
+    } else {
+        ch = chunk.firstChild || chunk;
+        chunkOffset = chunkCharacter;
+    }
     
     // Ensure we're working with the correct document context
     const doc = ch.ownerDocument || document;
     const range = doc.createRange();
-    range.setStart(ch, chunkCharacter);
+    range.setStart(ch, chunkOffset);
     range.collapse(true);
     
     // Check if the range is already the same as the current selection
@@ -86,8 +106,8 @@ export function moveCursor(
         const codePaddingLeft = codeElement ? 
             parseFloat(getComputedStyle(codeElement).paddingLeft) : 0;
         
-        const cursorNode = ch.firstChild || ch;
-        const cursorOffset = chunkCharacter;
+        const cursorNode = ch;
+        const cursorOffset = chunkOffset;
     
         scrollCursorIntoViewHorizontally(
             scrollable!, cursorNode, cursorOffset, 
