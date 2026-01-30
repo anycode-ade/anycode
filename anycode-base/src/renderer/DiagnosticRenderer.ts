@@ -5,6 +5,15 @@ export class DiagnosticRenderer {
         return line.querySelector('span.diagnostic');
     }
 
+    private isEmptyLine(line: AnycodeLine): boolean {
+        for (const child of line.children) {
+            if (child.tagName === 'BR') continue;
+            if (child.classList.contains('diagnostic')) continue;
+            return false;
+        }
+        return true;
+    }
+
     private getInsertAnchor(line: AnycodeLine): ChildNode | null {
         const last = line.lastChild;
         if (last && last.nodeType === Node.ELEMENT_NODE) {
@@ -14,14 +23,15 @@ export class DiagnosticRenderer {
         return null;
     }
 
-    public render(line: AnycodeLine, message?: string | null) {
+    public render(line: AnycodeLine, diagnosticMessage?: string | null) {
         line.classList.remove('has-error');
         line.removeAttribute('data-error');
 
-        const text = message ? minimize(message) : '';
+        const text = diagnosticMessage ? minimize(diagnosticMessage) : '';
         const existing = this.getDiagnosticSpan(line);
 
-        if (!text) {
+        // Don't show diagnostics on empty lines
+        if (!text || this.isEmptyLine(line)) {
             if (existing) existing.remove();
             return;
         }
