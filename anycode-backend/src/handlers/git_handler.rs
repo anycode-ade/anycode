@@ -129,17 +129,23 @@ fn git_commit_impl(request: &GitCommitRequest) -> Result<Value> {
     let repo = Repository::discover(&workdir)?;
     let mut index = repo.index()?;
 
-    // Add files to index
-    for path in &request.files {
-        let path = Path::new(path);
+    // Add/remove files to index
+    let repo_root = repo.workdir().unwrap_or(Path::new("."));
+    for file_path in &request.files {
+        let path = Path::new(file_path);
         let relative_path = if path.is_absolute() {
-            path.strip_prefix(repo.workdir().unwrap_or(Path::new(".")))
-                .unwrap_or(path)
+            path.strip_prefix(repo_root).unwrap_or(path)
         } else {
             path
         };
 
-        index.add_path(relative_path)?;
+        // Check if file exists on disk - if not, it's a deletion
+        let full_path = repo_root.join(relative_path);
+        if full_path.exists() {
+            index.add_path(relative_path)?;
+        } else {
+            index.remove_path(relative_path)?;
+        }
     }
 
     index.write()?;
