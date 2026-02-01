@@ -258,6 +258,23 @@
     text-shadow: 0 0 6px rgba(255, 255, 255, 0.8);
 }
 
+.toggle-mode-btn {
+    background: transparent;
+    border: none;
+    color: #888;
+    cursor: pointer;
+    border-radius: 12px;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 4px;
+}
+
+.toggle-mode-btn:hover {
+    color: #fff;
+}
+
 .editor-toggle-btn {
     background: none;
     border: none;
@@ -425,6 +442,16 @@
     background: linear-gradient(to bottom, transparent, #555, transparent);
 }
 
+.changes-panel::after {
+    content: '';
+    position: absolute;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    width: 1.5px;
+    background: linear-gradient(to bottom, transparent, #555, transparent);
+}
+
 .file-system-content {
     padding: 1px 4px 4px 4px;
     flex: 1;
@@ -453,6 +480,10 @@
 
 /* Add bottom padding only when terminal is closed - same approach as file-system-content */
 .app-container:not(.terminal-visible) .search-results {
+    padding-bottom: var(--toolbar-total-space);
+}
+/* Add bottom padding only when terminal is closed - same approach as file-system-content */
+.app-container:not(.terminal-visible) .changes-list {
     padding-bottom: var(--toolbar-total-space);
 }
 

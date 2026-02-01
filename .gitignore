@@ -1,6 +1,7 @@
 target
 node_modules
 .DS_Store
+.anycode
 *copy*.ts
 anycode/dist
 anycode-base/dist

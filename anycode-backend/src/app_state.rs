@@ -48,6 +48,25 @@ macro_rules! error_ack {
     }};
 }
 
+/// Helper: send response based on Result
+/// Used with _impl pattern: handler calls send_response(ack, some_impl())
+/// where some_impl() returns anyhow::Result<Value> and can use ? operator with .context()
+pub fn send_response(ack: socketioxide::extract::AckSender, result: anyhow::Result<serde_json::Value>) {
+    use serde_json::json;
+    match result {
+        Ok(data) => {
+            let mut response = data;
+            if let Some(obj) = response.as_object_mut() {
+                obj.insert("success".to_string(), json!(true));
+            }
+            ack.send(&response).ok();
+        }
+        Err(e) => {
+            ack.send(&json!({ "success": false, "error": format!("{:#}", e) })).ok();
+        }
+    }
+}
+
 pub fn get_or_create_code<'a>(
     f2c: &'a mut HashMap<String, Code>,
     path: &str,

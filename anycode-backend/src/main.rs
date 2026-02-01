@@ -39,6 +39,7 @@ use handlers::{
     terminal_handler::*,
     watch_handler::{handle_watch_event},
     acp_handler::*,
+    git_handler::*,
 };
 
 mod search;
@@ -80,6 +81,11 @@ async fn on_connect(socket: SocketRef, state: State<AppState>) {
     socket.on("acp:reconnect", handle_acp_reconnect);
     socket.on("acp:permission_response", handle_acp_permission_response);
     socket.on("acp:undo", handle_acp_undo);
+
+    socket.on("git:status", handle_git_status);
+    socket.on("git:file-original", handle_git_file_original);
+    socket.on("git:commit", handle_git_commit);
+    socket.on("git:push", handle_git_push);
 
     socket.on_disconnect(on_disconnect)
 }

@@ -1128,6 +1128,16 @@ export class AnycodeEditor {
         }
     }
 
+    public setOriginalCode(content: string): void {
+        this.originalCode = content;
+        if (this.diffEnabled) {
+            const currentText = this.code.getContent();
+            this.diffs = computeGitChanges(this.originalCode, currentText);
+            this.renderer.render(this.getEditorState(), this.search);
+            this.verifyDiffRendering();
+        }
+    }
+
     private verifyDiffRendering(): void {
         if (!this.diffEnabled || this.diffs === undefined) {
             return;

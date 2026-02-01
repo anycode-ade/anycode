@@ -16,7 +16,7 @@ import { loadTerminals, loadTerminalSelected, loadBottomVisible,
 import { Allotment } from 'allotment';
 import 'allotment/dist/style.css';
 import { TreeNodeComponent, TreeNode, FileState, TerminalComponent, 
-    TerminalTabs, AcpDialog 
+    TerminalTabs, AcpDialog, ChangesPanel, ChangedFile
 } from './components';
 import Search from './components/Search';
 import { Icons } from './components/Icons';
@@ -66,6 +66,13 @@ const App: React.FC = () => {
     const [followEnabled, setFollowEnabled] = useState<boolean>(loadFollowEnabled());
     const followEnabledRef = useRef<boolean>(true);
     const pendingOpenFilesRef = useRef<Set<string>>(new Set());
+    // Store original content (for git diff) to apply once editor is initialized
+    const pendingOriginalContentRef = useRef<Map<string, string>>(new Map());
+
+    // Git integration state
+    const [changedFiles, setChangedFiles] = useState<ChangedFile[]>([]);
+    const [gitBranch, setGitBranch] = useState<string>('');
+    const [leftPanelMode, setLeftPanelMode] = useState<'files' | 'changes' | 'search'>('files');
 
     const [terminals, setTerminals] = useState<Terminal[]>(loadTerminals);
     const [terminalSelected, setTerminalSelected] = useState<number>(loadTerminalSelected());
@@ -163,6 +170,15 @@ const App: React.FC = () => {
                     editorRefs.current.set(file.id, editor);
                     
                     if (pendingPosition) pendingPositions.current.delete(file.id);
+
+                    // Check for pending original content (git diff)
+                    const pendingDiff = pendingOriginalContentRef.current.get(file.id);
+                    if (pendingDiff !== undefined) {
+                        editor.setOriginalCode(pendingDiff);
+                        editor.setDiffEnabled(true);
+                        // Optional: clear it if we don't want to persist across re-opens without re-fetching
+                        // pendingOriginalContentRef.current.delete(file.id);
+                    }
                 } else {
                     // if editor already exists, just use it
                     const existing = editorStates.get(file.id)!;
@@ -455,6 +471,19 @@ const App: React.FC = () => {
         });
 
         reconnectToAcpAgents();
+
+        // Fetch git status on connect
+        wsRef.current?.emit('git:status', {}, (response: any) => {
+            if (response.success) {
+                console.log('Git status:', response);
+                setChangedFiles(response.files || []);
+                setGitBranch(response.branch || '');
+            } else {
+                console.log('Git status failed:', response.error);
+                setChangedFiles([]);
+                setGitBranch('');
+            }
+        });
     };
 
     const handleSocketDisconnect = (reason: string) => {
@@ -473,6 +502,7 @@ const App: React.FC = () => {
         console.error('Backend error:', data);
         setConnectionError(data.message);
     };
+
 
     const handleDiagnostics = (diagnosticsResponse: DiagnosticResponse) => {
         console.log("lsp:diagnostics", diagnosticsResponse);
@@ -748,6 +778,81 @@ const App: React.FC = () => {
             });
         }
     };
+
+    // Git integration functions
+    const fetchGitStatus = useCallback(() => {
+        if (wsRef.current && isConnected) {
+            wsRef.current.emit('git:status', {}, (response: any) => {
+                if (response.success) {
+                    console.log('Git status:', response);
+                    setChangedFiles(response.files || []);
+                    setGitBranch(response.branch || '');
+                } else {
+                    console.log('Git status failed:', response.error);
+                    setChangedFiles([]);
+                    setGitBranch('');
+                }
+            });
+        }
+    }, [isConnected]);
+
+    const handleOpenChangedFile = useCallback((path: string) => {
+        // Open file directly (openFile is now defined above)
+        openFile(path);
+        
+        // Then get the original content from git and enable diff
+        if (wsRef.current && isConnected) {
+            wsRef.current.emit('git:file-original', { path }, (response: any) => {
+                if (response.success) {
+                    console.log('Git file original received:', path, 
+                        response.is_new ? '(new file)' : `${response.content.length} bytes`);
+                    
+                    const content = response.content;
+                    
+                    // Store in ref so initializeEditors can pick it up if editor creates later
+                    pendingOriginalContentRef.current.set(path, content);
+                    
+                    // If editor already exists, apply immediately
+                    const editor = editorRefs.current.get(path);
+                    if (editor) {
+                        editor.setOriginalCode(content);
+                        editor.setDiffEnabled(true);
+                    }
+                }
+            });
+        }
+    }, [isConnected]);
+
+    const handleGitCommit = useCallback((filesToCommit: string[], message: string) => {
+        console.log('handleGitCommit', filesToCommit, message);
+        if (wsRef.current && isConnected) {
+            wsRef.current.emit('git:commit', { files: filesToCommit, message }, (response: any) => {
+                if (response.success) {
+                    console.log('Commit successful');
+                    fetchGitStatus();
+                } else {
+                    alert('Commit failed: ' + response.error);
+                    console.error('Commit failed:', response.error);
+                }
+            });
+        }
+    }, [isConnected, fetchGitStatus]);
+
+    const handleGitPush = useCallback(() => {
+        console.log('handleGitPush');
+        if (wsRef.current && isConnected) {
+            wsRef.current.emit('git:push', {}, (response: any) => {
+                if (response.success) {
+                    console.log('Push successful');
+                    fetchGitStatus();
+                } else {
+                    alert('Push failed: ' + response.error);
+                    console.error('Push failed:', response.error);
+                }
+            });
+        }
+    }, [isConnected, fetchGitStatus]);
+
 
     const handleOpenFileResponse = (path: string, content: string, history: { changes: Change[], index: number }) => {
         const fileName = getFileName(path);
@@ -1653,18 +1758,35 @@ const App: React.FC = () => {
         </div>
     );
 
-    const leftPanel = searchActive ? (
-        <Search
-            id="search"
-            onEnter={handleSearch}
-            onCancel={handleSearchCancel}
-            results={searchResults}
-            searchEnded={searchEnded}
-            onMatchClick={handleSearchResultClick}
-        />
-    ) : (
-        fileTreePanel
-    );
+    const leftPanel = (() => {
+        switch (leftPanelMode) {
+            case 'search':
+                return (
+                    <Search
+                        id="search"
+                        onEnter={handleSearch}
+                        onCancel={handleSearchCancel}
+                        results={searchResults}
+                        searchEnded={searchEnded}
+                        onMatchClick={handleSearchResultClick}
+                    />
+                );
+            case 'changes':
+                return (
+                    <ChangesPanel
+                        files={changedFiles}
+                        branch={gitBranch}
+                        onFileClick={handleOpenChangedFile}
+                        onRefresh={fetchGitStatus}
+                        onCommit={handleGitCommit}
+                        onPush={handleGitPush}
+                    />
+                );
+            case 'files':
+            default:
+                return fileTreePanel;
+        }
+    })();
 
     const editorPanel = (
         <div className="editor-container">
@@ -1794,6 +1916,28 @@ const App: React.FC = () => {
         </div>
     );
 
+    let leftPanelModeButtons;
+    switch (leftPanelMode) {
+        case 'files':
+            leftPanelModeButtons = <>
+                <button onClick={() => setLeftPanelMode('search')} className="toggle-mode-btn" title="Search"><Icons.Search /></button>
+                <button onClick={() => { setLeftPanelMode('changes'); fetchGitStatus(); }} className="toggle-mode-btn" title="Changes"><Icons.Git /></button>
+            </>;
+            break;
+        case 'search':
+            leftPanelModeButtons = <>
+                <button onClick={() => setLeftPanelMode('files')} className="toggle-mode-btn" title="Files"><Icons.Tree /></button>
+                <button onClick={() => { setLeftPanelMode('changes'); fetchGitStatus(); }} className="toggle-mode-btn" title="Changes"><Icons.Git /></button>
+            </>;
+            break;
+        case 'changes':
+            leftPanelModeButtons = <>
+                <button onClick={() => setLeftPanelMode('search')} className="toggle-mode-btn" title="Search"><Icons.Search /></button>
+                <button onClick={() => setLeftPanelMode('files')} className="toggle-mode-btn" title="Files"><Icons.Tree /></button>
+            </>;
+            break;
+    }
+
     const toolbar = (
         <div className="toolbar">
             <div className="toolbar-buttons">
@@ -1805,16 +1949,7 @@ const App: React.FC = () => {
                     {leftPanelVisible ? <Icons.LeftPanelOpened /> : <Icons.LeftPanelClosed />}
                 </button>
 
-                {leftPanelVisible && (
-                    <button
-                            onClick={() => setSearchActive(!searchActive)}
-                            className={`acp-toggle-btn ${searchActive ? 'active' : ''}`}
-                            title={searchActive ? 'Hide Search' : 'Search'}
-                        >
-                        {searchActive ? <Icons.Tree /> : <Icons.Search />}
-                    </button>
-
-                )}
+                {leftPanelVisible && leftPanelModeButtons}
 
                 <button
                     onClick={() => setBottomPanelVisible(!bottomPanelVisible)}
