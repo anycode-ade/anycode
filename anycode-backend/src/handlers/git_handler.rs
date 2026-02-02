@@ -10,7 +10,7 @@ use anyhow::{Context, Result};
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum FileStatus {
-    Modified, Added, Deleted, Renamed,
+    Modified, Added, Deleted, Renamed, Conflict,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -210,4 +210,125 @@ fn git_push_impl() -> Result<Value> {
 pub async fn handle_git_push(ack: AckSender, _state: State<AppState>) {
     info!("Received git:push");
     send_response(ack, git_push_impl());
+}
+
+fn git_pull_impl() -> Result<Value> {
+    let workdir = crate::utils::current_dir();
+    let repo = Repository::discover(&workdir)?;
+    
+    // Get remote and branch
+    let mut remote = repo.find_remote("origin")?;
+    let head = repo.head()?;
+    let branch_name = head.shorthand()
+        .context("Detached HEAD state")?;
+    
+    // Fetch from remote
+    let mut callbacks = git2::RemoteCallbacks::new();
+    callbacks.credentials(|_url, username_from_url, _allowed_types| {
+        git2::Cred::ssh_key_from_agent(username_from_url.unwrap_or("git"))
+    });
+    
+    let mut fetch_opts = git2::FetchOptions::new();
+    fetch_opts.remote_callbacks(callbacks);
+    
+    remote.fetch(&[branch_name], Some(&mut fetch_opts), None)?;
+    
+    // Get the fetched commit
+    let fetch_head = repo.find_reference("FETCH_HEAD")?;
+    let remote_commit = repo.reference_to_annotated_commit(&fetch_head)?;
+    
+    // Analyze what kind of merge we need
+    let (analysis, _) = repo.merge_analysis(&[&remote_commit])?;
+    
+    if analysis.is_up_to_date() {
+        info!("Git pull: already up to date");
+        return Ok(json!({ "status": "up_to_date" }));
+    }
+    
+    if analysis.is_fast_forward() {
+        // Fast-forward: just move the branch pointer
+        let refname = format!("refs/heads/{}", branch_name);
+        let mut reference = repo.find_reference(&refname)?;
+        reference.set_target(remote_commit.id(), "Fast-forward pull")?;
+        
+        // SAFE checkout - preserves uncommitted changes, fails if conflict
+        let checkout_result = repo.checkout_head(Some(
+            git2::build::CheckoutBuilder::default()
+                .safe()  // Don't overwrite uncommitted changes!
+        ));
+        
+        if let Err(e) = checkout_result {
+            // Revert the reference change
+            reference.set_target(head.target().unwrap(), "Revert failed pull")?;
+            anyhow::bail!("Pull would overwrite uncommitted changes: {}", e);
+        }
+        
+        info!("Git pull: fast-forward to {}", remote_commit.id());
+        return Ok(json!({ "status": "fast_forward" }));
+    }
+    
+    // Need to merge
+    repo.merge(&[&remote_commit], None, None)?;
+    
+    let mut index = repo.index()?;
+    
+    if index.has_conflicts() {
+        // Collect conflicting files
+        let conflicts: Vec<String> = index.conflicts()?
+            .filter_map(|c| c.ok())
+            .filter_map(|c| {
+                c.our.or(c.their).or(c.ancestor)
+            })
+            .filter_map(|entry| String::from_utf8(entry.path).ok())
+            .collect();
+        
+        // Write files with conflict markers to disk (safe - doesn't overwrite unrelated changes)
+        let checkout_result = repo.checkout_index(None, Some(
+            git2::build::CheckoutBuilder::default()
+                .allow_conflicts(true)
+                .conflict_style_merge(true)
+                .safe()  // Preserve other uncommitted changes
+        ));
+        
+        if let Err(e) = checkout_result {
+            repo.cleanup_state()?;
+            anyhow::bail!("Failed to write conflict markers: {}", e);
+        }
+        
+        info!("Git pull: conflicts in {:?}", conflicts);
+        return Ok(json!({ 
+            "status": "conflict",
+            "files": conflicts
+        }));
+    }
+    
+    // No conflicts - create merge commit
+    let tree_id = index.write_tree()?;
+    let tree = repo.find_tree(tree_id)?;
+    
+    let sig = repo.signature().or_else(|_| {
+        git2::Signature::now("Anycode User", "user@anycode.dev")
+    })?;
+    
+    let local_commit = head.peel_to_commit()?;
+    let remote_commit_obj = repo.find_commit(remote_commit.id())?;
+    
+    repo.commit(
+        Some("HEAD"),
+        &sig,
+        &sig,
+        &format!("Merge remote-tracking branch 'origin/{}'", branch_name),
+        &tree,
+        &[&local_commit, &remote_commit_obj]
+    )?;
+    
+    repo.cleanup_state()?;
+    
+    info!("Git pull: merged successfully");
+    Ok(json!({ "status": "merged" }))
+}
+
+pub async fn handle_git_pull(ack: AckSender, _state: State<AppState>) {
+    info!("Received git:pull");
+    send_response(ack, git_pull_impl());
 }

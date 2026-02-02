@@ -3,7 +3,7 @@ import './ChangesPanel.css';
 
 export interface ChangedFile {
     path: string;
-    status: 'modified' | 'added' | 'deleted' | 'renamed';
+    status: 'modified' | 'added' | 'deleted' | 'renamed' | 'conflict';
 }
 
 interface ChangesPanelProps {
@@ -13,6 +13,7 @@ interface ChangesPanelProps {
     onRefresh: () => void;
     onCommit: (files: string[], message: string) => void;
     onPush: () => void;
+    onPull: () => void;
 }
 
 const statusIcons: Record<string, string> = {
@@ -20,6 +21,7 @@ const statusIcons: Record<string, string> = {
     added: 'A',
     deleted: 'D',
     renamed: 'R',
+    conflict: '!',
 };
 
 const statusColors: Record<string, string> = {
@@ -27,6 +29,7 @@ const statusColors: Record<string, string> = {
     added: 'status-added',
     deleted: 'status-deleted',
     renamed: 'status-renamed',
+    conflict: 'status-conflict',
 };
 
 const getFileName = (path: string): string => {
@@ -46,7 +49,8 @@ export const ChangesPanel: React.FC<ChangesPanelProps> = ({
     onFileClick,
     onRefresh,
     onCommit,
-    onPush
+    onPush,
+    onPull
 }) => {
     const [message, setMessage] = useState('');
     const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
@@ -130,6 +134,9 @@ export const ChangesPanel: React.FC<ChangesPanelProps> = ({
                         title="Commit"
                     >
                         Commit
+                    </button>
+                    <button className="changes-action-btn" onClick={onPull} title="Pull">
+                        Pull
                     </button>
                     <button className="changes-action-btn" onClick={onPush} title="Push">
                         Push

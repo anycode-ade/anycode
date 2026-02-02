@@ -853,6 +853,34 @@ const App: React.FC = () => {
         }
     }, [isConnected, fetchGitStatus]);
 
+    const handleGitPull = useCallback(() => {
+        console.log('handleGitPull');
+        if (wsRef.current && isConnected) {
+            wsRef.current.emit('git:pull', {}, (response: any) => {
+                if (response.success) {
+                    console.log('Pull response:', response);
+                    const status = response.status;
+                    
+                    if (status === 'up_to_date') {
+                        alert('Already up to date');
+                    } else if (status === 'fast_forward') {
+                        alert('Fast-forwarded');
+                    } else if (status === 'merged') {
+                        alert('Merged successfully');
+                    } else if (status === 'conflict') {
+                        const files = response.files || [];
+                        alert(`Merge conflicts in:\n${files.join('\n')}\n\nResolve conflicts and commit.`);
+                    }
+                    
+                    fetchGitStatus();
+                } else {
+                    alert('Pull failed: ' + response.error);
+                    console.error('Pull failed:', response.error);
+                }
+            });
+        }
+    }, [isConnected, fetchGitStatus]);
+
 
     const handleOpenFileResponse = (path: string, content: string, history: { changes: Change[], index: number }) => {
         const fileName = getFileName(path);
@@ -1780,6 +1808,7 @@ const App: React.FC = () => {
                         onRefresh={fetchGitStatus}
                         onCommit={handleGitCommit}
                         onPush={handleGitPush}
+                        onPull={handleGitPull}
                     />
                 );
             case 'files':
