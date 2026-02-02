@@ -14,6 +14,7 @@ interface ChangesPanelProps {
     onCommit: (files: string[], message: string) => void;
     onPush: () => void;
     onPull: () => void;
+    onRevert: (path: string) => void;
 }
 
 const statusIcons: Record<string, string> = {
@@ -50,7 +51,8 @@ export const ChangesPanel: React.FC<ChangesPanelProps> = ({
     onRefresh,
     onCommit,
     onPush,
-    onPull
+    onPull,
+    onRevert
 }) => {
     const [message, setMessage] = useState('');
     const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
@@ -198,6 +200,13 @@ export const ChangesPanel: React.FC<ChangesPanelProps> = ({
                                     {getDirectory(file.path)}
                                 </span>
                             </div>
+                            <button
+                                className="changes-revert-btn"
+                                onClick={(e) => { e.stopPropagation(); onRevert(file.path); }}
+                                title="Discard Changes"
+                            >
+                                ↩
+                            </button>
                             <div 
                                 className={`changes-checkbox ${selectedFiles.has(file.path) ? 'checked' : ''}`}
                                 onClick={(e) => toggleFile(file.path, e)}

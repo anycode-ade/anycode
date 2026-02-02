@@ -168,6 +168,28 @@
     background-color: #2a2a2a;
 }
 
+.changes-revert-btn {
+    background: none;
+    border: none;
+    color: #888;
+    font-size: 14px;
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 3px;
+    opacity: 0;
+    transition: opacity 0.1s ease, color 0.1s ease, background-color 0.1s ease;
+    flex-shrink: 0;
+}
+
+.changes-item:hover .changes-revert-btn {
+    opacity: 1;
+}
+
+.changes-revert-btn:hover {
+    color: #ea4335;
+    background-color: rgba(234, 67, 53, 0.15);
+}
+
 
 .changes-checkbox {
     width: 16px;

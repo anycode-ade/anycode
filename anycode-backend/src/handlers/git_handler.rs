@@ -30,6 +30,11 @@ pub struct GitCommitRequest {
     pub message: String,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct GitRevertRequest {
+    pub path: String,
+}
+
 fn git_status_impl() -> Result<Value> {
     let workdir = crate::utils::current_dir();
     
@@ -331,4 +336,57 @@ fn git_pull_impl() -> Result<Value> {
 pub async fn handle_git_pull(ack: AckSender, _state: State<AppState>) {
     info!("Received git:pull");
     send_response(ack, git_pull_impl());
+}
+
+fn git_revert_impl(request: &GitRevertRequest) -> Result<Value> {
+    let workdir = crate::utils::current_dir();
+    let repo = Repository::discover(&workdir)?;
+    let repo_root = repo.workdir().unwrap_or(Path::new("."));
+    
+    // Convert to relative path
+    let file_path = Path::new(&request.path);
+    let relative_path = if file_path.is_absolute() {
+        file_path.strip_prefix(repo_root).unwrap_or(file_path)
+    } else {
+        file_path
+    };
+    
+    // Check file status to know if it's tracked or untracked
+    let mut opts = StatusOptions::new();
+    opts.include_untracked(true)
+        .pathspec(&request.path);
+    
+    let statuses = repo.statuses(Some(&mut opts))?;
+    let is_new_file = statuses.iter().any(|entry| {
+        entry.status().contains(Status::WT_NEW) || 
+        entry.status().contains(Status::INDEX_NEW)
+    });
+    
+    if is_new_file {
+        // For new/untracked files, just delete
+        let full_path = repo_root.join(relative_path);
+        if full_path.exists() {
+            std::fs::remove_file(&full_path)
+                .context("Failed to delete untracked file")?;
+        }
+        info!("Git revert: deleted untracked file {}", request.path);
+    } else {
+        // For tracked files, restore from HEAD
+        let mut checkout_opts = git2::build::CheckoutBuilder::new();
+        checkout_opts.path(relative_path).force();
+        repo.checkout_head(Some(&mut checkout_opts))
+            .context("Failed to restore file from HEAD")?;
+        info!("Git revert: restored {} from HEAD", request.path);
+    }
+    
+    Ok(json!({}))
+}
+
+pub async fn handle_git_revert(
+    Data(request): Data<GitRevertRequest>,
+    ack: AckSender,
+    _state: State<AppState>,
+) {
+    info!("Received git:revert: {:?}", request.path);
+    send_response(ack, git_revert_impl(&request));
 }

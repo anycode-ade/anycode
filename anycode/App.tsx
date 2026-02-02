@@ -881,6 +881,21 @@ const App: React.FC = () => {
         }
     }, [isConnected, fetchGitStatus]);
 
+    const handleGitRevert = useCallback((path: string) => {
+        console.log('handleGitRevert', path);
+        if (wsRef.current && isConnected) {
+            wsRef.current.emit('git:revert', { path }, (response: any) => {
+                if (response.success) {
+                    console.log('Revert successful');
+                    fetchGitStatus();
+                } else {
+                    alert('Revert failed: ' + response.error);
+                    console.error('Revert failed:', response.error);
+                }
+            });
+        }
+    }, [isConnected, fetchGitStatus]);
+
 
     const handleOpenFileResponse = (path: string, content: string, history: { changes: Change[], index: number }) => {
         const fileName = getFileName(path);
@@ -1809,6 +1824,7 @@ const App: React.FC = () => {
                         onCommit={handleGitCommit}
                         onPush={handleGitPush}
                         onPull={handleGitPull}
+                        onRevert={handleGitRevert}
                     />
                 );
             case 'files':
