@@ -4,6 +4,7 @@ use crate::code::Code;
 use crate::config::Config;
 use crate::lsp::LspManager;
 use crate::acp::AcpManager;
+use crate::git::GitManager;
 use socketioxide::{extract::{SocketRef, State}};
 use std::collections::HashSet;
 use tokio_util::sync::CancellationToken;
@@ -18,6 +19,7 @@ pub struct AppState {
     pub file2code: Arc<Mutex<HashMap<String, Code>>>,
     pub lsp_manager: Arc<Mutex<LspManager>>,
     pub acp_manager: Arc<Mutex<AcpManager>>,
+    pub git_manager: Arc<Mutex<GitManager>>,
     pub socket2data: Arc<Mutex<HashMap<String, SocketData>>>,
     pub terminals: Arc<Mutex<HashMap<String, TerminalData>>>,
 }

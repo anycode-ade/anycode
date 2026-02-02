@@ -90,11 +90,12 @@ async fn handle_modify_event(
 
 pub async fn handle_watch_event(
     path: &PathBuf,
-    event: &notify::Event,
+    _event: &notify::Event,
     socket: &Arc<socketioxide::SocketIo>,
     file2code: &Arc<Mutex<HashMap<String, Code>>>,
     socket2data: &Arc<Mutex<HashMap<String, SocketData>>>,
-    file_states: &Arc<Mutex<HashMap<String, FileWatchState>>>
+    file_states: &Arc<Mutex<HashMap<String, FileWatchState>>>,
+    git_manager: &Arc<Mutex<crate::git::GitManager>>,
 ) {
     let path_str = match path.to_str() {
         Some(s) => s,
@@ -175,6 +176,24 @@ pub async fn handle_watch_event(
                 last_event_time: Instant::now(),
             },
         );
+    }
+
+    // Check git status
+    let should_ignore = {
+        let git = git_manager.lock().await;
+        git.should_ignore(path_str)
+    };
+
+    if !should_ignore {
+        let new_status = {
+            let mut git = git_manager.lock().await;
+            git.check_status_changed()
+        };
+
+        if let Some(status) = new_status {
+            // Emit to all clients
+            let _ = socket.emit("git:status-update", &status.to_json()).await;
+        }
     }
 }
 

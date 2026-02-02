@@ -447,6 +447,7 @@ const App: React.FC = () => {
             ws.on("watcher:edits", handleWatcherEdits);
             ws.on("watcher:create", handleWatcherCreate);
             ws.on("watcher:remove", handleWatcherRemove);
+            ws.on("git:status-update", handleGitStatusUpdate);
             ws.on("acp:message", handleAcpMessage);
             ws.on("acp:history", handleAcpHistory);
             ws.on("search:result", handleSearchResult);
@@ -795,6 +796,13 @@ const App: React.FC = () => {
             });
         }
     }, [isConnected]);
+
+    // Handle git status updates pushed from backend
+    const handleGitStatusUpdate = (data: { files: ChangedFile[]; branch: string }) => {
+        console.log('git:status-update', data);
+        setChangedFiles(data.files || []);
+        setGitBranch(data.branch || '');
+    };
 
     const handleOpenChangedFile = useCallback((path: string) => {
         // Open file directly (openFile is now defined above)

@@ -119,9 +119,6 @@
     outline: none;
 }
 
-.changes-message-input:focus {
-    /* border-color: #0e639c; */
-}
 
 .changes-list-header {
     display: flex;
@@ -214,10 +211,6 @@
 .changes-list-header:hover .changes-checkbox,
 .changes-checkbox.checked {
     opacity: 1;
-}
-
-.changes-checkbox.checked {
-
 }
 
 .changes-status {

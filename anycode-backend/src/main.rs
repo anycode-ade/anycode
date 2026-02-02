@@ -17,9 +17,10 @@ mod utils;
 mod lsp;
 mod acp;
 mod acp_history;
+mod git;
 use lsp::LspManager;
 use acp::AcpManager;
-use acp_history::AcpHistoryManager;
+use git::GitManager;
 
 use std::sync::Arc;
 use tokio::sync::{mpsc::Receiver, Mutex};
@@ -171,13 +172,14 @@ fn build_app_state() -> (AppState, Receiver<PublishDiagnosticsParams>) {
 
     let lsp_manager = Arc::new(Mutex::new(lsp_manager));
     let acp_manager = Arc::new(Mutex::new(AcpManager::new()));
+    let git_manager = Arc::new(Mutex::new(GitManager::new(crate::utils::current_dir())));
 
     let file2code = Arc::new(Mutex::new(HashMap::new()));
     let socket2data = Arc::new(Mutex::new(HashMap::new()));
     let terminals = Arc::new(Mutex::new(HashMap::new())); 
 
     let state = AppState { 
-        config, file2code, lsp_manager, acp_manager, socket2data, terminals 
+        config, file2code, lsp_manager, acp_manager, git_manager: git_manager.clone(), socket2data, terminals 
     };
 
     (state, diagnostic_recv)
@@ -266,6 +268,7 @@ async fn main() -> Result<()> {
     let (state, mut diagnostics_channel) = build_app_state();
     let file2code = state.file2code.clone();
     let socket2data = state.socket2data.clone();
+    let git_manager = state.git_manager.clone();
 
     let (layer, io) = SocketIo::builder().with_state(state).build_layer();
     let cors = ServiceBuilder::new().layer(CorsLayer::permissive()).layer(layer);
@@ -306,7 +309,7 @@ async fn main() -> Result<()> {
                     for path in &event.paths {
                         if crate::utils::is_ignored_dir(path) { continue }
                         else {
-                            handle_watch_event(path, &event, &socket, &file2code, &socket2data, &file_states).await
+                            handle_watch_event(path, &event, &socket, &file2code, &socket2data, &file_states, &git_manager).await
                         }
                     }
                 },
