@@ -11,9 +11,10 @@
 - **Advanced code experience**: Utilizes a custom code component based on **web-tree-sitter** for efficient parsing, syntax highlighting, and real-time code analysis.
 - **LSP integration**: LSP support for intelligent code completion, go-to-definition, hover information and real-time diagnostics.
 - **File system integration**: WebSocket-based backend for browsing and editing files from your local filesystem.
+- **Source control (Git)**: Built-in Changes panel with real-time status updates, per-file revert, commit, push, and pull.
 - **Integrated terminal**: Full-featured terminal emulator with WebSocket-based communication, supporting real-time command execution and output.
 - **Search functionality**: Powerful search capabilities including local search within files and global search across project.
-- **ACP integration**: Agent Client Protocol (ACP) support for seamless integration with AI agents. Start, manage, and interact with multiple AI agents directly from the IDE, with support for tool calls, tool results, and real-time message streaming.
+- **ACP integration**: Agent Client Protocol (ACP) support for seamless integration with AI agents, including tool-call streaming and history-backed undo.
 
 ## Architecture
 
@@ -54,14 +55,13 @@ anycode
    pnpm dev
    ```
 
-2. **Select backend - rust or node:**
-
-3. **Start rust backend:**
+2. **Start rust backend:**
    ```bash
    cd anycode-backend
    cargo run --release
+   ```
 
-4. **Open your browser** and navigate to the frontend URL
+3. **Open your browser** and navigate to the frontend URL
 
 ## Contributing
 
