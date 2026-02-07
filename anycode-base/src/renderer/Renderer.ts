@@ -1,4 +1,4 @@
-import { Code, HighlighedNode } from "../code";
+import { Code } from "../code";
 import { AnycodeLine, objectHash } from "../utils";
 import { moveCursor, removeCursor } from "../cursor";
 import { EditorState, EditorSettings } from "../editor";
@@ -12,6 +12,26 @@ import { DiffRenderer } from "./DiffRenderer";
 import { CompletionRenderer } from "./CompletionRenderer";
 import { DiagnosticRenderer } from "./DiagnosticRenderer";
 
+/**
+ * A real line from the code
+ */
+export interface RealRow {
+    kind: 'real';
+    lineIndex: number;  // 0-indexed line in code
+}
+
+/**
+ * A ghost line representing deleted content
+ */
+export interface GhostRow {
+    kind: 'ghost';
+    hunkId: number;
+    anchorLine: number;  // 1-indexed, the line before which this ghost appears
+    text: string;
+}
+
+export type VisualRow = RealRow | GhostRow;
+
 export class Renderer {
     private container: HTMLDivElement;
     private buttonsColumn: HTMLDivElement;
@@ -22,6 +42,8 @@ export class Renderer {
     private searchRenderer: SearchRenderer;
     private diffRenderer: DiffRenderer;
     private completionRenderer: CompletionRenderer;
+    
+    private visualRows: VisualRow[] = [];
 
     constructor(
         container: HTMLDivElement,
@@ -62,63 +84,73 @@ export class Renderer {
 
         const { code, offset, selection, runLines, errorLines, settings, diffs } = state;
 
-        const totalLines = code.linesLength();
-        const { startLine, endLine } = this.getVisibleRange(totalLines, settings);
-        let itemHeight = settings.lineHeight;
-        const paddingTop = startLine * itemHeight;
-        const paddingBottom = (totalLines - endLine) * itemHeight;
+        // Build unified visual rows model (real lines + ghost lines)
+        const totalRealLines = code.linesLength();
+        this.visualRows = this.diffEnabled 
+            ? this.buildVisualRows(totalRealLines, diffs)
+            : this.buildRealOnlyRows(totalRealLines);
 
-        // build fragments for better performance
+        const totalVisualRows = this.visualRows.length;
+        const { startIndex, endIndex } = this.getVisibleRangeByVisualIndex(totalVisualRows, settings);
+        
+        const itemHeight = settings.lineHeight;
+        const paddingTop = startIndex * itemHeight;
+        const paddingBottom = (totalVisualRows - endIndex) * itemHeight;
+
+        // Build fragments for better performance
         const btnFrag = document.createDocumentFragment();
         const gutterFrag = document.createDocumentFragment();
         const codeFrag = document.createDocumentFragment();
 
-        // top spacers
+        // Top spacers
         btnFrag.appendChild(this.lineRenderer.createSpacer(paddingTop));
         gutterFrag.appendChild(this.lineRenderer.createSpacer(paddingTop));
         codeFrag.appendChild(this.lineRenderer.createSpacer(paddingTop));
 
-        // Track which hunks we've already rendered ghost lines for
-        const renderedHunks = new Set<number>();
+        // Render visible slice of visual rows
+        for (let i = startIndex; i < endIndex; i++) {
+            const row = this.visualRows[i];
+            
+            if (row.kind === 'real') {
+                const lineIndex = row.lineIndex;
+                const syntaxNodes = code.getLineNodes(lineIndex);
+                
+                const lineWrapper = this.lineRenderer.createLineWrapper(lineIndex, syntaxNodes, errorLines, settings, diffs);
+                lineWrapper.setAttribute('data-visual-index', i.toString());
+                
+                const lineNumberEl = this.lineRenderer.createLineNumber(lineIndex, settings, diffs);
+                lineNumberEl.setAttribute('data-visual-index', i.toString());
+                
+                const lineButtonEl = this.lineRenderer.createLineButtons(lineIndex, runLines, errorLines, settings);
+                lineButtonEl.setAttribute('data-visual-index', i.toString());
 
-        for (let i = startLine; i < endLine; i++) {
-            // get syntax highlight nodes (cache supported)
-            const syntaxNodes: HighlighedNode[] = code.getLineNodes(i);
-
-            // Delegate ghost line rendering to DiffRenderer
-            if (diffs && this.diffEnabled) {
-                const ghosts = this.diffRenderer.renderGhostsForLine(
-                    i, diffs, renderedHunks, settings
-                );
-                if (ghosts) {
-                    for (const ghost of ghosts) {
-                        codeFrag.appendChild(ghost.code);
-                        gutterFrag.appendChild(ghost.gutter);
-                        btnFrag.appendChild(ghost.btn);
-                    }
-                }
+                codeFrag.appendChild(lineWrapper);
+                gutterFrag.appendChild(lineNumberEl);
+                btnFrag.appendChild(lineButtonEl);
+            } else {
+                // Ghost row
+                const ghostElements = this.diffRenderer.createGhostRowElements(row, settings);
+                ghostElements.code.setAttribute('data-visual-index', i.toString());
+                ghostElements.gutter.setAttribute('data-visual-index', i.toString());
+                ghostElements.btn.setAttribute('data-visual-index', i.toString());
+                
+                codeFrag.appendChild(ghostElements.code);
+                gutterFrag.appendChild(ghostElements.gutter);
+                btnFrag.appendChild(ghostElements.btn);
             }
-
-            const lineWrapper = this.lineRenderer.createLineWrapper(i, syntaxNodes, errorLines, settings, diffs);
-            const lineNumberEl = this.lineRenderer.createLineNumber(i, settings, diffs);
-            const lineButtonEl = this.lineRenderer.createLineButtons(i, runLines, errorLines, settings);
-
-            codeFrag.appendChild(lineWrapper);
-            gutterFrag.appendChild(lineNumberEl);
-            btnFrag.appendChild(lineButtonEl);
         }
 
-        // bottom spacers
+        // Bottom spacers
         btnFrag.appendChild(this.lineRenderer.createSpacer(paddingBottom));
         gutterFrag.appendChild(this.lineRenderer.createSpacer(paddingBottom));
         codeFrag.appendChild(this.lineRenderer.createSpacer(paddingBottom));
 
-        // replace old children atomically
+        // Replace old children atomically
         this.buttonsColumn.replaceChildren(btnFrag);
         this.gutter.replaceChildren(gutterFrag);
         this.codeContent.replaceChildren(codeFrag);
 
-        // render cursor or selection
+        // Render cursor or selection
         if (!search || !search.isActive() || !search.isFocused()) {
             if (!selection || selection.isEmpty()) {
                 const { line, column } = code.getPosition(offset);
@@ -128,20 +160,159 @@ export class Renderer {
             }
         }
 
-        // render search highlights
+        // Render search highlights
         if (search && search.isActive()) {
             this.searchRenderer.updateSearchHighlights(search);
         }
     }
 
+    /**
+     * Build visual rows with only real lines (no ghost lines)
+     */
+    private buildRealOnlyRows(totalLines: number): VisualRow[] {
+        const rows: VisualRow[] = [];
+        for (let i = 0; i < totalLines; i++) {
+            rows.push({ kind: 'real', lineIndex: i });
+        }
+        return rows;
+    }
+
+    /**
+     * Build a unified list of visual rows (real + ghost lines).
+     * Ghost lines are inserted before their anchor line.
+     * This provides a stable model for virtualized scrolling.
+     */
+    private buildVisualRows(
+        totalLines: number,
+        diffs: Map<number, DiffInfo> | undefined
+    ): VisualRow[] {
+        const rows: VisualRow[] = [];
+        const processedHunks = new Set<number>();
+
+        // Collect ghost info by anchor line for efficient lookup
+        const ghostsByAnchor = new Map<number, { hunkId: number; texts: string[] }[]>();
+        
+        if (diffs) {
+            for (const [lineNumber, diffInfo] of diffs) {
+                if (!diffInfo.oldLines || diffInfo.oldLines.length === 0) continue;
+                if (diffInfo.changeType !== 'modified' && diffInfo.changeType !== 'deleted') continue;
+                
+                const anchorLine = diffInfo.ghostAnchorLine ?? lineNumber;
+                
+                if (!ghostsByAnchor.has(anchorLine)) {
+                    ghostsByAnchor.set(anchorLine, []);
+                }
+                ghostsByAnchor.get(anchorLine)!.push({
+                    hunkId: diffInfo.hunkId,
+                    texts: diffInfo.oldLines
+                });
+            }
+        }
+
+        // Build visual rows: iterate through lines and insert ghosts before their anchors
+        for (let i = 0; i < totalLines; i++) {
+            const lineNumber = i + 1; // 1-indexed for diffs
+            
+            // Check for ghost lines anchored before this line
+            const ghostsHere = ghostsByAnchor.get(lineNumber);
+            if (ghostsHere) {
+                for (const ghostGroup of ghostsHere) {
+                    if (processedHunks.has(ghostGroup.hunkId)) continue;
+                    processedHunks.add(ghostGroup.hunkId);
+                    
+                    for (const text of ghostGroup.texts) {
+                        rows.push({
+                            kind: 'ghost',
+                            hunkId: ghostGroup.hunkId,
+                            anchorLine: lineNumber,
+                            text
+                        });
+                    }
+                }
+            }
+            
+            // Add the real line
+            rows.push({ kind: 'real', lineIndex: i });
+        }
+
+        // Handle EOF ghosts (deletions anchored after the last line)
+        const eofAnchor = totalLines + 1;
+        const eofGhosts = ghostsByAnchor.get(eofAnchor);
+        if (eofGhosts) {
+            for (const ghostGroup of eofGhosts) {
+                if (processedHunks.has(ghostGroup.hunkId)) continue;
+                processedHunks.add(ghostGroup.hunkId);
+                
+                for (const text of ghostGroup.texts) {
+                    rows.push({
+                        kind: 'ghost',
+                        hunkId: ghostGroup.hunkId,
+                        anchorLine: eofAnchor,
+                        text
+                    });
+                }
+            }
+        }
+
+        return rows;
+    }
+
+    /**
+     * Get visual index for a real line number.
+     * This accounts for ghost lines above the target line.
+     */
+    private getVisualIndexForLine(lineIndex: number): number {
+        for (let i = 0; i < this.visualRows.length; i++) {
+            const row = this.visualRows[i];
+            if (row.kind === 'real' && row.lineIndex === lineIndex) {
+                return i;
+            }
+        }
+        // Fallback: if line not found, estimate based on lineIndex
+        // This shouldn't happen in normal operation
+        return lineIndex;
+    }
+    
+    /**
+     * Get visible range based on visual row indices
+     */
+    private getVisibleRangeByVisualIndex(totalVisualRows: number, settings: EditorSettings) {
+        const scrollTop = this.container.scrollTop;
+        const viewHeight = this.container.clientHeight;
+
+        const visibleBuffer = settings.buffer;
+        const itemHeight = settings.lineHeight;
+
+        let visibleCount: number;
+        if (viewHeight > 0) {
+            visibleCount = Math.ceil(viewHeight / itemHeight);
+        } else {
+            const parentHeight = this.container.parentElement?.clientHeight || 0;
+            const fallbackHeight = parentHeight > 0 ? parentHeight : window.innerHeight;
+            visibleCount = Math.min(Math.floor(fallbackHeight / itemHeight), totalVisualRows);
+        }
+
+        const startIndex = Math.max(0, Math.floor(scrollTop / itemHeight) - visibleBuffer);
+        const endIndex = Math.min(totalVisualRows, startIndex + visibleCount + visibleBuffer * 2);
+
+        return { startIndex, endIndex };
+    }
+
     public renderScroll(state: EditorState, search?: Search) {
         // console.log("renderScroll");
 
-        const { code, offset, selection, settings, diffs } = state;
-        const totalLines = code.linesLength();
+        const { code, offset, selection, settings, diffs, runLines, errorLines } = state;
         const lineHeight = settings.lineHeight;
         const buffer = settings.buffer;
-        const { startLine, endLine } = this.getVisibleRange(totalLines, settings);
+        
+        // Rebuild visual rows if diffs changed (otherwise use cached)
+        const totalRealLines = code.linesLength();
+        this.visualRows = this.diffEnabled 
+            ? this.buildVisualRows(totalRealLines, diffs)
+            : this.buildRealOnlyRows(totalRealLines);
+
+        const totalVisualRows = this.visualRows.length;
+        const { startIndex, endIndex } = this.getVisibleRangeByVisualIndex(totalVisualRows, settings);
 
         this.ensureSpacers(this.codeContent);
         this.ensureSpacers(this.gutter);
@@ -156,105 +327,84 @@ export class Renderer {
         const btnTopSpacer = this.buttonsColumn.firstChild as HTMLElement;
         const btnBottomSpacer = this.buttonsColumn.lastChild as HTMLElement;
 
-        // Find first and last real lines (skip spacers and ghost lines)
-        const realLines = this.getLines();
-        let currentStartLine = realLines.length > 0 ? realLines[0].lineNumber : -1;
-        let currentEndLine = realLines.length > 0 ? realLines[realLines.length - 1].lineNumber + 1 : -1; // exclusive
+        // Get current rendered range by checking first/last visual index attributes
+        const renderedElements = this.getRenderedElements();
+        let currentStartIndex = renderedElements.length > 0 
+            ? parseInt(renderedElements[0].getAttribute('data-visual-index') || '-1', 10) 
+            : -1;
+        let currentEndIndex = renderedElements.length > 0 
+            ? parseInt(renderedElements[renderedElements.length - 1].getAttribute('data-visual-index') || '-1', 10) + 1 
+            : -1;
 
-        let changed = false;
-
+        // Check if full re-render is needed
         const needFullRerender =
-            currentStartLine === -1 ||
-            startLine >= currentEndLine ||
-            endLine <= currentStartLine ||
-            Math.abs(startLine - currentStartLine) > buffer * 2 ||
-            Math.abs(endLine - currentEndLine) > buffer * 2;
+            currentStartIndex === -1 ||
+            startIndex >= currentEndIndex ||
+            endIndex <= currentStartIndex ||
+            Math.abs(startIndex - currentStartIndex) > buffer * 2 ||
+            Math.abs(endIndex - currentEndIndex) > buffer * 2;
 
         if (needFullRerender) {
             this.render(state, search);
             return;
         }
 
-        // delete rows above - remove elements until we reach the target line
-        while (currentStartLine < startLine && this.codeContent.children.length > 2) {
-            const child = this.codeContent.children[1];
+        let changed = false;
 
-            // Always remove matching elements from all three columns
-            this.codeContent.removeChild(child);
+        // Remove rows from top
+        while (currentStartIndex < startIndex && this.codeContent.children.length > 2) {
+            this.codeContent.removeChild(this.codeContent.children[1]);
             if (this.gutter.children[1]) {
                 this.gutter.removeChild(this.gutter.children[1]);
             }
             if (this.buttonsColumn.children[1]) {
                 this.buttonsColumn.removeChild(this.buttonsColumn.children[1]);
             }
-
-            // Only increment currentStartLine if we removed a real line (not ghost)
-            if (!child.hasAttribute('data-ghost')) {
-                currentStartLine++;
-            }
+            currentStartIndex++;
             changed = true;
         }
 
-        // delete rows below - similar logic
-        while (currentEndLine > endLine && this.codeContent.children.length > 2) {
+        // Remove rows from bottom
+        while (currentEndIndex > endIndex && this.codeContent.children.length > 2) {
             const index = this.codeContent.children.length - 2;
-            const child = this.codeContent.children[index];
-
-            this.codeContent.removeChild(child);
+            this.codeContent.removeChild(this.codeContent.children[index]);
             if (this.gutter.children[index]) {
                 this.gutter.removeChild(this.gutter.children[index]);
             }
             if (this.buttonsColumn.children[index]) {
                 this.buttonsColumn.removeChild(this.buttonsColumn.children[index]);
             }
-
-            // Only decrement currentEndLine if we removed a real line (not ghost)
-            if (!child.hasAttribute('data-ghost')) {
-                currentEndLine--;
-            }
+            currentEndIndex--;
             changed = true;
         }
 
+        // Add rows above
+        while (currentStartIndex > startIndex) {
+            currentStartIndex--;
+            const row = this.visualRows[currentStartIndex];
+            const elements = this.createRowElements(row, currentStartIndex, state);
 
-        // add roes above 
-        while (currentStartLine > startLine) {
-            currentStartLine--;
-            const nodes = code.getLineNodes(currentStartLine);
-            const lineEl = this.lineRenderer.createLineWrapper(currentStartLine, nodes, state.errorLines, settings, diffs);
-
-            this.container.appendChild(lineEl);
-            this.container.removeChild(lineEl);
-
-            this.codeContent.insertBefore(lineEl, this.codeContent.children[1]);
-            this.gutter.insertBefore(this.lineRenderer.createLineNumber(currentStartLine, settings, diffs), this.gutter.children[1]);
-            this.buttonsColumn.insertBefore(
-                this.lineRenderer.createLineButtons(currentStartLine, state.runLines, state.errorLines, settings),
-                this.buttonsColumn.children[1]
-            );
+            this.codeContent.insertBefore(elements.code, this.codeContent.children[1]);
+            this.gutter.insertBefore(elements.gutter, this.gutter.children[1]);
+            this.buttonsColumn.insertBefore(elements.btn, this.buttonsColumn.children[1]);
 
             changed = true;
         }
 
-        // add rows below
-        while (currentEndLine < endLine) {
-            const nodes = code.getLineNodes(currentEndLine);
-            const lineEl = this.lineRenderer.createLineWrapper(currentEndLine, nodes, state.errorLines, settings, diffs);
+        // Add rows below
+        while (currentEndIndex < endIndex) {
+            const row = this.visualRows[currentEndIndex];
+            const elements = this.createRowElements(row, currentEndIndex, state);
 
-            this.container.appendChild(lineEl);
-            this.container.removeChild(lineEl);
+            this.codeContent.insertBefore(elements.code, bottomSpacer);
+            this.gutter.insertBefore(elements.gutter, gutterBottomSpacer);
+            this.buttonsColumn.insertBefore(elements.btn, btnBottomSpacer);
 
-            this.codeContent.insertBefore(lineEl, bottomSpacer);
-            this.gutter.insertBefore(this.lineRenderer.createLineNumber(currentEndLine, settings, diffs), gutterBottomSpacer);
-            this.buttonsColumn.insertBefore(
-                this.lineRenderer.createLineButtons(currentEndLine, state.runLines, state.errorLines, settings),
-                btnBottomSpacer
-            );
-
-            currentEndLine++;
+            currentEndIndex++;
             changed = true;
         }
 
-        // render cursor or selection
+        // Render cursor or selection
         if (!search || !search.isActive() || !search.isFocused()) {
             if (!selection || selection.isEmpty()) {
                 const { line, column } = code.getPosition(offset);
@@ -264,16 +414,16 @@ export class Renderer {
             }
         }
 
-        // render search highlights
+        // Render search highlights
         if (search && search.isActive()) {
             this.searchRenderer.updateSearchHighlights(search);
         }
 
         if (!changed) return;
 
-        // update spacers
-        const topHeight = Math.round(startLine * lineHeight);
-        const bottomHeight = Math.round(Math.max(0, (totalLines - endLine) * lineHeight));
+        // Update spacers based on visual indices
+        const topHeight = Math.round(startIndex * lineHeight);
+        const bottomHeight = Math.round(Math.max(0, (totalVisualRows - endIndex) * lineHeight));
 
         topSpacer.style.height = `${topHeight}px`;
         bottomSpacer.style.height = `${bottomHeight}px`;
@@ -283,88 +433,150 @@ export class Renderer {
 
         btnTopSpacer.style.height = `${topHeight}px`;
         btnBottomSpacer.style.height = `${bottomHeight}px`;
+    }
 
-        // Update ghost lines after scroll if diff mode is enabled
-        if (this.diffEnabled && diffs && diffs.size > 0) {
-            const lines = this.getLines();
-            this.diffRenderer.syncVisibleGhosts(startLine, endLine, diffs, settings, lines);
+    /**
+     * Create DOM elements for a visual row (real or ghost)
+     */
+    private createRowElements(
+        row: VisualRow, 
+        visualIndex: number, 
+        state: EditorState
+    ): { code: HTMLElement; gutter: HTMLElement; btn: HTMLElement } {
+        const { code, settings, diffs, runLines, errorLines } = state;
+        
+        if (row.kind === 'real') {
+            const lineIndex = row.lineIndex;
+            const syntaxNodes = code.getLineNodes(lineIndex);
+            
+            const lineWrapper = this.lineRenderer.createLineWrapper(lineIndex, syntaxNodes, errorLines, settings, diffs);
+            lineWrapper.setAttribute('data-visual-index', visualIndex.toString());
+            
+            const lineNumberEl = this.lineRenderer.createLineNumber(lineIndex, settings, diffs);
+            lineNumberEl.setAttribute('data-visual-index', visualIndex.toString());
+            
+            const lineButtonEl = this.lineRenderer.createLineButtons(lineIndex, runLines, errorLines, settings);
+            lineButtonEl.setAttribute('data-visual-index', visualIndex.toString());
+            
+            return { code: lineWrapper, gutter: lineNumberEl, btn: lineButtonEl };
+        } else {
+            const ghostElements = this.diffRenderer.createGhostRowElements(row, settings);
+            ghostElements.code.setAttribute('data-visual-index', visualIndex.toString());
+            ghostElements.gutter.setAttribute('data-visual-index', visualIndex.toString());
+            ghostElements.btn.setAttribute('data-visual-index', visualIndex.toString());
+            
+            return ghostElements;
         }
+    }
+
+    /**
+     * Get all rendered elements (excluding spacers)
+     */
+    private getRenderedElements(): HTMLElement[] {
+        return Array.from(this.codeContent.children)
+            .filter((child) => !child.classList.contains('spacer')) as HTMLElement[];
     }
 
     public renderChanges(state: EditorState, search?: Search) {
         console.log("renderChanges");
-        // console.time('updateChanges');
 
         const { code, offset, selection, errorLines, settings, diffs } = state;
 
-        const totalLines = code.linesLength();
-        const { startLine, endLine } = this.getVisibleRange(totalLines, settings);
+        // Rebuild visual rows - structure may have changed
+        const totalRealLines = code.linesLength();
+        const newVisualRows = this.diffEnabled 
+            ? this.buildVisualRows(totalRealLines, diffs)
+            : this.buildRealOnlyRows(totalRealLines);
+
+        // If visual rows structure changed (different length or diff structure changed), do full render
+        if (newVisualRows.length !== this.visualRows.length) {
+            this.render(state, search);
+            return;
+        }
+
+        // Update visualRows
+        this.visualRows = newVisualRows;
+
+        const totalVisualRows = this.visualRows.length;
+        const { startIndex, endIndex } = this.getVisibleRangeByVisualIndex(totalVisualRows, settings);
 
         const lines = this.getLines();
 
         if (lines.length === 0) {
             this.render(state, search);
-            // console.timeEnd('updateChanges');
             return;
         }
 
-        const oldStartLine = lines[0].lineNumber;
-        const oldEndLine = lines[lines.length - 1].lineNumber + 1;
-
-        if (oldStartLine !== startLine || oldEndLine !== endLine) {
-            // Full render if viewport changed
+        // Get current rendered range
+        const renderedElements = this.getRenderedElements();
+        if (renderedElements.length === 0) {
             this.render(state, search);
-            // console.timeEnd('updateChanges');
             return;
         }
 
-        // Update only changed lines
-        for (let i = startLine; i < endLine; i++) {
-            const nodes = code.getLineNodes(i);
+        const currentStartIndex = parseInt(renderedElements[0].getAttribute('data-visual-index') || '-1', 10);
+        const currentEndIndex = parseInt(renderedElements[renderedElements.length - 1].getAttribute('data-visual-index') || '-1', 10) + 1;
+
+        // If viewport changed, do full render
+        if (currentStartIndex !== startIndex || currentEndIndex !== endIndex) {
+            this.render(state, search);
+            return;
+        }
+
+        // Update only changed real lines
+        for (let i = startIndex; i < endIndex; i++) {
+            const row = this.visualRows[i];
+            if (row.kind !== 'real') continue;
+
+            const lineIndex = row.lineIndex;
+            const nodes = code.getLineNodes(lineIndex);
             const newHash = objectHash(nodes).toString();
 
-            const existingLine = lines.find(line => line.lineNumber === i);
+            const existingLine = lines.find(line => line.lineNumber === lineIndex);
 
             if (existingLine) {
                 const existingHash = existingLine.hash;
                 if (existingHash !== newHash) {
-                    const newLineEl = this.lineRenderer.createLineWrapper(i, nodes, errorLines, settings, diffs);
+                    const newLineEl = this.lineRenderer.createLineWrapper(lineIndex, nodes, errorLines, settings, diffs);
+                    newLineEl.setAttribute('data-visual-index', i.toString());
                     existingLine.replaceWith(newLineEl);
 
                     // Replace the line number (gutter) to reflect changes
-                    // Find the gutter element by data-line attribute (not by index, due to ghost lines)
-                    const oldGutterLine = this.gutter.querySelector(`.ln[data-line="${i}"]`) as HTMLElement;
+                    const oldGutterLine = this.gutter.querySelector(`.ln[data-line="${lineIndex}"]`) as HTMLElement;
                     if (oldGutterLine) {
-                        const newGutterLine = this.lineRenderer.createLineNumber(i, settings, diffs);
+                        const newGutterLine = this.lineRenderer.createLineNumber(lineIndex, settings, diffs);
+                        newGutterLine.setAttribute('data-visual-index', i.toString());
                         this.gutter.replaceChild(newGutterLine, oldGutterLine);
                     }
                 }
             } else {
                 // Fallback to full render if line is missing
                 this.render(state, search);
-                console.timeEnd('updateChanges');
                 return;
             }
         }
 
         // Update gutter for all visible lines to ensure diff classes are correct
-        // (even if line content hash didn't change, diffInfo might have changed)
         if (diffs) {
-            for (let i = startLine; i < endLine; i++) {
-                const oldGutterLine = this.gutter.querySelector(`.ln[data-line="${i}"]`) as HTMLElement;
+            for (let i = startIndex; i < endIndex; i++) {
+                const row = this.visualRows[i];
+                if (row.kind !== 'real') continue;
+
+                const lineIndex = row.lineIndex;
+                const oldGutterLine = this.gutter.querySelector(`.ln[data-line="${lineIndex}"]`) as HTMLElement;
                 if (oldGutterLine) {
                     const hasDiffClass = oldGutterLine.classList.contains('diff-changed') ||
                         oldGutterLine.classList.contains('diff-added') ||
                         oldGutterLine.classList.contains('diff-deleted');
-                    const diffInfo = diffs.get(i + 1);
+                    const diffInfo = diffs.get(lineIndex + 1);
 
-                    // Only update if the diff state changed
                     if (hasDiffClass || diffInfo) {
                         const expectedClass = diffInfo ? this.diffRenderer.getDiffClass(diffInfo.changeType) : '';
                         const hasCorrectClass = expectedClass ? oldGutterLine.classList.contains(expectedClass) : !hasDiffClass;
 
                         if (!hasCorrectClass) {
-                            const newGutterLine = this.lineRenderer.createLineNumber(i, settings, diffs);
+                            const newGutterLine = this.lineRenderer.createLineNumber(lineIndex, settings, diffs);
+                            newGutterLine.setAttribute('data-visual-index', i.toString());
                             this.gutter.replaceChild(newGutterLine, oldGutterLine);
                         }
                     }
@@ -372,18 +584,12 @@ export class Renderer {
             }
         }
 
-        // Update ghost lines if diff mode is enabled
-        if (this.diffEnabled && diffs && diffs.size > 0) {
-            const lines = this.getLines();
-            this.diffRenderer.syncVisibleGhosts(startLine, endLine, diffs, settings, lines);
-        }
-
-        // render search highlights
+        // Render search highlights
         if (search && search.isActive()) {
             this.searchRenderer.updateSearchHighlights(search);
         }
 
-        // render cursor or selection
+        // Render cursor or selection
         if (!search || !search.isActive() || !search.isFocused()) {
             if (!selection || selection.isEmpty()) {
                 const { line, column } = code.getPosition(offset);
@@ -392,8 +598,6 @@ export class Renderer {
                 this.renderSelection(code, selection!);
             }
         }
-
-        // console.timeEnd('updateChanges');
     }
 
     private ensureSpacers(container: HTMLElement) {
@@ -407,29 +611,6 @@ export class Renderer {
         if (!last || !last.classList?.contains('spacer')) {
             container.appendChild(this.lineRenderer.createSpacer(0));
         }
-    }
-
-    private getVisibleRange(totalLines: number, settings: EditorSettings) {
-        const scrollTop = this.container.scrollTop;
-        const viewHeight = this.container.clientHeight;
-
-        let visibleBuffer = settings.buffer;
-        let itemHeight = settings.lineHeight;
-
-        // Fallback for cases when container doesn't have sizes (first render)
-        let visibleCount: number;
-        if (viewHeight > 0) {
-            visibleCount = Math.ceil(viewHeight / itemHeight);
-        } else {
-            const parentHeight = this.container.parentElement?.clientHeight || 0;
-            const fallbackHeight = parentHeight > 0 ? parentHeight : window.innerHeight;
-            visibleCount = Math.min(Math.floor(fallbackHeight / itemHeight), totalLines);
-        }
-
-        const startLine = Math.max(0, Math.floor(scrollTop / itemHeight) - visibleBuffer);
-        const endLine = Math.min(totalLines, startLine + visibleCount + visibleBuffer * 2);
-
-        return { startLine, endLine };
     }
 
     public renderCursorOrSelection(state: EditorState, focus: boolean = false) {
@@ -513,7 +694,9 @@ export class Renderer {
         let { line } = code.getPosition(offset);
         if (focusLine !== null) line = focusLine;
 
-        const cursorTop = line * settings.lineHeight;
+        // Use visual index to account for ghost lines above cursor
+        const visualIndex = this.getVisualIndexForLine(line);
+        const cursorTop = visualIndex * settings.lineHeight;
         const cursorBottom = cursorTop + settings.lineHeight;
 
         const viewportTop = this.container.scrollTop;
@@ -544,7 +727,9 @@ export class Renderer {
 
         const { line } = code.getPosition(offset);
 
-        const cursorTop = line * settings.lineHeight;
+        // Use visual index to account for ghost lines above cursor
+        const visualIndex = this.getVisualIndexForLine(line);
+        const cursorTop = visualIndex * settings.lineHeight;
         const cursorCenter = cursorTop + settings.lineHeight / 2;
 
         const viewportHeight = this.container.clientHeight;

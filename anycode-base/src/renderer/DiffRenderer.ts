@@ -1,6 +1,7 @@
 import { AnycodeLine } from "../utils";
 import { EditorSettings } from "../editor";
 import { DiffInfo, ChangeType } from "../diff";
+import { GhostRow } from "./Renderer";
 
 export interface GhostLine {
     code: HTMLElement;
@@ -46,78 +47,110 @@ export class DiffRenderer {
 
     // ========== Ghost Lines Rendering ==========
 
+    private hasGhostContent(diffInfo: DiffInfo): boolean {
+        return (
+            (diffInfo.changeType === 'modified' || diffInfo.changeType === 'deleted') &&
+            !!diffInfo.oldLines &&
+            diffInfo.oldLines.length > 0
+        );
+    }
+
+    private getGhostAnchorLine(lineNumber: number, diffInfo: DiffInfo): number {
+        return diffInfo.ghostAnchorLine ?? lineNumber;
+    }
+
+    /**
+     * @deprecated Use buildVisualRows + createGhostRowElements instead.
+     * This method was used for dynamic ghost line insertion during render.
+     */
     public renderGhostsForLine(
         lineIndex: number,
         diffResult: Map<number, DiffInfo>,
         renderedHunks: Set<number>,
         settings: EditorSettings
     ): GhostLine[] | null {
-        const diffInfo = diffResult.get(lineIndex + 1);
-        if (diffInfo?.changeType === 'modified' && diffInfo.oldLines && diffInfo.oldLines.length > 0) {
+        const anchorLine = lineIndex + 1;
+        const lines: GhostLine[] = [];
+
+        for (const [lineNumber, diffInfo] of diffResult) {
+            if (!this.hasGhostContent(diffInfo)) {
+                continue;
+            }
+            if (this.getGhostAnchorLine(lineNumber, diffInfo) !== anchorLine) {
+                continue;
+            }
+
             const hunkId = diffInfo.hunkId;
+            if (renderedHunks.has(hunkId)) {
+                continue;
+            }
+            renderedHunks.add(hunkId);
 
-            // Check if this is the first line in the hunk within the visible range
-            // And we haven't rendered this hunk yet
-            if (!renderedHunks.has(hunkId)) {
-                renderedHunks.add(hunkId);
+            for (const oldLine of diffInfo.oldLines!) {
+                const ghostLine = this.createDeletedGhostLine(oldLine, settings, hunkId);
 
-                const lines: GhostLine[] = [];
+                // Add empty gutter and button elements to keep alignment
+                const emptyGutter = document.createElement('div');
+                emptyGutter.className = 'ln';
+                emptyGutter.style.height = `${settings.lineHeight}px`;
+                emptyGutter.setAttribute('data-ghost', 'true');
+                emptyGutter.setAttribute('data-hunk-id', hunkId.toString());
 
-                // Add ghost lines for deleted content
-                for (const oldLine of diffInfo.oldLines) {
-                    const ghostLine = this.createDeletedGhostLine(oldLine, settings, hunkId);
+                const emptyButton = document.createElement('div');
+                emptyButton.className = 'bt';
+                emptyButton.style.height = `${settings.lineHeight}px`;
+                emptyButton.setAttribute('data-ghost', 'true');
+                emptyButton.setAttribute('data-hunk-id', hunkId.toString());
 
-                    // Add empty gutter and button elements to keep alignment
-                    const emptyGutter = document.createElement('div');
-                    emptyGutter.className = 'ln';
-                    emptyGutter.style.height = `${settings.lineHeight}px`;
-                    emptyGutter.setAttribute('data-ghost', 'true');
-                    emptyGutter.setAttribute('data-hunk-id', hunkId.toString());
-
-                    const emptyButton = document.createElement('div');
-                    emptyButton.className = 'bt';
-                    emptyButton.style.height = `${settings.lineHeight}px`;
-                    emptyButton.setAttribute('data-ghost', 'true');
-                    emptyButton.setAttribute('data-hunk-id', hunkId.toString());
-
-                    lines.push({ code: ghostLine, gutter: emptyGutter, btn: emptyButton });
-                }
-                return lines;
+                lines.push({ code: ghostLine, gutter: emptyGutter, btn: emptyButton });
             }
         }
-        return null;
+
+        return lines.length > 0 ? lines : null;
     }
 
+    /**
+     * @deprecated No longer needed with visual rows model.
+     * Ghost lines are now part of the unified visual rows and rendered with stable indices.
+     */
     public syncVisibleGhosts(
         startLine: number,
         endLine: number,
         diffResult: Map<number, DiffInfo>,
         settings: EditorSettings,
-        lines: AnycodeLine[]
+        lines: AnycodeLine[],
+        totalLines: number
     ): void {
         if (!diffResult || diffResult.size === 0) return;
 
         const visibleHunks = new Set<number>();
+        const includeEofAnchor = endLine === totalLines;
 
-        // Collect all hunks in visible range
-        for (let i = startLine; i < endLine; i++) {
-            const diffInfo = diffResult.get(i + 1);
-            if (diffInfo?.changeType === 'modified' && diffInfo.oldLines && diffInfo.oldLines.length > 0) {
+        // Collect all hunks whose ghost anchor is visible.
+        for (const [lineNumber, diffInfo] of diffResult) {
+            if (!this.hasGhostContent(diffInfo)) {
+                continue;
+            }
+            const anchorLine = this.getGhostAnchorLine(lineNumber, diffInfo);
+            const inVisibleRange = anchorLine >= startLine + 1 && anchorLine <= endLine;
+            const atVisibleEof = includeEofAnchor && anchorLine === totalLines + 1;
+
+            if (inVisibleRange || atVisibleEof) {
                 visibleHunks.add(diffInfo.hunkId);
             }
         }
 
         // Update ghost lines for each visible hunk
         for (const hunkId of visibleHunks) {
-            let oldLines: string[] | undefined;
+            let oldLinesForHunk: string[] | undefined;
             for (const [_, info] of diffResult) {
-                if (info.hunkId === hunkId && info.oldLines) {
-                    oldLines = info.oldLines;
+                if (info.hunkId === hunkId && info.oldLines && info.oldLines.length > 0) {
+                    oldLinesForHunk = info.oldLines;
                     break;
                 }
             }
-            if (oldLines) {
-                this.updateGhostLinesForHunk(hunkId, oldLines, settings, diffResult, lines);
+            if (oldLinesForHunk) {
+                this.updateGhostLinesForHunk(hunkId, oldLinesForHunk, settings, diffResult, lines);
             }
         }
 
@@ -163,13 +196,12 @@ export class DiffRenderer {
         // Remove old ghost lines and corresponding gutter/button elements
         this.removeGhostLinesForHunk(hunkId);
 
-        // Find the first line in this hunk
-        const firstLineNum = this.getFirstLineInHunk(hunkId, diffResult);
-        if (firstLineNum === null) return;
+        // Find ghost anchor for this hunk.
+        const anchorLineNum = this.getGhostAnchorLineInHunk(hunkId, diffResult);
+        if (anchorLineNum === null) return;
 
-        // Find firstLine from lines array instead of DOM query
-        const firstLine = lines.find(line => line.lineNumber === firstLineNum - 1);
-        if (!firstLine) return;
+        // Find anchor line from lines array (can be absent for EOF anchors).
+        const anchorLine = lines.find(line => line.lineNumber === anchorLineNum - 1);
 
         // Insert new ghost lines before the first line
         const codeFrag = document.createDocumentFragment();
@@ -195,19 +227,18 @@ export class DiffRenderer {
             btnFrag.appendChild(emptyButton);
         }
 
-        // Find corresponding gutter and button elements by data-line attribute
-        const firstGutterEl = this.gutter.querySelector(`.ln[data-line="${firstLineNum - 1}"]`);
-        const firstBtnEl = this.buttonsColumn.querySelector(`.bt[data-line="${firstLineNum - 1}"]`);
+        // Find corresponding gutter and button elements by data-line attribute.
+        const anchorGutterEl = this.gutter.querySelector(`.ln[data-line="${anchorLineNum - 1}"]`);
+        const anchorBtnEl = this.buttonsColumn.querySelector(`.bt[data-line="${anchorLineNum - 1}"]`);
 
-        // Insert at the correct positions in all three containers
-        this.codeContent.insertBefore(codeFrag, firstLine);
+        // Insert at the correct positions in all three containers.
+        const codeInsertBefore = anchorLine ?? this.codeContent.lastElementChild;
+        const gutterInsertBefore = anchorGutterEl ?? this.gutter.lastElementChild;
+        const btnInsertBefore = anchorBtnEl ?? this.buttonsColumn.lastElementChild;
 
-        if (firstGutterEl) {
-            this.gutter.insertBefore(gutterFrag, firstGutterEl);
-        }
-        if (firstBtnEl) {
-            this.buttonsColumn.insertBefore(btnFrag, firstBtnEl);
-        }
+        this.codeContent.insertBefore(codeFrag, codeInsertBefore);
+        this.gutter.insertBefore(gutterFrag, gutterInsertBefore);
+        this.buttonsColumn.insertBefore(btnFrag, btnInsertBefore);
     }
 
     private createDeletedGhostLine(
@@ -226,6 +257,33 @@ export class DiffRenderer {
         }
 
         return ghostLine;
+    }
+
+    /**
+     * Create DOM elements for a ghost row (from visual rows model)
+     * Returns code, gutter, and button elements for the ghost line
+     */
+    public createGhostRowElements(
+        ghostRow: GhostRow, 
+        settings: EditorSettings
+    ): GhostLine {
+        const { hunkId, text } = ghostRow;
+        
+        const ghostLine = this.createDeletedGhostLine(text, settings, hunkId);
+
+        const emptyGutter = document.createElement('div');
+        emptyGutter.className = 'ln';
+        emptyGutter.style.height = `${settings.lineHeight}px`;
+        emptyGutter.setAttribute('data-ghost', 'true');
+        emptyGutter.setAttribute('data-hunk-id', hunkId.toString());
+
+        const emptyButton = document.createElement('div');
+        emptyButton.className = 'bt';
+        emptyButton.style.height = `${settings.lineHeight}px`;
+        emptyButton.setAttribute('data-ghost', 'true');
+        emptyButton.setAttribute('data-hunk-id', hunkId.toString());
+
+        return { code: ghostLine, gutter: emptyGutter, btn: emptyButton };
     }
 
     private findGhostLinesForHunk(hunkId: number): HTMLElement[] {
@@ -250,18 +308,19 @@ export class DiffRenderer {
         btnGhosts.forEach(ghost => ghost.remove());
     }
 
-    private getFirstLineInHunk(
+    private getGhostAnchorLineInHunk(
         hunkId: number, diffResult: Map<number, DiffInfo>
     ): number | null {
-        let minLine: number | null = null;
+        let minAnchorLine: number | null = null;
         for (const [lineNum, info] of diffResult) {
-            if (info.hunkId === hunkId && info.changeType === 'modified') {
-                if (minLine === null || lineNum < minLine) {
-                    minLine = lineNum;
+            if (info.hunkId === hunkId && this.hasGhostContent(info)) {
+                const anchorLine = this.getGhostAnchorLine(lineNum, info);
+                if (minAnchorLine === null || anchorLine < minAnchorLine) {
+                    minAnchorLine = anchorLine;
                 }
             }
         }
-        return minLine;
+        return minAnchorLine;
     }
 
     public clearAllGhostLines(): void {

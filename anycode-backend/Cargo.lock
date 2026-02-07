@@ -59,7 +59,7 @@ dependencies = [
 
 [[package]]
 name = "anycode"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "agent-client-protocol",
  "agent-client-protocol-schema",

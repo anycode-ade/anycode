@@ -79,7 +79,7 @@
 }
 
 .diff-changed {
-  background-color: rgba(48, 123, 215, 0.357);
+  background-color: rgba(48, 123, 215, 0.246);
   position: relative;
 }
 
@@ -94,7 +94,7 @@
 }
 
 .diff-added {
-  background-color: rgba(76, 175, 80, 0.15);
+  background-color: rgba(76, 175, 79, 0.311);
   position: relative;
 }
 
@@ -166,7 +166,6 @@
 .line-deleted-ghost {
   color: #f44336;
   opacity: 0.6;
-  text-decoration: line-through;
   background-color: rgba(244, 67, 54, 0.15);
   pointer-events: none;
   user-select: none;

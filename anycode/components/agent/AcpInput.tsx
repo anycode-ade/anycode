@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import './AcpInput.css';
 import { AcpIcons } from './AcpIcons';
 
@@ -9,7 +9,6 @@ interface AcpInputProps {
   onCancel: () => void;
   isConnected: boolean;
   isProcessing?: boolean;
-  disabled?: boolean;
 }
 
 export const AcpInput: React.FC<AcpInputProps> = ({
@@ -19,19 +18,18 @@ export const AcpInput: React.FC<AcpInputProps> = ({
   onCancel,
   isConnected,
   isProcessing = false,
-  disabled = false,
 }) => {
-  const handleKeyPress = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      if (value.trim() && isConnected && !disabled) {
+      if (value.trim() && isConnected && !isProcessing) {
         onSend();
       }
     }
   };
 
   const handleSend = () => {
-    if (value.trim() && isConnected && !disabled) {
+    if (value.trim() && isConnected) {
       onSend();
     }
   };
@@ -41,16 +39,16 @@ export const AcpInput: React.FC<AcpInputProps> = ({
       <textarea
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        onKeyPress={handleKeyPress}
+        onKeyDown={handleKeyDown}
         placeholder="Ask anything..."
         rows={3}
-        disabled={!isConnected || isProcessing || disabled}
+        disabled={!isConnected}
       />
       {isProcessing ? (
         <button
           className="acp-stop-prompt-btn"
           onClick={onCancel}
-          disabled={!isConnected || disabled}
+          disabled={!isConnected}
         >
           <AcpIcons.Cancel />
         </button>
@@ -58,7 +56,7 @@ export const AcpInput: React.FC<AcpInputProps> = ({
         <button
           className="acp-send-btn"
           onClick={handleSend}
-          disabled={!value.trim() || !isConnected || disabled}
+          disabled={!value.trim() || !isConnected}
         >
           <AcpIcons.Send />
         </button>

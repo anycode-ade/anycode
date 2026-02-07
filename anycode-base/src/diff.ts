@@ -18,6 +18,7 @@ export type ChangeType = 'added' | 'modified' | 'deleted';
 export type DiffInfo = {
   changeType: ChangeType;
   oldLines?: string[];
+  ghostAnchorLine?: number;
   hunkId: number;
 };
 
@@ -25,6 +26,7 @@ export function computeGitChanges(
   original: string, current: string
 ): Map<number, DiffInfo> {
   const changes = new Map<number, DiffInfo>();
+  const currentLineCount = current === '' ? 1 : current.split('\n').length;
   const patch = JsDiff.createTwoFilesPatch(
     'a', 'b', original, current, '', '', { context: 0 }
   );
@@ -99,8 +101,17 @@ export function computeGitChanges(
               }
             } else if (deletedLines.length > 0) {
               // deleted
-              changes.set(newLine, {
+              // JsDiff can emit +0 for deletions before the first line.
+              // ghostAnchorLine is the line BEFORE which ghost lines appear.
+              // markerLine is the line where the deletion marker appears in gutter
+              // (the last real line before the deletion, i.e. anchorLine - 1).
+              const ghostAnchorLine = Math.max(1, newLine + 1);
+              // Marker should be on the line BEFORE the ghosts
+              const markerLine = Math.max(1, Math.min(ghostAnchorLine - 1, currentLineCount));
+              changes.set(markerLine, {
                 changeType: 'deleted',
+                oldLines: deletedLines,
+                ghostAnchorLine,
                 hunkId: hunkId,
               });
             }
