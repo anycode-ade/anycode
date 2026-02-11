@@ -55,37 +55,106 @@ jobs:
       
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.93.0
+      
+      - name: Add musl target
+        run: rustup target add x86_64-unknown-linux-musl
+      
+      - name: Install musl toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools
       
       - name: Cache Rust dependencies
-        uses: actions/cache@v4
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            anycode-backend/target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-
+          workspaces: |
+            anycode-backend -> target
       
-      - name: Build Linux x86_64 binary
+      - name: Build Linux x86_64 musl binary
         working-directory: ./anycode-backend
-        run: cargo build --release
+        run: cargo build --release --target x86_64-unknown-linux-musl
       
       - name: Package as tar.gz
         working-directory: ./anycode-backend
         run: |
           mkdir -p dist-release
-          strip target/release/anycode
-          cp target/release/anycode dist-release/
-          tar -czf anycode-linux-x86_64.tar.gz -C dist-release anycode
+          strip target/x86_64-unknown-linux-musl/release/anycode
+          cp target/x86_64-unknown-linux-musl/release/anycode dist-release/
+          tar -czf anycode-linux-x86_64-musl.tar.gz -C dist-release anycode
       
       - name: Upload to release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: anycode-backend/anycode-linux-x86_64.tar.gz
+          files: anycode-backend/anycode-linux-x86_64-musl.tar.gz
+          tag_name: ${{ github.ref_name }}
+          name: Release ${{ github.ref_name }}
+
+  build-linux-arm64:
+    name: Build for Linux ARM64
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+      
+      - name: Get pnpm store directory
+        shell: bash
+        run: |
+          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+      
+      - name: Setup pnpm cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+      
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      
+      - name: Build frontend
+        working-directory: ./anycode
+        run: pnpm build
+      
+      - name: Verify frontend build
+        working-directory: ./anycode-backend
+        run: |
+          if [ ! -d "dist" ] || [ -z "$(ls -A dist)" ]; then
+            echo "Error: dist directory is empty or missing"
+            exit 1
+          fi
+          echo "Frontend build verified: $(ls -la dist | head -5)"
+      
+      - name: Build Linux aarch64 musl binary
+        uses: houseabsolute/actions-rust-cross@v1
+        with:
+          command: build
+          target: aarch64-unknown-linux-musl
+          args: "--release"
+          working-directory: ./anycode-backend
+      
+      - name: Package as tar.gz
+        working-directory: ./anycode-backend
+        run: |
+          mkdir -p dist-release
+          cp target/aarch64-unknown-linux-musl/release/anycode dist-release/
+          tar -czf anycode-linux-aarch64-musl.tar.gz -C dist-release anycode
+      
+      - name: Upload to release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: anycode-backend/anycode-linux-aarch64-musl.tar.gz
           tag_name: ${{ github.ref_name }}
           name: Release ${{ github.ref_name }}
 
@@ -132,22 +201,17 @@ jobs:
           fi
           echo "Frontend build verified: $(ls -la dist | head -5)"
       
-      - name: Install Rust targets
-        run: |
-          rustup target add aarch64-apple-darwin x86_64-apple-darwin
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.93.0
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
       
       - name: Cache Rust dependencies
-        uses: actions/cache@v4
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            anycode-backend/target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-
+          workspaces: |
+            anycode-backend -> target
       
       - name: Build macOS binaries
         working-directory: ./anycode-backend
@@ -177,4 +241,3 @@ jobs:
           files: anycode-backend/anycode-universal-apple-darwin.tar.gz
           tag_name: ${{ github.ref_name }}
           name: Release ${{ github.ref_name }}
-
