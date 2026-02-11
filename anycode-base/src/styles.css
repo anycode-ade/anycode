@@ -30,7 +30,7 @@
 
 .anyeditor .gutter {
   position: sticky;
-  left: 31px;
+  left: 32px;
   user-select: none;
   pointer-events: auto;
   background: inherit;
@@ -94,7 +94,7 @@
 }
 
 .diff-added {
-  background-color: rgba(76, 175, 79, 0.311);
+  background-color: rgba(76, 175, 79, 0.206);
   position: relative;
 }
 
@@ -105,7 +105,7 @@
   top: 0;
   bottom: 0;
   width: 3px;
-  background-color: rgba(76, 175, 80, 0.5);
+  background-color: rgba(76, 175, 79, 0.405);
 }
 
 .gutter .ln.diff-deleted {

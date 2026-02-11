@@ -44,6 +44,9 @@ export class Renderer {
     private completionRenderer: CompletionRenderer;
     
     private visualRows: VisualRow[] = [];
+    
+    private maxWidth: number = 0;
+    private charWidth: number = 0;
 
     constructor(
         container: HTMLDivElement,
@@ -164,6 +167,8 @@ export class Renderer {
         if (search && search.isActive()) {
             this.searchRenderer.updateSearchHighlights(search);
         }
+        
+        this.updateMaxWidth(code);
     }
 
     /**
@@ -598,6 +603,8 @@ export class Renderer {
                 this.renderSelection(code, selection!);
             }
         }
+        
+        this.updateMaxWidth(code);
     }
 
     private ensureSpacers(container: HTMLElement) {
@@ -823,5 +830,47 @@ export class Renderer {
 
     public clearAllDiffs(): void {
         this.diffRenderer.clearAllDiffs();
+    }
+
+    private getCharWidth(): number {
+        if (this.charWidth > 0) return this.charWidth;
+
+        const probe = document.createElement('span');
+        probe.textContent = 'M';
+        probe.style.position = 'absolute';
+        probe.style.visibility = 'hidden';
+        probe.style.whiteSpace = 'pre';
+        probe.style.pointerEvents = 'none';
+
+        const computed = window.getComputedStyle(this.codeContent);
+        probe.style.fontFamily = computed.fontFamily;
+        probe.style.fontSize = computed.fontSize;
+        probe.style.fontWeight = computed.fontWeight;
+        probe.style.letterSpacing = computed.letterSpacing;
+
+        this.codeContent.appendChild(probe);
+        const measured = probe.getBoundingClientRect().width;
+        probe.remove();
+
+        this.charWidth = measured > 0 ? measured : 8;
+        return this.charWidth;
+    }
+
+    private updateMaxWidth(code: Code): void {
+        const charW = this.getCharWidth();
+        const totalLines = code.linesLength();
+        let maxW = 0;
+
+        for (let i = 0; i < totalLines; i++) {
+            const width = code.lineLength(i) * charW;
+            if (width > maxW) {
+                maxW = width;
+            }
+        }
+
+        this.maxWidth = maxW;
+        if (this.maxWidth > 0) {
+            this.codeContent.style.minWidth = `${this.maxWidth + 100}px`;
+        }
     }
 }
