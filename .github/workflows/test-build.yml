@@ -63,6 +63,14 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
       
+      - name: Add musl target
+        run: rustup target add x86_64-unknown-linux-musl
+      
+      - name: Install musl toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools
+      
       - name: Cache Rust dependencies
         uses: actions/cache@v4
         with:
@@ -76,18 +84,17 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
       
-      - name: Build Linux x86_64 binary (test)
+      - name: Build Linux x86_64 musl binary (test)
         working-directory: ./anycode-backend
-        run: cargo build --release
+        run: cargo build --release --target x86_64-unknown-linux-musl
       
       - name: Check binary size
         working-directory: ./anycode-backend
         run: |
-          ls -lh target/release/anycode
-          file target/release/anycode
+          ls -lh target/x86_64-unknown-linux-musl/release/anycode
+          file target/x86_64-unknown-linux-musl/release/anycode
       
       - name: Test binary help
         working-directory: ./anycode-backend
         run: |
-          ./target/release/anycode --help
-
+          ./target/x86_64-unknown-linux-musl/release/anycode --help
