@@ -67,7 +67,7 @@
 .tree-name {
     flex: 1;
     overflow: hidden;
-    text-overflow: ellipsis;
+    /* text-overflow: ellipsis; */
     white-space: nowrap;
     color: #e0e0e0;
     user-select: none;

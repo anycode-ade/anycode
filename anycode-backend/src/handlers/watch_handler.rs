@@ -1,12 +1,13 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::collections::HashMap;
-use std::time::{Instant, Duration};
-use tokio::sync::Mutex;
-use tokio::time::sleep;
+use std::time::Duration;
+use tokio::sync::{Mutex, Notify};
 use serde_json::json;
 use tracing::info;
 use anyhow::Result;
+
+const DEBOUNCE: Duration = Duration::from_millis(100);
 
 use crate::app_state::SocketData;
 use crate::code::Code;
@@ -20,7 +21,8 @@ enum FileState {
 
 pub struct FileWatchState {
     pub state: FileState,
-    pub last_event_time: Instant,
+    pub notify: Arc<Notify>,
+    pub pending: bool,
 }
 
 async fn is_parent_dir_opened(
@@ -67,9 +69,18 @@ async fn handle_create_remove_event(
 
     let relative_path = crate::utils::relative_path(path_str);
 
+    // For create events, path.is_file() works because the file exists.
+    // For remove events, path.is_file() always returns false (file is gone),
+    // so we use a heuristic: if the path has a file extension, it's a file.
+    let is_file = match event_kind {
+        notify::EventKind::Create(_) => path.is_file(),
+        notify::EventKind::Remove(_) => path.extension().is_some(),
+        _ => false,
+    };
+
     let _ = socket.emit(event_name, &json!({
         "path": relative_path,
-        "isFile": path.is_file()
+        "isFile": is_file
     })).await;
 }
 
@@ -98,24 +109,80 @@ pub async fn handle_watch_event(
     git_manager: &Arc<Mutex<crate::git::GitManager>>,
 ) {
     let path_str = match path.to_str() {
-        Some(s) => s,
+        Some(s) => s.to_string(),
         None => return,
     };
 
-    // Debounce: ignore events if less than 100ms since the last one
-    {
-        let states = file_states.lock().await;
-        if let Some(watch_state) = states.get(path_str) {
-            if watch_state.last_event_time.elapsed() < Duration::from_millis(100) {
-                info!("Debouncing event for path: {:?}", path);
-                return;
-            }
+    let should_spawn = {
+        let mut states = file_states.lock().await;
+        let entry = states.entry(path_str.clone()).or_insert_with(|| FileWatchState {
+            state: FileState::DoesNotExist, // never seen = didn't exist for us
+            notify: Arc::new(Notify::new()),
+            pending: false,
+        });
+
+        // Signal the existing task to reset its timer
+        entry.notify.notify_one();
+
+        if entry.pending {
+            // A task is already waiting — it will pick up the new event
+            false
+        } else {
+            entry.pending = true;
+            true
         }
+    };
+
+    if !should_spawn {
+        return;
     }
 
-    // Wait 100ms before checking the actual state
-    sleep(Duration::from_millis(100)).await;
+    // Spawn a single debounce task for this file
+    let path = path.clone();
+    let socket = socket.clone();
+    let file2code = file2code.clone();
+    let socket2data = socket2data.clone();
+    let file_states = file_states.clone();
+    let git_manager = git_manager.clone();
 
+    // Get the notify handle for this file
+    let file_notify = {
+        let states = file_states.lock().await;
+        states.get(&path_str).unwrap().notify.clone()
+    };
+
+    tokio::spawn(async move {
+        // Wait until events stop arriving (trailing-edge debounce)
+        loop {
+            match tokio::time::timeout(DEBOUNCE, file_notify.notified()).await {
+                Ok(_) => continue,  // new event arrived — reset timer
+                Err(_) => break,    // timeout — silence, time to process
+            }
+        }
+
+        process_watch_event(
+            &path, &path_str, &socket, &file2code, &socket2data, &file_states, &git_manager,
+        ).await;
+
+        // Mark as not pending so future events spawn a new task
+        {
+            let mut states = file_states.lock().await;
+            if let Some(state) = states.get_mut(&path_str) {
+                state.pending = false;
+            }
+        }
+    });
+}
+
+async fn process_watch_event(
+    path: &PathBuf,
+    path_str: &str,
+    socket: &Arc<socketioxide::SocketIo>,
+    file2code: &Arc<Mutex<HashMap<String, Code>>>,
+    socket2data: &Arc<Mutex<HashMap<String, SocketData>>>,
+    file_states: &Arc<Mutex<HashMap<String, FileWatchState>>>,
+    git_manager: &Arc<Mutex<crate::git::GitManager>>,
+) {
     let current_state = if path.exists() {
         FileState::Exists
     } else {
@@ -123,22 +190,16 @@ pub async fn handle_watch_event(
     };
 
     let last_state = {
-        let mut states = file_states.lock().await;
-        let watch_state = states.entry(path_str.to_string()).or_insert(FileWatchState {
-            state: if path.exists() { FileState::Exists } else { FileState::DoesNotExist },
-            last_event_time: Instant::now(),
-        });
-        let last = watch_state.state.clone();
-        watch_state.last_event_time = Instant::now();
-        last
+        let states = file_states.lock().await;
+        states.get(path_str)
+            .map(|s| s.state.clone())
+            .unwrap_or(FileState::DoesNotExist) // never seen = didn't exist for us
     };
 
     info!("File state transition: {:?} -> {:?} for path: {:?}", last_state, current_state, path);
 
-    // Only handle when the state changes
     match (&last_state, &current_state) {
         (&FileState::DoesNotExist, &FileState::Exists) => {
-            // File created/restored
             handle_create_remove_event(
                 path,
                 path_str,
@@ -148,7 +209,6 @@ pub async fn handle_watch_event(
             ).await;
         },
         (&FileState::Exists, &FileState::DoesNotExist) => {
-            // File removed
             handle_create_remove_event(
                 path,
                 path_str,
@@ -158,7 +218,6 @@ pub async fn handle_watch_event(
             ).await;
         },
         (&FileState::Exists, &FileState::Exists) => {
-            // File exists - treat as modify
             handle_modify_event(path, path_str, socket, file2code, socket2data).await;
         },
         _ => {
@@ -166,16 +225,14 @@ pub async fn handle_watch_event(
         }
     }
 
-    // Update state
+    // Update state (or remove if file was deleted to prevent memory leak)
     {
         let mut states = file_states.lock().await;
-        states.insert(
-            path_str.to_string(),
-            FileWatchState {
-                state: current_state,
-                last_event_time: Instant::now(),
-            },
-        );
+        if current_state == FileState::DoesNotExist {
+            states.remove(path_str);
+        } else if let Some(watch_state) = states.get_mut(path_str) {
+            watch_state.state = current_state;
+        }
     }
 
     // Check git status
@@ -191,7 +248,6 @@ pub async fn handle_watch_event(
         };
 
         if let Some(status) = new_status {
-            // Emit to all clients
             let _ = socket.emit("git:status-update", &status.to_json()).await;
         }
     }

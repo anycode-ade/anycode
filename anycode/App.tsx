@@ -4,7 +4,7 @@ import { AnycodeEditorReact, AnycodeEditor } from 'anycode-react';
 import type { Change, Position, Edit } from '../anycode-base/src/code';
 import { WatcherCreate, WatcherEdits, WatcherRemove,
     type CursorHistory, type Terminal, type AcpSession,
-    type AcpMessage, type AcpPromptStateMessage, type AcpToolCallMessage,
+    type AcpMessage, type AcpPromptStateMessage, type AcpToolCallMessage, type AcpToolResultMessage,
     type AcpOpenFileMessage, type SearchResult, type SearchEnd, type SearchMatch,
     type PendingBatch
 } from './types';
@@ -1280,16 +1280,23 @@ const App: React.FC = () => {
 
         // Handle tool_call, tool_result, tool_update, and permission_request messages
         if (data.item.role === 'tool_call' || data.item.role === 'tool_result' || data.item.role === 'tool_update' || data.item.role === 'permission_request') {
-            // Follow mode: open file when tool_call has locations
-            if (data.item.role === 'tool_call' && followEnabledRef.current) {
-                const toolCall = data.item as AcpToolCallMessage;
-                if (toolCall.locations && toolCall.locations.length > 0) {
-                    const loc = toolCall.locations[0];
-                    const filePath = loc.path;
-                    if (loc.line !== undefined) {
-                        pendingPositions.current.set(filePath, { line: loc.line, column: 0 });
+            // Follow mode: open file when tool_result arrives (file is guaranteed to exist at this point)
+            if (data.item.role === 'tool_result' && followEnabledRef.current) {
+                const toolResult = data.item as AcpToolResultMessage;
+                // Find the matching tool_call in session history to get locations
+                const session = acpSessionsRef.current.get(data.agent_id);
+                if (session) {
+                    const matchingToolCall = session.messages.find(
+                        m => m.role === 'tool_call' && (m as AcpToolCallMessage).id === toolResult.id
+                    ) as AcpToolCallMessage | undefined;
+                    if (matchingToolCall?.locations && matchingToolCall.locations.length > 0) {
+                        const loc = matchingToolCall.locations[0];
+                        const filePath = loc.path;
+                        if (loc.line !== undefined) {
+                            pendingPositions.current.set(filePath, { line: loc.line, column: 0 });
+                        }
+                        handleOpenChangedFile(filePath);
                     }
-                    openFile(filePath);
                 }
             }
 
