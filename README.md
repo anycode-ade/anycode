@@ -29,9 +29,17 @@ The project consists of several packages:
 ## Installation
 ### From releases
 
-Linux:
+Linux (x86_64):
 ```bash
-curl -L https://github.com/anycode-ide/anycode/releases/latest/download/anycode-linux-x86_64.tar.gz | tar -xz
+curl -L https://github.com/anycode-ide/anycode/releases/latest/download/anycode-linux-x86_64-musl.tar.gz | tar -xz
+sudo mv anycode /usr/local/bin/
+sudo chmod +x /usr/local/bin/anycode
+anycode
+```
+
+Linux (ARM64):
+```bash
+curl -L https://github.com/anycode-ide/anycode/releases/latest/download/anycode-linux-aarch64-musl.tar.gz | tar -xz
 sudo mv anycode /usr/local/bin/
 sudo chmod +x /usr/local/bin/anycode
 anycode
