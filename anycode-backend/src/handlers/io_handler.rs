@@ -293,6 +293,14 @@ pub async fn handle_file_change(
         }
     }
 
+    if state.config.autosave {
+        if let Err(e) = code.save_file() {
+            error!("Autosave failed for {}: {:?}", abs_path, e);
+        } else if let Some(lsp) = lsp_manager.get(&code.lang).await {
+            lsp.did_save(&abs_path, Some(&code.text.to_string()));
+        }
+    }
+
     // Broadcast as a single message for other clients if needed
     socket.broadcast().emit("file:change", &change).await.ok();
 }

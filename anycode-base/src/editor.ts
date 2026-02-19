@@ -68,7 +68,7 @@ export class AnycodeEditor {
 
     private search: Search = new Search();
 
-    private diffEnabled: boolean = true;
+    private diffEnabled: boolean = false;
     private originalCode?: string;
     private diffs?: Map<number, DiffInfo>;
 

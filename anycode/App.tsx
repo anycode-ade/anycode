@@ -40,8 +40,6 @@ const App: React.FC = () => {
     const [files, setFiles] = useState<FileState[]>([]);
     const filesRef = useRef<FileState[]>([]);
     const savedFileContentsRef = useRef<Map<string, string>>(new Map());
-    const dirtyFlagsRef = useRef<Map<string, boolean>>(new Map());
-    const [dirtyFlags, setDirtyFlags] = useState<Map<string, boolean>>(new Map());
     const [activeFileId, setActiveFileId] = useState<string | null>(null);
     const [editorStates, setEditorStates] = useState<Map<string, AnycodeEditor>>(new Map());
     const editorRefs = useRef<Map<string, AnycodeEditor>>(new Map());
@@ -176,8 +174,7 @@ const App: React.FC = () => {
                     if (pendingDiff !== undefined) {
                         editor.setOriginalCode(pendingDiff);
                         editor.setDiffEnabled(true);
-                        // Optional: clear it if we don't want to persist across re-opens without re-fetching
-                        // pendingOriginalContentRef.current.delete(file.id);
+                        pendingOriginalContentRef.current.delete(file.id);
                     }
                 } else {
                     // if editor already exists, just use it
@@ -301,22 +298,7 @@ const App: React.FC = () => {
         let oldcontent = savedFileContentsRef.current.get(file.id);
         if (!oldcontent) return;
 
-        let newContentLength = editor.getTextLength();
 
-        let isDirty = false;
-        if (newContentLength !== oldcontent.length) {
-            isDirty = true;
-        } else {
-            let newContent = editor.getText();
-            isDirty = newContent !== oldcontent;
-        }
-
-        const currentDirtyFlag = dirtyFlagsRef.current.get(file.id);
-        if (currentDirtyFlag !== isDirty) {
-            console.log('setDirtyFlags', file.id, isDirty);
-            dirtyFlagsRef.current.set(file.id, isDirty);
-            setDirtyFlags(prev => new Map(prev).set(file.id, isDirty));
-        }
     };
 
     const handleCursorChange = (filename: string, newCursor: Position, oldCursor: Position) => {
@@ -361,12 +343,6 @@ const App: React.FC = () => {
         editorRefs.current.delete(fileId);
         
         savedFileContentsRef.current.delete(fileId);
-        dirtyFlagsRef.current.delete(fileId);
-        setDirtyFlags(prev => {
-            const newFlags = new Map(prev);
-            newFlags.delete(fileId);
-            return newFlags;
-        });
         
         // Unselect the closed file in the tree
         if (fileToClose) {
@@ -412,8 +388,6 @@ const App: React.FC = () => {
         if (response.success) {
             console.log('File saved successfully:', fileId);
             savedFileContentsRef.current.set(fileId, content);
-            dirtyFlagsRef.current.set(fileId, false);
-            setDirtyFlags(prev => new Map(prev).set(fileId, false));
         } else {
             console.error('Failed to save file:', response.error);
         }
@@ -2044,7 +2018,6 @@ const App: React.FC = () => {
                         className={`tab ${activeFileId === file.id ? 'active' : ''}`}
                         onClick={() => openTab(file)}
                     >
-                        <span className={`tab-dirty-indicator ${dirtyFlags.get(file.id) ? 'dirty' : ''}`}> ● </span>
                         <span className="tab-filename"> {file.name} </span>
                         <button className="tab-close-button" onClick={(e) => { e.stopPropagation(); closeTab(file); }}> × </button>
                     </div>

@@ -60,8 +60,8 @@
     overflow: hidden;
     /* text-overflow: ellipsis; */
     /* height: 100%; */
-    padding-left: 4px;
-    padding-right: 4px;
+    padding-left: 8px;
+    /* padding-right: 4px; */
 
 }
 
@@ -121,11 +121,11 @@
     align-items: center;
     position: absolute;
     bottom: var(--toolbar-bottom-margin);
-    left: 16px;
-    right: 16px;
+    left: 8px;
+    right: 8px;
     user-select: none;
     z-index: 1000;
-    border-radius: 16px;
+    border-radius: 12px;
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
     height: var(--toolbar-height);
     border: 1px solid rgb(70, 70, 70);

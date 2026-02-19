@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::collections::HashMap;
 use std::time::Duration;
-use tokio::sync::{Mutex, Notify};
+use tokio::sync::{Mutex, watch};
 use serde_json::json;
 use tracing::info;
 use anyhow::Result;
@@ -13,7 +13,7 @@ use crate::app_state::SocketData;
 use crate::code::Code;
 use crate::diff::compute_text_edits;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)] // Added Copy/Clone/PartialEq if needed by usage, sticking to original Clone/PartialEq + Debug
 enum FileState {
     Exists,
     DoesNotExist,
@@ -21,7 +21,7 @@ enum FileState {
 
 pub struct FileWatchState {
     pub state: FileState,
-    pub notify: Arc<Notify>,
+    pub sender: watch::Sender<()>,
     pub pending: bool,
 }
 
@@ -109,33 +109,30 @@ pub async fn handle_watch_event(
     git_manager: &Arc<Mutex<crate::git::GitManager>>,
 ) {
     let path_str = match path.to_str() {
-        Some(s) => s.to_string(),
-        None => return,
+        Some(s) => s.to_string(), None => return,
     };
 
-    let should_spawn = {
+    let (should_spawn, rx) = {
         let mut states = file_states.lock().await;
-        let entry = states.entry(path_str.clone()).or_insert_with(|| FileWatchState {
-            state: FileState::DoesNotExist, // never seen = didn't exist for us
-            notify: Arc::new(Notify::new()),
-            pending: false,
+        let entry = states.entry(path_str.clone()).or_insert_with(|| {
+            let (tx, _) = watch::channel(());
+            FileWatchState { state: FileState::DoesNotExist, sender: tx, pending: false, }
         });
 
-        // Signal the existing task to reset its timer
-        entry.notify.notify_one();
+        let _ = entry.sender.send(());
 
         if entry.pending {
-            // A task is already waiting — it will pick up the new event
-            false
+            (false, None)
         } else {
             entry.pending = true;
-            true
+            let receiver = entry.sender.subscribe();
+            (true, Some(receiver))
         }
     };
 
-    if !should_spawn {
-        return;
-    }
+    if !should_spawn { return; }
+
+    let mut rx = rx.unwrap();
 
     // Spawn a single debounce task for this file
     let path = path.clone();
@@ -144,33 +141,30 @@ pub async fn handle_watch_event(
     let socket2data = socket2data.clone();
     let file_states = file_states.clone();
     let git_manager = git_manager.clone();
-
-    // Get the notify handle for this file
-    let file_notify = {
-        let states = file_states.lock().await;
-        states.get(&path_str).unwrap().notify.clone()
-    };
+    let path_str_key = path_str.clone();
 
     tokio::spawn(async move {
         // Wait until events stop arriving (trailing-edge debounce)
         loop {
-            match tokio::time::timeout(DEBOUNCE, file_notify.notified()).await {
+            // Mark as seen so we wait for *new* changes
+            let _ = rx.borrow_and_update();
+            match tokio::time::timeout(DEBOUNCE, rx.changed()).await {
                 Ok(_) => continue,  // new event arrived — reset timer
                 Err(_) => break,    // timeout — silence, time to process
             }
         }
 
         process_watch_event(
-            &path, &path_str, &socket, &file2code, &socket2data, &file_states, &git_manager,
+            &path, &path_str_key, &socket, &file2code, &socket2data, &file_states, &git_manager,
         ).await;
 
         // Mark as not pending so future events spawn a new task
-        {
-            let mut states = file_states.lock().await;
-            if let Some(state) = states.get_mut(&path_str) {
-                state.pending = false;
-            }
+        
+        let mut states = file_states.lock().await;
+        if let Some(state) = states.get_mut(&path_str_key) {
+            state.pending = false;
         }
+        
     });
 }
 

@@ -18,6 +18,8 @@ pub struct Config {
     pub theme: String,
     pub language: Vec<Language>,
     pub terminal: Option<Terminal>,
+    #[serde(default = "default_autosave")]
+    pub autosave: bool,
 }
 
 impl Config {
@@ -26,8 +28,13 @@ impl Config {
             theme: "default".to_string(),
             language: vec![],
             terminal: None,
+            autosave: default_autosave(),
         }
     }
+}
+
+fn default_autosave() -> bool {
+    true
 }
 
 #[derive(Debug, Deserialize, Clone)]
