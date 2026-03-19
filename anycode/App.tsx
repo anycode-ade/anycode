@@ -27,6 +27,8 @@ import {
     loadFollowEnabled,
     loadLeftPanelVisible,
     loadRightPanelVisible,
+    loadAcpPermissionMode,
+    saveAcpPermissionMode,
     saveItem,
 } from './storage';
 import { useSocket } from './hooks/useSocket';
@@ -36,6 +38,7 @@ import { useFileTree } from './hooks/useFileTree';
 import { useTerminals } from './hooks/useTerminals';
 import { useEditors } from './hooks/useEditors';
 import { useAgents } from './hooks/useAgents';
+import { type AcpPermissionMode } from './types';
 
 const App: React.FC = () => {
     const [leftPanelVisible, setLeftPanelVisible] = useState<boolean>(loadLeftPanelVisible());
@@ -46,6 +49,7 @@ const App: React.FC = () => {
     const [leftPanelMode, setLeftPanelMode] = useState<'files' | 'changes' | 'search'>('files');
     const [diffEnabled, setDiffEnabled] = useState<boolean>(loadDiffEnabled());
     const [followEnabled, setFollowEnabled] = useState<boolean>(loadFollowEnabled());
+    const [permissionMode, setPermissionMode] = useState<AcpPermissionMode>(loadAcpPermissionMode());
 
     const { wsRef, isConnected } = useSocket({});
 
@@ -180,6 +184,16 @@ const App: React.FC = () => {
     }, [followEnabled]);
 
     useEffect(() => {
+        saveAcpPermissionMode(permissionMode);
+    }, [permissionMode]);
+
+    useEffect(() => {
+        if (!isConnected || !wsRef.current) return;
+
+        wsRef.current.emit('acp:set_permission_mode', { mode: permissionMode });
+    }, [isConnected, permissionMode, wsRef]);
+
+    useEffect(() => {
         saveItem('terminals', terminals.terminals);
     }, [terminals.terminals]);
 
@@ -247,8 +261,9 @@ const App: React.FC = () => {
         setFollowEnabled((prev) => !prev);
     };
 
-    const handleSaveAgents = (agentList: AcpAgent[], defaultAgentId: string | null) => {
+    const handleSaveAgents = (agentList: AcpAgent[], defaultAgentId: string | null, nextPermissionMode: AcpPermissionMode) => {
         updateAgents(agentList, defaultAgentId);
+        setPermissionMode(nextPermissionMode);
         agents.setAgentsVersion((prev) => prev + 1);
     };
 
@@ -371,7 +386,6 @@ const App: React.FC = () => {
                 onClose={() => setRightPanelVisible(false)}
                 onSendPrompt={agents.sendPrompt}
                 onCancelPrompt={agents.cancelPrompt}
-                onPermissionResponse={agents.sendPermissionResponse}
                 onUndoPrompt={agents.undoPrompt}
                 messages={currentSession?.messages || []}
                 toolCalls={[]}
@@ -380,12 +394,14 @@ const App: React.FC = () => {
                 showSettings={agents.isAgentSettingsOpen}
                 settingsAgents={agents.isAgentSettingsOpen ? getAllAgents() : []}
                 settingsDefaultAgentId={agents.isAgentSettingsOpen ? getDefaultAgentId() : null}
+                settingsPermissionMode={permissionMode}
                 onSaveSettings={handleSaveAgents}
                 onCloseSettings={() => agents.setIsAgentSettingsOpen(false)}
                 diffEnabled={diffEnabled}
                 onToggleDiff={toggleDiffMode}
                 followEnabled={followEnabled}
                 onToggleFollow={toggleFollowMode}
+                onPermissionResponse={agents.sendPermissionResponse}
             />
         );
     })();

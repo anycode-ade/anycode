@@ -8,7 +8,8 @@ import {
   AcpAssistantMessage,
   AcpThoughtMessage,
   AcpSession,
-  AcpAgent
+  AcpAgent,
+  type AcpPermissionMode,
 } from '../types';
 import './AcpDialog.css';
 import { AcpSettings } from './agent/AcpSettings';
@@ -240,7 +241,8 @@ interface AcpDialogProps {
   showSettings?: boolean;
   settingsAgents?: AcpAgent[];
   settingsDefaultAgentId?: string | null;
-  onSaveSettings?: (agents: AcpAgent[], defaultAgentId: string | null) => void;
+  settingsPermissionMode?: AcpPermissionMode;
+  onSaveSettings?: (agents: AcpAgent[], defaultAgentId: string | null, permissionMode: AcpPermissionMode) => void;
   onCloseSettings?: () => void;
 }
 
@@ -262,6 +264,7 @@ export const AcpDialog: React.FC<AcpDialogProps> = ({
   showSettings = false,
   settingsAgents = [],
   settingsDefaultAgentId = null,
+  settingsPermissionMode = 'full_access',
   onSaveSettings,
   onCloseSettings,
 }) => {
@@ -280,6 +283,7 @@ export const AcpDialog: React.FC<AcpDialogProps> = ({
         <AcpSettings
           agents={settingsAgents}
           defaultAgentId={settingsDefaultAgentId}
+          permissionMode={settingsPermissionMode}
           onSave={onSaveSettings}
           onClose={onCloseSettings}
         />

@@ -3,7 +3,7 @@ use agent_client_protocol_schema::ProtocolVersion;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::Arc;
 use std::path::PathBuf;
 use tokio::process::Command;
@@ -14,6 +14,58 @@ use tracing::{info, debug, error};
 use anyhow::{Result, anyhow};
 use crate::utils::relative_to_current_dir;
 use crate::acp_history::AcpHistoryManager;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum AcpPermissionMode {
+    Ask = 0,
+    FullAccess = 1,
+}
+
+impl AcpPermissionMode {
+    pub fn from_env() -> Self {
+        let raw = std::env::var("ANYCODE_ACP_PERMISSION_MODE")
+            .unwrap_or_else(|_| "full_access".to_string());
+        Self::from_str(&raw).unwrap_or_else(|| {
+            error!(
+                "Unknown ANYCODE_ACP_PERMISSION_MODE value '{}', defaulting to full_access",
+                raw
+            );
+            Self::FullAccess
+        })
+    }
+
+    pub fn from_str(value: &str) -> Option<Self> {
+        match value.to_lowercase().as_str() {
+            "ask" => Some(Self::Ask),
+            "full_access" | "full-access" | "fullaccess" => Some(Self::FullAccess),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Ask => "ask",
+            Self::FullAccess => "full_access",
+        }
+    }
+
+    pub fn is_full_access(self) -> bool {
+        matches!(self, Self::FullAccess)
+    }
+
+    pub fn as_atomic(self) -> u8 {
+        self as u8
+    }
+
+    pub fn from_atomic(value: u8) -> Self {
+        match value {
+            0 => Self::Ask,
+            1 => Self::FullAccess,
+            _ => Self::FullAccess,
+        }
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AcpUserMessage {
@@ -130,6 +182,7 @@ pub struct PermissionResponse {
 
 struct AcpClientImpl {
     agent_id: String,
+    permission_mode: Arc<AtomicU8>,
     message_sender: broadcast::Sender<AcpMessage>,
     history: Arc<tokio::sync::Mutex<Vec<AcpMessage>>>,
     /// Pending permission requests waiting for user response
@@ -143,6 +196,40 @@ impl Client for AcpClientImpl {
         args: acp::RequestPermissionRequest,
     ) -> acp::Result<acp::RequestPermissionResponse> {
         info!("request_permission called for agent {}: {:?}", self.agent_id, args);
+        
+        let permission_mode = AcpPermissionMode::from_atomic(self.permission_mode.load(Ordering::Relaxed));
+        if permission_mode.is_full_access() {
+            let selected_option = args.options.iter().find(|opt| {
+                let name = opt.name.to_lowercase();
+                name.contains("allow")
+                    || name.contains("approve")
+                    || name.contains("accept")
+                    || name.contains("grant")
+                    || name.contains("yes")
+                    || name.contains("continue")
+                    || name.contains("proceed")
+            }).or_else(|| args.options.first());
+
+            if let Some(option) = selected_option {
+                info!(
+                    "Auto-approving permission for agent {} in full_access mode: {}",
+                    self.agent_id,
+                    option.name
+                );
+                let selected_outcome = acp::SelectedPermissionOutcome::new(option.option_id.clone());
+                return Ok(acp::RequestPermissionResponse::new(
+                    acp::RequestPermissionOutcome::Selected(selected_outcome),
+                ));
+            }
+
+            error!(
+                "Full access mode but no permission options were returned for agent {}",
+                self.agent_id
+            );
+            return Ok(acp::RequestPermissionResponse::new(
+                acp::RequestPermissionOutcome::Cancelled,
+            ));
+        }
 
         // Handle tool_call if present
         let tool_call_update = &args.tool_call;
@@ -729,6 +816,7 @@ pub type PendingPermissionsMap = Arc<tokio::sync::Mutex<HashMap<String, tokio::s
 pub struct AcpAgent {
     agent_id: String,
     agent_name: String,
+    permission_mode: Arc<AtomicU8>,
     connection: Option<acp::ClientSideConnection>,
     session_id: Option<acp::SessionId>,
     ready: Arc<AtomicBool>,
@@ -744,7 +832,7 @@ pub struct AcpAgent {
 }
 
 impl AcpAgent {
-    pub fn new(agent_id: String, agent_name: String) -> Self {
+    pub fn new(agent_id: String, agent_name: String, permission_mode: Arc<AtomicU8>) -> Self {
         // Initialize history manager with current working directory and agent ID
         let project_root = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
         let mut history_manager = AcpHistoryManager::new(&project_root, &agent_id);
@@ -755,6 +843,7 @@ impl AcpAgent {
         Self {
             agent_id,
             agent_name,
+            permission_mode,
             connection: None,
             session_id: None,
             ready: Arc::new(AtomicBool::new(false)),
@@ -794,6 +883,7 @@ impl AcpAgent {
         let history_clone = self.history.clone();
         let message_sender_clone = history_tx.clone();
         let pending_permissions_clone = self.pending_permissions.clone();
+        let permission_mode_clone = self.permission_mode.clone();
 
         let local_set_handle = tokio::task::spawn_blocking(move || {
             tokio::runtime::Handle::current().block_on(async {
@@ -805,6 +895,7 @@ impl AcpAgent {
                         history_clone,
                         message_sender_clone,
                         pending_permissions_clone,
+                        permission_mode_clone,
                         stdin,
                         stdout,
                         stderr,
@@ -864,6 +955,7 @@ impl AcpAgent {
         history: Arc<tokio::sync::Mutex<Vec<AcpMessage>>>,
         message_sender: broadcast::Sender<AcpMessage>,
         pending_permissions: PendingPermissionsMap,
+        permission_mode: Arc<AtomicU8>,
         stdin: tokio::process::ChildStdin,
         stdout: tokio::process::ChildStdout,
         stderr: tokio::process::ChildStderr,
@@ -878,6 +970,7 @@ impl AcpAgent {
         // Create client implementation
         let client_impl = AcpClientImpl {
             agent_id: agent_id.clone(),
+            permission_mode,
             message_sender: message_sender.clone(),
             history,
             pending_permissions,
@@ -1247,13 +1340,23 @@ impl AcpAgent {
 
 pub struct AcpManager {
     agents: HashMap<String, AcpAgent>,
+    permission_mode: Arc<AtomicU8>,
 }
 
 impl AcpManager {
-    pub fn new() -> Self {
+    pub fn new(permission_mode: AcpPermissionMode) -> Self {
         Self {
             agents: HashMap::new(),
+            permission_mode: Arc::new(AtomicU8::new(permission_mode.as_atomic())),
         }
+    }
+
+    pub fn get_permission_mode(&self) -> AcpPermissionMode {
+        AcpPermissionMode::from_atomic(self.permission_mode.load(Ordering::Relaxed))
+    }
+
+    pub fn set_permission_mode(&self, mode: AcpPermissionMode) {
+        self.permission_mode.store(mode.as_atomic(), Ordering::Relaxed);
     }
 
     /// Start agent by agent_id and agent_name. Returns an error if the agent already exists.
@@ -1264,7 +1367,7 @@ impl AcpManager {
             return Err(anyhow::anyhow!("Agent {} already running", agent_id));
         }
 
-        let mut agent = AcpAgent::new(agent_id.clone(), agent_name.clone());
+        let mut agent = AcpAgent::new(agent_id.clone(), agent_name.clone(), self.permission_mode.clone());
 
         info!("Starting ACP agent {} with command: {} {:?}", agent_id, cmd, args);
         agent.start(cmd, args).await?;

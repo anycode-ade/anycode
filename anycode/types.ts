@@ -107,6 +107,8 @@ export interface AcpAgent {
     description?: string;
 }
 
+export type AcpPermissionMode = 'ask' | 'full_access';
+
 export interface AcpPromptStateMessage {
     role: 'prompt_state';
     is_processing: boolean;

@@ -19,7 +19,7 @@ mod acp;
 mod acp_history;
 mod git;
 use lsp::LspManager;
-use acp::AcpManager;
+use acp::{AcpManager, AcpPermissionMode};
 use git::GitManager;
 
 use std::sync::Arc;
@@ -81,6 +81,7 @@ async fn on_connect(socket: SocketRef, state: State<AppState>) {
     socket.on("acp:list", handle_acp_list);
     socket.on("acp:reconnect", handle_acp_reconnect);
     socket.on("acp:permission_response", handle_acp_permission_response);
+    socket.on("acp:set_permission_mode", handle_acp_permission_mode);
     socket.on("acp:undo", handle_acp_undo);
 
     socket.on("git:status", handle_git_status);
@@ -165,13 +166,14 @@ async fn on_disconnect(socket: SocketRef, state: State<AppState>) {
 
 fn build_app_state() -> (AppState, Receiver<PublishDiagnosticsParams>) {
     let config = crate::config::get();
+    let acp_permission_mode = AcpPermissionMode::from_env();
 
     let (diagnostic_send, diagnostic_recv) = mpsc::channel::<PublishDiagnosticsParams>(1);
     let mut lsp_manager = LspManager::new(config.clone());
     lsp_manager.set_diagnostics_sender(diagnostic_send);
 
     let lsp_manager = Arc::new(Mutex::new(lsp_manager));
-    let acp_manager = Arc::new(Mutex::new(AcpManager::new()));
+    let acp_manager = Arc::new(Mutex::new(AcpManager::new(acp_permission_mode)));
     let git_manager = Arc::new(Mutex::new(GitManager::new(crate::utils::current_dir())));
 
     let file2code = Arc::new(Mutex::new(HashMap::new()));
@@ -235,6 +237,7 @@ fn print_help() {
     println!("ENVIRONMENT:");
     println!("    ANYCODE_PORT     Port to listen on (default: 3000)");
     println!("    ANYCODE_HOME     Path to configuration directory");
+    println!("    ANYCODE_ACP_PERMISSION_MODE  ACP permission mode: full_access (default) or ask");
     println!();
     println!("Start the anycode server. The server will be available at http://localhost:<port>");
 }

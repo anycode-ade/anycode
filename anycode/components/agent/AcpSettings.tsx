@@ -1,27 +1,33 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { AcpAgent } from '../../types';
+import { AcpAgent, type AcpPermissionMode } from '../../types';
 import './AcpSettings.css';
 import { AcpIcons } from './AcpIcons';
 
 interface AcpSettingsProps {
   agents: AcpAgent[];
   defaultAgentId: string | null;
-  onSave: (agents: AcpAgent[], defaultAgentId: string | null) => void;
+  permissionMode: AcpPermissionMode;
+  onSave: (agents: AcpAgent[], defaultAgentId: string | null, permissionMode: AcpPermissionMode) => void;
   onClose: () => void;
 }
 
 export const AcpSettings: React.FC<AcpSettingsProps> = ({
   agents: initialAgents,
   defaultAgentId: initialDefaultAgentId,
+  permissionMode: initialPermissionMode,
   onSave,
   onClose,
 }) => {
   const [agents, setAgents] = useState<AcpAgent[]>(initialAgents);
   const [defaultAgentId, setDefaultAgentId] = useState<string | null>(initialDefaultAgentId);
+  const [permissionMode, setPermissionMode] = useState<AcpPermissionMode>(initialPermissionMode);
 
   // Check if there are any changes
   const hasChanges = useMemo(() => {
     if (defaultAgentId !== initialDefaultAgentId) {
+      return true;
+    }
+    if (permissionMode !== initialPermissionMode) {
       return true;
     }
     if (agents.length !== initialAgents.length) {
@@ -37,13 +43,14 @@ export const AcpSettings: React.FC<AcpSettingsProps> = ({
         JSON.stringify(agent.args) !== JSON.stringify(initialAgent.args)
       );
     });
-  }, [agents, defaultAgentId, initialAgents, initialDefaultAgentId]);
+  }, [agents, defaultAgentId, permissionMode, initialAgents, initialDefaultAgentId, initialPermissionMode]);
 
   // Update state when props change (e.g., when ensureDefaultAgents is called)
   useEffect(() => {
     setAgents(initialAgents);
     setDefaultAgentId(initialDefaultAgentId);
-  }, [initialAgents, initialDefaultAgentId]);
+    setPermissionMode(initialPermissionMode);
+  }, [initialAgents, initialDefaultAgentId, initialPermissionMode]);
 
   // Generate ID from name: lowercase, replace spaces with hyphens, remove special chars
   const generateIdFromName = (name: string, existingIds: string[] = []): string => {
@@ -132,7 +139,7 @@ export const AcpSettings: React.FC<AcpSettingsProps> = ({
       finalDefaultId = validAgents[0].id;
     }
 
-    onSave(validAgents, finalDefaultId);
+    onSave(validAgents, finalDefaultId, permissionMode);
     onClose();
   };
 
@@ -158,6 +165,44 @@ export const AcpSettings: React.FC<AcpSettingsProps> = ({
       </div>
 
       <div className="agent-settings-content">
+        <div className="agent-settings-item">
+          <div className="agent-settings-item-header">
+            <h4>ACP permission mode</h4>
+          </div>
+
+          <div className="agent-settings-fields">
+            <label className="agent-settings-mode-option">
+              <input
+                type="radio"
+                name="permissionMode"
+                checked={permissionMode === 'full_access'}
+                onChange={() => setPermissionMode('full_access')}
+              />
+              <div>
+                <div className="agent-settings-mode-title">Full access</div>
+                <div className="agent-settings-mode-description">
+                  Auto-approve permission prompts on the backend. This is the default.
+                </div>
+              </div>
+            </label>
+
+            <label className="agent-settings-mode-option">
+              <input
+                type="radio"
+                name="permissionMode"
+                checked={permissionMode === 'ask'}
+                onChange={() => setPermissionMode('ask')}
+              />
+              <div>
+                <div className="agent-settings-mode-title">Ask</div>
+                <div className="agent-settings-mode-description">
+                  Send permission requests to the frontend and wait for confirmation.
+                </div>
+              </div>
+            </label>
+          </div>
+        </div>
+
         {agents.map((agent, index) => (
           <div key={index} className="agent-settings-item">
             <div className="agent-settings-item-header">
@@ -226,4 +271,3 @@ export const AcpSettings: React.FC<AcpSettingsProps> = ({
     </div>
   );
 };
-

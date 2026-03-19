@@ -5,7 +5,7 @@ use tracing::{info, error};
 use anyhow::anyhow;
 use crate::app_state::AppState;
 use crate::error_ack;
-use crate::acp::AcpMessage;
+use crate::acp::{AcpMessage, AcpPermissionMode};
 use tokio::sync::broadcast;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -199,6 +199,11 @@ pub struct AcpPermissionResponseRequest {
     pub option_id: String,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct AcpPermissionModeRequest {
+    pub mode: String,
+}
+
 pub async fn handle_acp_permission_response(
     Data(request): Data<AcpPermissionResponseRequest>,
     ack: AckSender,
@@ -230,6 +235,28 @@ pub async fn handle_acp_permission_response(
             error_ack!(ack, &agent_id, "Permission response failed: {}", e);
         }
     }
+}
+
+pub async fn handle_acp_permission_mode(
+    Data(request): Data<AcpPermissionModeRequest>,
+    ack: AckSender,
+    state: State<AppState>
+) {
+    info!("handle_acp_permission_mode {:?}", request);
+    let AcpPermissionModeRequest { mode } = request;
+
+    let permission_mode = match AcpPermissionMode::from_str(&mode) {
+        Some(mode) => mode,
+        None => {
+            error!("Invalid ACP permission mode requested: {}", mode);
+            error_ack!(ack, &mode, "Invalid ACP permission mode: {}", mode);
+        }
+    };
+
+    let acp_manager = state.acp_manager.lock().await;
+    acp_manager.set_permission_mode(permission_mode);
+
+    ack.send(&json!({ "success": true, "mode": permission_mode.as_str() })).ok();
 }
 
 pub async fn handle_acp_reconnect(

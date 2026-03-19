@@ -122,6 +122,35 @@
   gap: 12px;
 }
 
+.agent-settings-mode-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-color, #333);
+  border-radius: 12px;
+  cursor: pointer;
+  color: var(--text-color, #ccc);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.agent-settings-mode-option input[type="radio"] {
+  margin-top: 3px;
+  cursor: pointer;
+}
+
+.agent-settings-mode-title {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.agent-settings-mode-description {
+  margin-top: 2px;
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--text-color-secondary, #888);
+}
+
 .agent-settings-field {
   display: flex;
   flex-direction: column;
@@ -215,4 +244,3 @@
     font-size: 16px;
   }
 }
-

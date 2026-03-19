@@ -1,5 +1,5 @@
 
-import { type Terminal, type AcpSession, type AcpAgent} from './types';
+import { type Terminal, type AcpSession, type AcpAgent, type AcpPermissionMode } from './types';
 
 export function saveItem<T>(key: string, value: T): void {
     try {
@@ -45,6 +45,14 @@ export function loadDiffEnabled(): boolean {
 }
 export function loadFollowEnabled(): boolean {
     return loadItem('followEnabled') ?? false;
+}
+
+export function loadAcpPermissionMode(): AcpPermissionMode {
+    return loadItem<AcpPermissionMode>('acpPermissionMode') ?? 'full_access';
+}
+
+export function saveAcpPermissionMode(mode: AcpPermissionMode): void {
+    saveItem('acpPermissionMode', mode);
 }
 
 export function loadAcpSessions(): Map<string, AcpSession> {

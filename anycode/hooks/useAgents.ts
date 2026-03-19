@@ -39,6 +39,16 @@ export const useAgents = ({
     useEffect(() => { acpSessionsRef.current = acpSessions; }, [acpSessions]);
     useEffect(() => { followEnabledRef.current = followEnabled; }, [followEnabled]);
 
+    const sendPermissionResponse = useCallback((agentId: string, permissionId: string, optionId: string) => {
+        if (!wsRef.current || !isConnected) return;
+
+        wsRef.current.emit('acp:permission_response', {
+            agent_id: agentId,
+            permission_id: permissionId,
+            option_id: optionId,
+        });
+    }, [wsRef, isConnected]);
+
     const generateAgentId = useCallback((baseAgentId: string): string => {
         const existingSessions = acpSessionsRef.current;
         let uniqueId = baseAgentId;
@@ -344,16 +354,6 @@ export const useAgents = ({
             if (!response.success) {
                 alert('Failed to undo prompt: ' + response.error);
             }
-        });
-    }, [wsRef, isConnected]);
-
-    const sendPermissionResponse = useCallback((agentId: string, permissionId: string, optionId: string) => {
-        if (!wsRef.current || !isConnected) return;
-
-        wsRef.current.emit('acp:permission_response', {
-            agent_id: agentId,
-            permission_id: permissionId,
-            option_id: optionId,
         });
     }, [wsRef, isConnected]);
 
