@@ -228,10 +228,49 @@
 }
 
 .acp-dialog-content {
+    position: relative;
     flex: 1;
-    overflow-y: auto;
-    overflow-x: hidden;
     min-height: 0;
-    scroll-behavior: smooth;
 }
 
+.acp-scroll-to-bottom-btn {
+    position: absolute;
+    right: 16px;
+    bottom: 16px;
+    width: 36px;
+    height: 36px;
+    border: none;
+    border-radius: 999px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    color: var(--text-color, #ccc);
+    background: rgba(45, 45, 45, 0.5);
+    backdrop-filter: blur(2px);
+    -webkit-backdrop-filter: blur(2px);
+    transition: background-color 0.2s, transform 0.2s, opacity 0.2s, color 0.2s;
+    z-index: 1;
+}
+
+.acp-scroll-to-bottom-btn:hover {
+    background-color: var(--hover-bg, #2a2a2a);
+    transform: translateY(-1px);
+}
+
+.acp-scroll-to-bottom-btn:focus,
+.acp-scroll-to-bottom-btn:active {
+    outline: none;
+}
+
+.acp-scroll-to-bottom-btn svg {
+    width: 22px;
+    height: 22px;
+}
+
+@media (max-width: 768px) {
+    .acp-scroll-to-bottom-btn {
+        right: 12px;
+        bottom: 12px;
+    }
+}

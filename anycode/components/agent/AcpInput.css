@@ -13,7 +13,8 @@
     border: none;
    
     padding: 8px;
-    /* color: var(--text-color, #ccc); */
+    color: #fff;
+    -webkit-text-fill-color: #fff;
     font-family: inherit;
     font-size: 14px;
     resize: none;
@@ -31,12 +32,17 @@
 }
 
 .acp-dialog-input textarea::placeholder {
+    color: rgba(255, 255, 255, 0.55);
+    -webkit-text-fill-color: rgba(255, 255, 255, 0.55);
     font-size: 12px;
 }
 
-.acp-send-btn {
-    background-color: transparent;
-    color: var(--text-color, #ccc);
+.acp-send-btn,
+.acp-stop-prompt-btn {
+    background: rgba(45, 45, 45, 0.5);
+    backdrop-filter: blur(2px);
+    -webkit-backdrop-filter: blur(2px);
+    color: #fff;
     border: none;
     padding: 0px;
     border-radius: 50%;
@@ -46,61 +52,34 @@
     display: flex;
     align-items: center;
     justify-content: center;
+    width: 36px;
+    height: 36px;
     flex-shrink: 0;
     outline: none;
+    transition: background-color 0.2s, transform 0.2s, opacity 0.2s, color 0.2s;
 }
 
 .acp-send-btn:focus,
-.acp-send-btn:active {
-    outline: none;
-    border: none;
-}
-
-.acp-send-btn svg {
-    width: 20px;
-    height: 20px;
-}
-
-.acp-send-btn:hover:not(:disabled) {
-    background-color: var(--hover-bg, #2a2a2a);
-}
-
-.acp-send-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-}
-
-.acp-stop-prompt-btn {
-    background-color: transparent;
-    color: var(--text-color, #ccc);
-    border: none;
-    padding: 0px;
-    border-radius: 50%;
-    cursor: pointer;
-    font-size: 14px;
-    font-weight: 500;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    outline: none;
-}
-
+.acp-send-btn:active,
 .acp-stop-prompt-btn:focus,
 .acp-stop-prompt-btn:active {
     outline: none;
     border: none;
 }
 
+.acp-send-btn svg,
 .acp-stop-prompt-btn svg {
     width: 20px;
     height: 20px;
 }
 
+.acp-send-btn:hover:not(:disabled),
 .acp-stop-prompt-btn:hover:not(:disabled) {
     background-color: var(--hover-bg, #2a2a2a);
+    transform: translateY(-1px);
 }
 
+.acp-send-btn:disabled,
 .acp-stop-prompt-btn:disabled {
     opacity: 0.5;
     cursor: not-allowed;

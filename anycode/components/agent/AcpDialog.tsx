@@ -12,15 +12,31 @@ import { AcpInput } from './AcpInput';
 import { AcpMessages } from './AcpMessages';
 import { AcpIcons } from './AcpIcons';
 
-const useAutoScroll = (messages: AcpMessage[]) => {
+const useAutoScroll = (messages: AcpMessage[], isProcessing: boolean) => {
   const contentRef = useRef<HTMLDivElement>(null);
-  const isScrolledToBottomRef = useRef(true);
+  const autoScrollEnabledRef = useRef(true);
   const lastScrollTopRef = useRef<number>(0);
-  const userScrolledUpRef = useRef(false);
+  const isProgrammaticScrollRef = useRef(false);
+  const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
 
   const checkIfScrolledToBottom = (element: HTMLElement): boolean => {
-    const threshold = 70;
-    return element.scrollHeight - element.scrollTop - element.clientHeight <= threshold;
+    return element.scrollHeight - element.scrollTop - element.clientHeight <= 48;
+  };
+
+  const setAutoScroll = (enabled: boolean) => {
+    autoScrollEnabledRef.current = enabled;
+    setAutoScrollEnabled(prev => (prev === enabled ? prev : enabled));
+  };
+
+  const scrollToBottom = (behavior: ScrollBehavior = 'auto') => {
+    const element = contentRef.current;
+    if (!element) return;
+
+    isProgrammaticScrollRef.current = true;
+    element.scrollTo({
+      top: element.scrollHeight,
+      behavior,
+    });
   };
 
   useEffect(() => {
@@ -29,33 +45,48 @@ const useAutoScroll = (messages: AcpMessage[]) => {
 
     const handleScroll = () => {
       const currentScrollTop = contentElement.scrollTop;
-      const scrollDirection = currentScrollTop < lastScrollTopRef.current ? 'up' : 'down';
-      
-      if (scrollDirection === 'up') {
-        userScrolledUpRef.current = true;
-      } else if (scrollDirection === 'down' && checkIfScrolledToBottom(contentElement)) {
-        userScrolledUpRef.current = false;
+      const delta = currentScrollTop - lastScrollTopRef.current;
+      const scrollDirection = delta < -1 ? 'up' : delta > 1 ? 'down' : 'none';
+
+      if (isProgrammaticScrollRef.current) {
+        if (checkIfScrolledToBottom(contentElement)) {
+          isProgrammaticScrollRef.current = false;
+        }
+        lastScrollTopRef.current = currentScrollTop;
+        return;
       }
-      
-      isScrolledToBottomRef.current = checkIfScrolledToBottom(contentElement);
+
+      if (scrollDirection === 'up') {
+        setAutoScroll(false);
+      }
+
       lastScrollTopRef.current = currentScrollTop;
     };
 
     contentElement.addEventListener('scroll', handleScroll);
+    lastScrollTopRef.current = contentElement.scrollTop;
     return () => contentElement.removeEventListener('scroll', handleScroll);
   }, []);
 
   useEffect(() => {
-    if (contentRef.current && isScrolledToBottomRef.current && !userScrolledUpRef.current) {
+    if (!isProcessing) return;
+
+    if (autoScrollEnabledRef.current && contentRef.current) {
       requestAnimationFrame(() => {
-        if (contentRef.current) {
-          contentRef.current.scrollTop = contentRef.current.scrollHeight;
-        }
+        scrollToBottom('auto');
       });
     }
-  }, [messages]);
+  }, [messages, isProcessing]);
 
-  return contentRef;
+  const enableAutoScroll = () => {
+    setAutoScroll(true);
+
+    requestAnimationFrame(() => {
+      scrollToBottom('auto');
+    });
+  };
+
+  return { contentRef, autoScrollEnabled, enableAutoScroll };
 };
 
 const useExpandableItems = () => {
@@ -133,7 +164,7 @@ export const AcpDialog: React.FC<AcpDialogProps> = ({
   const { expanded: expandedToolResults, toggle: toggleToolResult } = useExpandableItems();
   const { expanded: expandedThoughts, toggle: toggleThought } = useExpandableItems();
   const { expanded: expandedPermissions, toggle: togglePermission } = useExpandableItems();
-  const contentRef = useAutoScroll(messages);
+  const { contentRef, autoScrollEnabled, enableAutoScroll } = useAutoScroll(messages, isProcessing);
 
   if (!isOpen) return null;
 
@@ -203,23 +234,35 @@ export const AcpDialog: React.FC<AcpDialogProps> = ({
         </div>
       </div>
 
-      <div className="acp-dialog-content" ref={contentRef}>
-        <div className="acp-dialog-messages">
-          <AcpMessages
-            messages={messages}
-            toolCalls={toolCalls}
-            expandedToolCalls={expandedToolCalls}
-            expandedToolResults={expandedToolResults}
-            expandedThoughts={expandedThoughts}
-            expandedPermissions={expandedPermissions}
-            onToggleToolCall={toggleToolCall}
-            onToggleToolResult={toggleToolResult}
-            onToggleThought={toggleThought}
-            onTogglePermission={togglePermission}
-            onPermissionResponse={(permissionId, optionId) => onPermissionResponse(agentId, permissionId, optionId)}
-            onUndoMessage={(message) => onUndoPrompt(agentId, message.checkpoint_id, message.content)}
-          />
+      <div className="acp-dialog-content">
+        <div className="acp-dialog-messages" ref={contentRef}>
+          <div className="acp-dialog-messages-inner">
+            <AcpMessages
+              messages={messages}
+              toolCalls={toolCalls}
+              expandedToolCalls={expandedToolCalls}
+              expandedToolResults={expandedToolResults}
+              expandedThoughts={expandedThoughts}
+              expandedPermissions={expandedPermissions}
+              onToggleToolCall={toggleToolCall}
+              onToggleToolResult={toggleToolResult}
+              onToggleThought={toggleThought}
+              onTogglePermission={togglePermission}
+              onPermissionResponse={(permissionId, optionId) => onPermissionResponse(agentId, permissionId, optionId)}
+              onUndoMessage={(message) => onUndoPrompt(agentId, message.checkpoint_id, message.content)}
+            />
+          </div>
         </div>
+        {!autoScrollEnabled && (
+          <button
+            className="acp-scroll-to-bottom-btn"
+            onClick={enableAutoScroll}
+            title="Enable auto-scroll"
+            aria-label="Enable auto-scroll"
+          >
+            <AcpIcons.ScrollDown />
+          </button>
+        )}
       </div>
 
       <AcpInput

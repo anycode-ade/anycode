@@ -32,13 +32,14 @@ const ToolCallMessage: React.FC<{
   const hasArguments = message.arguments &&
     JSON.stringify(message.arguments) !== '{}' &&
     JSON.stringify(message.arguments) !== '[]';
+  const displayCommand = message.command?.trim() || message.name;
 
   return (
     <div className="acp-message acp-message-tool_call">
       <div className="acp-message-content">
-        <div className="acp-tool-call-indicator" onClick={onToggle} style={{ cursor: 'pointer' }}>
+        <div className="acp-tool-call-toggle" onClick={onToggle} style={{ cursor: 'pointer' }}>
           <span className="acp-toggle-icon">{isExpanded ? '▼' : '▶'}</span>
-          <div className="acp-tool-call-name">{message.name}</div>
+          <div className="acp-tool-call-name">{displayCommand}</div>
         </div>
 
         {isExpanded && (
@@ -322,13 +323,14 @@ const PermissionRequestMessage: React.FC<{
   const hasArguments = toolCall.arguments &&
     JSON.stringify(toolCall.arguments) !== '{}' &&
     JSON.stringify(toolCall.arguments) !== '[]';
+  const displayCommand = toolCall.command?.trim() || toolCall.name;
 
   return (
     <div className="acp-message acp-message-permission_request">
       <div className="acp-message-content">
         <div className="acp-permission-header" onClick={onToggle} style={{ cursor: 'pointer' }}>
           <span className="acp-toggle-icon">{isExpanded ? '▼' : '▶'}</span>
-          <div className="acp-tool-call-name">{toolCall.name}</div>
+          <div className="acp-tool-call-name">{displayCommand}</div>
         </div>
 
         {isExpanded && (

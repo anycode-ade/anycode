@@ -65,16 +65,17 @@ const ToolCallMessage: React.FC<ToolCallMessageProps> = ({ message, isExpanded, 
   const hasArguments = message.arguments && 
     JSON.stringify(message.arguments) !== '{}' && 
     JSON.stringify(message.arguments) !== '[]';
+  const displayCommand = message.command?.trim() || message.name;
 
   return (
     <div className="acp-message acp-message-tool_call">
       <div className="acp-message-content">
-        <div className="acp-tool-call-indicator" onClick={onToggle} style={{ cursor: 'pointer' }}>
+        <div className="acp-tool-call-toggle" onClick={onToggle} style={{ cursor: 'pointer' }}>
           <div className="acp-tool-call-header">
             <span className="acp-toggle-icon">{isExpanded ? '▼' : '▶'}</span>
             Tool Call:
           </div>
-          <div className="acp-tool-call-name">{message.name}</div>
+          <div className="acp-tool-call-name">{displayCommand}</div>
         </div>
         
         {isExpanded && (
@@ -183,8 +184,6 @@ const useAutoScroll = (messages: AcpMessage[]) => {
       
       if (scrollDirection === 'up') {
         userScrolledUpRef.current = true;
-      } else if (scrollDirection === 'down' && checkIfScrolledToBottom(contentElement)) {
-        userScrolledUpRef.current = false;
       }
       
       isScrolledToBottomRef.current = checkIfScrolledToBottom(contentElement);

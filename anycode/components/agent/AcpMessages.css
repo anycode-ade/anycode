@@ -1,8 +1,15 @@
 .acp-dialog-messages {
+    height: 100%;
+    overflow-y: auto;
+    overflow-x: hidden;
+    min-height: 0;
+}
+
+.acp-dialog-messages-inner {
     padding: 16px;
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 2px;
 }
 
 .acp-empty-state {
@@ -46,4 +53,3 @@
     overflow-x: auto;
     color: var(--code-color, #d4d4d4);
 }
-

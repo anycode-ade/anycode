@@ -55,6 +55,7 @@
     background: transparent;
     outline: none;
     border: none;
+    color: #fff;
     padding: 2px;
     cursor: pointer;
     display: flex;
@@ -103,4 +104,3 @@
         height: 20px;
     }
 }
-

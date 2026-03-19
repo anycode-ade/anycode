@@ -137,7 +137,7 @@
     overflow-x: hidden;
 }
 
-.acp-tool-call-indicator,
+.acp-tool-call-toggle,
 .acp-tool-result-indicator,
 .acp-tool-update-indicator {
     font-size: 12px;
@@ -146,7 +146,7 @@
     user-select: none;
 }
 
-.acp-tool-call-indicator:hover,
+.acp-tool-call-toggle:hover,
 .acp-tool-result-indicator:hover,
 .acp-tool-update-indicator:hover {
     color: var(--text-color, #ccc);
@@ -156,8 +156,10 @@
     font-size: 11px;
     font-weight: 400;
     color: var(--text-color, #ccc);
-    word-break: break-word;
-    overflow-wrap: break-word;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .acp-toggle-icon {
@@ -225,11 +227,14 @@
 }
 
 .acp-tool-call-command {
-    white-space: pre-wrap;
-    word-break: break-all;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    word-break: normal;
+    display: block;
 }
 
-.acp-tool-call-indicator,
+.acp-tool-call-toggle,
 .acp-permission-header {
     display: flex;
     align-items: center;
