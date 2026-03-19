@@ -61,8 +61,7 @@
     /* text-overflow: ellipsis; */
     /* height: 100%; */
     padding-left: 8px;
-    /* padding-right: 4px; */
-
+    padding-right: 4px;
 }
 
 .tab-close-button {
@@ -609,10 +608,4 @@
     .tab-filename {
         font-size: 16px;
     }
-
-
-
-
-
-
 }
