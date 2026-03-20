@@ -219,9 +219,19 @@ export interface AcpToolUpdate {
 export interface AcpSession {
     agentId: string;
     agentName: string;
+    sessionId?: string;
+    agentConfigId?: string;
     messages: AcpMessage[];
     isActive: boolean;
     isProcessing?: boolean;
+}
+
+export interface AcpSessionSummary {
+    sessionId: string;
+    cwd: string;
+    title?: string;
+    updatedAt?: string;
+    preview?: string;
 }
 
 // Search types

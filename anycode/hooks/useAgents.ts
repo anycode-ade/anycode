@@ -6,6 +6,7 @@ import {
     type AcpOpenFileMessage,
     type AcpPromptStateMessage,
     type AcpSession,
+    type AcpSessionSummary,
     type AcpToolCallMessage,
     type AcpToolResultMessage,
 } from '../types';
@@ -204,7 +205,7 @@ export const useAgents = ({
             } else {
                 if (isChunk && existing.messages.length > 0) {
                     const lastMessage = existing.messages[existing.messages.length - 1];
-                    if (lastMessage.role === 'assistant' || lastMessage.role === 'thought') {
+                    if (lastMessage.role === message.role && (lastMessage.role === 'assistant' || lastMessage.role === 'thought')) {
                         const updatedMessages = [...existing.messages];
                         updatedMessages[updatedMessages.length - 1] = {
                             ...lastMessage,
@@ -304,7 +305,7 @@ export const useAgents = ({
         });
     }, [wsRef, isConnected, selectedAgentId]);
 
-    const startAgent = useCallback((agent: AcpAgent | undefined) => {
+    const startAgent = useCallback((agent: AcpAgent | undefined, options?: { resumeSessionId?: string }) => {
         if (!agent || !wsRef.current || !isConnected) return;
 
         const { id, name, command, args } = agent;
@@ -315,11 +316,22 @@ export const useAgents = ({
             agent_name: name,
             command,
             args,
+            resume_session_id: options?.resumeSessionId ?? null,
         }, (response: any) => {
             if (response.success) {
                 setAcpSessions((prev) => {
                     const newSessions = new Map(prev);
-                    newSessions.set(aid, { agentId: aid, agentName: name, messages: [], isActive: true });
+                    const existing = newSessions.get(aid);
+                    newSessions.set(aid, {
+                        ...existing,
+                        agentId: aid,
+                        agentName: name,
+                        agentConfigId: id,
+                        sessionId: response.session_id,
+                        messages: existing?.messages ?? [],
+                        isActive: true,
+                        isProcessing: existing?.isProcessing ?? false,
+                    });
                     return newSessions;
                 });
                 setSelectedAgentId(aid);
@@ -329,6 +341,38 @@ export const useAgents = ({
             }
         });
     }, [wsRef, isConnected, generateAgentId, onAgentStarted]);
+
+    const fetchAvailableSessions = useCallback((agent: AcpAgent | undefined): Promise<AcpSessionSummary[]> => {
+        return new Promise((resolve, reject) => {
+            if (!agent || !wsRef.current || !isConnected) {
+                resolve([]);
+                return;
+            }
+
+            wsRef.current.emit('acp:sessions_list', {
+                command: agent.command,
+                args: agent.args,
+            }, (response: any) => {
+                if (!response.success) {
+                    reject(new Error(response.error || 'Failed to load ACP sessions'));
+                    return;
+                }
+
+                const sessions = (response.sessions || []).map((session: any) => ({
+                    sessionId: session.session_id,
+                    cwd: session.cwd,
+                    title: session.title ?? undefined,
+                    updatedAt: session.updated_at ?? undefined,
+                })) as AcpSessionSummary[];
+
+                resolve(sessions);
+            });
+        });
+    }, [wsRef, isConnected]);
+
+    const resumeSession = useCallback((agent: AcpAgent | undefined, sessionId: string) => {
+        startAgent(agent, { resumeSessionId: sessionId });
+    }, [startAgent]);
 
     const sendPrompt = useCallback((agentId: string, prompt: string) => {
         if (!wsRef.current || !isConnected) return;
@@ -429,6 +473,8 @@ export const useAgents = ({
         handleAcpHistory,
         reconnectToAcpAgents,
         startAgent,
+        fetchAvailableSessions,
+        resumeSession,
         sendPrompt,
         undoPrompt,
         sendPermissionResponse,

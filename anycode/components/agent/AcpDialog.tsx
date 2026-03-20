@@ -4,6 +4,7 @@ import {
   AcpToolCall, 
   AcpSession,
   AcpAgent,
+  type AcpSessionSummary,
   type AcpPermissionMode,
 } from '../../types';
 import './AcpDialog.css';
@@ -128,6 +129,8 @@ interface AcpDialogProps {
   settingsPermissionMode?: AcpPermissionMode;
   onSaveSettings?: (agents: AcpAgent[], defaultAgentId: string | null, permissionMode: AcpPermissionMode) => void;
   onCloseSettings?: () => void;
+  onLoadSettingsSessions?: (agent: AcpAgent) => Promise<AcpSessionSummary[]>;
+  onResumeSettingsSession?: (agent: AcpAgent, sessionId: string) => void;
   diffEnabled?: boolean;
   onToggleDiff?: () => void;
   followEnabled?: boolean;
@@ -157,6 +160,8 @@ export const AcpDialog: React.FC<AcpDialogProps> = ({
   settingsPermissionMode = 'full_access',
   onSaveSettings,
   onCloseSettings,
+  onLoadSettingsSessions,
+  onResumeSettingsSession,
   diffEnabled = false,
   onToggleDiff,
   followEnabled = false,
@@ -181,6 +186,8 @@ export const AcpDialog: React.FC<AcpDialogProps> = ({
           permissionMode={settingsPermissionMode}
           onSave={onSaveSettings}
           onClose={onCloseSettings}
+          onLoadSessions={onLoadSettingsSessions ?? (async () => [])}
+          onResumeSession={(agent, sessionId) => onResumeSettingsSession?.(agent, sessionId)}
         />
       </div>
     );

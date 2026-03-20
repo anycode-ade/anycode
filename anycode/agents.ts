@@ -5,6 +5,13 @@ import { loadAgents, saveAgents, loadDefaultAgentId, saveDefaultAgentId } from '
 // Can be overridden by user settings
 export const DEFAULT_AGENTS: AcpAgent[] = [
     {
+        id: 'codex',
+        name: 'codex',
+        command: 'codex-acp',
+        args: [],
+        description: 'codex',
+    },
+    {
         id: 'qwen',
         name: 'Qwen',
         command: 'qwen',
@@ -26,13 +33,6 @@ export const DEFAULT_AGENTS: AcpAgent[] = [
         description: 'Cluade AI coding agent',
     },
     {
-        id: 'codex',
-        name: 'codex',
-        command: 'codex-acp',
-        args: [],
-        description: 'codex',
-    },
-    {
         id: 'opencode',
         name: 'opencode',
         command: 'opencode',
@@ -47,13 +47,13 @@ export function getAllAgents(): AcpAgent[] {
     if (cachedAgents !== null) {
         return cachedAgents;
     }
-    
+
     const savedAgents = loadAgents();
-    
+
     // Merge saved agents with default agents
     // Ensure all DEFAULT_AGENTS are present (add missing ones)
     const agentMap = new Map<string, AcpAgent>();
-    
+
     // First, add all saved agents
     savedAgents.forEach(agent => {
         agentMap.set(agent.id, {
@@ -61,7 +61,7 @@ export function getAllAgents(): AcpAgent[] {
             args: [...agent.args] // Ensure args array is copied
         });
     });
-    
+
     // Then, add all default agents that are missing
     DEFAULT_AGENTS.forEach(defaultAgent => {
         if (!agentMap.has(defaultAgent.id)) {
@@ -72,19 +72,19 @@ export function getAllAgents(): AcpAgent[] {
             });
         }
     });
-    
+
     cachedAgents = Array.from(agentMap.values());
-    
+
     // If we added missing default agents, save the updated list
     if (cachedAgents.length > savedAgents.length) {
         saveAgents(cachedAgents);
     }
-    
+
     // If no agents were saved before, also set default agent ID
     if (savedAgents.length === 0 && !loadDefaultAgentId() && cachedAgents.length > 0) {
         saveDefaultAgentId(cachedAgents[0].id);
     }
-    
+
     return cachedAgents;
 }
 
@@ -101,13 +101,13 @@ export function getDefaultAgentId(): string | null {
             return savedId;
         }
     }
-    
+
     // Fallback to first agent
     const agents = getAllAgents();
     if (agents.length > 0) {
         return agents[0].id;
     }
-    
+
     return null;
 }
 
@@ -146,4 +146,3 @@ export function getDefaultAgent(): AcpAgent | undefined {
     }
     return getAllAgents()[0];
 }
-

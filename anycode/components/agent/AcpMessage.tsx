@@ -15,7 +15,7 @@ import './AcpMessage.css';
 interface AcpMessageProps {
   message: AcpMessageType;
   toolResult?: AcpToolResultMessage;
-  toolUpdate?: AcpToolUpdateMessage;
+  toolUpdates?: AcpToolUpdateMessage[];
   isExpanded?: boolean;
   onToggle?: () => void;
   onPermissionResponse?: (permissionId: string, optionId: string) => void;
@@ -25,10 +25,10 @@ interface AcpMessageProps {
 const ToolCallMessage: React.FC<{
   message: AcpToolCallMessage;
   toolResult?: AcpToolResultMessage;
-  toolUpdate?: AcpToolUpdateMessage;
+  toolUpdates?: AcpToolUpdateMessage[];
   isExpanded: boolean;
   onToggle: () => void;
-}> = ({ message, toolResult, toolUpdate, isExpanded, onToggle }) => {
+}> = ({ message, toolResult, toolUpdates, isExpanded, onToggle }) => {
   const hasArguments = message.arguments &&
     JSON.stringify(message.arguments) !== '{}' &&
     JSON.stringify(message.arguments) !== '[]';
@@ -58,12 +58,14 @@ const ToolCallMessage: React.FC<{
                 </pre>
               </div>
             )} */}
-            {toolUpdate && (
+            {toolUpdates && toolUpdates.length > 0 && (
               <div className="acp-tool-call-section">
-                <div className="acp-tool-call-label">Update:</div>
-                <pre className="acp-tool-result-content">
-                  {JSON.stringify(toolUpdate.update, null, 2)}
-                </pre>
+                <div className="acp-tool-call-label">Updates:</div>
+                {toolUpdates.map((toolUpdate, index) => (
+                  <pre key={`${toolUpdate.id}-${index}`} className="acp-tool-result-content">
+                    {JSON.stringify(toolUpdate.update, null, 2)}
+                  </pre>
+                ))}
               </div>
             )}
             {toolResult && (
@@ -114,18 +116,25 @@ const ToolResultDetails: React.FC<{ result: any }> = ({ result }) => {
     return undefined;
   };
 
-  const title = result.title;
-  const status = result.status;
-  const rawInput = getField(result, 'rawInput', 'raw_input');
-  const rawOutput = getField(result, 'rawOutput', 'raw_output');
-  const content = result.content;
+  const fields = result.fields && typeof result.fields === 'object' ? result.fields : undefined;
+  const title = result.title ?? fields?.title;
+  const status = result.status ?? fields?.status;
+  const rawInput = getField(result, 'rawInput', 'raw_input')
+    ?? getField(fields, 'rawInput', 'raw_input');
+  const rawOutput = getField(result, 'rawOutput', 'raw_output')
+    ?? getField(fields, 'rawOutput', 'raw_output');
+  const content = result.content ?? fields?.content;
 
-  const rawOutputCommand = rawOutput?.command;
+  const rawOutputCommand = typeof rawOutput === 'object' ? rawOutput?.command : undefined;
   const command =
+    rawInput?.cmd ??
     rawInput?.command ??
     (Array.isArray(rawOutputCommand) ? rawOutputCommand.join(' ') : rawOutputCommand);
-  const description = rawInput?.description ?? rawOutput?.metadata?.description;
+  const description =
+    rawInput?.description ??
+    (typeof rawOutput === 'object' ? rawOutput?.metadata?.description : undefined);
   const output =
+    (typeof rawOutput === 'string' ? rawOutput : undefined) ??
     rawOutput?.formatted_output ??
     rawOutput?.stdout ??
     rawOutput?.aggregated_output ??
@@ -133,8 +142,9 @@ const ToolResultDetails: React.FC<{ result: any }> = ({ result }) => {
     rawOutput?.metadata?.output ??
     rawOutput?.metadata?.stderr;
   const errorOutput =
-    rawOutput?.stderr ??
-    rawOutput?.metadata?.stderr;
+    typeof rawOutput === 'object'
+      ? rawOutput?.stderr ?? rawOutput?.metadata?.stderr
+      : undefined;
 
   const contentText = Array.isArray(content)
     ? content
@@ -371,7 +381,7 @@ const PermissionRequestMessage: React.FC<{
 export const AcpMessage: React.FC<AcpMessageProps> = ({
   message,
   toolResult,
-  toolUpdate,
+  toolUpdates,
   isExpanded = false,
   onToggle,
   onPermissionResponse,
@@ -382,12 +392,12 @@ export const AcpMessage: React.FC<AcpMessageProps> = ({
       if (!onToggle) return null;
       return (
         <ToolCallMessage
-          message={message}
-          toolResult={toolResult}
-          toolUpdate={toolUpdate}
-          isExpanded={isExpanded}
-          onToggle={onToggle}
-        />
+            message={message}
+            toolResult={toolResult}
+            toolUpdates={toolUpdates}
+            isExpanded={isExpanded}
+            onToggle={onToggle}
+          />
       );
     case 'tool_result':
       if (!onToggle) return null;

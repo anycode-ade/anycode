@@ -1,54 +1,49 @@
+use anyhow::Result;
 use axum::{
-  http::{header, StatusCode, Uri},
-  response::{Html, IntoResponse, Response},
+    http::{StatusCode, Uri, header},
+    response::{Html, IntoResponse, Response},
 };
 use socketioxide::{
-    extract::{SocketRef, State},
     SocketIo,
+    extract::{SocketRef, State},
 };
 use tower::ServiceBuilder;
 use tower_http::cors::CorsLayer;
 use tracing::info;
-use anyhow::Result;
 
-mod code;
-mod config;
-mod utils;
-mod lsp;
 mod acp;
 mod acp_history;
+mod code;
+mod config;
 mod git;
-use lsp::LspManager;
+mod lsp;
+mod utils;
 use acp::{AcpManager, AcpPermissionMode};
 use git::GitManager;
+use lsp::LspManager;
 
-use std::sync::Arc;
-use tokio::sync::{mpsc::Receiver, Mutex};
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 use tokio::sync::mpsc;
+use tokio::sync::{Mutex, mpsc::Receiver};
 
 mod app_state;
-use app_state::{*};
+use app_state::*;
 
 mod diff;
 
 mod handlers;
 use handlers::{
-    io_handler::*,
-    search_handler::*,
-    lsp_handler::*,
-    terminal_handler::*,
-    watch_handler::{handle_watch_event},
-    acp_handler::*,
-    git_handler::*,
+    acp_handler::*, git_handler::*, io_handler::*, lsp_handler::*, search_handler::*,
+    terminal_handler::*, watch_handler::handle_watch_event,
 };
 
+mod history;
 mod search;
 mod terminal;
-mod history;
 
 use lsp_types::PublishDiagnosticsParams;
-use notify::{recommended_watcher, Event, RecursiveMode, Watcher};
+use notify::{Event, RecursiveMode, Watcher, recommended_watcher};
 
 async fn on_connect(socket: SocketRef, state: State<AppState>) {
     info!("Socket.IO connected: {:?} {:?}", socket.ns(), socket.id);
@@ -79,6 +74,7 @@ async fn on_connect(socket: SocketRef, state: State<AppState>) {
     socket.on("acp:stop", handle_acp_stop);
     socket.on("acp:cancel", handle_acp_cancel);
     socket.on("acp:list", handle_acp_list);
+    socket.on("acp:sessions_list", handle_acp_sessions_list);
     socket.on("acp:reconnect", handle_acp_reconnect);
     socket.on("acp:permission_response", handle_acp_permission_response);
     socket.on("acp:set_permission_mode", handle_acp_permission_mode);
@@ -98,7 +94,7 @@ async fn on_disconnect(socket: SocketRef, state: State<AppState>) {
     info!("Socket.IO disconnected: {}", socket.id);
 
     let sid = socket.id.as_str().to_string();
-    
+
     // Get opened files for this socket before removing socket data
     let opened_files = {
         let sockets_data = state.socket2data.lock().await;
@@ -111,7 +107,8 @@ async fn on_disconnect(socket: SocketRef, state: State<AppState>) {
     // Get languages for files opened by this socket
     let languages = {
         let f2c = state.file2code.lock().await;
-        opened_files.iter()
+        opened_files
+            .iter()
             .filter_map(|path| f2c.get(path).map(|code| code.lang.clone()))
             .collect::<HashSet<_>>()
     };
@@ -120,11 +117,12 @@ async fn on_disconnect(socket: SocketRef, state: State<AppState>) {
     let mut sockets_data = state.socket2data.lock().await;
     sockets_data.remove(&sid);
     drop(sockets_data);
-    
+
     // Get all opened files from remaining sockets
     let all_opened_files: HashSet<String> = {
         let sockets_data = state.socket2data.lock().await;
-        sockets_data.values()
+        sockets_data
+            .values()
             .flat_map(|data| data.opened_files.iter())
             .cloned()
             .collect()
@@ -133,11 +131,10 @@ async fn on_disconnect(socket: SocketRef, state: State<AppState>) {
     // Clean up files that are no longer opened by any socket
     let files_to_close: Vec<(String, String)> = {
         let f2c = state.file2code.lock().await;
-        opened_files.iter()
+        opened_files
+            .iter()
             .filter(|path| !all_opened_files.contains(*path))
-            .filter_map(|path| {
-                f2c.get(path).map(|code| (path.clone(), code.lang.clone()))
-            })
+            .filter_map(|path| f2c.get(path).map(|code| (path.clone(), code.lang.clone())))
             .collect()
     };
 
@@ -153,7 +150,7 @@ async fn on_disconnect(socket: SocketRef, state: State<AppState>) {
             }
         }
     }
-    
+
     // Stop LSP servers for languages that have no files opened by other sockets
     for lang in languages {
         if !is_language_opened(&lang, &state).await {
@@ -178,10 +175,16 @@ fn build_app_state() -> (AppState, Receiver<PublishDiagnosticsParams>) {
 
     let file2code = Arc::new(Mutex::new(HashMap::new()));
     let socket2data = Arc::new(Mutex::new(HashMap::new()));
-    let terminals = Arc::new(Mutex::new(HashMap::new())); 
+    let terminals = Arc::new(Mutex::new(HashMap::new()));
 
-    let state = AppState { 
-        config, file2code, lsp_manager, acp_manager, git_manager: git_manager.clone(), socket2data, terminals 
+    let state = AppState {
+        config,
+        file2code,
+        lsp_manager,
+        acp_manager,
+        git_manager: git_manager.clone(),
+        socket2data,
+        terminals,
     };
 
     (state, diagnostic_recv)
@@ -214,14 +217,14 @@ async fn static_handler(uri: Uri) -> impl IntoResponse {
 }
 
 async fn index_html() -> Response {
-  match crate::config::Dist::get(INDEX_HTML) {
-    Some(content) => Html(content.data).into_response(),
-    None => not_found().await,
-  }
+    match crate::config::Dist::get(INDEX_HTML) {
+        Some(content) => Html(content.data).into_response(),
+        None => not_found().await,
+    }
 }
 
 async fn not_found() -> Response {
-  (StatusCode::NOT_FOUND, "404").into_response()
+    (StatusCode::NOT_FOUND, "404").into_response()
 }
 
 fn print_help() {
@@ -245,7 +248,7 @@ fn print_help() {
 #[tokio::main]
 async fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().collect();
-    
+
     if args.len() > 1 {
         match args[1].as_str() {
             "--help" | "-h" => {
@@ -263,7 +266,7 @@ async fn main() -> Result<()> {
             }
         }
     }
-    
+
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::new("info"))
         .init();
@@ -274,7 +277,9 @@ async fn main() -> Result<()> {
     let git_manager = state.git_manager.clone();
 
     let (layer, io) = SocketIo::builder().with_state(state).build_layer();
-    let cors = ServiceBuilder::new().layer(CorsLayer::permissive()).layer(layer);
+    let cors = ServiceBuilder::new()
+        .layer(CorsLayer::permissive())
+        .layer(layer);
 
     let io = Arc::new(io);
 
@@ -285,14 +290,13 @@ async fn main() -> Result<()> {
             // log2::debug!("diagnostic_message_json {}", diagnostic_message_json);
             let send_result = socket.emit("lsp:diagnostics", &diagnostic_message).await;
             match send_result {
-                Ok(_) => {},
+                Ok(_) => {}
                 Err(e) => {
                     tracing::error!("error while sending lsp:diagnostics {}", e);
                 }
             }
         }
     });
-
 
     // Spawn a task to watch files and dirs changes and send events to the socket
     let (watch_tx, mut watch_rx) = mpsc::channel::<notify::Result<Event>>(32);
@@ -310,13 +314,23 @@ async fn main() -> Result<()> {
             match res {
                 Ok(event) => {
                     for path in &event.paths {
-                        if crate::utils::is_ignored_dir(path) { continue }
-                        else {
-                            handle_watch_event(path, &event, &socket, &file2code, &socket2data, &file_states, &git_manager).await
+                        if crate::utils::is_ignored_dir(path) {
+                            continue;
+                        } else {
+                            handle_watch_event(
+                                path,
+                                &event,
+                                &socket,
+                                &file2code,
+                                &socket2data,
+                                &file_states,
+                                &git_manager,
+                            )
+                            .await
                         }
                     }
-                },
-                Err(e) => eprintln!("watch error: {:?}", e)
+                }
+                Err(e) => eprintln!("watch error: {:?}", e),
             }
         }
     });

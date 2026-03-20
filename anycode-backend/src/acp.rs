@@ -1,19 +1,19 @@
+use crate::acp_history::AcpHistoryManager;
+use crate::utils::relative_to_current_dir;
 use agent_client_protocol::{self as acp, Agent as _, Client};
-use agent_client_protocol_schema::ProtocolVersion;
+use agent_client_protocol_schema::{ProtocolVersion, SessionId};
+use anyhow::{Result, anyhow};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
-use std::sync::Arc;
 use std::path::PathBuf;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+use tokio::io::{self, AsyncBufReadExt, BufReader};
 use tokio::process::Command;
-use tokio::sync::{mpsc, broadcast, Mutex, oneshot::Sender, RwLock};
-use tokio::io::{self};
+use tokio::sync::{Mutex, RwLock, broadcast, mpsc, oneshot::Sender};
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
-use tracing::{info, debug, error};
-use anyhow::{Result, anyhow};
-use crate::utils::relative_to_current_dir;
-use crate::acp_history::AcpHistoryManager;
+use tracing::{debug, error, info};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
@@ -149,6 +149,16 @@ pub struct AcpOpenFile {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AcpSessionSummary {
+    pub session_id: String,
+    pub cwd: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub updated_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "role")]
 pub enum AcpMessage {
     #[serde(rename = "user")]
@@ -195,28 +205,36 @@ impl Client for AcpClientImpl {
         &self,
         args: acp::RequestPermissionRequest,
     ) -> acp::Result<acp::RequestPermissionResponse> {
-        info!("request_permission called for agent {}: {:?}", self.agent_id, args);
-        
-        let permission_mode = AcpPermissionMode::from_atomic(self.permission_mode.load(Ordering::Relaxed));
+        info!(
+            "request_permission called for agent {}: {:?}",
+            self.agent_id, args
+        );
+
+        let permission_mode =
+            AcpPermissionMode::from_atomic(self.permission_mode.load(Ordering::Relaxed));
         if permission_mode.is_full_access() {
-            let selected_option = args.options.iter().find(|opt| {
-                let name = opt.name.to_lowercase();
-                name.contains("allow")
-                    || name.contains("approve")
-                    || name.contains("accept")
-                    || name.contains("grant")
-                    || name.contains("yes")
-                    || name.contains("continue")
-                    || name.contains("proceed")
-            }).or_else(|| args.options.first());
+            let selected_option = args
+                .options
+                .iter()
+                .find(|opt| {
+                    let name = opt.name.to_lowercase();
+                    name.contains("allow")
+                        || name.contains("approve")
+                        || name.contains("accept")
+                        || name.contains("grant")
+                        || name.contains("yes")
+                        || name.contains("continue")
+                        || name.contains("proceed")
+                })
+                .or_else(|| args.options.first());
 
             if let Some(option) = selected_option {
                 info!(
                     "Auto-approving permission for agent {} in full_access mode: {}",
-                    self.agent_id,
-                    option.name
+                    self.agent_id, option.name
                 );
-                let selected_outcome = acp::SelectedPermissionOutcome::new(option.option_id.clone());
+                let selected_outcome =
+                    acp::SelectedPermissionOutcome::new(option.option_id.clone());
                 return Ok(acp::RequestPermissionResponse::new(
                     acp::RequestPermissionOutcome::Selected(selected_outcome),
                 ));
@@ -235,7 +253,9 @@ impl Client for AcpClientImpl {
         let tool_call_update = &args.tool_call;
         // Extract tool call information from ToolCallUpdate
         let tool_call_id = tool_call_update.tool_call_id.to_string();
-        let (tool_name, tool_command) = tool_call_update.fields.title
+        let (tool_name, tool_command) = tool_call_update
+            .fields
+            .title
             .as_ref()
             .map(|s| {
                 let name = Self::extract_tool_name(s);
@@ -256,12 +276,14 @@ impl Client for AcpClientImpl {
 
         // Extract locations from tool call update (use relative path if possible)
         let locations = tool_call_update.fields.locations.as_ref().map(|locs| {
-            locs.iter().map(|loc| AcpLocation {
-                path: relative_to_current_dir(&loc.path)
-                    .map(|p| p.to_string_lossy().to_string())
-                    .unwrap_or_else(|| loc.path.to_string_lossy().to_string()),
-                line: loc.line,
-            }).collect()
+            locs.iter()
+                .map(|loc| AcpLocation {
+                    path: relative_to_current_dir(&loc.path)
+                        .map(|p| p.to_string_lossy().to_string())
+                        .unwrap_or_else(|| loc.path.to_string_lossy().to_string()),
+                    line: loc.line,
+                })
+                .collect()
         });
 
         let acp_tool_call = AcpToolCall {
@@ -276,7 +298,9 @@ impl Client for AcpClientImpl {
         let permission_id = format!("perm_{}", tool_call_id);
 
         // Convert options to our format
-        let permission_options: Vec<AcpPermissionOption> = args.options.iter()
+        let permission_options: Vec<AcpPermissionOption> = args
+            .options
+            .iter()
             .map(|opt| AcpPermissionOption {
                 id: opt.option_id.to_string(),
                 name: opt.name.clone(),
@@ -306,36 +330,62 @@ impl Client for AcpClientImpl {
         }
 
         // Send permission request to frontend
-        self.send_message(AcpMessage::PermissionRequest(permission_request)).await;
+        self.send_message(AcpMessage::PermissionRequest(permission_request))
+            .await;
 
         // Wait for user response
         match response_rx.await {
             Ok(response) => {
-                info!("Permission response received for agent {}: option_id={}", self.agent_id, response.option_id);
+                info!(
+                    "Permission response received for agent {}: option_id={}",
+                    self.agent_id, response.option_id
+                );
 
                 // Find the matching option from original args
-                if let Some(option) = args.options.iter().find(|opt| opt.option_id.to_string() == response.option_id) {
-                    let selected_outcome = acp::SelectedPermissionOutcome::new(option.option_id.clone());
-                    Ok(acp::RequestPermissionResponse::new(acp::RequestPermissionOutcome::Selected(selected_outcome)))
+                if let Some(option) = args
+                    .options
+                    .iter()
+                    .find(|opt| opt.option_id.to_string() == response.option_id)
+                {
+                    let selected_outcome =
+                        acp::SelectedPermissionOutcome::new(option.option_id.clone());
+                    Ok(acp::RequestPermissionResponse::new(
+                        acp::RequestPermissionOutcome::Selected(selected_outcome),
+                    ))
                 } else {
                     // If option not found, treat as cancelled
-                    error!("Invalid option_id {} for agent {}", response.option_id, self.agent_id);
-                    Ok(acp::RequestPermissionResponse::new(acp::RequestPermissionOutcome::Cancelled))
+                    error!(
+                        "Invalid option_id {} for agent {}",
+                        response.option_id, self.agent_id
+                    );
+                    Ok(acp::RequestPermissionResponse::new(
+                        acp::RequestPermissionOutcome::Cancelled,
+                    ))
                 }
             }
             Err(_) => {
                 // Channel was dropped (e.g., agent stopped)
-                error!("Permission request channel closed for agent {}", self.agent_id);
-                Ok(acp::RequestPermissionResponse::new(acp::RequestPermissionOutcome::Cancelled))
+                error!(
+                    "Permission request channel closed for agent {}",
+                    self.agent_id
+                );
+                Ok(acp::RequestPermissionResponse::new(
+                    acp::RequestPermissionOutcome::Cancelled,
+                ))
             }
         }
     }
 
     async fn write_text_file(
-        &self, args: acp::WriteTextFileRequest,
+        &self,
+        args: acp::WriteTextFileRequest,
     ) -> acp::Result<acp::WriteTextFileResponse> {
-        info!("write_text_file called for agent {}: path={:?}, content_len={}",
-            self.agent_id, args.path, args.content.len());
+        info!(
+            "write_text_file called for agent {}: path={:?}, content_len={}",
+            self.agent_id,
+            args.path,
+            args.content.len()
+        );
 
         // Send open_file message to UI for follow mode
         let relative_path = relative_to_current_dir(&args.path)
@@ -345,92 +395,133 @@ impl Client for AcpClientImpl {
         self.send_message(AcpMessage::OpenFile(AcpOpenFile {
             path: relative_path,
             line: None,
-        })).await;
+        }))
+        .await;
 
         // Write file to filesystem
         let path = args.path.as_path();
         match tokio::fs::write(path, &args.content).await {
             Ok(_) => {
-                info!("Successfully wrote file for agent {}: {:?} ({} bytes)",
-                    self.agent_id, args.path, args.content.len());
+                info!(
+                    "Successfully wrote file for agent {}: {:?} ({} bytes)",
+                    self.agent_id,
+                    args.path,
+                    args.content.len()
+                );
                 Ok(acp::WriteTextFileResponse::new())
             }
             Err(e) => {
-                error!("Failed to write file {:?} for agent {}: {}", args.path, self.agent_id, e);
+                error!(
+                    "Failed to write file {:?} for agent {}: {}",
+                    args.path, self.agent_id, e
+                );
                 Err(acp::Error::internal_error())
             }
         }
     }
 
     async fn read_text_file(
-        &self, args: acp::ReadTextFileRequest,
+        &self,
+        args: acp::ReadTextFileRequest,
     ) -> acp::Result<acp::ReadTextFileResponse> {
-        info!("read_text_file called for agent {}: path={:?}", self.agent_id, args.path);
+        info!(
+            "read_text_file called for agent {}: path={:?}",
+            self.agent_id, args.path
+        );
 
         // Send open_file message to UI for follow mode
         let relative_path = relative_to_current_dir(&args.path)
             .map(|p| p.to_string_lossy().to_string())
             .unwrap_or_else(|| args.path.to_string_lossy().to_string());
-        
+
         self.send_message(AcpMessage::OpenFile(AcpOpenFile {
             path: relative_path,
             line: None,
-        })).await;
+        }))
+        .await;
 
         // Read file from filesystem
         let path = args.path.as_path();
         match tokio::fs::read_to_string(path).await {
             Ok(content) => {
-                info!("Successfully read file for agent {}: {:?} ({} bytes)",
-                    self.agent_id, args.path, content.len());
+                info!(
+                    "Successfully read file for agent {}: {:?} ({} bytes)",
+                    self.agent_id,
+                    args.path,
+                    content.len()
+                );
                 Ok(acp::ReadTextFileResponse::new(content))
             }
             Err(e) => {
-                error!("Failed to read file {:?} for agent {}: {}", args.path, self.agent_id, e);
+                error!(
+                    "Failed to read file {:?} for agent {}: {}",
+                    args.path, self.agent_id, e
+                );
                 Err(acp::Error::internal_error())
             }
         }
     }
 
     async fn create_terminal(
-        &self, _args: acp::CreateTerminalRequest,
+        &self,
+        _args: acp::CreateTerminalRequest,
     ) -> acp::Result<acp::CreateTerminalResponse> {
-        info!("create_terminal called for agent {}: {:?}", self.agent_id, _args);
+        info!(
+            "create_terminal called for agent {}: {:?}",
+            self.agent_id, _args
+        );
         Err(acp::Error::method_not_found())
     }
 
     async fn terminal_output(
-        &self, _args: acp::TerminalOutputRequest,
+        &self,
+        _args: acp::TerminalOutputRequest,
     ) -> acp::Result<acp::TerminalOutputResponse> {
-        info!("terminal_output called for agent {}: {:?}", self.agent_id, _args);
+        info!(
+            "terminal_output called for agent {}: {:?}",
+            self.agent_id, _args
+        );
         Err(acp::Error::method_not_found())
     }
 
     async fn release_terminal(
-        &self, _args: acp::ReleaseTerminalRequest,
+        &self,
+        _args: acp::ReleaseTerminalRequest,
     ) -> acp::Result<acp::ReleaseTerminalResponse> {
-        info!("release_terminal called for agent {}: {:?}", self.agent_id, _args);
+        info!(
+            "release_terminal called for agent {}: {:?}",
+            self.agent_id, _args
+        );
         Err(acp::Error::method_not_found())
     }
 
     async fn wait_for_terminal_exit(
-        &self, _args: acp::WaitForTerminalExitRequest,
+        &self,
+        _args: acp::WaitForTerminalExitRequest,
     ) -> acp::Result<acp::WaitForTerminalExitResponse> {
-        info!("wait_for_terminal_exit called for agent {}: {:?}", self.agent_id, _args);
+        info!(
+            "wait_for_terminal_exit called for agent {}: {:?}",
+            self.agent_id, _args
+        );
         Err(acp::Error::method_not_found())
     }
 
     async fn kill_terminal_command(
-        &self, _args: acp::KillTerminalCommandRequest,
+        &self,
+        _args: acp::KillTerminalCommandRequest,
     ) -> acp::Result<acp::KillTerminalCommandResponse> {
-        info!("kill_terminal_command called for agent {}: {:?}", self.agent_id, _args);
+        info!(
+            "kill_terminal_command called for agent {}: {:?}",
+            self.agent_id, _args
+        );
         Err(acp::Error::method_not_found())
     }
 
-    async fn session_notification(
-        &self, args: acp::SessionNotification,
-    ) -> acp::Result<()> {
-        info!("session_notification received for agent {}: {:?}", self.agent_id, args.update);
+    async fn session_notification(&self, args: acp::SessionNotification) -> acp::Result<()> {
+        info!(
+            "session_notification received for agent {}: {:?}",
+            self.agent_id, args.update
+        );
         match args.update {
             acp::SessionUpdate::AgentMessageChunk(chunk) => {
                 self.handle_agent_message_chunk(chunk).await?;
@@ -438,11 +529,15 @@ impl Client for AcpClientImpl {
             acp::SessionUpdate::ToolCall(tool_call) => {
                 self.handle_tool_call(tool_call).await;
             }
-            acp::SessionUpdate::UserMessageChunk { .. } => {
+            acp::SessionUpdate::UserMessageChunk(chunk) => {
                 info!("UserMessageChunk received for agent {}", self.agent_id);
+                self.handle_user_message_chunk(chunk).await?;
             }
             acp::SessionUpdate::AgentThoughtChunk(chunk) => {
-                debug!("AgentThoughtChunk received for agent {}: {:?}", self.agent_id, chunk);
+                debug!(
+                    "AgentThoughtChunk received for agent {}: {:?}",
+                    self.agent_id, chunk
+                );
                 self.handle_agent_thought_chunk(chunk).await?;
             }
             acp::SessionUpdate::ToolCallUpdate(update) => {
@@ -455,41 +550,77 @@ impl Client for AcpClientImpl {
                 info!("CurrentModeUpdate received for agent {}", self.agent_id);
             }
             acp::SessionUpdate::AvailableCommandsUpdate { .. } => {
-                info!("AvailableCommandsUpdate received for agent {}", self.agent_id);
+                info!(
+                    "AvailableCommandsUpdate received for agent {}",
+                    self.agent_id
+                );
             }
             _ => {
-                info!("Other session update received for agent {}: {:?}", self.agent_id, args.update);
+                info!(
+                    "Other session update received for agent {}: {:?}",
+                    self.agent_id, args.update
+                );
             }
         }
         Ok(())
     }
 
-    async fn ext_method(
-        &self, _args: acp::ExtRequest
-    ) -> acp::Result<acp::ExtResponse> {
+    async fn ext_method(&self, _args: acp::ExtRequest) -> acp::Result<acp::ExtResponse> {
         info!("ext_method called for agent {}: {:?}", self.agent_id, _args);
         Err(acp::Error::method_not_found())
     }
 
-    async fn ext_notification(
-        &self, _args: acp::ExtNotification
-    ) -> acp::Result<()> {
-        info!("ext_notification called for agent {}: {:?}", self.agent_id, _args);
+    async fn ext_notification(&self, _args: acp::ExtNotification) -> acp::Result<()> {
+        info!(
+            "ext_notification called for agent {}: {:?}",
+            self.agent_id, _args
+        );
         Err(acp::Error::method_not_found())
     }
 }
 
 impl AcpClientImpl {
-    async fn handle_agent_message_chunk(
-        &self,
-        chunk: acp::ContentChunk,
-    ) -> acp::Result<()> {
+    async fn handle_user_message_chunk(&self, chunk: acp::ContentChunk) -> acp::Result<()> {
         let text = Self::extract_text_from_content(&chunk.content);
-        info!("Received message chunk from agent {}: {}", self.agent_id, text);
-        
+        info!(
+            "Received user message chunk from agent {}: {}",
+            self.agent_id, text
+        );
+
+        let mut history = self.history.lock().await;
+        let is_chunk = Self::is_last_message_user(&history);
+
+        if is_chunk {
+            Self::append_to_last_user_message(&mut history, &text);
+        } else {
+            let new_message = AcpMessage::User(AcpUserMessage {
+                content: text.clone(),
+                checkpoint_id: None,
+            });
+            history.push(new_message);
+        }
+        drop(history);
+
+        let message = AcpMessage::User(AcpUserMessage {
+            content: text,
+            checkpoint_id: None,
+        });
+
+        self.send_message(message).await;
+
+        Ok(())
+    }
+
+    async fn handle_agent_message_chunk(&self, chunk: acp::ContentChunk) -> acp::Result<()> {
+        let text = Self::extract_text_from_content(&chunk.content);
+        info!(
+            "Received message chunk from agent {}: {}",
+            self.agent_id, text
+        );
+
         let mut history = self.history.lock().await;
         let is_chunk = Self::is_last_message_assistant(&history);
-        
+
         if is_chunk {
             Self::append_to_last_assistant_message(&mut history, &text);
         } else {
@@ -500,7 +631,7 @@ impl AcpClientImpl {
             history.push(new_message);
         }
         drop(history);
-        
+
         let message = AcpMessage::Assistant(AcpAssistantMessage {
             content: text.clone(),
             is_chunk: if is_chunk { Some(true) } else { None },
@@ -508,20 +639,20 @@ impl AcpClientImpl {
 
         // Send message to clients
         self.send_message(message).await;
-        
+
         Ok(())
     }
 
-    async fn handle_agent_thought_chunk(
-        &self,
-        chunk: acp::ContentChunk,
-    ) -> acp::Result<()> {
+    async fn handle_agent_thought_chunk(&self, chunk: acp::ContentChunk) -> acp::Result<()> {
         let text = Self::extract_text_from_content(&chunk.content);
-        info!("💭 Received thought chunk from agent {}: {}", self.agent_id, text);
-        
+        info!(
+            "💭 Received thought chunk from agent {}: {}",
+            self.agent_id, text
+        );
+
         let mut history = self.history.lock().await;
         let is_chunk = Self::is_last_message_thought(&history);
-        
+
         if is_chunk {
             Self::append_to_last_thought_message(&mut history, &text);
         } else {
@@ -532,7 +663,7 @@ impl AcpClientImpl {
             history.push(new_message);
         }
         drop(history);
-        
+
         let message = AcpMessage::Thought(AcpThought {
             content: text.clone(),
             is_chunk: if is_chunk { Some(true) } else { None },
@@ -540,19 +671,21 @@ impl AcpClientImpl {
 
         // Send message to clients
         self.send_message(message).await;
-        
+
         Ok(())
     }
 
     async fn handle_tool_call(&self, tool_call: acp::ToolCall) {
-        info!("Received tool call from agent {}: title={}, tool_call_id={:?}", 
-            self.agent_id, tool_call.title, tool_call.tool_call_id);
+        info!(
+            "Received tool call from agent {}: title={}, tool_call_id={:?}",
+            self.agent_id, tool_call.title, tool_call.tool_call_id
+        );
         debug!("Full tool_call structure: {:?}", tool_call);
-        
+
         // Convert acp::ToolCall to our AcpToolCall format
         let tool_call_id = tool_call.tool_call_id.to_string();
-        let (tool_name, tool_command) = Self::extract_tool_name_and_command(&tool_call.title);
-        
+        let (tool_name, mut tool_command) = Self::extract_tool_name_and_command(&tool_call.title);
+
         // Extract arguments from tool_call - try to serialize the whole tool_call and extract arguments
         // The tool_call might have different field names, so we try multiple approaches
         let arguments = serde_json::to_value(&tool_call)
@@ -583,17 +716,31 @@ impl AcpClientImpl {
                     "_debug": format!("{:?}", tool_call)
                 })
             });
-        
+
+        if let Some(raw_input) = tool_call.raw_input.as_ref() {
+            if let Some(cmd) = raw_input.get("cmd").and_then(|value| value.as_str()) {
+                tool_command = Some(cmd.to_string());
+            } else if let Some(command) = raw_input.get("command").and_then(|value| value.as_str()) {
+                tool_command = Some(command.to_string());
+            }
+        }
+
         // Extract locations from tool call (use relative path if possible)
         let locations = if tool_call.locations.is_empty() {
             None
         } else {
-            Some(tool_call.locations.iter().map(|loc| AcpLocation {
-                path: relative_to_current_dir(&loc.path)
-                    .map(|p| p.to_string_lossy().to_string())
-                    .unwrap_or_else(|| loc.path.to_string_lossy().to_string()),
-                line: loc.line,
-            }).collect())
+            Some(
+                tool_call
+                    .locations
+                    .iter()
+                    .map(|loc| AcpLocation {
+                        path: relative_to_current_dir(&loc.path)
+                            .map(|p| p.to_string_lossy().to_string())
+                            .unwrap_or_else(|| loc.path.to_string_lossy().to_string()),
+                        line: loc.line,
+                    })
+                    .collect(),
+            )
         };
 
         let acp_tool_call = AcpToolCall {
@@ -613,14 +760,14 @@ impl AcpClientImpl {
     }
 
     async fn handle_tool_call_update(&self, update: acp::ToolCallUpdate) {
-        info!("ToolCallUpdate received for agent {}: tool_call_id={:?}, status={:?}", 
-            self.agent_id, update.tool_call_id, update.fields.status);
-        
+        info!(
+            "ToolCallUpdate received for agent {}: tool_call_id={:?}, status={:?}",
+            self.agent_id, update.tool_call_id, update.fields.status
+        );
+
         let tool_call_id = update.tool_call_id.to_string();
 
-        // Serialize entire update to JSON string and put in payload
-        let payload = serde_json::to_value(&update)
-            .unwrap_or_else(|_| serde_json::json!({}));
+        let payload = Self::normalize_tool_call_update_payload(&update);
 
         match update.fields.status {
             Some(acp::ToolCallStatus::Completed) => {
@@ -634,15 +781,20 @@ impl AcpClientImpl {
                     let mut history = self.history.lock().await;
                     history.push(AcpMessage::ToolResult(acp_tool_result.clone()));
                 }
-                self.send_message(AcpMessage::ToolResult(acp_tool_result)).await;
+                self.send_message(AcpMessage::ToolResult(acp_tool_result))
+                    .await;
             }
             Some(_) => {
                 let acp_tool_update = AcpToolUpdate {
                     id: tool_call_id,
                     update: payload,
                 };
-                // Stream intermediate updates without persisting
-                self.send_message(AcpMessage::ToolUpdate(acp_tool_update)).await;
+                {
+                    let mut history = self.history.lock().await;
+                    history.push(AcpMessage::ToolUpdate(acp_tool_update.clone()));
+                }
+                self.send_message(AcpMessage::ToolUpdate(acp_tool_update))
+                    .await;
             }
             None => {}
         }
@@ -659,7 +811,7 @@ impl AcpClientImpl {
                 }
             }
         }
-        
+
         // Otherwise, extract the first part of the command (before first space or quote)
         // Example: "python3 -c \"...\"" -> "python3"
         if let Some(first_space) = title.find(' ') {
@@ -704,6 +856,21 @@ impl AcpClientImpl {
         }
     }
 
+    fn normalize_tool_call_update_payload(update: &acp::ToolCallUpdate) -> Value {
+        let fields = &update.fields;
+        serde_json::json!({
+            "tool_call_id": update.tool_call_id.to_string(),
+            "kind": fields.kind,
+            "status": fields.status,
+            "title": fields.title,
+            "content": fields.content,
+            "locations": fields.locations,
+            "raw_input": fields.raw_input,
+            "raw_output": fields.raw_output,
+            "meta": update.meta,
+        })
+    }
+
     fn extract_text_from_tool_call_content_vec(contents: &[acp::ToolCallContent]) -> String {
         contents
             .iter()
@@ -713,16 +880,20 @@ impl AcpClientImpl {
                 if let Ok(json_value) = serde_json::to_value(tool_content) {
                     // Try various paths to find text
                     // Path 1: content.Text.text (enum variant serialized as object with variant name as key)
-                    if let Some(text) = json_value.get("content")
+                    if let Some(text) = json_value
+                        .get("content")
                         .and_then(|c| c.get("Text"))
                         .and_then(|t| t.get("text"))
-                        .and_then(|t| t.as_str()) {
+                        .and_then(|t| t.as_str())
+                    {
                         return Some(text.to_string());
                     }
                     // Path 2: content.text (if content is directly an object with text field)
-                    if let Some(text) = json_value.get("content")
+                    if let Some(text) = json_value
+                        .get("content")
                         .and_then(|c| c.get("text"))
-                        .and_then(|t| t.as_str()) {
+                        .and_then(|t| t.as_str())
+                    {
                         return Some(text.to_string());
                     }
                     // Path 3: text (direct field)
@@ -730,7 +901,9 @@ impl AcpClientImpl {
                         return Some(text.to_string());
                     }
                     // Path 4: content array
-                    if let Some(content_array) = json_value.get("content").and_then(|c| c.as_array()) {
+                    if let Some(content_array) =
+                        json_value.get("content").and_then(|c| c.as_array())
+                    {
                         let texts: Vec<String> = content_array
                             .iter()
                             .filter_map(|item| {
@@ -757,15 +930,41 @@ impl AcpClientImpl {
     }
 
     fn is_last_message_assistant(history: &[AcpMessage]) -> bool {
-        history.last()
+        history
+            .last()
             .map(|item| matches!(item, AcpMessage::Assistant(_)))
             .unwrap_or(false)
     }
 
+    fn is_last_message_user(history: &[AcpMessage]) -> bool {
+        history
+            .last()
+            .map(|item| matches!(item, AcpMessage::User(_)))
+            .unwrap_or(false)
+    }
+
     fn is_last_message_thought(history: &[AcpMessage]) -> bool {
-        history.last()
+        history
+            .last()
             .map(|item| matches!(item, AcpMessage::Thought(_)))
             .unwrap_or(false)
+    }
+
+    fn append_to_last_user_message(history: &mut Vec<AcpMessage>, text: &str) {
+        if let Some(last_idx) = history.len().checked_sub(1) {
+            if let AcpMessage::User(AcpUserMessage {
+                content,
+                checkpoint_id,
+            }) = &history[last_idx]
+            {
+                let mut updated_content = content.clone();
+                updated_content.push_str(text);
+                history[last_idx] = AcpMessage::User(AcpUserMessage {
+                    content: updated_content,
+                    checkpoint_id: checkpoint_id.clone(),
+                });
+            }
+        }
     }
 
     fn append_to_last_assistant_message(history: &mut Vec<AcpMessage>, text: &str) {
@@ -798,20 +997,38 @@ impl AcpClientImpl {
         match self.message_sender.send(message) {
             Ok(receiver_count) => {
                 if receiver_count == 0 {
-                    debug!("Message sent to agent {} but no receivers connected (stored in history)", self.agent_id);
+                    debug!(
+                        "Message sent to agent {} but no receivers connected (stored in history)",
+                        self.agent_id
+                    );
                 } else {
-                    debug!("Message sent to agent {} with {} receivers", self.agent_id, receiver_count);
+                    debug!(
+                        "Message sent to agent {} with {} receivers",
+                        self.agent_id, receiver_count
+                    );
                 }
             }
             Err(e) => {
-                error!("Failed to send message to channel for agent {}: {}", self.agent_id, e);
+                debug!(
+                    "No active ACP subscribers for agent {}, message kept only in history: {}",
+                    self.agent_id, e
+                );
             }
         }
     }
 }
 
 /// Type alias for pending permissions map
-pub type PendingPermissionsMap = Arc<tokio::sync::Mutex<HashMap<String, tokio::sync::oneshot::Sender<PermissionResponse>>>>;
+pub type PendingPermissionsMap =
+    Arc<tokio::sync::Mutex<HashMap<String, tokio::sync::oneshot::Sender<PermissionResponse>>>>;
+
+enum RestoreSessionOutcome {
+    Restored(acp::SessionId),
+    Failed {
+        load_err: acp::Error,
+        resume_err: acp::Error,
+    },
+}
 
 pub struct AcpAgent {
     agent_id: String,
@@ -858,20 +1075,25 @@ impl AcpAgent {
         }
     }
 
-    pub async fn start(&mut self, cmd: &str, args: &[String]) -> io::Result<()> {
+    pub async fn start(
+        &mut self,
+        cmd: &str,
+        args: &[String],
+        resume_session_id: Option<String>,
+    ) -> Result<String> {
         // Setup channels
-        let (history_tx, _) = broadcast::channel::<AcpMessage>(100);
+        let (history_tx, _) = broadcast::channel::<AcpMessage>(1000);
         self.message_sender = Some(history_tx.clone());
-        
+
         let (prompt_tx, prompt_rx) = mpsc::channel::<String>(100);
         self.prompt_sender = Some(prompt_tx.clone());
-        
+
         let (cancel_tx, cancel_rx) = mpsc::channel::<()>(10);
         {
             let mut cancel_sender_guard = self.cancel_sender.lock().await;
             *cancel_sender_guard = Some(cancel_tx.clone());
         }
-        
+
         let (session_tx, mut session_rx) = mpsc::channel::<acp::SessionId>(1);
 
         // Spawn agent process
@@ -888,41 +1110,56 @@ impl AcpAgent {
         let local_set_handle = tokio::task::spawn_blocking(move || {
             tokio::runtime::Handle::current().block_on(async {
                 let local_set = tokio::task::LocalSet::new();
-                local_set.run_until(async move {
-                    Self::run_agent(
-                        agent_id_clone,
-                        ready_clone,
-                        history_clone,
-                        message_sender_clone,
-                        pending_permissions_clone,
-                        permission_mode_clone,
-                        stdin,
-                        stdout,
-                        stderr,
-                        prompt_rx,
-                        cancel_rx,
-                        session_tx,
-                    ).await;
-                }).await;
+                local_set
+                    .run_until(async move {
+                        Self::run_agent(
+                            agent_id_clone,
+                            ready_clone,
+                            history_clone,
+                            message_sender_clone,
+                            pending_permissions_clone,
+                            permission_mode_clone,
+                            stdin,
+                            stdout,
+                            stderr,
+                            prompt_rx,
+                            cancel_rx,
+                            session_tx,
+                            resume_session_id,
+                        )
+                        .await;
+                    })
+                    .await;
             })
         });
-        
+
         self.io_handle = Some(local_set_handle);
         self.connection = None;
 
-        // Receive session ID (non-blocking check)
-        if let Ok(session_id) = session_rx.try_recv() {
-            self.session_id = Some(session_id);
-        }
-
-        // Store process handle for cleanup
         let process_handle = tokio::spawn(async move {
             let _ = child.wait().await;
             debug!("ACP agent process ended");
         });
         self.process_handle = Some(process_handle);
 
-        Ok(())
+        match tokio::time::timeout(tokio::time::Duration::from_secs(15), session_rx.recv()).await {
+            Ok(Some(session_id)) => {
+                self.session_id = Some(session_id.clone());
+                Ok(session_id.to_string())
+            }
+            Ok(None) => {
+                self.stop().await;
+                Err(anyhow!(
+                    "ACP agent session channel closed before initialization"
+                ))
+            }
+            Err(_) => {
+                self.stop().await;
+                Err(anyhow!(
+                    "Timed out while waiting for ACP session initialization"
+                ))
+            }
+        }
     }
 
     fn spawn_agent_process(
@@ -962,6 +1199,7 @@ impl AcpAgent {
         mut prompt_rx: mpsc::Receiver<String>,
         mut cancel_rx: mpsc::Receiver<()>,
         session_tx: mpsc::Sender<acp::SessionId>,
+        resume_session_id: Option<String>,
     ) {
         // Clone history before moving client_impl
         let history_for_stderr = history.clone();
@@ -993,25 +1231,22 @@ impl AcpAgent {
         tokio::task::spawn_local(handle_io);
 
         // Read stderr for debugging
-        Self::spawn_stderr_reader(
-            stderr,
-            message_sender.clone(),
-            history_for_stderr
-        );
-        
+        Self::spawn_stderr_reader(stderr, message_sender.clone(), history_for_stderr);
+
         // Initialize connection and create session
-        let session_id = match Self::initialize_connection(&conn, &agent_id).await {
-            Ok(session_id) => {
-                let _ = session_tx.send(session_id.clone()).await;
-                ready.store(true, Ordering::SeqCst);
-                Some(session_id)
-            }
-            Err(e) => {
-                error!("Failed to initialize ACP agent {}: {}", agent_id, e);
-                None
-            }
-        };
-        
+        let session_id =
+            match Self::initialize_connection(&conn, &agent_id, resume_session_id).await {
+                Ok(session_id) => {
+                    let _ = session_tx.send(session_id.clone()).await;
+                    ready.store(true, Ordering::SeqCst);
+                    Some(session_id)
+                }
+                Err(e) => {
+                    error!("Failed to initialize ACP agent {}: {}", agent_id, e);
+                    None
+                }
+            };
+
         // Handle prompts in a loop
         if let Some(session_id) = session_id {
             Self::run_prompt_loop(
@@ -1022,9 +1257,13 @@ impl AcpAgent {
                 session_id,
                 &mut prompt_rx,
                 &mut cancel_rx,
-            ).await;
+            )
+            .await;
         } else {
-            error!("No session ID for agent {}, cannot handle prompts", agent_id);
+            error!(
+                "No session ID for agent {}, cannot handle prompts",
+                agent_id
+            );
             // Keep the connection alive if no session
             loop {
                 tokio::time::sleep(tokio::time::Duration::from_secs(3600)).await;
@@ -1046,9 +1285,7 @@ impl AcpAgent {
                 error!("ACP stderr: {}", error_msg);
 
                 // Create error message
-                let error_message = AcpMessage::Error(AcpError {
-                    message: error_msg,
-                });
+                let error_message = AcpMessage::Error(AcpError { message: error_msg });
 
                 // Save to history
                 {
@@ -1064,10 +1301,10 @@ impl AcpAgent {
         });
     }
 
-    async fn initialize_connection(
+    async fn initialize_agent_connection(
         conn: &std::rc::Rc<acp::ClientSideConnection>,
         agent_id: &str,
-    ) -> Result<acp::SessionId> {
+    ) -> Result<()> {
         let client_info = acp::Implementation::new("anycode", "1.0.0").title("Anycode Editor");
 
         // Define client capabilities
@@ -1075,27 +1312,115 @@ impl AcpAgent {
             .read_text_file(true)
             .write_text_file(true);
 
-        let client_capabilities = acp::ClientCapabilities::new()
-            .fs(fs_capabilities);
+        let client_capabilities = acp::ClientCapabilities::new().fs(fs_capabilities);
 
         let init_message = acp::InitializeRequest::new(ProtocolVersion::V1)
             .client_info(client_info)
             .client_capabilities(client_capabilities);
 
-        info!("Initializing ACP agent {} with capabilities: fs.readTextFile=true, fs.writeTextFile=true", agent_id);
+        info!(
+            "Initializing ACP agent {} with capabilities: fs.readTextFile=true, fs.writeTextFile=true",
+            agent_id
+        );
 
-        let init_response = conn.initialize(init_message).await
+        let init_response = conn
+            .initialize(init_message)
+            .await
             .map_err(|e| anyhow!("Failed to initialize: {}", e))?;
 
-        info!("ACP agent {} initialized successfully. Agent capabilities: {:?}", agent_id, init_response.agent_capabilities);
-        
-        // Create new session
+        info!(
+            "ACP agent {} initialized successfully. Agent capabilities: {:?}",
+            agent_id, init_response.agent_capabilities
+        );
+        Ok(())
+    }
+
+    async fn initialize_connection(
+        conn: &std::rc::Rc<acp::ClientSideConnection>,
+        agent_id: &str,
+        resume_session_id: Option<String>,
+    ) -> Result<acp::SessionId> {
+        Self::initialize_agent_connection(conn, agent_id).await?;
+
         let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
-        let response = conn.new_session(acp::NewSessionRequest::new(cwd)).await
+        let session_id = Self::create_or_resume_session(conn, resume_session_id, cwd).await?;
+
+        info!("Session ready for agent {}: {}", agent_id, session_id);
+        Ok(session_id)
+    }
+
+    async fn create_or_resume_session(
+        conn: &std::rc::Rc<acp::ClientSideConnection>,
+        resume_session_id: Option<String>,
+        cwd: PathBuf,
+    ) -> Result<acp::SessionId> {
+        if let Some(resume_session_id) = resume_session_id.as_deref() {
+            match Self::restore_session(conn, resume_session_id, &cwd).await? {
+                RestoreSessionOutcome::Restored(session_id) => return Ok(session_id),
+                RestoreSessionOutcome::Failed {
+                    load_err,
+                    resume_err,
+                } => {
+                    error!(
+                        "Failed to restore ACP session {}. load_session error: {}. resume_session error: {}. Falling back to creating a new session.",
+                        resume_session_id,
+                        load_err,
+                        resume_err
+                    );
+                }
+            }
+        }
+
+        let response = conn
+            .new_session(acp::NewSessionRequest::new(cwd))
+            .await
             .map_err(|e| anyhow!("Failed to create session: {}", e))?;
-        
-        info!("Session created for agent {}: {}", agent_id, response.session_id);
+
         Ok(response.session_id)
+    }
+
+    async fn restore_session(
+        conn: &std::rc::Rc<acp::ClientSideConnection>,
+        resume_session_id: &str,
+        cwd: &PathBuf,
+    ) -> Result<RestoreSessionOutcome> {
+        let requested_session_id = SessionId::new(resume_session_id.to_string());
+        let load_result = conn
+            .load_session(acp::LoadSessionRequest::new(
+                requested_session_id.clone(),
+                cwd.clone(),
+            ))
+            .await;
+
+        if load_result.is_ok() {
+            return Ok(RestoreSessionOutcome::Restored(requested_session_id));
+        }
+
+        let load_err = match load_result {
+            Ok(_) => unreachable!("successful load handled above"),
+            Err(err) => err,
+        };
+
+        let resume_result = conn
+            .resume_session(acp::ResumeSessionRequest::new(
+                requested_session_id.clone(),
+                cwd.clone(),
+            ))
+            .await;
+
+        if resume_result.is_ok() {
+            return Ok(RestoreSessionOutcome::Restored(requested_session_id));
+        }
+
+        let resume_err = match resume_result {
+            Ok(_) => unreachable!("successful resume handled above"),
+            Err(err) => err,
+        };
+
+        Ok(RestoreSessionOutcome::Failed {
+            load_err,
+            resume_err,
+        })
     }
 
     async fn run_prompt_loop(
@@ -1107,18 +1432,21 @@ impl AcpAgent {
         prompt_rx: &mut mpsc::Receiver<String>,
         cancel_rx: &mut mpsc::Receiver<()>,
     ) {
-        info!("Starting prompt handling loop for agent {} with session {}", agent_id, session_id);
-        
+        info!(
+            "Starting prompt handling loop for agent {} with session {}",
+            agent_id, session_id
+        );
+
         loop {
             match prompt_rx.recv().await {
                 Some(prompt) => {
                     info!("Sending prompt to agent {}: {}", agent_id, prompt);
-                    
+
                     // Send prompt state: processing started
                     let _ = message_sender.send(AcpMessage::PromptState(AcpPromptState {
                         is_processing: true,
                     }));
-                    
+
                     // Handle prompt with cancellation support
                     Self::handle_prompt_with_cancellation(
                         conn,
@@ -1128,13 +1456,14 @@ impl AcpAgent {
                         &session_id,
                         prompt,
                         cancel_rx,
-                    ).await;
-                    
+                    )
+                    .await;
+
                     // Send prompt state: processing finished
                     let _ = message_sender.send(AcpMessage::PromptState(AcpPromptState {
                         is_processing: false,
                     }));
-                    
+
                     // Drain any remaining cancel signals before processing next prompt
                     while cancel_rx.try_recv().is_ok() {}
                 }
@@ -1157,19 +1486,18 @@ impl AcpAgent {
     ) {
         // Create prompt request
         let prompt_request = acp::PromptRequest::new(session_id.clone(), vec![prompt.into()]);
-        
+
         // Clone connection for cancellation
         let conn_for_prompt = std::rc::Rc::clone(conn);
         let conn_for_cancel = std::rc::Rc::clone(conn);
-        
+
         // Pin the prompt future
-        let mut prompt_fut = std::pin::pin!(async move {
-            conn_for_prompt.prompt(prompt_request).await
-        });
-        
+        let mut prompt_fut =
+            std::pin::pin!(async move { conn_for_prompt.prompt(prompt_request).await });
+
         // Track if we've sent cancel notification
         let mut cancel_sent = false;
-        
+
         // Wait for prompt completion or cancel signal
         loop {
             tokio::select! {
@@ -1214,6 +1542,108 @@ impl AcpAgent {
         }
     }
 
+    pub async fn list_sessions_for_command(
+        cmd: &str,
+        args: &[String],
+        cwd: PathBuf,
+    ) -> Result<Vec<AcpSessionSummary>> {
+        let cmd = cmd.to_string();
+        let args = args.to_vec();
+
+        tokio::task::spawn_blocking(move || {
+            tokio::runtime::Handle::current().block_on(async move {
+                let local_set = tokio::task::LocalSet::new();
+                local_set
+                    .run_until(async move {
+                        let (mut child, stdin, stdout, stderr) =
+                            Self::spawn_agent_process(&cmd, &args).map_err(|e| {
+                                anyhow!("Failed to spawn ACP agent for session listing: {}", e)
+                            })?;
+
+                        tokio::task::spawn_local(async move {
+                            let mut reader = BufReader::new(stderr);
+                            let mut buf = String::new();
+                            loop {
+                                match reader.read_line(&mut buf).await {
+                                    Ok(0) => break,
+                                    Ok(_) => {
+                                        debug!("ACP sessions stderr: {}", buf.trim());
+                                        buf.clear();
+                                    }
+                                    Err(err) => {
+                                        debug!("Failed to read ACP sessions stderr: {}", err);
+                                        break;
+                                    }
+                                }
+                            }
+                        });
+
+                        let (message_sender, _) = broadcast::channel::<AcpMessage>(1);
+                        let client_impl = AcpClientImpl {
+                            agent_id: "session-list".to_string(),
+                            permission_mode: Arc::new(AtomicU8::new(
+                                AcpPermissionMode::FullAccess.as_atomic(),
+                            )),
+                            message_sender,
+                            history: Arc::new(tokio::sync::Mutex::new(Vec::new())),
+                            pending_permissions: Arc::new(Mutex::new(HashMap::new())),
+                        };
+
+                        let (conn, handle_io) = acp::ClientSideConnection::new(
+                            client_impl,
+                            stdin.compat_write(),
+                            stdout.compat(),
+                            |fut| {
+                                tokio::task::spawn_local(fut);
+                            },
+                        );
+                        let conn = std::rc::Rc::new(conn);
+
+                        tokio::task::spawn_local(handle_io);
+
+                        Self::initialize_agent_connection(&conn, "session-list").await?;
+
+                        let mut all_sessions = Vec::new();
+                        let mut cursor = None;
+
+                        loop {
+                            let response = conn
+                                .list_sessions(
+                                    acp::ListSessionsRequest::new()
+                                        .cwd(cwd.clone())
+                                        .cursor(cursor.clone()),
+                                )
+                                .await
+                                .map_err(|e| anyhow!("Failed to list sessions: {}", e))?;
+
+                            all_sessions.extend(response.sessions.into_iter().map(|session| {
+                                AcpSessionSummary {
+                                    session_id: session.session_id.to_string(),
+                                    cwd: session.cwd.to_string_lossy().to_string(),
+                                    title: session.title,
+                                    updated_at: session.updated_at,
+                                }
+                            }));
+
+                            if response.next_cursor.is_none() {
+                                break;
+                            }
+                            cursor = response.next_cursor;
+                        }
+
+                        all_sessions.sort_by(|left, right| right.updated_at.cmp(&left.updated_at));
+
+                        let _ = child.kill().await;
+                        let _ = child.wait().await;
+
+                        Ok(all_sessions)
+                    })
+                    .await
+            })
+        })
+        .await
+        .map_err(|e| anyhow!("Failed to join ACP session listing task: {}", e))?
+    }
 
     pub async fn stop(&mut self) {
         self.ready.store(false, Ordering::SeqCst);
@@ -1230,7 +1660,7 @@ impl AcpAgent {
     pub async fn send_prompt(&mut self, prompt: String) -> Result<String> {
         let prompt_tx = match &self.prompt_sender {
             Some(tx) => tx,
-            None => return Err(anyhow!("Prompt sender not initialized"))
+            None => return Err(anyhow!("Prompt sender not initialized")),
         };
 
         // Create checkpoint before processing the message
@@ -1256,7 +1686,10 @@ impl AcpAgent {
         // Send user message to all connected clients (non-blocking)
         if let Some(message_sender) = &self.message_sender {
             if let Err(e) = message_sender.send(user_message.clone()) {
-                error!("Failed to broadcast user message for agent {}: {}", self.agent_id, e);
+                error!(
+                    "Failed to broadcast user message for agent {}: {}",
+                    self.agent_id, e
+                );
                 // Continue anyway - message is in history and will be sent on reconnect
             }
         }
@@ -1288,7 +1721,8 @@ impl AcpAgent {
     /// Get all available checkpoints
     pub async fn get_checkpoints(&self) -> Vec<String> {
         let manager = self.history_manager.read().await;
-        manager.get_all_checkpoints()
+        manager
+            .get_all_checkpoints()
             .iter()
             .map(|cp| cp.prompt.clone())
             .collect()
@@ -1298,9 +1732,9 @@ impl AcpAgent {
         let cancel_sender_guard = self.cancel_sender.lock().await;
         let cancel_tx = match cancel_sender_guard.as_ref() {
             Some(tx) => tx,
-            None => return Err(anyhow!("Cancel sender not initialized"))
+            None => return Err(anyhow!("Cancel sender not initialized")),
         };
-        
+
         // Send cancel signal to agent
         cancel_tx.send(()).await?;
         Ok(())
@@ -1322,7 +1756,11 @@ impl AcpAgent {
 
     /// Send permission response for a pending permission request.
     /// Returns Ok(true) if the permission was found and response sent, Ok(false) if not found.
-    pub async fn send_permission_response(&self, permission_id: &str, option_id: String) -> Result<bool> {
+    pub async fn send_permission_response(
+        &self,
+        permission_id: &str,
+        option_id: String,
+    ) -> Result<bool> {
         let mut pending = self.pending_permissions.lock().await;
         if let Some(sender) = pending.remove(permission_id) {
             let response = PermissionResponse {
@@ -1356,25 +1794,38 @@ impl AcpManager {
     }
 
     pub fn set_permission_mode(&self, mode: AcpPermissionMode) {
-        self.permission_mode.store(mode.as_atomic(), Ordering::Relaxed);
+        self.permission_mode
+            .store(mode.as_atomic(), Ordering::Relaxed);
     }
 
     /// Start agent by agent_id and agent_name. Returns an error if the agent already exists.
     pub async fn start_agent(
-        &mut self, agent_id: String, agent_name: String, cmd: &str, args: &[String],
-    ) -> Result<()> {
+        &mut self,
+        agent_id: String,
+        agent_name: String,
+        cmd: &str,
+        args: &[String],
+        resume_session_id: Option<String>,
+    ) -> Result<String> {
         if self.agents.contains_key(&agent_id) {
             return Err(anyhow::anyhow!("Agent {} already running", agent_id));
         }
 
-        let mut agent = AcpAgent::new(agent_id.clone(), agent_name.clone(), self.permission_mode.clone());
+        let mut agent = AcpAgent::new(
+            agent_id.clone(),
+            agent_name.clone(),
+            self.permission_mode.clone(),
+        );
 
-        info!("Starting ACP agent {} with command: {} {:?}", agent_id, cmd, args);
-        agent.start(cmd, args).await?;
+        info!(
+            "Starting ACP agent {} with command: {} {:?}",
+            agent_id, cmd, args
+        );
+        let session_id = agent.start(cmd, args, resume_session_id).await?;
 
         self.agents.insert(agent_id, agent);
 
-        Ok(())
+        Ok(session_id)
     }
 
     /// Stop agent by agent_id.
@@ -1398,11 +1849,11 @@ impl AcpManager {
         self.agents.get_mut(agent_id)
     }
 
-
     /// Subscribe to agent messages. Returns a receiver for the agent's message channel.
     /// Returns None if the agent doesn't exist or hasn't been started yet.
     pub fn subscribe(&self, agent_id: &str) -> Option<broadcast::Receiver<AcpMessage>> {
-        self.agents.get(agent_id)?
+        self.agents
+            .get(agent_id)?
             .get_message_sender()
             .map(|sender| sender.subscribe())
     }
@@ -1424,17 +1875,34 @@ impl AcpManager {
             .collect()
     }
 
+    pub async fn list_sessions(
+        &self,
+        cmd: &str,
+        args: &[String],
+        cwd: PathBuf,
+    ) -> Result<Vec<AcpSessionSummary>> {
+        AcpAgent::list_sessions_for_command(cmd, args, cwd).await
+    }
+
     /// Restore agent's project to state before a specific prompt was processed
     pub async fn restore_to_prompt(&self, agent_id: &str, prompt: &str) -> Result<()> {
-        let agent = self.agents.get(agent_id)
+        let agent = self
+            .agents
+            .get(agent_id)
             .ok_or_else(|| anyhow!("Agent {} not found", agent_id))?;
 
         agent.restore_to_prompt(prompt).await
     }
 
     /// Restore agent's project to state at a checkpoint id (commit hash)
-    pub async fn restore_to_checkpoint_id(&self, agent_id: &str, checkpoint_id: &str) -> Result<()> {
-        let agent = self.agents.get(agent_id)
+    pub async fn restore_to_checkpoint_id(
+        &self,
+        agent_id: &str,
+        checkpoint_id: &str,
+    ) -> Result<()> {
+        let agent = self
+            .agents
+            .get(agent_id)
             .ok_or_else(|| anyhow!("Agent {} not found", agent_id))?;
 
         agent.restore_to_checkpoint_id(checkpoint_id).await
@@ -1442,7 +1910,9 @@ impl AcpManager {
 
     /// Get all checkpoints for an agent. Returns Vec of prompts
     pub async fn get_checkpoints(&self, agent_id: &str) -> Result<Vec<String>> {
-        let agent = self.agents.get(agent_id)
+        let agent = self
+            .agents
+            .get(agent_id)
             .ok_or_else(|| anyhow!("Agent {} not found", agent_id))?;
 
         Ok(agent.get_checkpoints().await)

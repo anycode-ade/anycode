@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { AcpAgent, type AcpPermissionMode } from '../../types';
+import { AcpAgent, type AcpPermissionMode, type AcpSessionSummary } from '../../types';
 import './AcpSettings.css';
 import { AcpIcons } from './AcpIcons';
 
@@ -9,6 +9,8 @@ interface AcpSettingsProps {
   permissionMode: AcpPermissionMode;
   onSave: (agents: AcpAgent[], defaultAgentId: string | null, permissionMode: AcpPermissionMode) => void;
   onClose: () => void;
+  onLoadSessions: (agent: AcpAgent) => Promise<AcpSessionSummary[]>;
+  onResumeSession: (agent: AcpAgent, sessionId: string) => void;
 }
 
 export const AcpSettings: React.FC<AcpSettingsProps> = ({
@@ -17,10 +19,15 @@ export const AcpSettings: React.FC<AcpSettingsProps> = ({
   permissionMode: initialPermissionMode,
   onSave,
   onClose,
+  onLoadSessions,
+  onResumeSession,
 }) => {
   const [agents, setAgents] = useState<AcpAgent[]>(initialAgents);
   const [defaultAgentId, setDefaultAgentId] = useState<string | null>(initialDefaultAgentId);
   const [permissionMode, setPermissionMode] = useState<AcpPermissionMode>(initialPermissionMode);
+  const [expandedSessions, setExpandedSessions] = useState<Record<string, boolean>>({});
+  const [sessionsByAgent, setSessionsByAgent] = useState<Record<string, AcpSessionSummary[]>>({});
+  const [loadingSessions, setLoadingSessions] = useState<Record<string, boolean>>({});
 
   // Check if there are any changes
   const hasChanges = useMemo(() => {
@@ -50,6 +57,9 @@ export const AcpSettings: React.FC<AcpSettingsProps> = ({
     setAgents(initialAgents);
     setDefaultAgentId(initialDefaultAgentId);
     setPermissionMode(initialPermissionMode);
+    setExpandedSessions({});
+    setSessionsByAgent({});
+    setLoadingSessions({});
   }, [initialAgents, initialDefaultAgentId, initialPermissionMode]);
 
   // Generate ID from name: lowercase, replace spaces with hyphens, remove special chars
@@ -143,6 +153,41 @@ export const AcpSettings: React.FC<AcpSettingsProps> = ({
     onClose();
   };
 
+  const handleToggleSessions = async (agent: AcpAgent) => {
+    const isExpanded = expandedSessions[agent.id] ?? false;
+    const nextExpanded = !isExpanded;
+
+    setExpandedSessions((prev) => ({ ...prev, [agent.id]: nextExpanded }));
+
+    if (!nextExpanded || sessionsByAgent[agent.id] || loadingSessions[agent.id]) {
+      return;
+    }
+
+    setLoadingSessions((prev) => ({ ...prev, [agent.id]: true }));
+    try {
+      const sessions = await onLoadSessions(agent);
+      setSessionsByAgent((prev) => ({ ...prev, [agent.id]: sessions }));
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Failed to load ACP sessions');
+      setSessionsByAgent((prev) => ({ ...prev, [agent.id]: [] }));
+    } finally {
+      setLoadingSessions((prev) => ({ ...prev, [agent.id]: false }));
+    }
+  };
+
+  const handleRefreshSessions = async (agent: AcpAgent) => {
+    setLoadingSessions((prev) => ({ ...prev, [agent.id]: true }));
+    try {
+      const sessions = await onLoadSessions(agent);
+      setSessionsByAgent((prev) => ({ ...prev, [agent.id]: sessions }));
+      setExpandedSessions((prev) => ({ ...prev, [agent.id]: true }));
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Failed to load ACP sessions');
+    } finally {
+      setLoadingSessions((prev) => ({ ...prev, [agent.id]: false }));
+    }
+  };
+
   return (
     <div className="agent-settings-container">
       <div className="agent-settings-header">
@@ -208,6 +253,14 @@ export const AcpSettings: React.FC<AcpSettingsProps> = ({
             <div className="agent-settings-item-header">
               <h4>Agent {index + 1}</h4>
               <div className="agent-settings-item-actions">
+                <button
+                  className="agent-settings-sessions-btn"
+                  onClick={() => handleToggleSessions(agent)}
+                  title="Show ACP sessions"
+                >
+                  <AcpIcons.Sessions />
+                  Sessions
+                </button>
                 <label className="agent-settings-default-checkbox">
                   <input
                     type="radio"
@@ -259,6 +312,49 @@ export const AcpSettings: React.FC<AcpSettingsProps> = ({
                   placeholder="--arg1 --arg2"
                 />
               </div>
+
+              {expandedSessions[agent.id] && (
+                <div className="agent-settings-sessions-panel">
+                  <div className="agent-settings-sessions-panel-header">
+                    <div className="agent-settings-sessions-title">ACP sessions</div>
+                    <button
+                      className="agent-settings-sessions-refresh-btn"
+                      onClick={() => handleRefreshSessions(agent)}
+                      title="Refresh sessions"
+                    >
+                      <AcpIcons.Sessions />
+                    </button>
+                  </div>
+
+                  {loadingSessions[agent.id] ? (
+                    <div className="agent-settings-sessions-empty">Loading sessions...</div>
+                  ) : (sessionsByAgent[agent.id]?.length ?? 0) === 0 ? (
+                    <div className="agent-settings-sessions-empty">No ACP sessions in this folder</div>
+                  ) : (
+                    <div className="agent-settings-sessions-list">
+                      {sessionsByAgent[agent.id].map((session) => (
+                        <div key={session.sessionId} className="agent-settings-session-item">
+                          <div className="agent-settings-session-content">
+                            <div className="agent-settings-session-title">
+                              {session.preview || session.title || session.sessionId}
+                            </div>
+                            <div className="agent-settings-session-meta">
+                              {session.updatedAt || 'Unknown time'}
+                            </div>
+                            <div className="agent-settings-session-id">{session.sessionId}</div>
+                          </div>
+                          <button
+                            className="agent-settings-session-resume-btn"
+                            onClick={() => onResumeSession(agent, session.sessionId)}
+                          >
+                            Resume
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         ))}

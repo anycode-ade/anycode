@@ -48,7 +48,7 @@ export const AcpMessages: React.FC<AcpMessagesProps> = ({
 
   const toolCallIndexesById = new Map<string, number>();
   const toolResultsById = new Map<string, { message: AcpToolResultMessage; index: number }>();
-  const toolUpdatesById = new Map<string, { message: AcpToolUpdateMessage; index: number }>();
+  const toolUpdatesById = new Map<string, Array<{ message: AcpToolUpdateMessage; index: number }>>();
   for (let i = 0; i < messages.length; i += 1) {
     const message = messages[i];
     if (message.role === 'tool_call') {
@@ -58,7 +58,9 @@ export const AcpMessages: React.FC<AcpMessagesProps> = ({
     } else if (message.role === 'tool_result') {
       toolResultsById.set(message.id, { message, index: i });
     } else if (message.role === 'tool_update') {
-      toolUpdatesById.set(message.id, { message, index: i });
+      const existingUpdates = toolUpdatesById.get(message.id) ?? [];
+      existingUpdates.push({ message, index: i });
+      toolUpdatesById.set(message.id, existingUpdates);
     }
   }
 
@@ -86,7 +88,7 @@ export const AcpMessages: React.FC<AcpMessagesProps> = ({
         let isExpanded = false;
         let onToggle: (() => void) | undefined = undefined;
         let toolResult: AcpToolResultMessage | undefined = undefined;
-        let toolUpdate: AcpToolUpdateMessage | undefined = undefined;
+        let toolUpdates: AcpToolUpdateMessage[] | undefined = undefined;
 
         if (message.role === 'tool_call') {
           isExpanded = expandedToolCalls.has(index);
@@ -94,12 +96,11 @@ export const AcpMessages: React.FC<AcpMessagesProps> = ({
           const toolResultEntry = toolResultsById.get(message.id);
           if (toolResultEntry && toolResultEntry.index > index) {
             toolResult = toolResultEntry.message;
-          } else {
-            const toolUpdateEntry = toolUpdatesById.get(message.id);
-            if (toolUpdateEntry && toolUpdateEntry.index > index) {
-              toolUpdate = toolUpdateEntry.message;
-            }
           }
+          const toolUpdateEntries = toolUpdatesById.get(message.id) ?? [];
+          toolUpdates = toolUpdateEntries
+            .filter((entry) => entry.index > index)
+            .map((entry) => entry.message);
         } else if (message.role === 'tool_result') {
           if (toolResultIndexesToSkip.has(index)) {
             return null;
@@ -127,7 +128,7 @@ export const AcpMessages: React.FC<AcpMessagesProps> = ({
             isExpanded={isExpanded}
             onToggle={onToggle}
             toolResult={toolResult}
-            toolUpdate={toolUpdate}
+            toolUpdates={toolUpdates}
             onPermissionResponse={onPermissionResponse}
             onUndo={
               message.role === 'user' && onUndoMessage

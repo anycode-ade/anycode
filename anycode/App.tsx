@@ -397,6 +397,11 @@ const App: React.FC = () => {
                 settingsPermissionMode={permissionMode}
                 onSaveSettings={handleSaveAgents}
                 onCloseSettings={() => agents.setIsAgentSettingsOpen(false)}
+                onLoadSettingsSessions={agents.fetchAvailableSessions}
+                onResumeSettingsSession={(agent, sessionId) => {
+                    agents.setIsAgentSettingsOpen(false);
+                    agents.resumeSession(agent, sessionId);
+                }}
                 diffEnabled={diffEnabled}
                 onToggleDiff={toggleDiffMode}
                 followEnabled={followEnabled}

@@ -6,6 +6,13 @@ export const AcpIcons = {
       <path d="M10 5V15M5 10H15" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
     </svg>
   ),
+  Sessions: () => (
+    <svg width="16" height="16" viewBox="0 0 20 20" fill="none">
+      <path d="M5.5 5.5H14.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      <path d="M5.5 10H14.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      <path d="M5.5 14.5H11.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  ),
   Settings: () => (
     <svg width="16" height="16" viewBox="0 0 20 20" fill="none">
       <circle cx="10" cy="5" r="1.5" fill="currentColor"/>
