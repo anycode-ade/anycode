@@ -2,7 +2,7 @@ use crate::acp_history::AcpHistoryManager;
 use crate::utils::relative_to_current_dir;
 use agent_client_protocol::{self as acp, Agent as _, Client};
 use agent_client_protocol_schema::{ProtocolVersion, SessionId};
-use anyhow::{Result, anyhow};
+use anyhow::{Context, Result, anyhow};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -124,6 +124,33 @@ pub struct AcpPromptState {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AcpSelectOption {
+    pub config_id: String,
+    pub value: String,
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AcpModelSelector {
+    pub current_value: String,
+    pub options: Vec<AcpSelectOption>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AcpReasoningSelector {
+    pub current_value: String,
+    pub options: Vec<AcpSelectOption>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AcpContextUsage {
+    pub used: u64,
+    pub size: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AcpPermissionOption {
     pub id: String,
     pub name: String,
@@ -175,6 +202,12 @@ pub enum AcpMessage {
     ToolUpdate(AcpToolUpdate),
     #[serde(rename = "prompt_state")]
     PromptState(AcpPromptState),
+    #[serde(rename = "session_model_selector")]
+    SessionModelSelector(AcpModelSelector),
+    #[serde(rename = "session_reasoning_selector")]
+    SessionReasoningSelector(AcpReasoningSelector),
+    #[serde(rename = "context_usage")]
+    ContextUsage(AcpContextUsage),
     #[serde(rename = "permission_request")]
     PermissionRequest(AcpPermissionRequest),
     #[serde(rename = "error")]
@@ -554,6 +587,9 @@ impl Client for AcpClientImpl {
                     "AvailableCommandsUpdate received for agent {}",
                     self.agent_id
                 );
+            }
+            acp::SessionUpdate::UsageUpdate(usage_update) => {
+                self.handle_usage_update(usage_update).await;
             }
             _ => {
                 info!(
@@ -1016,6 +1052,21 @@ impl AcpClientImpl {
             }
         }
     }
+
+    async fn handle_usage_update(&self, usage_update: acp::UsageUpdate) {
+        let message = AcpMessage::ContextUsage(AcpContextUsage {
+            used: usage_update.used,
+            size: usage_update.size,
+        });
+
+        {
+            let mut history = self.history.lock().await;
+            history.retain(|item| !matches!(item, AcpMessage::ContextUsage(_)));
+            history.push(message.clone());
+        }
+
+        self.send_message(message).await;
+    }
 }
 
 /// Type alias for pending permissions map
@@ -1023,11 +1074,30 @@ pub type PendingPermissionsMap =
     Arc<tokio::sync::Mutex<HashMap<String, tokio::sync::oneshot::Sender<PermissionResponse>>>>;
 
 enum RestoreSessionOutcome {
-    Restored(acp::SessionId),
+    Restored(SessionBootstrap),
     Failed {
         load_err: acp::Error,
         resume_err: acp::Error,
     },
+}
+
+#[derive(Debug, Clone)]
+struct SessionBootstrap {
+    session_id: acp::SessionId,
+    model_selector: Option<AcpModelSelector>,
+    reasoning_selector: Option<AcpReasoningSelector>,
+}
+
+#[derive(Debug, Clone)]
+struct SessionConfigSelectors {
+    model_selector: Option<AcpModelSelector>,
+    reasoning_selector: Option<AcpReasoningSelector>,
+}
+
+#[derive(Debug)]
+struct PendingConfigUpdate {
+    option: AcpSelectOption,
+    response_tx: tokio::sync::oneshot::Sender<Result<SessionConfigSelectors, String>>,
 }
 
 pub struct AcpAgent {
@@ -1039,6 +1109,7 @@ pub struct AcpAgent {
     ready: Arc<AtomicBool>,
     message_sender: Option<broadcast::Sender<AcpMessage>>,
     prompt_sender: Option<mpsc::Sender<String>>,
+    config_sender: Option<mpsc::Sender<PendingConfigUpdate>>,
     cancel_sender: Arc<tokio::sync::Mutex<Option<mpsc::Sender<()>>>>,
     process_handle: Option<tokio::task::JoinHandle<()>>,
     io_handle: Option<tokio::task::JoinHandle<()>>,
@@ -1066,6 +1137,7 @@ impl AcpAgent {
             ready: Arc::new(AtomicBool::new(false)),
             message_sender: None,
             prompt_sender: None,
+            config_sender: None,
             cancel_sender: Arc::new(tokio::sync::Mutex::new(None)),
             process_handle: None,
             io_handle: None,
@@ -1087,6 +1159,8 @@ impl AcpAgent {
 
         let (prompt_tx, prompt_rx) = mpsc::channel::<String>(100);
         self.prompt_sender = Some(prompt_tx.clone());
+        let (config_tx, config_rx) = mpsc::channel::<PendingConfigUpdate>(32);
+        self.config_sender = Some(config_tx);
 
         let (cancel_tx, cancel_rx) = mpsc::channel::<()>(10);
         {
@@ -1123,6 +1197,7 @@ impl AcpAgent {
                             stdout,
                             stderr,
                             prompt_rx,
+                            config_rx,
                             cancel_rx,
                             session_tx,
                             resume_session_id,
@@ -1197,6 +1272,7 @@ impl AcpAgent {
         stdout: tokio::process::ChildStdout,
         stderr: tokio::process::ChildStderr,
         mut prompt_rx: mpsc::Receiver<String>,
+        mut config_rx: mpsc::Receiver<PendingConfigUpdate>,
         mut cancel_rx: mpsc::Receiver<()>,
         session_tx: mpsc::Sender<acp::SessionId>,
         resume_session_id: Option<String>,
@@ -1234,12 +1310,12 @@ impl AcpAgent {
         Self::spawn_stderr_reader(stderr, message_sender.clone(), history_for_stderr);
 
         // Initialize connection and create session
-        let session_id =
+        let bootstrap =
             match Self::initialize_connection(&conn, &agent_id, resume_session_id).await {
-                Ok(session_id) => {
-                    let _ = session_tx.send(session_id.clone()).await;
+                Ok(bootstrap) => {
+                    let _ = session_tx.send(bootstrap.session_id.clone()).await;
                     ready.store(true, Ordering::SeqCst);
-                    Some(session_id)
+                    Some(bootstrap)
                 }
                 Err(e) => {
                     error!("Failed to initialize ACP agent {}: {}", agent_id, e);
@@ -1248,14 +1324,23 @@ impl AcpAgent {
             };
 
         // Handle prompts in a loop
-        if let Some(session_id) = session_id {
+        if let Some(bootstrap) = bootstrap {
+            Self::emit_session_config_messages(
+                &message_sender,
+                &history_for_prompt,
+                bootstrap.model_selector.clone(),
+                bootstrap.reasoning_selector.clone(),
+            )
+            .await;
+
             Self::run_prompt_loop(
                 &conn,
                 &agent_id,
                 &message_sender,
                 history_for_prompt,
-                session_id,
+                bootstrap.session_id,
                 &mut prompt_rx,
+                &mut config_rx,
                 &mut cancel_rx,
             )
             .await;
@@ -1339,24 +1424,24 @@ impl AcpAgent {
         conn: &std::rc::Rc<acp::ClientSideConnection>,
         agent_id: &str,
         resume_session_id: Option<String>,
-    ) -> Result<acp::SessionId> {
+    ) -> Result<SessionBootstrap> {
         Self::initialize_agent_connection(conn, agent_id).await?;
 
         let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
-        let session_id = Self::create_or_resume_session(conn, resume_session_id, cwd).await?;
+        let bootstrap = Self::create_or_resume_session(conn, resume_session_id, cwd).await?;
 
-        info!("Session ready for agent {}: {}", agent_id, session_id);
-        Ok(session_id)
+        info!("Session ready for agent {}: {}", agent_id, bootstrap.session_id);
+        Ok(bootstrap)
     }
 
     async fn create_or_resume_session(
         conn: &std::rc::Rc<acp::ClientSideConnection>,
         resume_session_id: Option<String>,
         cwd: PathBuf,
-    ) -> Result<acp::SessionId> {
+    ) -> Result<SessionBootstrap> {
         if let Some(resume_session_id) = resume_session_id.as_deref() {
             match Self::restore_session(conn, resume_session_id, &cwd).await? {
-                RestoreSessionOutcome::Restored(session_id) => return Ok(session_id),
+                RestoreSessionOutcome::Restored(bootstrap) => return Ok(bootstrap),
                 RestoreSessionOutcome::Failed {
                     load_err,
                     resume_err,
@@ -1376,7 +1461,7 @@ impl AcpAgent {
             .await
             .map_err(|e| anyhow!("Failed to create session: {}", e))?;
 
-        Ok(response.session_id)
+        Self::build_session_bootstrap(response.session_id, response.config_options.as_deref())
     }
 
     async fn restore_session(
@@ -1392,8 +1477,13 @@ impl AcpAgent {
             ))
             .await;
 
-        if load_result.is_ok() {
-            return Ok(RestoreSessionOutcome::Restored(requested_session_id));
+        if let Ok(response) = load_result {
+            return Ok(RestoreSessionOutcome::Restored(
+                Self::build_session_bootstrap(
+                    requested_session_id,
+                    response.config_options.as_deref(),
+                )?,
+            ));
         }
 
         let load_err = match load_result {
@@ -1408,8 +1498,13 @@ impl AcpAgent {
             ))
             .await;
 
-        if resume_result.is_ok() {
-            return Ok(RestoreSessionOutcome::Restored(requested_session_id));
+        if let Ok(response) = resume_result {
+            return Ok(RestoreSessionOutcome::Restored(
+                Self::build_session_bootstrap(
+                    requested_session_id,
+                    response.config_options.as_deref(),
+                )?,
+            ));
         }
 
         let resume_err = match resume_result {
@@ -1423,6 +1518,164 @@ impl AcpAgent {
         })
     }
 
+    fn build_session_bootstrap(
+        session_id: acp::SessionId,
+        config_options: Option<&[acp::SessionConfigOption]>,
+    ) -> Result<SessionBootstrap> {
+        Ok(SessionBootstrap {
+            session_id,
+            model_selector: Self::parse_model_selector(config_options),
+            reasoning_selector: Self::parse_reasoning_selector(config_options),
+        })
+    }
+
+    fn parse_model_selector(
+        config_options: Option<&[acp::SessionConfigOption]>,
+    ) -> Option<AcpModelSelector> {
+        let options = config_options?;
+        for option in options {
+            let select = match &option.kind {
+                acp::SessionConfigKind::Select(select) => select,
+                _ => continue,
+            };
+
+            let is_model_category = option.category.as_ref().is_some_and(|category| {
+                matches!(category, acp::SessionConfigOptionCategory::Model)
+            });
+            if !is_model_category {
+                continue;
+            }
+
+            let selector_options = Self::collect_select_options(option);
+            if selector_options.is_empty() {
+                continue;
+            }
+
+            return Some(AcpModelSelector {
+                current_value: select.current_value.to_string(),
+                options: selector_options,
+            });
+        }
+
+        None
+    }
+
+    fn parse_reasoning_selector(
+        config_options: Option<&[acp::SessionConfigOption]>,
+    ) -> Option<AcpReasoningSelector> {
+        let options = config_options?;
+        for option in options {
+            let select = match &option.kind {
+                acp::SessionConfigKind::Select(select) => select,
+                _ => continue,
+            };
+
+            let is_reasoning_category = option.category.as_ref().is_some_and(|category| {
+                matches!(category, acp::SessionConfigOptionCategory::ThoughtLevel)
+            });
+            if !is_reasoning_category {
+                continue;
+            }
+
+            let selector_options = Self::collect_select_options(option);
+            if selector_options.is_empty() {
+                continue;
+            }
+
+            return Some(AcpReasoningSelector {
+                current_value: select.current_value.to_string(),
+                options: selector_options,
+            });
+        }
+
+        None
+    }
+
+    fn collect_select_options(option: &acp::SessionConfigOption) -> Vec<AcpSelectOption> {
+        let option_id = option.id.to_string();
+        let select = match &option.kind {
+            acp::SessionConfigKind::Select(select) => select,
+            _ => return Vec::new(),
+        };
+
+        match &select.options {
+            acp::SessionConfigSelectOptions::Ungrouped(values) => values
+                .iter()
+                .map(|value| AcpSelectOption {
+                    config_id: option_id.clone(),
+                    value: value.value.to_string(),
+                    name: value.name.clone(),
+                    description: value.description.clone(),
+                })
+                .collect(),
+            acp::SessionConfigSelectOptions::Grouped(groups) => groups
+                .iter()
+                .flat_map(|group| group.options.iter())
+                .map(|value| AcpSelectOption {
+                    config_id: option_id.clone(),
+                    value: value.value.to_string(),
+                    name: value.name.clone(),
+                    description: value.description.clone(),
+                })
+                .collect(),
+            _ => Vec::new(),
+        }
+    }
+
+    async fn apply_session_config_option(
+        conn: &std::rc::Rc<acp::ClientSideConnection>,
+        session_id: &acp::SessionId,
+        option: &AcpSelectOption,
+    ) -> Result<SessionConfigSelectors> {
+        let response = conn
+            .set_session_config_option(acp::SetSessionConfigOptionRequest::new(
+                session_id.clone(),
+                option.config_id.clone(),
+                option.value.clone(),
+            ))
+            .await
+            .context("set session config option")?;
+
+        Ok(SessionConfigSelectors {
+            model_selector: Self::parse_model_selector(Some(response.config_options.as_slice())),
+            reasoning_selector: Self::parse_reasoning_selector(Some(response.config_options.as_slice())),
+        })
+    }
+
+    async fn emit_session_config_messages(
+        message_sender: &broadcast::Sender<AcpMessage>,
+        history: &Arc<tokio::sync::Mutex<Vec<AcpMessage>>>,
+        model_selector: Option<AcpModelSelector>,
+        reasoning_selector: Option<AcpReasoningSelector>,
+    ) {
+        if model_selector.is_none() && reasoning_selector.is_none() {
+            return;
+        }
+
+        let mut messages = Vec::new();
+        if let Some(selector) = model_selector {
+            messages.push(AcpMessage::SessionModelSelector(selector));
+        }
+        if let Some(selector) = reasoning_selector {
+            messages.push(AcpMessage::SessionReasoningSelector(selector));
+        }
+
+        {
+            let mut history = history.lock().await;
+            history.retain(|item| {
+                !matches!(
+                    item,
+                    AcpMessage::SessionModelSelector(_) | AcpMessage::SessionReasoningSelector(_)
+                )
+            });
+            history.extend(messages.iter().cloned());
+        }
+
+        for message in messages {
+            let _ = message_sender.send(message);
+        }
+    }
+
     async fn run_prompt_loop(
         conn: &std::rc::Rc<acp::ClientSideConnection>,
         agent_id: &str,
@@ -1430,6 +1683,7 @@ impl AcpAgent {
         history: Arc<tokio::sync::Mutex<Vec<AcpMessage>>>,
         session_id: acp::SessionId,
         prompt_rx: &mut mpsc::Receiver<String>,
+        config_rx: &mut mpsc::Receiver<PendingConfigUpdate>,
         cancel_rx: &mut mpsc::Receiver<()>,
     ) {
         info!(
@@ -1438,7 +1692,8 @@ impl AcpAgent {
         );
 
         loop {
-            match prompt_rx.recv().await {
+            tokio::select! {
+                maybe_prompt = prompt_rx.recv() => match maybe_prompt {
                 Some(prompt) => {
                     info!("Sending prompt to agent {}: {}", agent_id, prompt);
 
@@ -1470,6 +1725,29 @@ impl AcpAgent {
                 None => {
                     info!("Prompt channel closed for agent {}", agent_id);
                     break; // Channel closed
+                }
+                },
+                maybe_config = config_rx.recv() => match maybe_config {
+                    Some(update) => {
+                        let result = Self::apply_session_config_option(conn, &session_id, &update.option).await
+                            .map_err(|err| format!("{err:#}"));
+
+                        if let Ok(selectors) = &result {
+                            Self::emit_session_config_messages(
+                                message_sender,
+                                &history,
+                                selectors.model_selector.clone(),
+                                selectors.reasoning_selector.clone(),
+                            )
+                            .await;
+                        }
+
+                        let _ = update.response_tx.send(result);
+                    }
+                    None => {
+                        info!("Config channel closed for agent {}", agent_id);
+                        break;
+                    }
                 }
             }
         }
@@ -1655,6 +1933,7 @@ impl AcpAgent {
         }
         self.connection = None;
         self.session_id = None;
+        self.config_sender = None;
     }
 
     pub async fn send_prompt(&mut self, prompt: String) -> Result<String> {
@@ -1737,6 +2016,32 @@ impl AcpAgent {
 
         // Send cancel signal to agent
         cancel_tx.send(()).await?;
+        Ok(())
+    }
+
+    pub async fn set_session_config_option(
+        &self,
+        option: AcpSelectOption,
+    ) -> Result<()> {
+        let config_tx = self
+            .config_sender
+            .as_ref()
+            .context("Config sender not initialized")?;
+        let (response_tx, response_rx) = tokio::sync::oneshot::channel();
+
+        config_tx
+            .send(PendingConfigUpdate {
+                option,
+                response_tx,
+            })
+            .await
+            .context("Failed to queue config update")?;
+
+        let _selectors = response_rx
+            .await
+            .map_err(|_| anyhow!("Config update response channel closed"))?
+            .map_err(|err| anyhow!(err))?;
+
         Ok(())
     }
 
@@ -1842,6 +2147,26 @@ impl AcpManager {
         } else {
             Err(anyhow::anyhow!("Agent {} not found", agent_id))
         }
+    }
+
+    pub async fn set_model(&self, agent_id: &str, option: AcpSelectOption) -> Result<()> {
+        let agent = self
+            .agents
+            .get(agent_id)
+            .ok_or_else(|| anyhow::anyhow!("Agent {} not found", agent_id))?;
+
+        agent.set_session_config_option(option).await?;
+        Ok(())
+    }
+
+    pub async fn set_reasoning(&self, agent_id: &str, option: AcpSelectOption) -> Result<()> {
+        let agent = self
+            .agents
+            .get(agent_id)
+            .ok_or_else(|| anyhow::anyhow!("Agent {} not found", agent_id))?;
+
+        agent.set_session_config_option(option).await?;
+        Ok(())
     }
 
     /// Get agent by agent_id. Returns None if the agent doesn't exist.

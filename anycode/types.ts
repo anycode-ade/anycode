@@ -114,6 +114,31 @@ export interface AcpPromptStateMessage {
     is_processing: boolean;
 }
 
+export interface AcpSelectOption {
+    config_id: string;
+    value: string;
+    name: string;
+    description?: string;
+}
+
+export interface AcpModelSelectorMessage {
+    role: 'session_model_selector';
+    current_value: string;
+    options: AcpSelectOption[];
+}
+
+export interface AcpReasoningSelectorMessage {
+    role: 'session_reasoning_selector';
+    current_value: string;
+    options: AcpSelectOption[];
+}
+
+export interface AcpContextUsageMessage {
+    role: 'context_usage';
+    used: number;
+    size: number;
+}
+
 export interface AcpErrorMessage {
     role: 'error';
     message: string;
@@ -133,6 +158,9 @@ export type AcpMessage =
     | AcpToolResultMessage
     | AcpToolUpdateMessage
     | AcpPromptStateMessage
+    | AcpModelSelectorMessage
+    | AcpReasoningSelectorMessage
+    | AcpContextUsageMessage
     | AcpPermissionRequestMessage
     | AcpErrorMessage
     | AcpOpenFileMessage;
@@ -224,6 +252,9 @@ export interface AcpSession {
     messages: AcpMessage[];
     isActive: boolean;
     isProcessing?: boolean;
+    modelSelector?: Omit<AcpModelSelectorMessage, 'role'>;
+    reasoningSelector?: Omit<AcpReasoningSelectorMessage, 'role'>;
+    contextUsage?: Omit<AcpContextUsageMessage, 'role'>;
 }
 
 export interface AcpSessionSummary {

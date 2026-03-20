@@ -73,6 +73,8 @@ async fn on_connect(socket: SocketRef, state: State<AppState>) {
     socket.on("acp:prompt", handle_acp_prompt);
     socket.on("acp:stop", handle_acp_stop);
     socket.on("acp:cancel", handle_acp_cancel);
+    socket.on("acp:set_model", handle_acp_set_model);
+    socket.on("acp:set_reasoning", handle_acp_set_reasoning);
     socket.on("acp:list", handle_acp_list);
     socket.on("acp:sessions_list", handle_acp_sessions_list);
     socket.on("acp:reconnect", handle_acp_reconnect);

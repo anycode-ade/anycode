@@ -1,9 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   AcpMessage, 
+  type AcpContextUsageMessage,
+  type AcpModelSelectorMessage,
   AcpToolCall, 
   AcpSession,
   AcpAgent,
+  type AcpReasoningSelectorMessage,
+  type AcpSelectOption,
   type AcpSessionSummary,
   type AcpPermissionMode,
 } from '../../types';
@@ -123,6 +127,11 @@ interface AcpDialogProps {
   toolCalls: AcpToolCall[];
   isConnected: boolean;
   isProcessing?: boolean;
+  modelSelector?: Omit<AcpModelSelectorMessage, 'role'>;
+  reasoningSelector?: Omit<AcpReasoningSelectorMessage, 'role'>;
+  contextUsage?: Omit<AcpContextUsageMessage, 'role'>;
+  onSelectModel?: (agentId: string, option: AcpSelectOption) => void;
+  onSelectReasoning?: (agentId: string, option: AcpSelectOption) => void;
   showSettings?: boolean;
   settingsAgents?: AcpAgent[];
   settingsDefaultAgentId?: string | null;
@@ -154,6 +163,11 @@ export const AcpDialog: React.FC<AcpDialogProps> = ({
   toolCalls,
   isConnected,
   isProcessing = false,
+  modelSelector,
+  reasoningSelector,
+  contextUsage,
+  onSelectModel,
+  onSelectReasoning,
   showSettings = false,
   settingsAgents = [],
   settingsDefaultAgentId = null,
@@ -283,6 +297,11 @@ export const AcpDialog: React.FC<AcpDialogProps> = ({
         onCancel={() => onCancelPrompt(agentId)}
         isConnected={isConnected}
         isProcessing={isProcessing}
+        modelSelector={modelSelector}
+        reasoningSelector={reasoningSelector}
+        contextUsage={contextUsage}
+        onSelectModel={(option) => onSelectModel?.(agentId, option)}
+        onSelectReasoning={(option) => onSelectReasoning?.(agentId, option)}
       />
     </div>
   );

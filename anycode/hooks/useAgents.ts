@@ -2,9 +2,13 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Socket } from 'socket.io-client';
 import {
     type AcpAgent,
+    type AcpContextUsageMessage,
     type AcpMessage,
+    type AcpModelSelectorMessage,
     type AcpOpenFileMessage,
     type AcpPromptStateMessage,
+    type AcpReasoningSelectorMessage,
+    type AcpSelectOption,
     type AcpSession,
     type AcpSessionSummary,
     type AcpToolCallMessage,
@@ -49,6 +53,15 @@ export const useAgents = ({
             option_id: optionId,
         });
     }, [wsRef, isConnected]);
+
+    const updateSession = useCallback((agentId: string, updater: (session: AcpSession | undefined) => AcpSession) => {
+        setAcpSessions((prev) => {
+            const newSessions = new Map(prev);
+            const existing = newSessions.get(agentId);
+            newSessions.set(agentId, updater(existing));
+            return newSessions;
+        });
+    }, []);
 
     const generateAgentId = useCallback((baseAgentId: string): string => {
         const existingSessions = acpSessionsRef.current;
@@ -96,33 +109,102 @@ export const useAgents = ({
     }, []);
 
     const handleAcpMessage = useCallback((data: { agent_id: string; item: AcpMessage }) => {
-        if (data.item.role === 'prompt_state') {
-            const promptState = data.item as AcpPromptStateMessage;
-            setAcpSessions((prev) => {
-                const newSessions = new Map(prev);
-                const existing = newSessions.get(data.agent_id);
-                if (!existing) {
-                    newSessions.set(data.agent_id, {
-                        agentId: data.agent_id,
-                        agentName: '',
-                        messages: [],
-                        isActive: true,
-                        isProcessing: promptState.is_processing,
-                    });
-                } else {
-                    newSessions.set(data.agent_id, {
-                        ...existing,
-                        isProcessing: promptState.is_processing,
-                    });
-                }
-                return newSessions;
-            });
-            return;
-        }
-
         if (data.item.role === 'open_file' && followEnabledRef.current) {
             const openFileMsg = data.item as AcpOpenFileMessage;
             openFile(openFileMsg.path, openFileMsg.line, 0);
+            return;
+        }
+
+        if (data.item.role === 'prompt_state') {
+            const promptState = data.item as AcpPromptStateMessage;
+            updateSession(data.agent_id, (existing) => ({
+                agentId: data.agent_id,
+                agentName: existing?.agentName ?? '',
+                messages: existing?.messages ?? [],
+                isActive: true,
+                isProcessing: promptState.is_processing,
+                sessionId: existing?.sessionId,
+                agentConfigId: existing?.agentConfigId,
+                modelSelector: existing?.modelSelector,
+                reasoningSelector: existing?.reasoningSelector,
+                contextUsage: existing?.contextUsage,
+            }));
+            return;
+        }
+
+        if (data.item.role === 'session_model_selector') {
+            const selector = data.item as AcpModelSelectorMessage;
+            updateSession(data.agent_id, (existing) => ({
+                agentId: data.agent_id,
+                agentName: existing?.agentName ?? '',
+                messages: existing?.messages ?? [],
+                isActive: true,
+                isProcessing: existing?.isProcessing,
+                sessionId: existing?.sessionId,
+                agentConfigId: existing?.agentConfigId,
+                modelSelector: {
+                    current_value: selector.current_value,
+                    options: selector.options,
+                },
+                reasoningSelector: existing?.reasoningSelector,
+                contextUsage: existing?.contextUsage,
+            }));
+            return;
+        }
+
+        if (data.item.role === 'session_reasoning_selector') {
+            const selector = data.item as AcpReasoningSelectorMessage;
+            updateSession(data.agent_id, (existing) => ({
+                agentId: data.agent_id,
+                agentName: existing?.agentName ?? '',
+                messages: existing?.messages ?? [],
+                isActive: true,
+                isProcessing: existing?.isProcessing,
+                sessionId: existing?.sessionId,
+                agentConfigId: existing?.agentConfigId,
+                modelSelector: existing?.modelSelector,
+                reasoningSelector: {
+                    current_value: selector.current_value,
+                    options: selector.options,
+                },
+                contextUsage: existing?.contextUsage,
+            }));
+            return;
+        }
+
+        if (data.item.role === 'context_usage') {
+            const usage = data.item as AcpContextUsageMessage;
+            updateSession(data.agent_id, (existing) => ({
+                agentId: data.agent_id,
+                agentName: existing?.agentName ?? '',
+                messages: existing?.messages ?? [],
+                isActive: true,
+                isProcessing: existing?.isProcessing,
+                sessionId: existing?.sessionId,
+                agentConfigId: existing?.agentConfigId,
+                modelSelector: existing?.modelSelector,
+                reasoningSelector: existing?.reasoningSelector,
+                contextUsage: {
+                    used: usage.used,
+                    size: usage.size,
+                },
+            }));
+            return;
+        }
+
+        if (data.item.role === 'error') {
+            updateSession(data.agent_id, (existing) => ({
+                agentId: data.agent_id,
+                agentName: existing?.agentName ?? '',
+                messages: [...(existing?.messages ?? []), data.item],
+                isActive: true,
+                isProcessing: existing?.isProcessing,
+                sessionId: existing?.sessionId,
+                agentConfigId: existing?.agentConfigId,
+                modelSelector: existing?.modelSelector,
+                reasoningSelector: existing?.reasoningSelector,
+                contextUsage: existing?.contextUsage,
+            }));
             return;
         }
 
@@ -142,46 +224,18 @@ export const useAgents = ({
                 }
             }
 
-            setAcpSessions((prev) => {
-                const newSessions = new Map(prev);
-                const existing = newSessions.get(data.agent_id);
-                if (!existing) {
-                    newSessions.set(data.agent_id, {
-                        agentId: data.agent_id,
-                        agentName: '',
-                        messages: [data.item],
-                        isActive: true,
-                    });
-                } else {
-                    newSessions.set(data.agent_id, {
-                        ...existing,
-                        messages: [...existing.messages, data.item],
-                    });
-                }
-                return newSessions;
-            });
-            return;
-        }
-
-        if (data.item.role === 'error') {
-            setAcpSessions((prev) => {
-                const newSessions = new Map(prev);
-                const existing = newSessions.get(data.agent_id);
-                if (!existing) {
-                    newSessions.set(data.agent_id, {
-                        agentId: data.agent_id,
-                        agentName: '',
-                        messages: [data.item],
-                        isActive: true,
-                    });
-                } else {
-                    newSessions.set(data.agent_id, {
-                        ...existing,
-                        messages: [...existing.messages, data.item],
-                    });
-                }
-                return newSessions;
-            });
+            updateSession(data.agent_id, (existing) => ({
+                agentId: data.agent_id,
+                agentName: existing?.agentName ?? '',
+                messages: [...(existing?.messages ?? []), data.item],
+                isActive: true,
+                isProcessing: existing?.isProcessing,
+                sessionId: existing?.sessionId,
+                agentConfigId: existing?.agentConfigId,
+                modelSelector: existing?.modelSelector,
+                reasoningSelector: existing?.reasoningSelector,
+                contextUsage: existing?.contextUsage,
+            }));
             return;
         }
 
@@ -192,66 +246,100 @@ export const useAgents = ({
         const message = data.item;
         const isChunk = message.is_chunk || false;
 
-        setAcpSessions((prev) => {
-            const newSessions = new Map(prev);
-            const existing = newSessions.get(data.agent_id);
+        updateSession(data.agent_id, (existing) => {
             if (!existing) {
-                newSessions.set(data.agent_id, {
+                return {
                     agentId: data.agent_id,
                     agentName: '',
                     messages: [message],
                     isActive: true,
-                });
-            } else {
-                if (isChunk && existing.messages.length > 0) {
-                    const lastMessage = existing.messages[existing.messages.length - 1];
-                    if (lastMessage.role === message.role && (lastMessage.role === 'assistant' || lastMessage.role === 'thought')) {
-                        const updatedMessages = [...existing.messages];
-                        updatedMessages[updatedMessages.length - 1] = {
-                            ...lastMessage,
-                            content: lastMessage.content + message.content,
-                        };
-                        newSessions.set(data.agent_id, {
-                            ...existing,
-                            messages: updatedMessages,
-                        });
-                        return newSessions;
-                    }
-                }
-
-                const messageToAdd = isChunk && (message.role === 'thought' || message.role === 'assistant')
-                    ? { ...message, is_chunk: undefined }
-                    : message;
-
-                newSessions.set(data.agent_id, {
-                    ...existing,
-                    messages: [...existing.messages, messageToAdd],
-                });
+                };
             }
-            return newSessions;
+
+            if (isChunk && existing.messages.length > 0) {
+                const lastMessage = existing.messages[existing.messages.length - 1];
+                if (lastMessage.role === message.role && (lastMessage.role === 'assistant' || lastMessage.role === 'thought')) {
+                    const updatedMessages = [...existing.messages];
+                    updatedMessages[updatedMessages.length - 1] = {
+                        ...lastMessage,
+                        content: lastMessage.content + message.content,
+                    };
+
+                    return {
+                        ...existing,
+                        messages: updatedMessages,
+                    };
+                }
+            }
+
+            const messageToAdd = isChunk && (message.role === 'thought' || message.role === 'assistant')
+                ? { ...message, is_chunk: undefined }
+                : message;
+
+            return {
+                ...existing,
+                messages: [...existing.messages, messageToAdd],
+            };
         });
-    }, [openFile, openChangedFileWithDiff]);
+    }, [openFile, openChangedFileWithDiff, updateSession]);
 
     const handleAcpHistory = useCallback((data: { agent_id: string; history: AcpMessage[] }) => {
-        setAcpSessions((prev) => {
-            const newSessions = new Map(prev);
-            const existing = newSessions.get(data.agent_id);
-            if (!existing) {
-                newSessions.set(data.agent_id, {
-                    agentId: data.agent_id,
-                    agentName: '',
-                    messages: data.history,
-                    isActive: true,
-                });
-            } else {
-                newSessions.set(data.agent_id, {
-                    ...existing,
-                    messages: data.history,
-                });
-            }
-            return newSessions;
+        const reversedHistory = [...data.history].reverse();
+        const modelSelector = reversedHistory.find((item): item is AcpModelSelectorMessage => item.role === 'session_model_selector');
+        const reasoningSelector = reversedHistory.find((item): item is AcpReasoningSelectorMessage => item.role === 'session_reasoning_selector');
+        const contextUsage = reversedHistory.find((item): item is AcpContextUsageMessage => item.role === 'context_usage');
+        const visibleMessages = data.history.filter((item) =>
+            item.role !== 'session_model_selector'
+            && item.role !== 'session_reasoning_selector'
+            && item.role !== 'context_usage',
+        );
+
+        updateSession(data.agent_id, (existing) => ({
+            agentId: data.agent_id,
+            agentName: existing?.agentName ?? '',
+            messages: visibleMessages,
+            isActive: true,
+            isProcessing: existing?.isProcessing,
+            sessionId: existing?.sessionId,
+            agentConfigId: existing?.agentConfigId,
+            modelSelector: modelSelector ? {
+                current_value: modelSelector.current_value,
+                options: modelSelector.options,
+            } : existing?.modelSelector,
+            reasoningSelector: reasoningSelector ? {
+                current_value: reasoningSelector.current_value,
+                options: reasoningSelector.options,
+            } : existing?.reasoningSelector,
+            contextUsage: contextUsage ? {
+                used: contextUsage.used,
+                size: contextUsage.size,
+            } : existing?.contextUsage,
+        }));
+    }, [updateSession]);
+
+    const setSessionModel = useCallback((agentId: string, option: AcpSelectOption) => {
+        if (!wsRef.current || !isConnected) return;
+
+        wsRef.current.emit('acp:set_model', {
+            agent_id: agentId,
+            option,
+        }, (response: any) => {
+            if (response.success) return;
+            alert('Failed to set model: ' + response.error);
         });
-    }, []);
+    }, [wsRef, isConnected]);
+
+    const setSessionReasoning = useCallback((agentId: string, option: AcpSelectOption) => {
+        if (!wsRef.current || !isConnected) return;
+
+        wsRef.current.emit('acp:set_reasoning', {
+            agent_id: agentId,
+            option,
+        }, (response: any) => {
+            if (response.success) return;
+            alert('Failed to set thinking: ' + response.error);
+        });
+    }, [wsRef, isConnected]);
 
     const reconnectToAcpAgents = useCallback(() => {
         if (!wsRef.current || !isConnected) return;
@@ -478,6 +566,8 @@ export const useAgents = ({
         sendPrompt,
         undoPrompt,
         sendPermissionResponse,
+        setSessionModel,
+        setSessionReasoning,
         cancelPrompt,
         stopAgent,
         closeAgent,

@@ -46,8 +46,8 @@ dirs = "6.0.0"
 shell-words = "1.1.0"
 lsp-types = "0.97.0"
 similar = "2.7.0"
-agent-client-protocol = { version = "0.9.0", features = ["unstable_session_list", "unstable_session_resume"] }
-agent-client-protocol-schema = { version = "0.10.1", features = ["unstable_session_list", "unstable_session_resume"] }
+agent-client-protocol = { version = "0.9.4", features = ["unstable_session_list", "unstable_session_resume", "unstable_session_usage"] }
+agent-client-protocol-schema = { version = "0.10.8", features = ["unstable_session_list", "unstable_session_resume", "unstable_session_usage"] }
 async-trait = "0.1"
 tokio-util = { version = "0.7.13", features = ["compat"] }
 unicode-segmentation = "1.12.0"

@@ -391,6 +391,11 @@ const App: React.FC = () => {
                 toolCalls={[]}
                 isConnected={currentSession ? (currentSession.isActive && isConnected) : false}
                 isProcessing={currentSession?.isProcessing || false}
+                modelSelector={currentSession?.modelSelector}
+                reasoningSelector={currentSession?.reasoningSelector}
+                contextUsage={currentSession?.contextUsage}
+                onSelectModel={agents.setSessionModel}
+                onSelectReasoning={agents.setSessionReasoning}
                 showSettings={agents.isAgentSettingsOpen}
                 settingsAgents={agents.isAgentSettingsOpen ? getAllAgents() : []}
                 settingsDefaultAgentId={agents.isAgentSettingsOpen ? getDefaultAgentId() : null}

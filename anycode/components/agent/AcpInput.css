@@ -1,24 +1,86 @@
 .acp-dialog-input {
     display: flex;
-    flex-direction: row;
-    padding: 1px 16px;
+    flex-direction: column;
+    gap: 8px;
+    padding: 8px 12px;
     border-top: 1px solid var(--border-color, #333);
-    align-items: center;
+    align-items: stretch;
     border-radius: 14px;
+}
+
+.acp-input-controls-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    overflow-x: auto;
+    padding-bottom: 1px;
+}
+
+.acp-input-controls-row > * {
+    flex: 0 0 auto;
+}
+
+.acp-input-main-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.acp-input-select,
+.acp-input-context-value {
+    min-height: 26px;
+    border-radius: 8px;
+    color: #fff;
+    font-size: 11px;
+    padding: 0 8px;
+}
+
+.acp-input-select {
+    outline: none;
+    border: none;
+    background: transparent;
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    flex-shrink: 0;
+    width: max-content;
+    inline-size: max-content;
+    white-space: nowrap;
+    field-sizing: content;
+    box-sizing: content-box;
+}
+
+.acp-input-select:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.acp-input-context-value {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    white-space: nowrap;
+    padding: 0 10px;
+}
+
+.acp-input-context {
+    flex-shrink: 0;
+    margin-top: auto;
+    margin-bottom: auto;
 }
 
 .acp-dialog-input textarea {
     flex: 1;
     background-color: transparent;
     border: none;
-   
-    padding: 8px;
+    padding: 6px 8px;
     color: #fff;
     -webkit-text-fill-color: #fff;
     font-family: inherit;
-    font-size: 14px;
+    font-size: 13px;
     resize: none;
-    min-height: 36px;
+    min-height: 32px;
 }
 
 .acp-dialog-input textarea:focus {
@@ -34,7 +96,7 @@
 .acp-dialog-input textarea::placeholder {
     color: rgba(255, 255, 255, 0.55);
     -webkit-text-fill-color: rgba(255, 255, 255, 0.55);
-    font-size: 12px;
+    font-size: 11px;
 }
 
 .acp-send-btn,
@@ -87,6 +149,16 @@
 
 /* Mobile styles for buttons */
 @media (max-width: 768px) {
+    .acp-dialog-input {
+        gap: 7px;
+    }
+
+    .acp-input-controls-row {
+    }
+
+    .acp-input-select {
+    }
+
     .acp-dialog-input textarea {
         font-size: 16px;
     }

@@ -1,6 +1,12 @@
 import React from 'react';
 import './AcpInput.css';
 import { AcpIcons } from './AcpIcons';
+import type {
+  AcpContextUsageMessage,
+  AcpModelSelectorMessage,
+  AcpReasoningSelectorMessage,
+  AcpSelectOption,
+} from '../../types';
 
 interface AcpInputProps {
   value: string;
@@ -9,6 +15,11 @@ interface AcpInputProps {
   onCancel: () => void;
   isConnected: boolean;
   isProcessing?: boolean;
+  modelSelector?: Omit<AcpModelSelectorMessage, 'role'>;
+  reasoningSelector?: Omit<AcpReasoningSelectorMessage, 'role'>;
+  contextUsage?: Omit<AcpContextUsageMessage, 'role'>;
+  onSelectModel?: (option: AcpSelectOption) => void;
+  onSelectReasoning?: (option: AcpSelectOption) => void;
 }
 
 export const AcpInput: React.FC<AcpInputProps> = ({
@@ -18,6 +29,11 @@ export const AcpInput: React.FC<AcpInputProps> = ({
   onCancel,
   isConnected,
   isProcessing = false,
+  modelSelector,
+  reasoningSelector,
+  contextUsage,
+  onSelectModel,
+  onSelectReasoning,
 }) => {
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -34,32 +50,99 @@ export const AcpInput: React.FC<AcpInputProps> = ({
     }
   };
 
+  const formatContextPercent = (used: number, size: number): string => {
+    if (size <= 0) {
+      return '0%';
+    }
+
+    const percent = Math.min(100, Math.round((used / size) * 100));
+    return `${percent}%`;
+  };
+
+  const formatContextTitle = (used: number, size: number): string => {
+    const percent = formatContextPercent(used, size);
+    return `${used} / ${size} (${percent})`;
+  };
+
+  const renderSelect = (
+    id: string,
+    name: string,
+    selector: Omit<AcpModelSelectorMessage, 'role'> | Omit<AcpReasoningSelectorMessage, 'role'> | undefined,
+    onSelect?: (option: AcpSelectOption) => void,
+  ) => {
+    if (!selector || selector.options.length === 0 || !onSelect) {
+      return null;
+    }
+
+    return (
+      <select
+        className="acp-input-select"
+        id={id}
+        name={name}
+        value={selector.current_value}
+        disabled={!isConnected || isProcessing}
+        onChange={(e) => {
+          const next = selector.options.find((option) => option.value === e.target.value);
+          if (next) {
+            onSelect(next);
+          }
+        }}
+      >
+        {selector.options.map((option) => (
+          <option key={`${option.config_id}:${option.value}`} value={option.value}>
+            {option.name}
+          </option>
+        ))}
+      </select>
+    );
+  };
+
   return (
     <div className="acp-dialog-input">
-      <textarea
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        onKeyDown={handleKeyDown}
-        placeholder="Ask anything..."
-        rows={3}
-        disabled={!isConnected}
-      />
-      {isProcessing ? (
-        <button
-          className="acp-stop-prompt-btn"
-          onClick={onCancel}
+      <div className="acp-input-main-row">
+        <textarea
+          id="acp-prompt-input"
+          name="prompt"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder="Ask anything..."
+          rows={3}
           disabled={!isConnected}
-        >
-          <AcpIcons.Cancel />
-        </button>
-      ) : (
-        <button
-          className="acp-send-btn"
-          onClick={handleSend}
-          disabled={!value.trim() || !isConnected}
-        >
-          <AcpIcons.Send />
-        </button>
+        />
+        {isProcessing ? (
+          <button
+            className="acp-stop-prompt-btn"
+            onClick={onCancel}
+            disabled={!isConnected}
+          >
+            <AcpIcons.Cancel />
+          </button>
+        ) : (
+          <button
+            className="acp-send-btn"
+            onClick={handleSend}
+            disabled={!value.trim() || !isConnected}
+          >
+            <AcpIcons.Send />
+          </button>
+        )}
+      </div>
+      {(modelSelector || reasoningSelector || contextUsage) && (
+        <div className="acp-input-controls-row">
+          {renderSelect('acp-model-select', 'model', modelSelector, onSelectModel)}
+          {renderSelect('acp-reasoning-select', 'thinking', reasoningSelector, onSelectReasoning)}
+          {contextUsage && (
+            <div
+              className="acp-input-context"
+              title={formatContextTitle(contextUsage.used, contextUsage.size)}
+            >
+              <div className="acp-input-context-value">
+                {formatContextPercent(contextUsage.used, contextUsage.size)}
+              </div>
+            </div>
+          )}
+        </div>
       )}
     </div>
   );

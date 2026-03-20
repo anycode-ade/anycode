@@ -1,4 +1,5 @@
 use crate::acp::{AcpMessage, AcpPermissionMode};
+use crate::acp::AcpSelectOption;
 use crate::app_state::AppState;
 use crate::error_ack;
 use serde::{Deserialize, Serialize};
@@ -211,6 +212,48 @@ pub async fn handle_acp_cancel(
             error_ack!(ack, &agent_id, "Cancel failed: {}", e);
         }
     }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct AcpSetConfigRequest {
+    pub agent_id: String,
+    pub option: AcpSelectOption,
+}
+
+pub async fn handle_acp_set_model(
+    Data(request): Data<AcpSetConfigRequest>,
+    ack: AckSender,
+    state: State<AppState>,
+) {
+    info!("handle_acp_set_model {:?}", request);
+    let AcpSetConfigRequest { agent_id, option } = request;
+
+    let acp_manager = state.acp_manager.lock().await;
+    match acp_manager.set_model(&agent_id, option).await {
+        Ok(_) => ack.send(&json!({ "success": true })).ok(),
+        Err(err) => {
+            error!("Failed to set ACP model for {}: {}", agent_id, err);
+            error_ack!(ack, &agent_id, "Failed to set model: {}", err);
+        }
+    };
+}
+
+pub async fn handle_acp_set_reasoning(
+    Data(request): Data<AcpSetConfigRequest>,
+    ack: AckSender,
+    state: State<AppState>,
+) {
+    info!("handle_acp_set_reasoning {:?}", request);
+    let AcpSetConfigRequest { agent_id, option } = request;
+
+    let acp_manager = state.acp_manager.lock().await;
+    match acp_manager.set_reasoning(&agent_id, option).await {
+        Ok(_) => ack.send(&json!({ "success": true })).ok(),
+        Err(err) => {
+            error!("Failed to set ACP reasoning for {}: {}", agent_id, err);
+            error_ack!(ack, &agent_id, "Failed to set thinking: {}", err);
+        }
+    };
 }
 
 pub async fn handle_acp_list(ack: AckSender, state: State<AppState>) {
