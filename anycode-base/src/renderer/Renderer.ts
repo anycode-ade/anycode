@@ -83,9 +83,7 @@ export class Renderer {
     }
 
     public render(state: EditorState, search?: Search) {
-        console.log("render");
-
-        const { code, offset, selection, runLines, errorLines, settings, diffs } = state;
+        const { code, offset, selection, runLines, errorLines, settings, diffs, readOnly } = state;
 
         // Build unified visual rows model (real lines + ghost lines)
         const totalRealLines = code.linesLength();
@@ -154,7 +152,7 @@ export class Renderer {
         this.codeContent.replaceChildren(codeFrag);
 
         // Render cursor or selection
-        if (!search || !search.isActive() || !search.isFocused()) {
+        if (!readOnly && (!search || !search.isActive() || !search.isFocused())) {
             if (!selection || selection.isEmpty()) {
                 const { line, column } = code.getPosition(offset);
                 this.renderCursor(line, column, false);
@@ -164,7 +162,7 @@ export class Renderer {
         }
 
         // Render search highlights
-        if (search && search.isActive()) {
+        if (!readOnly && search && search.isActive()) {
             this.searchRenderer.updateSearchHighlights(search);
         }
         

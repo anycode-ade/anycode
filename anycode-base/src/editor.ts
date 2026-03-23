@@ -24,6 +24,13 @@ export interface EditorSettings {
     buffer: number;
 }
 
+export interface EditorOptions {
+    line?: number;
+    column?: number;
+    theme?: any;
+    readOnly?: boolean;
+}
+
 export interface EditorState {
     code: Code;
     offset: number;
@@ -32,6 +39,7 @@ export interface EditorState {
     errorLines: Map<number, string>;
     settings: EditorSettings;
     diffs?: Map<number, DiffInfo>;
+    readOnly?: boolean;
 }
 
 export class AnycodeEditor {
@@ -71,14 +79,16 @@ export class AnycodeEditor {
     private diffEnabled: boolean = false;
     private originalCode?: string;
     private diffs?: Map<number, DiffInfo>;
+    private readonly readOnly: boolean;
 
     constructor(
         initialText = '',
         filename: string = 'test.txt',
         language: string = 'javascript',
-        options: any = {}
+        options: EditorOptions = {}
     ) {
         this.code = new Code(initialText, filename, language);
+        this.readOnly = options.readOnly ?? false;
         // Set initial cursor position
         if (options.line !== undefined && options.column !== undefined) {
             this.offset = this.code.getOffset(options.line, options.column);
@@ -114,10 +124,13 @@ export class AnycodeEditor {
 
         this.codeContent = document.createElement('div');
         this.codeContent.className = 'code';
-        this.codeContent.setAttribute("contentEditable", "true");
+        this.codeContent.setAttribute("contentEditable", this.readOnly ? "false" : "true");
         this.codeContent.setAttribute("spellcheck", "false");
         this.codeContent.setAttribute("autocorrect", "off");
         this.codeContent.setAttribute("autocapitalize", "off");
+        if (this.readOnly) {
+            this.container.classList.add('readonly');
+        }
 
         this.container.appendChild(this.buttonsColumn);
         this.container.appendChild(this.gutter);
@@ -125,7 +138,6 @@ export class AnycodeEditor {
     }
 
     public clean() {
-        console.log('clean');
         this.removeEventListeners();
         this.offset = 0;
         this.selection = null;
@@ -136,10 +148,12 @@ export class AnycodeEditor {
     }
 
     public setOnChange(func: (t: Change) => void) {
+        if (this.readOnly) return;
         this.code.setOnChange(func);
     }
 
     public setHistory(changes: Change[], index: number) {
+        if (this.readOnly) return;
         this.code.setHistory(changes, index);
     }
 
@@ -152,6 +166,62 @@ export class AnycodeEditor {
         }
     }
 
+    public updateTextIncremental(newText: string) {
+        const currentText = this.code.getContent();
+        if (currentText === newText) return;
+
+        const maxPrefix = Math.min(currentText.length, newText.length);
+        let prefixLength = 0;
+        while (
+            prefixLength < maxPrefix
+            && currentText.charCodeAt(prefixLength) === newText.charCodeAt(prefixLength)
+        ) {
+            prefixLength += 1;
+        }
+
+        let currentSuffixStart = currentText.length;
+        let nextSuffixStart = newText.length;
+        while (
+            currentSuffixStart > prefixLength
+            && nextSuffixStart > prefixLength
+            && currentText.charCodeAt(currentSuffixStart - 1) === newText.charCodeAt(nextSuffixStart - 1)
+        ) {
+            currentSuffixStart -= 1;
+            nextSuffixStart -= 1;
+        }
+
+        const removedLength = currentSuffixStart - prefixLength;
+        const insertedText = newText.slice(prefixLength, nextSuffixStart);
+
+        if (removedLength === 0 && insertedText.length === 0) return;
+
+        if (removedLength > 0) {
+            this.code.remove(prefixLength, removedLength);
+        }
+
+        if (insertedText.length > 0) {
+            this.code.insert(insertedText, prefixLength);
+        }
+
+        this.selection = null;
+        this.offset = Math.min(this.offset, this.code.getContentLength());
+
+        if (this.diffEnabled && this.originalCode !== undefined) {
+            const updatedText = this.code.getContent();
+            this.diffs = computeGitChanges(this.originalCode, updatedText);
+        } else {
+            this.diffs = undefined;
+        }
+
+        if (this.search.isActive()) {
+            const matches = this.code.search(this.search.getPattern());
+            this.search.setMatches(matches);
+        }
+
+        this.renderer.renderChanges(this.getEditorState(), this.search);
+        this.verifyDiffRendering();
+    }
+
     public getText(): string {
         return this.code.getContent();
     }
@@ -162,7 +232,9 @@ export class AnycodeEditor {
 
     public async init() {
         await this.code.init();
-        this.setupEventListeners();
+        if (!this.readOnly) {
+            this.setupEventListeners();
+        }
     }
 
     public getContainer(): HTMLDivElement {
@@ -180,6 +252,7 @@ export class AnycodeEditor {
     }
 
     public requestFocus(line: number, column: number, center: boolean = false): void {
+        if (this.readOnly) return;
         this.needFocus = true;
         const offset = this.code.getOffset(line, column);
         this.offset = offset;
@@ -303,6 +376,7 @@ export class AnycodeEditor {
                 buffer: this.settings.buffer,
             },
             diffs: this.diffs,
+            readOnly: this.readOnly,
         };
     }
 
@@ -311,6 +385,7 @@ export class AnycodeEditor {
     }
 
     public renderCursorOrSelection() {
+        if (this.readOnly) return;
         this.renderer.renderCursorOrSelection(this.getEditorState());
     }
 

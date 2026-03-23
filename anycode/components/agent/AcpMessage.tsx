@@ -1,4 +1,8 @@
 import React from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkBreaks from 'remark-breaks';
+import remarkGfm from 'remark-gfm';
+import { AnycodeEditorReact, AnycodeEditor } from 'anycode-react';
 import {
   AcpMessage as AcpMessageType,
   AcpToolCallMessage,
@@ -11,6 +15,72 @@ import {
   AcpErrorMessage,
 } from '../../types';
 import './AcpMessage.css';
+
+const SUPPORTED_LANGUAGES: Record<string, string> = {
+  javascript: 'javascript',
+  js: 'javascript',
+  jsx: 'javascript',
+  mjs: 'javascript',
+  cjs: 'javascript',
+  typescript: 'typescript',
+  ts: 'typescript',
+  tsx: 'typescript',
+  rust: 'rust',
+  python: 'python',
+  py: 'python',
+  yaml: 'yaml',
+  yml: 'yaml',
+  json: 'json',
+  toml: 'toml',
+  html: 'html',
+  css: 'css',
+  go: 'go',
+  golang: 'go',
+  java: 'java',
+  kotlin: 'kotlin',
+  lua: 'lua',
+  bash: 'bash',
+  sh: 'bash',
+  shell: 'bash',
+  zsh: 'bash',
+  zig: 'zig',
+  csharp: 'csharp',
+  cs: 'csharp',
+  c: 'c',
+  cpp: 'cpp',
+  cc: 'cpp',
+  cxx: 'cpp',
+  hpp: 'cpp',
+  h: 'c',
+  md: 'text',
+  markdown: 'text',
+  diff: 'text',
+  text: 'text',
+  plain: 'text',
+};
+
+const EDITOR_SUPPORTED_LANGUAGES = new Set([
+  'javascript',
+  'typescript',
+  'rust',
+  'python',
+  'yaml',
+  'json',
+  'toml',
+  'html',
+  'css',
+  'go',
+  'java',
+  'kotlin',
+  'lua',
+  'bash',
+  'zig',
+  'csharp',
+  'c',
+  'cpp',
+]);
+
+let codeBlockIdCounter = 0;
 
 interface AcpMessageProps {
   message: AcpMessageType;
@@ -242,20 +312,232 @@ const ToolUpdateMessage: React.FC<{
   </div>
 );
 
+const canRenderWithAnycodeEditor = (language: string): boolean => {
+  return EDITOR_SUPPORTED_LANGUAGES.has(language);
+};
+
+const MarkdownLink: React.FC<React.AnchorHTMLAttributes<HTMLAnchorElement>> = ({
+  children,
+  ...props
+}) => (
+  <a {...props} target="_blank" rel="noreferrer noopener">
+    {children}
+  </a>
+);
+
+const MarkdownInlineCode: React.FC<{
+  children?: React.ReactNode;
+}> = ({ children }) => {
+  return (
+    <code className="acp-inline-code">
+      {children}
+    </code>
+  );
+};
+
+type MarkdownPart =
+  | { kind: 'text'; content: string }
+  | { kind: 'code'; content: string; language: string; isOpen: boolean };
+
+const normalizeFenceLanguage = (rawLanguage: string): string => {
+  const language = rawLanguage.trim().toLowerCase();
+  if (!language) return 'text';
+  return SUPPORTED_LANGUAGES[language] ?? language;
+};
+
+const parseMarkdownParts = (content: string): MarkdownPart[] => {
+  const lines = content.split('\n');
+  const parts: MarkdownPart[] = [];
+  let textBuffer: string[] = [];
+  let codeBuffer: string[] = [];
+  let inCodeFence = false;
+  let currentLanguage = 'text';
+
+  const flushText = () => {
+    if (textBuffer.length === 0) return;
+    parts.push({ kind: 'text', content: textBuffer.join('\n') });
+    textBuffer = [];
+  };
+
+  const flushCode = (isOpen: boolean) => {
+    parts.push({
+      kind: 'code',
+      content: codeBuffer.join('\n'),
+      language: currentLanguage,
+      isOpen,
+    });
+    codeBuffer = [];
+  };
+
+  for (const line of lines) {
+    const trimmed = line.trimStart();
+    const fenceMatch = trimmed.match(/^```([a-zA-Z0-9_+-]*)\s*$/);
+
+    if (!inCodeFence && fenceMatch) {
+      flushText();
+      inCodeFence = true;
+      currentLanguage = normalizeFenceLanguage(fenceMatch[1] || '');
+      codeBuffer = [];
+      continue;
+    }
+
+    if (inCodeFence && trimmed === '```') {
+      flushCode(false);
+      inCodeFence = false;
+      currentLanguage = 'text';
+      continue;
+    }
+
+    if (inCodeFence) {
+      codeBuffer.push(line);
+    } else {
+      textBuffer.push(line);
+    }
+  }
+
+  if (inCodeFence) {
+    flushCode(true);
+  }
+
+  flushText();
+  return parts;
+};
+
+const MarkdownTextBlock: React.FC<{
+  content: string;
+}> = ({ content }) => (
+  <ReactMarkdown
+    remarkPlugins={[remarkGfm, remarkBreaks]}
+    components={{
+      a: MarkdownLink,
+      code: MarkdownInlineCode,
+    }}
+  >
+    {content}
+  </ReactMarkdown>
+);
+
+const MarkdownCodeBlock: React.FC<{
+  code: string;
+  language: string;
+  isOpen?: boolean;
+}> = ({ code, language, isOpen = false }) => {
+  const [editor, setEditor] = React.useState<AnycodeEditor | null>(null);
+  const blockIdRef = React.useRef<string | null>(null);
+  const containerRef = React.useRef<HTMLDivElement | null>(null);
+  const useEditor = canRenderWithAnycodeEditor(language);
+
+  if (!blockIdRef.current) {
+    codeBlockIdCounter += 1;
+    blockIdRef.current = `acp-code-block-${codeBlockIdCounter}`;
+  }
+
+  React.useEffect(() => {
+    if (editor) {
+      editor.updateTextIncremental(code);
+      // scroll to the bottom 
+      requestAnimationFrame(() => {
+        if (containerRef.current) {
+          containerRef.current.scrollTop = containerRef.current.scrollHeight;
+        }
+      });
+    }
+  }, [code, editor]);
+
+  React.useEffect(() => {
+    if (!useEditor) {
+      setEditor(null);
+      return;
+    }
+
+    let cancelled = false;
+    let editor: AnycodeEditor | null = null;
+
+    const init = async () => {
+      try {
+        editor = new AnycodeEditor(code, blockIdRef.current!, language, {
+          readOnly: true,
+        });
+        await editor.init();
+
+        if (cancelled) {
+          editor.clean();
+          return;
+        }
+
+        setEditor(editor);
+      } catch (error) {
+        console.warn(`Failed to render code block with AnycodeEditor for language "${language}"`, error);
+        if (editor) {
+          editor.clean();
+        }
+        setEditor(null);
+      }
+    };
+
+    void init();
+
+    return () => {
+      cancelled = true;
+      if (editor) {
+        editor.clean();
+      }
+      setEditor(null);
+    };
+  }, [language, useEditor]);
+
+  if (!useEditor) {
+    return (
+      <div className="acp-code">
+        <pre className="acp-code-block-fallback">{code}</pre>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      ref={containerRef}
+      className={`acp-code ${isOpen ? 'acp-code-streaming' : ''}`}
+    >
+      {editor ? (
+        <AnycodeEditorReact id={blockIdRef.current!} editorState={editor} />
+      ) : (
+        <pre className="acp-code-block-fallback">{code}</pre>
+      )}
+    </div>
+  );
+};
+
+const StreamingMarkdownContent: React.FC<{
+  content: string;
+}> = ({ content }) => (
+  <div className="acp-message-markdown">
+    {parseMarkdownParts(content).map((part, index) => {
+      if (part.kind === 'code') {
+        return (
+          <MarkdownCodeBlock
+            key={`code-${index}`}
+            code={part.content}
+            language={part.language}
+            isOpen={part.isOpen}
+          />
+        );
+      }
+
+      return (
+        <MarkdownTextBlock key={`text-${index}`} content={part.content} />
+      );
+    })}
+  </div>
+);
+
 const TextMessage: React.FC<{
   message: AcpUserMessage | AcpAssistantMessage;
   onUndo?: () => void;
 }> = ({ message, onUndo }) => (
   <div className={`acp-message acp-message-${message.role}`}>
     <div className="acp-message-content acp-message-content-with-actions">
-      <div className="acp-message-text">
-        {message.content.trim().split('\n').map((line, i, lines) => (
-          <React.Fragment key={i}>
-            {line}
-            {i < lines.length - 1 && <br />}
-          </React.Fragment>
-        ))}
-      </div>
+      <StreamingMarkdownContent content={message.content} />
       {message.role === 'user' && onUndo && (
         <div className="acp-message-actions">
           <button className="acp-undo-button" onClick={onUndo} title="Undo">

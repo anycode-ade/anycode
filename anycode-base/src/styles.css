@@ -54,6 +54,15 @@
   outline: none;
 }
 
+.anyeditor.readonly .buttons,
+.anyeditor.readonly .gutter {
+  display: none;
+}
+
+.anyeditor.readonly .code {
+  cursor: text;
+}
+
 .anyeditor .code div {
   line-height: 20px;
 }
