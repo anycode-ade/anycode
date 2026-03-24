@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnycodeEditorReact } from 'anycode-react';
 import { Allotment } from 'allotment';
 import 'allotment/dist/style.css';
@@ -18,7 +18,7 @@ import {
     ensureDefaultAgents,
     updateAgents,
 } from './agents';
-import { AcpAgent, type SearchMatch } from './types';
+import { AcpAgent, type AcpMessage, type AcpToolCall, type SearchMatch } from './types';
 import './App.css';
 import {
     loadBottomVisible,
@@ -54,6 +54,8 @@ const App: React.FC = () => {
     const { wsRef, isConnected } = useSocket({});
 
     const fileTree = useFileTree();
+    const emptyToolCalls = useMemo<AcpToolCall[]>(() => [], []);
+    const emptyMessages = useMemo<AcpMessage[]>(() => [], []);
 
     const editors = useEditors({
         wsRef,
@@ -251,21 +253,53 @@ const App: React.FC = () => {
         editors.openFile(filePath, match.line, match.column);
     };
 
-    const toggleDiffMode = () => {
+    const toggleDiffMode = useCallback(() => {
         const newDiffEnabled = !diffEnabled;
         setDiffEnabled(newDiffEnabled);
         editors.setDiffForAllEditors(newDiffEnabled);
-    };
+    }, [diffEnabled, editors]);
 
-    const toggleFollowMode = () => {
+    const toggleFollowMode = useCallback(() => {
         setFollowEnabled((prev) => !prev);
-    };
+    }, []);
 
-    const handleSaveAgents = (agentList: AcpAgent[], defaultAgentId: string | null, nextPermissionMode: AcpPermissionMode) => {
+    const sessionsArray = useMemo(() => Array.from(agents.acpSessions.values()), [agents.acpSessions]);
+    const currentSession = useMemo(
+        () => (agents.selectedAgentId ? agents.acpSessions.get(agents.selectedAgentId) ?? null : null),
+        [agents.acpSessions, agents.selectedAgentId],
+    );
+    const defaultAgent = useMemo(() => getDefaultAgent(), [agents.agentsVersion]);
+    const settingsAgents = useMemo<AcpAgent[]>(() => (
+        agents.isAgentSettingsOpen ? getAllAgents() : []
+    ), [agents.isAgentSettingsOpen, agents.agentsVersion]);
+    const settingsDefaultAgentId = useMemo(
+        () => (agents.isAgentSettingsOpen ? getDefaultAgentId() : null),
+        [agents.isAgentSettingsOpen, agents.agentsVersion],
+    );
+    const handleAddAgent = useCallback(() => {
+        if (!defaultAgent) return;
+        agents.startAgent(defaultAgent);
+    }, [agents.startAgent, defaultAgent]);
+    const handleOpenAgentSettings = useCallback(() => {
+        ensureDefaultAgents();
+        agents.setIsAgentSettingsOpen(true);
+    }, [agents.setIsAgentSettingsOpen]);
+    const handleCloseAgentPanel = useCallback(() => {
+        setRightPanelVisible(false);
+    }, []);
+    const handleCloseAgentSettings = useCallback(() => {
+        agents.setIsAgentSettingsOpen(false);
+    }, [agents.setIsAgentSettingsOpen]);
+    const handleResumeSettingsSession = useCallback((agent: AcpAgent, sessionId: string) => {
+        agents.setIsAgentSettingsOpen(false);
+        agents.resumeSession(agent, sessionId);
+    }, [agents.resumeSession, agents.setIsAgentSettingsOpen]);
+
+    const handleSaveAgents = useCallback((agentList: AcpAgent[], defaultAgentId: string | null, nextPermissionMode: AcpPermissionMode) => {
         updateAgents(agentList, defaultAgentId);
         setPermissionMode(nextPermissionMode);
         agents.setAgentsVersion((prev) => prev + 1);
-    };
+    }, [agents.setAgentsVersion]);
 
     const leftPanelModeButtons = (() => {
         switch (leftPanelMode) {
@@ -364,57 +398,45 @@ const App: React.FC = () => {
         </div>
     );
 
-    const acpPanel = (() => {
-        const sessionsArray = Array.from(agents.acpSessions.values());
-        const currentSession = agents.selectedAgentId ? agents.acpSessions.get(agents.selectedAgentId) : null;
-        const defaultAgent = getDefaultAgent();
-
-        return (
-            <AcpDialog
-                key={`acp-${agents.agentsVersion}`}
-                agents={sessionsArray}
-                selectedAgentId={agents.selectedAgentId}
-                onSelectAgent={agents.setSelectedAgentId}
-                onCloseAgent={agents.closeAgent}
-                onAddAgent={() => agents.startAgent(defaultAgent)}
-                onOpenSettings={() => {
-                    ensureDefaultAgents();
-                    agents.setIsAgentSettingsOpen(true);
-                }}
-                agentId={currentSession?.agentId || defaultAgent?.id || 'gemini'}
-                isOpen={true}
-                onClose={() => setRightPanelVisible(false)}
-                onSendPrompt={agents.sendPrompt}
-                onCancelPrompt={agents.cancelPrompt}
-                onUndoPrompt={agents.undoPrompt}
-                messages={currentSession?.messages || []}
-                toolCalls={[]}
-                isConnected={currentSession ? (currentSession.isActive && isConnected) : false}
-                isProcessing={currentSession?.isProcessing || false}
-                modelSelector={currentSession?.modelSelector}
-                reasoningSelector={currentSession?.reasoningSelector}
-                contextUsage={currentSession?.contextUsage}
-                onSelectModel={agents.setSessionModel}
-                onSelectReasoning={agents.setSessionReasoning}
-                showSettings={agents.isAgentSettingsOpen}
-                settingsAgents={agents.isAgentSettingsOpen ? getAllAgents() : []}
-                settingsDefaultAgentId={agents.isAgentSettingsOpen ? getDefaultAgentId() : null}
-                settingsPermissionMode={permissionMode}
-                onSaveSettings={handleSaveAgents}
-                onCloseSettings={() => agents.setIsAgentSettingsOpen(false)}
-                onLoadSettingsSessions={agents.fetchAvailableSessions}
-                onResumeSettingsSession={(agent, sessionId) => {
-                    agents.setIsAgentSettingsOpen(false);
-                    agents.resumeSession(agent, sessionId);
-                }}
-                diffEnabled={diffEnabled}
-                onToggleDiff={toggleDiffMode}
-                followEnabled={followEnabled}
-                onToggleFollow={toggleFollowMode}
-                onPermissionResponse={agents.sendPermissionResponse}
-            />
-        );
-    })();
+    const acpPanel = (
+        <AcpDialog
+            key={`acp-${agents.agentsVersion}`}
+            agents={sessionsArray}
+            selectedAgentId={agents.selectedAgentId}
+            onSelectAgent={agents.setSelectedAgentId}
+            onCloseAgent={agents.closeAgent}
+            onAddAgent={handleAddAgent}
+            onOpenSettings={handleOpenAgentSettings}
+            agentId={currentSession?.agentId || defaultAgent?.id || 'gemini'}
+            isOpen={true}
+            onClose={handleCloseAgentPanel}
+            onSendPrompt={agents.sendPrompt}
+            onCancelPrompt={agents.cancelPrompt}
+            onUndoPrompt={agents.undoPrompt}
+            messages={currentSession?.messages || emptyMessages}
+            toolCalls={emptyToolCalls}
+            isConnected={currentSession ? (currentSession.isActive && isConnected) : false}
+            isProcessing={currentSession?.isProcessing || false}
+            modelSelector={currentSession?.modelSelector}
+            reasoningSelector={currentSession?.reasoningSelector}
+            contextUsage={currentSession?.contextUsage}
+            onSelectModel={agents.setSessionModel}
+            onSelectReasoning={agents.setSessionReasoning}
+            showSettings={agents.isAgentSettingsOpen}
+            settingsAgents={settingsAgents}
+            settingsDefaultAgentId={settingsDefaultAgentId}
+            settingsPermissionMode={permissionMode}
+            onSaveSettings={handleSaveAgents}
+            onCloseSettings={handleCloseAgentSettings}
+            onLoadSettingsSessions={agents.fetchAvailableSessions}
+            onResumeSettingsSession={handleResumeSettingsSession}
+            diffEnabled={diffEnabled}
+            onToggleDiff={toggleDiffMode}
+            followEnabled={followEnabled}
+            onToggleFollow={toggleFollowMode}
+            onPermissionResponse={agents.sendPermissionResponse}
+        />
+    );
 
     const terminalTabsPanel = (
         <TerminalTabs

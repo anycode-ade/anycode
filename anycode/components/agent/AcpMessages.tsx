@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   AcpMessage as AcpMessageType,
   AcpToolCall,
@@ -24,7 +24,7 @@ interface AcpMessagesProps {
   onUndoMessage?: (message: AcpUserMessage) => void;
 }
 
-export const AcpMessages: React.FC<AcpMessagesProps> = ({
+const AcpMessagesComponent: React.FC<AcpMessagesProps> = ({
   messages,
   toolCalls,
   expandedToolCalls,
@@ -46,40 +46,58 @@ export const AcpMessages: React.FC<AcpMessagesProps> = ({
     );
   }
 
-  const toolCallIndexesById = new Map<string, number>();
-  const toolResultsById = new Map<string, { message: AcpToolResultMessage; index: number }>();
-  const toolUpdatesById = new Map<string, Array<{ message: AcpToolUpdateMessage; index: number }>>();
-  for (let i = 0; i < messages.length; i += 1) {
-    const message = messages[i];
-    if (message.role === 'tool_call') {
-      if (!toolCallIndexesById.has(message.id)) {
-        toolCallIndexesById.set(message.id, i);
-      }
-    } else if (message.role === 'tool_result') {
-      toolResultsById.set(message.id, { message, index: i });
-    } else if (message.role === 'tool_update') {
-      const existingUpdates = toolUpdatesById.get(message.id) ?? [];
-      existingUpdates.push({ message, index: i });
-      toolUpdatesById.set(message.id, existingUpdates);
-    }
-  }
+  const {
+    toolCallIndexesById,
+    toolResultsById,
+    toolUpdatesById,
+    toolResultIndexesToSkip,
+    toolUpdateIndexesToSkip,
+  } = useMemo(() => {
+    const nextToolCallIndexesById = new Map<string, number>();
+    const nextToolResultsById = new Map<string, { message: AcpToolResultMessage; index: number }>();
+    const nextToolUpdatesById = new Map<string, Array<{ message: AcpToolUpdateMessage; index: number }>>();
 
-  const toolResultIndexesToSkip = new Set<number>();
-  const toolUpdateIndexesToSkip = new Set<number>();
-  for (let i = 0; i < messages.length; i += 1) {
-    const message = messages[i];
-    if (message.role === 'tool_result') {
-      const toolCallIndex = toolCallIndexesById.get(message.id);
-      if (toolCallIndex !== undefined && toolCallIndex < i) {
-        toolResultIndexesToSkip.add(i);
-      }
-    } else if (message.role === 'tool_update') {
-      const toolCallIndex = toolCallIndexesById.get(message.id);
-      if (toolCallIndex !== undefined && toolCallIndex < i) {
-        toolUpdateIndexesToSkip.add(i);
+    for (let i = 0; i < messages.length; i += 1) {
+      const message = messages[i];
+      if (message.role === 'tool_call') {
+        if (!nextToolCallIndexesById.has(message.id)) {
+          nextToolCallIndexesById.set(message.id, i);
+        }
+      } else if (message.role === 'tool_result') {
+        nextToolResultsById.set(message.id, { message, index: i });
+      } else if (message.role === 'tool_update') {
+        const existingUpdates = nextToolUpdatesById.get(message.id) ?? [];
+        existingUpdates.push({ message, index: i });
+        nextToolUpdatesById.set(message.id, existingUpdates);
       }
     }
-  }
+
+    const nextToolResultIndexesToSkip = new Set<number>();
+    const nextToolUpdateIndexesToSkip = new Set<number>();
+
+    for (let i = 0; i < messages.length; i += 1) {
+      const message = messages[i];
+      if (message.role === 'tool_result') {
+        const toolCallIndex = nextToolCallIndexesById.get(message.id);
+        if (toolCallIndex !== undefined && toolCallIndex < i) {
+          nextToolResultIndexesToSkip.add(i);
+        }
+      } else if (message.role === 'tool_update') {
+        const toolCallIndex = nextToolCallIndexesById.get(message.id);
+        if (toolCallIndex !== undefined && toolCallIndex < i) {
+          nextToolUpdateIndexesToSkip.add(i);
+        }
+      }
+    }
+
+    return {
+      toolCallIndexesById: nextToolCallIndexesById,
+      toolResultsById: nextToolResultsById,
+      toolUpdatesById: nextToolUpdatesById,
+      toolResultIndexesToSkip: nextToolResultIndexesToSkip,
+      toolUpdateIndexesToSkip: nextToolUpdateIndexesToSkip,
+    };
+  }, [messages]);
 
   return (
     <>
@@ -153,3 +171,5 @@ export const AcpMessages: React.FC<AcpMessagesProps> = ({
     </>
   );
 };
+
+export const AcpMessages = React.memo(AcpMessagesComponent);

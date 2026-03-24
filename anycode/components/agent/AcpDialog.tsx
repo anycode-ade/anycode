@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { 
   AcpMessage, 
   type AcpContextUsageMessage,
@@ -98,13 +98,13 @@ const useAutoScroll = (messages: AcpMessage[], isProcessing: boolean) => {
 const useExpandableItems = () => {
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
 
-  const toggle = (index: number) => {
+  const toggle = useCallback((index: number) => {
     setExpanded(prev => {
       const newSet = new Set(prev);
       newSet.has(index) ? newSet.delete(index) : newSet.add(index);
       return newSet;
     });
-  };
+  }, []);
 
   return { expanded, toggle };
 };
@@ -146,7 +146,7 @@ interface AcpDialogProps {
   onToggleFollow?: () => void;
 }
 
-export const AcpDialog: React.FC<AcpDialogProps> = ({
+const AcpDialogComponent: React.FC<AcpDialogProps> = ({
   agents,
   selectedAgentId,
   onSelectAgent,
@@ -187,6 +187,17 @@ export const AcpDialog: React.FC<AcpDialogProps> = ({
   const { expanded: expandedThoughts, toggle: toggleThought } = useExpandableItems();
   const { expanded: expandedPermissions, toggle: togglePermission } = useExpandableItems();
   const { contentRef, autoScrollEnabled, enableAutoScroll } = useAutoScroll(messages, isProcessing);
+  const handlePermissionResponse = useCallback(
+    (permissionId: string, optionId: string) => onPermissionResponse(agentId, permissionId, optionId),
+    [agentId, onPermissionResponse],
+  );
+  const handleUndoMessage = useCallback(
+    (message: AcpMessage) => {
+      if (message.role !== 'user') return;
+      onUndoPrompt(agentId, message.checkpoint_id, message.content);
+    },
+    [agentId, onUndoPrompt],
+  );
 
   if (!isOpen) return null;
 
@@ -273,8 +284,8 @@ export const AcpDialog: React.FC<AcpDialogProps> = ({
               onToggleToolResult={toggleToolResult}
               onToggleThought={toggleThought}
               onTogglePermission={togglePermission}
-              onPermissionResponse={(permissionId, optionId) => onPermissionResponse(agentId, permissionId, optionId)}
-              onUndoMessage={(message) => onUndoPrompt(agentId, message.checkpoint_id, message.content)}
+              onPermissionResponse={handlePermissionResponse}
+              onUndoMessage={handleUndoMessage}
             />
           </div>
         </div>
@@ -306,3 +317,5 @@ export const AcpDialog: React.FC<AcpDialogProps> = ({
     </div>
   );
 };
+
+export const AcpDialog = React.memo(AcpDialogComponent);
