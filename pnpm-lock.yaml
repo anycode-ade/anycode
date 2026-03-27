@@ -41,6 +41,9 @@ importers:
       anycode-react:
         specifier: workspace:*
         version: link:../anycode-react
+      diff:
+        specifier: ^8.0.2
+        version: 8.0.2
       jetbrains-mono:
         specifier: ^1.0.6
         version: 1.0.6

@@ -23,6 +23,7 @@
     "allotment": "^1.20.4",
     "anycode-base": "workspace:*",
     "anycode-react": "workspace:*",
+    "diff": "^8.0.2",
     "jetbrains-mono": "^1.0.6",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",

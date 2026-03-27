@@ -2,9 +2,11 @@ import React from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkBreaks from 'remark-breaks';
 import remarkGfm from 'remark-gfm';
+import { diffLines } from 'diff';
 import { AnycodeEditorReact, AnycodeEditor } from 'anycode-react';
 import {
   AcpMessage as AcpMessageType,
+  AcpDiffContent,
   AcpToolCallMessage,
   AcpToolResultMessage,
   AcpToolUpdateMessage,
@@ -26,6 +28,7 @@ const SUPPORTED_LANGUAGES: Record<string, string> = {
   ts: 'typescript',
   tsx: 'typescript',
   rust: 'rust',
+  rs: 'rust',
   python: 'python',
   py: 'python',
   yaml: 'yaml',
@@ -60,24 +63,10 @@ const SUPPORTED_LANGUAGES: Record<string, string> = {
 };
 
 const EDITOR_SUPPORTED_LANGUAGES = new Set([
-  'javascript',
-  'typescript',
-  'rust',
-  'python',
-  'yaml',
-  'json',
-  'toml',
-  'html',
-  'css',
-  'go',
-  'java',
-  'kotlin',
-  'lua',
-  'bash',
-  'zig',
-  'csharp',
-  'c',
-  'cpp',
+  'javascript', 'typescript', 'rust',
+  'python', 'yaml', 'json', 'toml', 'html',
+  'css', 'go', 'java', 'kotlin', 'lua', 'bash',
+  'zig', 'csharp', 'c', 'cpp',
 ]);
 
 let codeBlockIdCounter = 0;
@@ -99,35 +88,46 @@ const ToolCallMessage: React.FC<{
   isExpanded: boolean;
   onToggle: () => void;
 }> = ({ message, toolResult, toolUpdates, isExpanded, onToggle }) => {
-  const hasArguments = message.arguments &&
-    JSON.stringify(message.arguments) !== '{}' &&
-    JSON.stringify(message.arguments) !== '[]';
+
   const displayCommand = message.command?.trim() || message.name;
+  const toolCallView = React.useMemo(
+    () => getToolCallView(message, toolUpdates, toolResult),
+    [message, toolResult, toolUpdates],
+  );
+  const primaryDiff = toolCallView.diffs[0];
+  const toggleLabel = primaryDiff ? getFileNameFromPath(primaryDiff.path) : displayCommand;
+  const toggleStats = primaryDiff ? countDiffLines(primaryDiff.oldText, primaryDiff.newText) : undefined;
 
   return (
     <div className="acp-message acp-message-tool_call">
       <div className="acp-message-content">
         <div className="acp-tool-call-toggle" onClick={onToggle} style={{ cursor: 'pointer' }}>
           <span className="acp-toggle-icon">{isExpanded ? '▼' : '▶'}</span>
-          <div className="acp-tool-call-name">{displayCommand}</div>
+          <div className="acp-tool-call-toggle-main">
+            <div className="acp-tool-call-toggle-title">
+              {toggleStats && (
+                <span className="acp-tool-call-kind-badge">Edit</span>
+              )}
+              <div className="acp-tool-call-name">{toggleLabel}</div>
+            </div>
+            {toggleStats && (
+              <div className="acp-tool-call-toggle-stats">
+                <span className="acp-tool-call-diff-added">+{toggleStats.added}</span>
+                <span className="acp-tool-call-diff-deleted">-{toggleStats.deleted}</span>
+              </div>
+            )}
+          </div>
         </div>
 
         {isExpanded && (
-          <>
+          <div className="acp-tool-call-expanded">
             {message.command && (
               <div className="acp-tool-call-section">
                 <div className="acp-tool-call-label">Command:</div>
                 <pre className="acp-tool-call-command">{message.command}</pre>
               </div>
             )}
-            {/* {hasArguments && (
-              <div className="acp-tool-call-section">
-                <div className="acp-tool-call-label">Arguments:</div>
-                <pre className="acp-tool-call-args">
-                  {JSON.stringify(message.arguments, null, 2)}
-                </pre>
-              </div>
-            )} */}
+
             {toolUpdates && toolUpdates.length > 0 && (
               <div className="acp-tool-call-section">
                 <div className="acp-tool-call-label">Updates:</div>
@@ -138,13 +138,25 @@ const ToolCallMessage: React.FC<{
                 ))}
               </div>
             )}
+            {toolCallView.kind === 'edit' && toolCallView.diffs.length > 0 && (
+              <div className="acp-tool-call-section">
+                <div className="acp-tool-call-label">Diff:</div>
+                <div className="acp-tool-call-diffs">
+                  {toolCallView.diffs.map((diffEntry, index) => (
+                    <div key={`${diffEntry.path}-${index}`} className="acp-tool-call-diff">
+                      <DiffCodeBlock diff={diffEntry} />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             {toolResult && (
               <div className="acp-tool-call-section">
                 <div className="acp-tool-call-label">Result:</div>
                 <ToolResultDetails result={toolResult.result} />
               </div>
             )}
-          </>
+          </div>
         )}
       </div>
     </div>
@@ -169,8 +181,92 @@ const ToolResultMessage: React.FC<{
   </div>
 );
 
+type ToolResultDetailsView = {
+  title?: string;
+  status?: string;
+  command?: string;
+  description?: string;
+  contentText?: string;
+  output?: string;
+  errorOutput?: string;
+};
+
+const extractToolResultDetails = (result: unknown): ToolResultDetailsView | null => {
+  const resultRecord = asRecord(result);
+  if (!resultRecord) {
+    return null;
+  }
+
+  const fields = asRecord(resultRecord.fields);
+  const title = getMaybeString(resultRecord.title) ?? getMaybeString(fields?.title);
+  const status = getMaybeString(resultRecord.status) ?? getMaybeString(fields?.status);
+  const rawInput = asRecord(
+    getField(resultRecord, 'rawInput')
+      ?? getField(resultRecord, 'raw_input')
+      ?? getField(fields, 'rawInput')
+      ?? getField(fields, 'raw_input'),
+  );
+  const rawOutput = getField(resultRecord, 'rawOutput')
+    ?? getField(resultRecord, 'raw_output')
+    ?? getField(fields, 'rawOutput')
+    ?? getField(fields, 'raw_output');
+  const rawOutputRecord = asRecord(rawOutput);
+  const metadata = asRecord(rawOutputRecord?.metadata);
+  const command =
+    getMaybeString(rawInput?.cmd) ??
+    getMaybeString(rawInput?.command) ??
+    (Array.isArray(rawOutputRecord?.command)
+      ? rawOutputRecord.command.join(' ')
+      : getMaybeString(rawOutputRecord?.command));
+  const description =
+    getMaybeString(rawInput?.description) ??
+    getMaybeString(metadata?.description);
+  const output =
+    getMaybeString(rawOutput) ??
+    getMaybeString(rawOutputRecord?.formatted_output) ??
+    getMaybeString(rawOutputRecord?.stdout) ??
+    getMaybeString(rawOutputRecord?.aggregated_output) ??
+    getMaybeString(rawOutputRecord?.output) ??
+    getMaybeString(metadata?.output) ??
+    getMaybeString(metadata?.stderr);
+  const errorOutput = getMaybeString(rawOutputRecord?.stderr) ?? getMaybeString(metadata?.stderr);
+
+  const content = resultRecord.content ?? fields?.content;
+  const contentText = Array.isArray(content)
+    ? content
+      .map((item: unknown) => getMaybeString(asRecord(getField(item, 'content'))?.text))
+      .filter((text): text is string => typeof text === 'string' && text.length > 0)
+      .join('')
+    : undefined;
+
+  const hasParsed = Boolean(
+    title ||
+    status ||
+    command ||
+    description ||
+    output ||
+    errorOutput ||
+    contentText,
+  );
+
+  if (!hasParsed) {
+    return null;
+  }
+
+  return {
+    title,
+    status,
+    command,
+    description,
+    contentText,
+    output,
+    errorOutput,
+  };
+};
+
 const ToolResultDetails: React.FC<{ result: any }> = ({ result }) => {
-  if (!result || typeof result !== 'object') {
+  const details = extractToolResultDetails(result);
+  if (!details) {
     return (
       <pre className="acp-tool-result-content">
         {JSON.stringify(result, null, 2)}
@@ -178,51 +274,7 @@ const ToolResultDetails: React.FC<{ result: any }> = ({ result }) => {
     );
   }
 
-  const getField = (value: any, camel: string, snake: string) => {
-    if (value && typeof value === 'object') {
-      if (camel in value) return value[camel];
-      if (snake in value) return value[snake];
-    }
-    return undefined;
-  };
-
-  const fields = result.fields && typeof result.fields === 'object' ? result.fields : undefined;
-  const title = result.title ?? fields?.title;
-  const status = result.status ?? fields?.status;
-  const rawInput = getField(result, 'rawInput', 'raw_input')
-    ?? getField(fields, 'rawInput', 'raw_input');
-  const rawOutput = getField(result, 'rawOutput', 'raw_output')
-    ?? getField(fields, 'rawOutput', 'raw_output');
-  const content = result.content ?? fields?.content;
-
-  const rawOutputCommand = typeof rawOutput === 'object' ? rawOutput?.command : undefined;
-  const command =
-    rawInput?.cmd ??
-    rawInput?.command ??
-    (Array.isArray(rawOutputCommand) ? rawOutputCommand.join(' ') : rawOutputCommand);
-  const description =
-    rawInput?.description ??
-    (typeof rawOutput === 'object' ? rawOutput?.metadata?.description : undefined);
-  const output =
-    (typeof rawOutput === 'string' ? rawOutput : undefined) ??
-    rawOutput?.formatted_output ??
-    rawOutput?.stdout ??
-    rawOutput?.aggregated_output ??
-    rawOutput?.output ??
-    rawOutput?.metadata?.output ??
-    rawOutput?.metadata?.stderr;
-  const errorOutput =
-    typeof rawOutput === 'object'
-      ? rawOutput?.stderr ?? rawOutput?.metadata?.stderr
-      : undefined;
-
-  const contentText = Array.isArray(content)
-    ? content
-      .map((item: any) => item?.content?.text)
-      .filter((text: any) => typeof text === 'string' && text.length > 0)
-      .join('')
-    : undefined;
-
+  const { title, status, command, description, contentText, output, errorOutput } = details;
   const normalizedContent = typeof contentText === 'string' ? contentText.trim() : undefined;
   const normalizedOutput = typeof output === 'string' ? output.trim() : undefined;
   const shouldShowOutput =
@@ -234,25 +286,9 @@ const ToolResultDetails: React.FC<{ result: any }> = ({ result }) => {
     errorOutput.length > 0 &&
     errorOutput.trim() !== normalizedOutput;
 
-  const hasParsed =
-    title ||
-    status ||
-    command ||
-    description ||
-    output ||
-    contentText;
-
-  if (!hasParsed) {
-    return (
-      <pre className="acp-tool-result-content">
-        {JSON.stringify(result, null, 2)}
-      </pre>
-    );
-  }
-
   return (
     <div className="acp-tool-result-details">
-      {(title || status !== "completed") && (
+      {(title || (status && status !== 'completed')) && (
         <div className="acp-tool-call-section">
           <div className="acp-tool-call-label">Status:</div>
           <div className="acp-tool-result-meta">
@@ -272,7 +308,6 @@ const ToolResultDetails: React.FC<{ result: any }> = ({ result }) => {
       )}
       {contentText && (
         <div className="acp-tool-call-section">
-          {/* <div className="acp-tool-call-label">Content:</div> */}
           <pre className="acp-tool-result-content">{contentText}</pre>
         </div>
       )}
@@ -314,6 +349,125 @@ const ToolUpdateMessage: React.FC<{
 
 const canRenderWithAnycodeEditor = (language: string): boolean => {
   return EDITOR_SUPPORTED_LANGUAGES.has(language);
+};
+
+const getLanguageFromPath = (path?: string): string => {
+  if (!path) return 'text';
+  const fileName = path.split('/').pop() ?? path;
+  const parts = fileName.toLowerCase().split('.');
+  const extension = parts.length > 1 ? parts.pop() : undefined;
+  return normalizeFenceLanguage(extension ?? 'text');
+};
+
+const getFileNameFromPath = (path: string): string => {
+  return path.split('/').pop() ?? path;
+};
+
+const asRecord = (value: unknown): Record<string, unknown> | undefined => {
+  return typeof value === 'object' && value !== null ? value as Record<string, unknown> : undefined;
+};
+
+const getField = (value: unknown, key: string) => {
+  return asRecord(value)?.[key];
+};
+
+const getStringField = (value: unknown, key: string): string | undefined => {
+  const field = getField(value, key);
+  return typeof field === 'string' ? field : undefined;
+};
+
+const getMaybeString = (value: unknown): string | undefined => {
+  return typeof value === 'string' ? value : undefined;
+};
+
+const countDiffLines = (oldText?: string | null, newText?: string | null) => {
+  const changes = diffLines(oldText ?? '', newText ?? '');
+  return changes.reduce(
+    (acc, change) => {
+      if (change.added) {
+        acc.added += change.count;
+      }
+      if (change.removed) {
+        acc.deleted += change.count;
+      }
+      return acc;
+    },
+    { added: 0, deleted: 0 },
+  );
+};
+
+const isAcpDiffContent = (value: unknown): value is AcpDiffContent => {
+  const record = asRecord(value);
+  if (!record || record.type !== 'diff') {
+    return false;
+  }
+
+  const oldText = record.oldText;
+  return typeof record.path === 'string'
+    && typeof record.newText === 'string'
+    && (oldText === undefined || oldText === null || typeof oldText === 'string');
+};
+
+const getDiffEntries = (content: unknown): AcpDiffContent[] => {
+  return Array.isArray(content) ? content.filter(isAcpDiffContent) : [];
+};
+
+const getToolCallPayload = (message: AcpToolCallMessage): Record<string, unknown> | undefined => {
+  if (message.content || message.kind || message.status || message.raw_input || message.raw_output) {
+    return {
+      kind: message.kind,
+      status: message.status,
+      content: message.content,
+      locations: message.locations,
+      raw_input: message.raw_input,
+      raw_output: message.raw_output,
+    };
+  }
+
+  return asRecord(message.arguments);
+};
+
+const getToolProgressPayload = (
+  message?: AcpToolUpdateMessage | AcpToolResultMessage,
+): Record<string, unknown> | undefined => {
+  if (!message) return undefined;
+  return asRecord(message.role === 'tool_update' ? message.update : message.result);
+};
+
+const dedupeDiffs = (diffs: AcpDiffContent[]): AcpDiffContent[] => {
+  const seen = new Set<string>();
+  return diffs.filter((diff) => {
+    const key = `${diff.path}\u0000${diff.oldText ?? ''}\u0000${diff.newText}`;
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+};
+
+const getToolCallView = (
+  message: AcpToolCallMessage,
+  toolUpdates?: AcpToolUpdateMessage[],
+  toolResult?: AcpToolResultMessage,
+) => {
+  const toolCallPayload = getToolCallPayload(message);
+  const progressPayloads = [
+    ...(toolUpdates ?? []).map((toolUpdate) => getToolProgressPayload(toolUpdate)),
+    getToolProgressPayload(toolResult),
+  ].filter((payload): payload is Record<string, unknown> => payload !== undefined);
+
+  const kind = message.kind ?? getStringField(toolCallPayload, 'kind') ?? getStringField(progressPayloads[0], 'kind');
+  const diffs = dedupeDiffs([
+    ...getDiffEntries(message.content),
+    ...getDiffEntries(getField(toolCallPayload, 'content')),
+    ...progressPayloads.flatMap((payload) => getDiffEntries(getField(payload, 'content'))),
+  ]);
+
+  return {
+    kind,
+    diffs,
+  };
 };
 
 const MarkdownLink: React.FC<React.AnchorHTMLAttributes<HTMLAnchorElement>> = ({
@@ -503,6 +657,89 @@ const MarkdownCodeBlock: React.FC<{
         <AnycodeEditorReact id={blockIdRef.current!} editorState={editor} />
       ) : (
         <pre className="acp-code-block-fallback">{code}</pre>
+      )}
+    </div>
+  );
+};
+
+const DiffCodeBlock: React.FC<{
+  diff: AcpDiffContent;
+}> = ({ diff }) => {
+  const [editor, setEditor] = React.useState<AnycodeEditor | null>(null);
+  const blockIdRef = React.useRef<string | null>(null);
+  const language = getLanguageFromPath(diff.path);
+  const useEditor = canRenderWithAnycodeEditor(language);
+
+  if (!blockIdRef.current) {
+    codeBlockIdCounter += 1;
+    blockIdRef.current = `acp-diff-block-${codeBlockIdCounter}`;
+  }
+
+  React.useEffect(() => {
+    if (!useEditor) {
+      setEditor(null);
+      return;
+    }
+
+    let cancelled = false;
+    let nextEditor: AnycodeEditor | null = null;
+
+    const init = async () => {
+      try {
+        nextEditor = new AnycodeEditor(diff.newText, blockIdRef.current!, language, {
+          readOnly: true,
+        });
+        await nextEditor.init();
+        nextEditor.setOriginalCode(diff.oldText ?? '');
+        nextEditor.setDiffEnabled(true);
+
+        if (cancelled) {
+          nextEditor.clean();
+          return;
+        }
+
+        setEditor(nextEditor);
+      } catch (error) {
+        console.warn(`Failed to render diff block with AnycodeEditor for language "${language}"`, error);
+        if (nextEditor) {
+          nextEditor.clean();
+        }
+        setEditor(null);
+      }
+    };
+
+    void init();
+
+    return () => {
+      cancelled = true;
+      if (nextEditor) {
+        nextEditor.clean();
+      }
+      setEditor(null);
+    };
+  }, [diff.newText, diff.oldText, language, useEditor]);
+
+  React.useEffect(() => {
+    if (!editor) return;
+    editor.updateTextIncremental(diff.newText);
+    editor.setOriginalCode(diff.oldText ?? '');
+    editor.setDiffEnabled(true);
+  }, [diff.newText, diff.oldText, editor]);
+
+  if (!useEditor) {
+    return (
+      <pre className="acp-tool-result-content">
+        {`--- before\n${diff.oldText ?? ''}\n+++ after\n${diff.newText}`}
+      </pre>
+    );
+  }
+
+  return (
+    <div className="acp-code acp-diff-code">
+      {editor ? (
+        <AnycodeEditorReact id={blockIdRef.current!} editorState={editor} />
+      ) : (
+        <pre className="acp-code-block-fallback">{diff.newText}</pre>
       )}
     </div>
   );

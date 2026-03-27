@@ -189,25 +189,70 @@ export interface AcpLocation {
     line?: number;
 }
 
+export type AcpToolKind = 'edit' | 'read' | 'search' | 'execute' | string;
+
+export type AcpToolCallStatus = 'pending' | 'in_progress' | 'completed' | 'failed' | 'canceled' | string;
+
+export interface AcpDiffContent {
+    type: 'diff';
+    path: string;
+    oldText?: string | null;
+    newText: string;
+}
+
+export interface AcpToolCallUnknownContent {
+    type: string;
+    [key: string]: unknown;
+}
+
+export type AcpToolCallContent = AcpDiffContent | AcpToolCallUnknownContent;
+
+export interface AcpToolCallPayload {
+    kind?: AcpToolKind;
+    status?: AcpToolCallStatus;
+    content?: AcpToolCallContent[];
+    locations?: AcpLocation[];
+    raw_input?: Record<string, unknown>;
+    raw_output?: unknown;
+}
+
+export interface AcpToolCallProgressPayload {
+    tool_call_id: string;
+    kind?: AcpToolKind;
+    status?: AcpToolCallStatus;
+    title?: string | null;
+    content?: AcpToolCallContent[];
+    locations?: AcpLocation[];
+    raw_input?: Record<string, unknown>;
+    raw_output?: unknown;
+    meta?: unknown;
+}
+
 export interface AcpToolCallMessage {
     role: 'tool_call';
     id: string;
     name: string;
     command?: string;
-    arguments: any;
+    title?: string;
+    kind?: AcpToolKind;
+    status?: AcpToolCallStatus;
+    arguments: Record<string, unknown> | AcpToolCallPayload;
+    content?: AcpToolCallContent[];
+    raw_input?: Record<string, unknown>;
+    raw_output?: unknown;
     locations?: AcpLocation[];
 }
 
 export interface AcpToolResultMessage {
     role: 'tool_result';
     id: string;
-    result: any;
+    result: AcpToolCallProgressPayload | Record<string, unknown>;
 }
 
 export interface AcpToolUpdateMessage {
     role: 'tool_update';
     id: string;
-    update: any;
+    update: AcpToolCallProgressPayload | Record<string, unknown>;
 }
 
 export interface AcpPermissionOption {

@@ -164,6 +164,10 @@
     background: transparent;
 }
 
+.acp-diff-code {
+    max-height: 40vh;
+}
+
 .acp-code-block-fallback {
     margin: 0;
     padding: 0.75em;
@@ -221,11 +225,6 @@
     color: white;
 }
 
-.acp-message-assistant .acp-message-content {
-    /* background-color: var(--assistant-message-bg, #2a2a2a); */
-    /* color: var(--text-color, #ccc); */
-}
-
 .acp-message-thought .acp-message-content {
     /* background-color: var(--assistant-message-bg, #2a2a2a); */
     color: var(--text-color-secondary, #888);
@@ -247,6 +246,15 @@
     overflow-x: hidden;
 }
 
+.acp-tool-call-expanded {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-top: 10px;
+    animation: acp-tool-call-expand 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+    transform-origin: top;
+}
+
 .acp-message-tool_result {
     align-items: flex-start;
 }
@@ -258,6 +266,75 @@
     max-width: 100%;
     box-sizing: border-box;
     overflow-x: hidden;
+}
+
+.acp-tool-call-diffs {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.acp-tool-call-toggle-main {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex: 1;
+    min-width: 0;
+}
+
+.acp-tool-call-toggle-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+
+.acp-tool-call-kind-badge {
+    flex: 0 0 auto;
+    padding: 2px 6px;
+    border-radius: 999px;
+    background: rgba(76, 195, 138, 0.16);
+    color: #4cc38a;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1.2;
+    text-transform: uppercase;
+}
+
+.acp-tool-call-toggle-stats {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    white-space: nowrap;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 12px;
+}
+
+.acp-tool-call-diff {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.acp-tool-call-diff-added {
+    color: #4cc38a;
+}
+
+.acp-tool-call-diff-deleted {
+    color: #ff6b6b;
+}
+
+@keyframes acp-tool-call-expand {
+    from {
+        opacity: 0;
+        transform: translateY(-4px) scaleY(0.98);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0) scaleY(1);
+    }
 }
 
 .acp-message-tool_update {
