@@ -435,6 +435,7 @@ const App: React.FC = () => {
             followEnabled={followEnabled}
             onToggleFollow={toggleFollowMode}
             onPermissionResponse={agents.sendPermissionResponse}
+            onOpenFile={editors.openFile}
         />
     );
 

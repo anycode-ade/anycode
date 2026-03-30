@@ -4,7 +4,6 @@ import { AnycodeEditor } from 'anycode-base';
 interface AnycodeEditorProps {
     id: string;
     editorState: AnycodeEditor;
-    // focus?: boolean
 }
 
 export default function AnycodeEditorReact({ id, editorState,  }: AnycodeEditorProps) {
@@ -21,7 +20,7 @@ export default function AnycodeEditorReact({ id, editorState,  }: AnycodeEditorP
 
             if(focus) {
                 let { line, column } = editorState.getCursor();
-                if (line && column) {
+                if (line !== undefined && column !== undefined) {
                     editorState.requestFocus(line, column);
                     editorState.renderCursorOrSelection();
                 }
@@ -34,7 +33,7 @@ export default function AnycodeEditorReact({ id, editorState,  }: AnycodeEditorP
             containerRef.current.appendChild(editorState.getContainer());
 
             let { line, column } = editorState.getCursor();
-            if (line && column) {
+            if (line !== undefined && column !== undefined) {
                 editorState.requestFocus(line, column);
                 editorState.renderCursorOrSelection();
             }

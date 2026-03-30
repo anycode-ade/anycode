@@ -22,6 +22,7 @@ interface AcpMessagesProps {
   onTogglePermission: (index: number) => void;
   onPermissionResponse: (permissionId: string, optionId: string) => void;
   onUndoMessage?: (message: AcpUserMessage) => void;
+  onOpenFile?: (path: string, line?: number, column?: number) => void;
 }
 
 const AcpMessagesComponent: React.FC<AcpMessagesProps> = ({
@@ -37,6 +38,7 @@ const AcpMessagesComponent: React.FC<AcpMessagesProps> = ({
   onTogglePermission,
   onPermissionResponse,
   onUndoMessage,
+  onOpenFile,
 }) => {
   if (messages.length === 0) {
     return (
@@ -148,6 +150,7 @@ const AcpMessagesComponent: React.FC<AcpMessagesProps> = ({
             toolResult={toolResult}
             toolUpdates={toolUpdates}
             onPermissionResponse={onPermissionResponse}
+            onOpenFile={onOpenFile}
             onUndo={
               message.role === 'user' && onUndoMessage
                 ? () => onUndoMessage(message)

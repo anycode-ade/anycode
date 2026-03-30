@@ -79,6 +79,7 @@ interface AcpMessageProps {
   onToggle?: () => void;
   onPermissionResponse?: (permissionId: string, optionId: string) => void;
   onUndo?: () => void;
+  onOpenFile?: (path: string, line?: number, column?: number) => void;
 }
 
 const ToolCallMessage: React.FC<{
@@ -470,14 +471,122 @@ const getToolCallView = (
   };
 };
 
-const MarkdownLink: React.FC<React.AnchorHTMLAttributes<HTMLAnchorElement>> = ({
+type ParsedFileLink = {
+  path: string;
+  line?: number;
+  column?: number;
+};
+
+const parseLineNumber = (value: string | null): number | undefined => {
+  if (!value) return undefined;
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
+};
+
+const toZeroBasedPosition = (value: number | undefined): number | undefined => {
+  if (value === undefined) return undefined;
+  return value > 0 ? value - 1 : 0;
+};
+
+const parseMarkdownFileHref = (href: string): ParsedFileLink | null => {
+  const trimmedHref = href.trim();
+  if (!trimmedHref || trimmedHref.startsWith('#')) {
+    return null;
+  }
+
+  if (/^(https?:|mailto:|tel:)/i.test(trimmedHref)) {
+    return null;
+  }
+
+  let workingHref = trimmedHref;
+  let line: number | undefined;
+  let column: number | undefined;
+
+  const hashIndex = workingHref.indexOf('#');
+  if (hashIndex >= 0) {
+    const fragment = workingHref.slice(hashIndex + 1);
+    workingHref = workingHref.slice(0, hashIndex);
+    const lineMatch = fragment.match(/^L(\d+)(?:C(\d+))?$/i);
+    if (lineMatch) {
+      line = parseLineNumber(lineMatch[1]);
+      column = parseLineNumber(lineMatch[2] ?? null);
+    }
+  }
+
+  const queryIndex = workingHref.indexOf('?');
+  if (queryIndex >= 0) {
+    const queryString = workingHref.slice(queryIndex + 1);
+    workingHref = workingHref.slice(0, queryIndex);
+    const params = new URLSearchParams(queryString);
+    line ??= parseLineNumber(params.get('line'));
+    column ??= parseLineNumber(params.get('column'));
+  }
+
+  if (workingHref.startsWith('file://')) {
+    workingHref = decodeURIComponent(workingHref.slice('file://'.length));
+  } else if (/^[a-z][a-z0-9+.-]*:/i.test(workingHref)) {
+    return null;
+  }
+
+  const suffixMatch = workingHref.match(/^(.*):(\d+)(?::(\d+))?$/);
+  if (suffixMatch) {
+    workingHref = suffixMatch[1];
+    line ??= parseLineNumber(suffixMatch[2]);
+    column ??= parseLineNumber(suffixMatch[3] ?? null);
+  }
+
+  const path = decodeURIComponent(workingHref).trim();
+  if (!path) {
+    return null;
+  }
+
+  return {
+    path,
+    line: toZeroBasedPosition(line),
+    column: toZeroBasedPosition(column ?? 0),
+  };
+};
+
+const MarkdownLink: React.FC<React.ComponentProps<'a'> & {
+  onOpenFile?: (path: string, line?: number, column?: number) => void;
+}> = ({
   children,
+  href,
+  onClick,
+  onOpenFile,
   ...props
-}) => (
-  <a {...props} target="_blank" rel="noreferrer noopener">
-    {children}
-  </a>
-);
+}) => {
+  const parsedFileLink = href ? parseMarkdownFileHref(href) : null;
+
+  const handleClick = (event: React.MouseEvent<HTMLAnchorElement>) => {
+    onClick?.(event);
+    if (event.defaultPrevented) {
+      return;
+    }
+
+    if (parsedFileLink && onOpenFile) {
+      event.preventDefault();
+      onOpenFile(parsedFileLink.path, parsedFileLink.line, parsedFileLink.column);
+      return;
+    }
+
+    if (!href || /^javascript:/i.test(href.trim())) {
+      event.preventDefault();
+    }
+  };
+
+  return (
+    <a
+      {...props}
+      href={href}
+      onClick={handleClick}
+      target={parsedFileLink ? undefined : '_blank'}
+      rel={parsedFileLink ? undefined : 'noreferrer noopener'}
+    >
+      {children}
+    </a>
+  );
+};
 
 const MarkdownInlineCode: React.FC<{
   children?: React.ReactNode;
@@ -559,11 +668,12 @@ const parseMarkdownParts = (content: string): MarkdownPart[] => {
 
 const MarkdownTextBlock: React.FC<{
   content: string;
-}> = ({ content }) => (
+  onOpenFile?: (path: string, line?: number, column?: number) => void;
+}> = ({ content, onOpenFile }) => (
   <ReactMarkdown
     remarkPlugins={[remarkGfm, remarkBreaks]}
     components={{
-      a: MarkdownLink,
+      a: ({ node: _node, ...props }) => <MarkdownLink {...props} onOpenFile={onOpenFile} />,
       code: MarkdownInlineCode,
     }}
   >
@@ -747,7 +857,8 @@ const DiffCodeBlock: React.FC<{
 
 const StreamingMarkdownContent: React.FC<{
   content: string;
-}> = ({ content }) => (
+  onOpenFile?: (path: string, line?: number, column?: number) => void;
+}> = ({ content, onOpenFile }) => (
   <div className="acp-message-markdown">
     {parseMarkdownParts(content).map((part, index) => {
       if (part.kind === 'code') {
@@ -762,7 +873,7 @@ const StreamingMarkdownContent: React.FC<{
       }
 
       return (
-        <MarkdownTextBlock key={`text-${index}`} content={part.content} />
+        <MarkdownTextBlock key={`text-${index}`} content={part.content} onOpenFile={onOpenFile} />
       );
     })}
   </div>
@@ -771,10 +882,11 @@ const StreamingMarkdownContent: React.FC<{
 const TextMessage: React.FC<{
   message: AcpUserMessage | AcpAssistantMessage;
   onUndo?: () => void;
-}> = ({ message, onUndo }) => (
+  onOpenFile?: (path: string, line?: number, column?: number) => void;
+}> = ({ message, onUndo, onOpenFile }) => (
   <div className={`acp-message acp-message-${message.role}`}>
     <div className="acp-message-content acp-message-content-with-actions">
-      <StreamingMarkdownContent content={message.content} />
+      <StreamingMarkdownContent content={message.content} onOpenFile={onOpenFile} />
       {message.role === 'user' && onUndo && (
         <div className="acp-message-actions">
           <button className="acp-undo-button" onClick={onUndo} title="Undo">
@@ -905,6 +1017,7 @@ export const AcpMessage: React.FC<AcpMessageProps> = ({
   onToggle,
   onPermissionResponse,
   onUndo,
+  onOpenFile,
 }) => {
   switch (message.role) {
     case 'tool_call':
@@ -937,9 +1050,9 @@ export const AcpMessage: React.FC<AcpMessageProps> = ({
         />
       );
     case 'user':
-      return <TextMessage message={message} onUndo={onUndo} />;
+      return <TextMessage message={message} onUndo={onUndo} onOpenFile={onOpenFile} />;
     case 'assistant':
-      return <TextMessage message={message} />;
+      return <TextMessage message={message} onOpenFile={onOpenFile} />;
     case 'thought':
       if (!onToggle) return null;
       return (
