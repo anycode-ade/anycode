@@ -1,6 +1,5 @@
 name: Test Build
 
-# Тестовый workflow для проверки сборки без создания релиза
 on:
   push:
     branches:
