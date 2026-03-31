@@ -1,3 +1,5 @@
+import type { Lang } from "../lang";
+
 const query = `
 ; -------
 ; Tree-Sitter doesn't allow overrides in regards to captures,
@@ -324,4 +326,4 @@ let comment = "//";
 
 export default {
   query, runnablesQuery, executable, cmd, cmdTest, indent, comment
-}
+} satisfies Lang

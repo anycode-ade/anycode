@@ -11,6 +11,7 @@ import Parser from 'web-tree-sitter';
 import History from './history';
 import { Selection } from './selection';
 import { getWasmPath } from './utils';
+import type { Lang } from './lang';
 
 import javascript from './langs/javascript';
 import typescript from './langs/typescript';
@@ -60,21 +61,6 @@ export type Position = {
     column: number;
 }
 
-
-interface Indent {
-    width: number,
-    unit: string
-}
-
-interface Lang {
-    query: string
-    indent: Indent
-    comment: string
-    runnablesQuery?: string
-    executable?: boolean
-    cmd?: string
-    cmdTest?: string
-}
 
 export interface HighlighedNode {
     name: string | null;
@@ -591,7 +577,7 @@ export class Code {
         return language?.runnablesQuery || null;
     }
 
-    getIndent(): Indent | null {
+    getIndent(): Lang["indent"] | null {
         if (!this.language) return null;
 
         const language = this.getLang(this.language!);

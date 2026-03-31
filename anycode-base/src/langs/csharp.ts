@@ -1,3 +1,5 @@
+import type { Lang } from "../lang";
+
 const query = `
 ;; Methods
 (method_declaration name: (identifier) @function)
@@ -260,4 +262,4 @@ let comment = "//";
 
 export default {
     query, indent, comment
-}
+} satisfies Lang

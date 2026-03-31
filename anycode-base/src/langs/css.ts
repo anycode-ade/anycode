@@ -1,3 +1,5 @@
+import type { Lang } from "../lang";
+
 const query = `
 
 (comment) @comment
@@ -47,4 +49,4 @@ let cmd = "";
 
 export default {
   query, executable, cmd,  indent, comment
-}
+} satisfies Lang

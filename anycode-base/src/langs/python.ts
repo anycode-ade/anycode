@@ -1,3 +1,5 @@
+import type { Lang } from "../lang";
+
 const query = `
 ; Imports
 
@@ -250,4 +252,4 @@ let comment = "#";
 
 export default {
   query, runnablesQuery, executable, cmd, cmdTest, indent, comment
-}
+} satisfies Lang

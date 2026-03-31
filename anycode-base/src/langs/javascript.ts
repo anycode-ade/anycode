@@ -1,3 +1,5 @@
+import type { Lang } from "../lang";
+
 const query = `
 ; Special identifiers
 ;--------------------
@@ -235,4 +237,4 @@ let cmdTest = "npx jest {file} -t \"{test-name}\""
 
 export default {
     query, runnablesQuery, executable, cmd, cmdTest, indent, comment
-}
+} satisfies Lang

@@ -1,3 +1,5 @@
+import type { Lang } from "../lang";
+
 const query = `
 [
   "enum"
@@ -99,4 +101,4 @@ let comment = "//";
 
 export default {
     query, indent, comment
-}
+} satisfies Lang

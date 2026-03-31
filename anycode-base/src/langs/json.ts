@@ -1,3 +1,5 @@
+import type { Lang } from "../lang";
+
 const query = `
 [
   (true)
@@ -18,4 +20,4 @@ let comment = "//";
 
 export default {
   query, indent, comment
-}
+} satisfies Lang

@@ -1,3 +1,5 @@
+import type { Lang } from "../lang";
+
 const query = `
 [
  (string)
@@ -79,4 +81,4 @@ let cmd = "./{file}";
 
 export default {
   query, executable, cmd,  indent, comment
-}
+} satisfies Lang

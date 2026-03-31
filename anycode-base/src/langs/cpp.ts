@@ -1,3 +1,5 @@
+import type { Lang } from "../lang";
+
 const query = `
 
 "sizeof" @keyword
@@ -169,4 +171,4 @@ let comment = "//";
 
 export default {
     query, indent, comment
-}
+} satisfies Lang

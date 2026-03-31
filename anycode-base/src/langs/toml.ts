@@ -1,3 +1,5 @@
+import type { Lang } from "../lang";
+
 const query = `
 ; Properties
 ;-----------
@@ -54,4 +56,4 @@ let comment = "#";
 
 export default {
   query, indent, comment
-}
+} satisfies Lang

@@ -1,3 +1,5 @@
+import type { Lang } from "../lang";
+
 const query = `
 ; Identifiers
 (simple_identifier) @variable
@@ -395,4 +397,4 @@ let comment = "//";
 
 export default {
   query, indent, comment
-}
+} satisfies Lang

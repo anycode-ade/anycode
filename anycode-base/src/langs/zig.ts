@@ -1,3 +1,5 @@
+import type { Lang } from "../lang";
+
 const query = `
 [
   (container_doc_comment)
@@ -238,4 +240,4 @@ let comment = "//";
 
 export default {
   query, indent, comment
-}
+} satisfies Lang

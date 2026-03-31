@@ -1,3 +1,5 @@
+import type { Lang } from "../lang";
+
 const query = `
 (tag_name) @type
 (erroneous_end_tag_name) @tag.error
@@ -27,4 +29,4 @@ let comment = "";
 
 export default {
   query, indent, comment
-}
+} satisfies Lang

@@ -11,7 +11,7 @@
   "license": "ISC",
   "packageManager": "pnpm@10.13.1",
   "dependencies": {
-    "typescript": "^5.8.3",
+    "typescript": "^6.0.2",
     "anycode-base": "workspace:*",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
