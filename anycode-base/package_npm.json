@@ -1,6 +1,6 @@
 {
   "name": "anycode-base",
-  "version": "1.0.4",
+  "version": "1.0.6",
   "description": "Anycode Editor component",
   "type": "module",
   "main": "dist/index.js",
@@ -33,6 +33,7 @@
     "url": ""
   },
   "dependencies": {
+    "diff": "^8.0.2",
     "vscode-textbuffer": "^1.0.0",
     "web-tree-sitter": "^0.21.0"
   },

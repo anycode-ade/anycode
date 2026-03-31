@@ -1,6 +1,6 @@
 {
   "name": "anycode-base",
-  "version": "1.0.4",
+  "version": "1.0.6",
   "main": "src/index.ts",
   "description": "Anycode Editor component",
   "keywords": [
@@ -15,7 +15,7 @@
     "url": ""
   },
   "scripts": {
-    "build": "tsc -p .",
+    "build": "tsc -p . && cp src/styles.css dist/styles.css",
     "test": "vitest"
   },
   "dependencies": {

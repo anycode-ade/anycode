@@ -19,11 +19,39 @@
     padding: 1rem 2rem;
     background: #252526;
     border-bottom: 1px solid #3e3e42;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
   }
   
   h1 {
     font-size: 1.5rem;
     font-weight: 600;
+  }
+
+  #toggle-diff {
+    appearance: none;
+    border: 1px solid #5a5a60;
+    background: linear-gradient(180deg, #4b4b50 0%, #3b3b40 100%);
+    color: #f2f2f2;
+    font-size: 0.95rem;
+    font-weight: 600;
+    padding: 0.7rem 1rem;
+    border-radius: 999px;
+    cursor: pointer;
+    transition: transform 140ms ease, background 140ms ease, border-color 140ms ease, opacity 140ms ease;
+  }
+
+  #toggle-diff:hover {
+    transform: translateY(-1px);
+    border-color: #6d6d75;
+    background: linear-gradient(180deg, #57575d 0%, #47474d 100%);
+  }
+
+  #toggle-diff:active {
+    transform: translateY(0);
+    opacity: 0.92;
   }
   
   .editor-container {
