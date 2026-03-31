@@ -14,7 +14,7 @@
 - **Source control (Git)**: Built-in Changes panel with real-time status updates, per-file revert, commit, push, and pull.
 - **Integrated terminal**: Full-featured terminal emulator with WebSocket-based communication, supporting real-time command execution and output.
 - **Search functionality**: Powerful search capabilities including local search within files and global search across project.
-- **ACP integration**: Agent Client Protocol (ACP) support for seamless integration with AI agents, including tool-call streaming and history-backed undo.
+- **ACP integration**: Agent Client Protocol (ACP) support for seamless integration with AI agents, including tool-call streaming, history-backed undo, session resume, frontend-controlled permission mode, model and reasoning selectors, streamed markdown and code blocks, markdown file links, and improved tool-call diff display.
 
 ## Architecture
 
@@ -28,6 +28,16 @@ The project consists of several packages:
 
 ## Installation
 ### From releases
+
+One-shot installer:
+```bash
+curl -fsSL https://raw.githubusercontent.com/anycode-ide/anycode/main/install.sh | sh
+```
+
+You can also pin a version:
+```bash
+curl -fsSL https://raw.githubusercontent.com/anycode-ide/anycode/main/install.sh | sh -s -- --version v0.0.7
+```
 
 Linux (x86_64):
 ```bash
