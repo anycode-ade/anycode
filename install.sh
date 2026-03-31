@@ -140,6 +140,8 @@ else
   esac
   echo "Run this command to add it:"
   echo "  echo 'export PATH=\"$PREFIX:\$PATH\"' >> \"$rc_file\""
-  echo "Then restart your shell or run:"
+  echo "Then run:"
+  echo "  . \"$rc_file\""
+  echo "Or for just this terminal session, run:"
   echo "  export PATH=\"$PREFIX:\$PATH\""
 fi
