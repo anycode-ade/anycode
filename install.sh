@@ -71,11 +71,26 @@ case "$os" in
 esac
 
 if [ -z "$PREFIX" ]; then
-  if [ "$(id -u)" -eq 0 ]; then
-    PREFIX="/usr/local/bin"
-  else
-    PREFIX="${HOME}/.local/bin"
-  fi
+  case "$os" in
+    Darwin)
+      if [ -d "/opt/homebrew/bin" ] && [ -w "/opt/homebrew/bin" ]; then
+        PREFIX="/opt/homebrew/bin"
+      elif [ -d "/usr/local/bin" ] && [ -w "/usr/local/bin" ]; then
+        PREFIX="/usr/local/bin"
+      elif [ "$(id -u)" -eq 0 ]; then
+        PREFIX="/usr/local/bin"
+      else
+        PREFIX="${HOME}/.local/bin"
+      fi
+      ;;
+    *)
+      if [ "$(id -u)" -eq 0 ]; then
+        PREFIX="/usr/local/bin"
+      else
+        PREFIX="${HOME}/.local/bin"
+      fi
+      ;;
+  esac
 fi
 
 mkdir -p "$PREFIX"
