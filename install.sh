@@ -71,26 +71,11 @@ case "$os" in
 esac
 
 if [ -z "$PREFIX" ]; then
-  case "$os" in
-    Darwin)
-      if [ -d "/opt/homebrew/bin" ] && [ -w "/opt/homebrew/bin" ]; then
-        PREFIX="/opt/homebrew/bin"
-      elif [ -d "/usr/local/bin" ] && [ -w "/usr/local/bin" ]; then
-        PREFIX="/usr/local/bin"
-      elif [ "$(id -u)" -eq 0 ]; then
-        PREFIX="/usr/local/bin"
-      else
-        PREFIX="${HOME}/.local/bin"
-      fi
-      ;;
-    *)
-      if [ "$(id -u)" -eq 0 ]; then
-        PREFIX="/usr/local/bin"
-      else
-        PREFIX="${HOME}/.local/bin"
-      fi
-      ;;
-  esac
+  if [ "$(id -u)" -eq 0 ]; then
+    PREFIX="/usr/local/bin"
+  else
+    PREFIX="${HOME}/.local/bin"
+  fi
 fi
 
 mkdir -p "$PREFIX"
@@ -137,10 +122,24 @@ chmod 755 "$install_bin"
 
 echo "Installed anycode to $install_bin"
 
-case ":$PATH:" in
-  *":$PREFIX:"*)
-    ;;
-  *)
-    echo "Add $PREFIX to your PATH if it is not there yet."
-    ;;
-esac
+if command -v anycode >/dev/null 2>&1; then
+  echo "anycode is already available in PATH."
+else
+  echo "anycode is not in PATH yet."
+  shell_name="$(basename "${SHELL:-}")"
+  case "$shell_name" in
+    zsh)
+      rc_file="${HOME}/.zshrc"
+      ;;
+    bash)
+      rc_file="${HOME}/.bashrc"
+      ;;
+    *)
+      rc_file="${HOME}/.profile"
+      ;;
+  esac
+  echo "Run this command to add it:"
+  echo "  echo 'export PATH=\"$PREFIX:\$PATH\"' >> \"$rc_file\""
+  echo "Then restart your shell or run:"
+  echo "  export PATH=\"$PREFIX:\$PATH\""
+fi
