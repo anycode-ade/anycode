@@ -1,3 +1,4 @@
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::{fmt::format, path::Path};
 
@@ -144,6 +145,75 @@ pub fn read_assets_config() -> anyhow::Result<String> {
 #[derive(Debug, Deserialize, Clone)]
 pub struct Terminal {
     pub command: String,
+}
+
+const DEFAULT_PORT: u16 = 3000;
+
+fn print_help() {
+    println!("anycode - Code editor server");
+    println!();
+    println!("USAGE:");
+    println!("    anycode [OPTIONS]");
+    println!();
+    println!("OPTIONS:");
+    println!("    -h, --help         Print help information");
+    println!("    --version          Print version information");
+    println!("    -p, --port <PORT>  Port to listen on");
+    println!();
+    println!("ENVIRONMENT:");
+    println!("    ANYCODE_PORT                  Port to listen on (default: 3000)");
+    println!("    ANYCODE_HOME                  Path to configuration directory");
+    println!("    ANYCODE_ACP_PERMISSION_MODE   ACP permission mode: full_access (default) or ask");
+    println!();
+    println!("Start the anycode server. The server will be available at http://localhost:<port>");
+}
+
+fn parse_port(value: &str, source: &str) -> Result<u16> {
+    value
+        .parse::<u16>()
+        .map_err(|_| anyhow::anyhow!("Invalid {source}: {value}"))
+}
+
+pub fn resolve_server_port() -> Result<u16> {
+    let mut args = std::env::args().skip(1);
+    let mut cli_port: Option<u16> = None;
+
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--help" | "-h" => {
+                print_help();
+                std::process::exit(0);
+            }
+            "--version" | "-V" => {
+                println!("anycode {}", env!("CARGO_PKG_VERSION"));
+                std::process::exit(0);
+            }
+            "--port" | "-p" => {
+                let value = args
+                    .next()
+                    .ok_or_else(|| anyhow::anyhow!("Missing value for {arg}"))?;
+                cli_port = Some(parse_port(&value, "CLI port")?);
+            }
+            _ if arg.starts_with("--port=") => {
+                cli_port = Some(parse_port(&arg["--port=".len()..], "CLI port")?);
+            }
+            _ if arg.starts_with('-') => {
+                anyhow::bail!("Unknown option: {arg}");
+            }
+            _ => {
+                anyhow::bail!("Unknown positional argument: {arg}");
+            }
+        }
+    }
+
+    if let Some(port) = cli_port {
+        return Ok(port);
+    }
+
+    match std::env::var("ANYCODE_PORT") {
+        Ok(value) => parse_port(&value, "ANYCODE_PORT"),
+        Err(_) => Ok(DEFAULT_PORT),
+    }
 }
 
 #[cfg(test)]

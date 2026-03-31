@@ -229,46 +229,8 @@ async fn not_found() -> Response {
     (StatusCode::NOT_FOUND, "404").into_response()
 }
 
-fn print_help() {
-    println!("anycode - Code editor server");
-    println!();
-    println!("USAGE:");
-    println!("    anycode [OPTIONS]");
-    println!();
-    println!("OPTIONS:");
-    println!("    -h, --help       Print help information");
-    println!("    --version        Print version information");
-    println!();
-    println!("ENVIRONMENT:");
-    println!("    ANYCODE_PORT     Port to listen on (default: 3000)");
-    println!("    ANYCODE_HOME     Path to configuration directory");
-    println!("    ANYCODE_ACP_PERMISSION_MODE  ACP permission mode: full_access (default) or ask");
-    println!();
-    println!("Start the anycode server. The server will be available at http://localhost:<port>");
-}
-
 #[tokio::main]
 async fn main() -> Result<()> {
-    let args: Vec<String> = std::env::args().collect();
-
-    if args.len() > 1 {
-        match args[1].as_str() {
-            "--help" | "-h" => {
-                print_help();
-                return Ok(());
-            }
-            "--version" | "-V" => {
-                println!("anycode {}", env!("CARGO_PKG_VERSION"));
-                return Ok(());
-            }
-            _ => {
-                eprintln!("Unknown option: {}", args[1]);
-                eprintln!("Run 'anycode --help' for usage information.");
-                std::process::exit(1);
-            }
-        }
-    }
-
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::new("info"))
         .init();
@@ -344,7 +306,7 @@ async fn main() -> Result<()> {
         .with_state(io.clone())
         .layer(cors);
 
-    let port = std::env::var("ANYCODE_PORT").unwrap_or("3000".to_string());
+    let port = crate::config::resolve_server_port()?;
     let url = format!("0.0.0.0:{}", port);
     let listener = tokio::net::TcpListener::bind(url).await?;
 
