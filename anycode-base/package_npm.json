@@ -18,7 +18,7 @@
     "wasm"
   ],
   "scripts": {
-    "build": "tsc -p . && cp src/styles.css dist/styles.css && mkdir -p wasm && cp ../anycode/public/tree-sitter*.wasm wasm/ 2>/dev/null || true",
+    "build": "tsc -p . && cpy \"src/styles.css\" dist && cpy \"../anycode/public/tree-sitter*.wasm\" wasm",
     "prepublishOnly": "npm run build"
   },
   "keywords": [
@@ -38,6 +38,7 @@
     "web-tree-sitter": "^0.21.0"
   },
   "devDependencies": {
+    "cpy-cli": "^5.0.0",
     "typescript": "^5.8.3"
   }
 }

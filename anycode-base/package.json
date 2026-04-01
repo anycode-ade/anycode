@@ -15,7 +15,7 @@
     "url": ""
   },
   "scripts": {
-    "build": "tsc -p . && cp src/styles.css dist/styles.css",
+    "build": "tsc -p .",
     "test": "vitest"
   },
   "dependencies": {
