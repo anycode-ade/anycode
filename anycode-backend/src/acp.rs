@@ -1,3 +1,4 @@
+use crate::acp_fs::AcpFsCommand;
 use crate::acp_history::AcpHistoryManager;
 use crate::utils::relative_to_current_dir;
 use agent_client_protocol::{self as acp, Agent as _, Client};
@@ -230,6 +231,8 @@ struct AcpClientImpl {
     history: Arc<tokio::sync::Mutex<Vec<AcpMessage>>>,
     /// Pending permission requests waiting for user response
     pending_permissions: Arc<Mutex<HashMap<String, Sender<PermissionResponse>>>>,
+    /// Channel to send file operations to the ACP filesystem background task
+    fs_sender: Option<mpsc::Sender<AcpFsCommand>>,
 }
 
 #[async_trait::async_trait(?Send)]
@@ -420,21 +423,29 @@ impl Client for AcpClientImpl {
             args.content.len()
         );
 
-        // Send open_file message to UI for follow mode
-        let relative_path = relative_to_current_dir(&args.path)
-            .map(|p| p.to_string_lossy().to_string())
-            .unwrap_or_else(|| args.path.to_string_lossy().to_string());
+        let fs_sender = match &self.fs_sender {
+            Some(s) => s,
+            None => {
+                error!("No fs_sender available for agent {}", self.agent_id);
+                return Err(acp::Error::internal_error());
+            }
+        };
 
-        self.send_message(AcpMessage::OpenFile(AcpOpenFile {
-            path: relative_path,
-            line: None,
-        }))
-        .await;
+        let (resp_tx, resp_rx) = tokio::sync::oneshot::channel();
+        let cmd = AcpFsCommand::WriteTextFile {
+            agent_id: self.agent_id.clone(),
+            path: args.path.to_path_buf(),
+            content: args.content.clone(),
+            resp: resp_tx,
+        };
 
-        // Write file to filesystem
-        let path = args.path.as_path();
-        match tokio::fs::write(path, &args.content).await {
-            Ok(_) => {
+        if fs_sender.send(cmd).await.is_err() {
+            error!("ACP fs channel closed for agent {}", self.agent_id);
+            return Err(acp::Error::internal_error());
+        }
+
+        match resp_rx.await {
+            Ok(Ok(())) => {
                 info!(
                     "Successfully wrote file for agent {}: {:?} ({} bytes)",
                     self.agent_id,
@@ -443,11 +454,15 @@ impl Client for AcpClientImpl {
                 );
                 Ok(acp::WriteTextFileResponse::new())
             }
-            Err(e) => {
+            Ok(Err(e)) => {
                 error!(
                     "Failed to write file {:?} for agent {}: {}",
                     args.path, self.agent_id, e
                 );
+                Err(acp::Error::internal_error())
+            }
+            Err(_) => {
+                error!("ACP fs response channel dropped for agent {}", self.agent_id);
                 Err(acp::Error::internal_error())
             }
         }
@@ -462,21 +477,28 @@ impl Client for AcpClientImpl {
             self.agent_id, args.path
         );
 
-        // Send open_file message to UI for follow mode
-        let relative_path = relative_to_current_dir(&args.path)
-            .map(|p| p.to_string_lossy().to_string())
-            .unwrap_or_else(|| args.path.to_string_lossy().to_string());
+        let fs_sender = match &self.fs_sender {
+            Some(s) => s,
+            None => {
+                error!("No fs_sender available for agent {}", self.agent_id);
+                return Err(acp::Error::internal_error());
+            }
+        };
 
-        self.send_message(AcpMessage::OpenFile(AcpOpenFile {
-            path: relative_path,
-            line: None,
-        }))
-        .await;
+        let (resp_tx, resp_rx) = tokio::sync::oneshot::channel();
+        let cmd = AcpFsCommand::ReadTextFile {
+            agent_id: self.agent_id.clone(),
+            path: args.path.to_path_buf(),
+            resp: resp_tx,
+        };
 
-        // Read file from filesystem
-        let path = args.path.as_path();
-        match tokio::fs::read_to_string(path).await {
-            Ok(content) => {
+        if fs_sender.send(cmd).await.is_err() {
+            error!("ACP fs channel closed for agent {}", self.agent_id);
+            return Err(acp::Error::internal_error());
+        }
+
+        match resp_rx.await {
+            Ok(Ok(content)) => {
                 info!(
                     "Successfully read file for agent {}: {:?} ({} bytes)",
                     self.agent_id,
@@ -485,11 +507,15 @@ impl Client for AcpClientImpl {
                 );
                 Ok(acp::ReadTextFileResponse::new(content))
             }
-            Err(e) => {
+            Ok(Err(e)) => {
                 error!(
                     "Failed to read file {:?} for agent {}: {}",
                     args.path, self.agent_id, e
                 );
+                Err(acp::Error::internal_error())
+            }
+            Err(_) => {
+                error!("ACP fs response channel dropped for agent {}", self.agent_id);
                 Err(acp::Error::internal_error())
             }
         }
@@ -1117,10 +1143,12 @@ pub struct AcpAgent {
     pending_permissions: PendingPermissionsMap,
     /// History manager for undo/redo support
     history_manager: Arc<RwLock<AcpHistoryManager>>,
+    /// Channel to send file operations to the ACP filesystem background task
+    fs_sender: mpsc::Sender<AcpFsCommand>,
 }
 
 impl AcpAgent {
-    pub fn new(agent_id: String, agent_name: String, permission_mode: Arc<AtomicU8>) -> Self {
+    pub fn new(agent_id: String, agent_name: String, permission_mode: Arc<AtomicU8>, fs_sender: mpsc::Sender<AcpFsCommand>) -> Self {
         // Initialize history manager with current working directory and agent ID
         let project_root = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
         let mut history_manager = AcpHistoryManager::new(&project_root, &agent_id);
@@ -1144,6 +1172,7 @@ impl AcpAgent {
             history: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             pending_permissions: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             history_manager: Arc::new(RwLock::new(history_manager)),
+            fs_sender,
         }
     }
 
@@ -1180,6 +1209,7 @@ impl AcpAgent {
         let message_sender_clone = history_tx.clone();
         let pending_permissions_clone = self.pending_permissions.clone();
         let permission_mode_clone = self.permission_mode.clone();
+        let fs_sender_clone = self.fs_sender.clone();
 
         let local_set_handle = tokio::task::spawn_blocking(move || {
             tokio::runtime::Handle::current().block_on(async {
@@ -1193,6 +1223,7 @@ impl AcpAgent {
                             message_sender_clone,
                             pending_permissions_clone,
                             permission_mode_clone,
+                            fs_sender_clone,
                             stdin,
                             stdout,
                             stderr,
@@ -1268,6 +1299,7 @@ impl AcpAgent {
         message_sender: broadcast::Sender<AcpMessage>,
         pending_permissions: PendingPermissionsMap,
         permission_mode: Arc<AtomicU8>,
+        fs_sender: mpsc::Sender<AcpFsCommand>,
         stdin: tokio::process::ChildStdin,
         stdout: tokio::process::ChildStdout,
         stderr: tokio::process::ChildStderr,
@@ -1288,6 +1320,7 @@ impl AcpAgent {
             message_sender: message_sender.clone(),
             history,
             pending_permissions,
+            fs_sender: Some(fs_sender),
         };
 
         // Create connection inside LocalSet
@@ -1865,6 +1898,7 @@ impl AcpAgent {
                             message_sender,
                             history: Arc::new(tokio::sync::Mutex::new(Vec::new())),
                             pending_permissions: Arc::new(Mutex::new(HashMap::new())),
+                            fs_sender: None,
                         };
 
                         let (conn, handle_io) = acp::ClientSideConnection::new(
@@ -2084,13 +2118,15 @@ impl AcpAgent {
 pub struct AcpManager {
     agents: HashMap<String, AcpAgent>,
     permission_mode: Arc<AtomicU8>,
+    fs_sender: mpsc::Sender<AcpFsCommand>,
 }
 
 impl AcpManager {
-    pub fn new(permission_mode: AcpPermissionMode) -> Self {
+    pub fn new(permission_mode: AcpPermissionMode, fs_sender: mpsc::Sender<AcpFsCommand>) -> Self {
         Self {
             agents: HashMap::new(),
             permission_mode: Arc::new(AtomicU8::new(permission_mode.as_atomic())),
+            fs_sender,
         }
     }
 
@@ -2120,6 +2156,7 @@ impl AcpManager {
             agent_id.clone(),
             agent_name.clone(),
             self.permission_mode.clone(),
+            self.fs_sender.clone(),
         );
 
         info!(

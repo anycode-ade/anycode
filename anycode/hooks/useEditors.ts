@@ -44,6 +44,7 @@ export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: Us
     const pendingOpenFilesRef = useRef<Set<string>>(new Set());
     const pendingOriginalContentRef = useRef<Map<string, string>>(new Map());
     const pendingChangesRef = useRef<Map<string, PendingBatch>>(new Map());
+    const ignoreChangeFilesRef = useRef<Set<string>>(new Set());
 
     const activeFile = files.find((f) => f.id === activeFileId);
 
@@ -68,6 +69,10 @@ export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: Us
     }, [wsRef, isConnected]);
 
     const handleChange = useCallback((filename: string, change: Change) => {
+        if (ignoreChangeFilesRef.current.has(filename)) {
+            return;
+        }
+
         if (change.isUndo || change.isRedo) {
             flushChanges(filename);
             if (wsRef.current && isConnected) {
@@ -378,9 +383,21 @@ export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: Us
     const handleWatcherEdits = useCallback((watcherEdits: WatcherEdits) => {
         const { file, edits } = watcherEdits;
         const editor = editorRefs.current.get(file);
+        console.log('[watcher:edits] received', {
+            file,
+            editsCount: edits.length,
+            hasEditor: !!editor,
+            openEditors: Array.from(editorRefs.current.keys()),
+        });
         if (!editor) return;
 
-        editor.applyChange({ edits });
+        ignoreChangeFilesRef.current.add(file);
+
+        try {
+            editor.applyChange({ edits });
+        } finally {
+            ignoreChangeFilesRef.current.delete(file);
+        }
     }, []);
 
     const openFileDiff = useCallback((path: string, line?: number, column?: number) => {

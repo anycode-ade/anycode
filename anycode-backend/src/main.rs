@@ -12,6 +12,7 @@ use tower_http::cors::CorsLayer;
 use tracing::info;
 
 mod acp;
+mod acp_fs;
 mod acp_history;
 mod code;
 mod config;
@@ -163,7 +164,11 @@ async fn on_disconnect(socket: SocketRef, state: State<AppState>) {
     }
 }
 
-fn build_app_state() -> (AppState, Receiver<PublishDiagnosticsParams>) {
+fn build_app_state() -> (
+    AppState,
+    Receiver<PublishDiagnosticsParams>,
+    mpsc::Receiver<acp_fs::AcpFsCommand>,
+) {
     let config = crate::config::get();
     let acp_permission_mode = AcpPermissionMode::from_env();
 
@@ -172,7 +177,11 @@ fn build_app_state() -> (AppState, Receiver<PublishDiagnosticsParams>) {
     lsp_manager.set_diagnostics_sender(diagnostic_send);
 
     let lsp_manager = Arc::new(Mutex::new(lsp_manager));
-    let acp_manager = Arc::new(Mutex::new(AcpManager::new(acp_permission_mode)));
+
+    // Create ACP filesystem channel
+    let (acp_fs_tx, acp_fs_rx) = mpsc::channel::<acp_fs::AcpFsCommand>(32);
+    let acp_manager = Arc::new(Mutex::new(AcpManager::new(acp_permission_mode, acp_fs_tx)));
+
     let git_manager = Arc::new(Mutex::new(GitManager::new(crate::utils::current_dir())));
 
     let file2code = Arc::new(Mutex::new(HashMap::new()));
@@ -189,7 +198,7 @@ fn build_app_state() -> (AppState, Receiver<PublishDiagnosticsParams>) {
         terminals,
     };
 
-    (state, diagnostic_recv)
+    (state, diagnostic_recv, acp_fs_rx)
 }
 
 static INDEX_HTML: &str = "index.html";
@@ -235,10 +244,16 @@ async fn main() -> Result<()> {
         .with_env_filter(tracing_subscriber::EnvFilter::new("info"))
         .init();
 
-    let (state, mut diagnostics_channel) = build_app_state();
+    let (state, mut diagnostics_channel, acp_fs_rx) = build_app_state();
     let file2code = state.file2code.clone();
     let socket2data = state.socket2data.clone();
     let git_manager = state.git_manager.clone();
+    let lsp_manager = state.lsp_manager.clone();
+
+    // Prepare ACP filesystem task dependencies (spawned after SocketIo creation)
+    let acp_fs_file2code = state.file2code.clone();
+    let acp_fs_lsp = state.lsp_manager.clone();
+    let acp_fs_config = state.config.clone();
 
     let (layer, io) = SocketIo::builder().with_state(state).build_layer();
     let cors = ServiceBuilder::new()
@@ -246,6 +261,15 @@ async fn main() -> Result<()> {
         .layer(layer);
 
     let io = Arc::new(io);
+
+    // Spawn ACP filesystem background task (needs io for watcher:edits events)
+    tokio::spawn(acp_fs::run_acp_fs_loop(
+        acp_fs_rx,
+        acp_fs_file2code,
+        acp_fs_lsp,
+        acp_fs_config,
+        io.clone(),
+    ));
 
     // Spawn a task to handle diagnostics
     let socket = io.clone();
@@ -289,6 +313,7 @@ async fn main() -> Result<()> {
                                 &socket2data,
                                 &file_states,
                                 &git_manager,
+                                &lsp_manager,
                             )
                             .await
                         }

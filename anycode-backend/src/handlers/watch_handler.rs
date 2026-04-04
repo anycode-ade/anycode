@@ -12,6 +12,8 @@ const DEBOUNCE: Duration = Duration::from_millis(100);
 use crate::app_state::SocketData;
 use crate::code::Code;
 use crate::diff::compute_text_edits;
+use crate::handlers::io_handler::apply_edits_to_code;
+use crate::lsp::LspManager;
 
 #[derive(Clone, Debug, PartialEq)] // Added Copy/Clone/PartialEq if needed by usage, sticking to original Clone/PartialEq + Debug
 enum FileState {
@@ -89,14 +91,15 @@ async fn handle_modify_event(
     path_str: &str,
     socket: &Arc<socketioxide::SocketIo>,
     file2code: &Arc<Mutex<HashMap<String, Code>>>,
-    socket2data: &Arc<Mutex<HashMap<String, SocketData>>>
+    socket2data: &Arc<Mutex<HashMap<String, SocketData>>>,
+    lsp_manager: &Arc<Mutex<crate::lsp::LspManager>>,
 ) {
     if !is_file_opened(path_str, socket2data).await {
         return;
     }
 
     info!("watch event: {:?} for path: {:?}", "Modify", path);
-    let _ = handle_file_modification(path, socket, file2code).await;
+    let _ = handle_file_modification(path, socket, file2code, lsp_manager).await;
 }
 
 pub async fn handle_watch_event(
@@ -107,6 +110,7 @@ pub async fn handle_watch_event(
     socket2data: &Arc<Mutex<HashMap<String, SocketData>>>,
     file_states: &Arc<Mutex<HashMap<String, FileWatchState>>>,
     git_manager: &Arc<Mutex<crate::git::GitManager>>,
+    lsp_manager: &Arc<Mutex<LspManager>>,
 ) {
     let path_str = match path.to_str() {
         Some(s) => s.to_string(), None => return,
@@ -141,6 +145,7 @@ pub async fn handle_watch_event(
     let socket2data = socket2data.clone();
     let file_states = file_states.clone();
     let git_manager = git_manager.clone();
+    let lsp_manager = lsp_manager.clone();
     let path_str_key = path_str.clone();
 
     tokio::spawn(async move {
@@ -155,7 +160,7 @@ pub async fn handle_watch_event(
         }
 
         process_watch_event(
-            &path, &path_str_key, &socket, &file2code, &socket2data, &file_states, &git_manager,
+            &path, &path_str_key, &socket, &file2code, &socket2data, &file_states, &git_manager, &lsp_manager,
         ).await;
 
         // Mark as not pending so future events spawn a new task
@@ -176,6 +181,7 @@ async fn process_watch_event(
     socket2data: &Arc<Mutex<HashMap<String, SocketData>>>,
     file_states: &Arc<Mutex<HashMap<String, FileWatchState>>>,
     git_manager: &Arc<Mutex<crate::git::GitManager>>,
+    lsp_manager: &Arc<Mutex<LspManager>>,
 ) {
     let current_state = if path.exists() {
         FileState::Exists
@@ -212,7 +218,7 @@ async fn process_watch_event(
             ).await;
         },
         (&FileState::Exists, &FileState::Exists) => {
-            handle_modify_event(path, path_str, socket, file2code, socket2data).await;
+            handle_modify_event(path, path_str, socket, file2code, socket2data, lsp_manager).await;
         },
         _ => {
             info!("Ignoring state transition: {:?} -> {:?}", last_state, current_state);
@@ -250,12 +256,18 @@ async fn process_watch_event(
 async fn handle_file_modification(
     path: &PathBuf,
     socket: &Arc<socketioxide::SocketIo>,
-    file2code: &Arc<Mutex<HashMap<String, Code>>>
+    file2code: &Arc<Mutex<HashMap<String, Code>>>,
+    lsp_manager: &Arc<Mutex<LspManager>>,
 ) -> Result<()> {
     
     let path_str = path.to_str().ok_or_else(|| anyhow::anyhow!("Invalid UTF-8 in path"))?;
 
-    let old_text = {
+    // Read new content from disk first (before locking)
+    let new_text = tokio::fs::read_to_string(path).await
+        .map_err(|e| anyhow::anyhow!("Failed to read file {:?}: {}", path, e))?;
+
+    // Lock file2code, check self_updated, compute diff, apply edits
+    let (edits, lsp_changes, lang) = {
         let mut f2c = file2code.lock().await;
         let code = match f2c.get_mut(path_str) {
             Some(c) => c, None => return Ok(()),
@@ -266,25 +278,47 @@ async fn handle_file_modification(
             return Ok(());
         }
 
-        code.text.to_string()
+        let old_text = code.get_content();
+
+        if old_text == new_text {
+            return Ok(());
+        }
+
+        let edits = compute_text_edits(&old_text, &new_text);
+        if edits.is_empty() {
+            return Ok(());
+        }
+
+        // Apply edits to in-memory Code (with undo history)
+        let lsp_changes = apply_edits_to_code(code, &edits, true);
+
+        // Disk already has the correct content, so mark as unchanged
+        code.changed = false;
+
+        let lang = code.lang.clone();
+        (edits, lsp_changes, lang)
     };
+    // file2code lock released here
 
-    let new_text = tokio::fs::read_to_string(path).await
-        .map_err(|e| anyhow::anyhow!("Failed to read file {:?}: {}", path, e))?;
-
-    if old_text == new_text {
-        return Ok(());
-    }
-
-    let edits = compute_text_edits(&old_text, &new_text);
-    if edits.is_empty() {
-        return Ok(());
-    }
-
+    // Notify frontend
     let file = crate::utils::relative_path(path_str);
-
+    info!(
+        "emitting watcher:edits for path={} file={} edits={}",
+        path_str,
+        file,
+        edits.len()
+    );
     socket.emit("watcher:edits", &json! {{ "file": file, "edits": edits }}).await
         .map_err(|e| anyhow::anyhow!("Failed to emit edits: {}", e))?;
+
+    // Sync LSP
+    if !lsp_changes.is_empty() {
+        let mut lsp = lsp_manager.lock().await;
+        if let Some(lsp) = lsp.get(&lang).await {
+            lsp.did_change_multi(path_str, lsp_changes).await;
+            lsp.did_save(path_str, Some(&new_text));
+        }
+    }
 
     Ok(())
 }

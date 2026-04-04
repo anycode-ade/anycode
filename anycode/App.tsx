@@ -24,7 +24,7 @@ import {
     loadBottomVisible,
     loadCenterPaneVisible,
     loadDiffEnabled,
-    loadFollowEnabled,
+    // loadFollowEnabled,
     loadLeftPanelVisible,
     loadRightPanelVisible,
     loadAcpPermissionMode,
@@ -48,7 +48,7 @@ const App: React.FC = () => {
 
     const [leftPanelMode, setLeftPanelMode] = useState<'files' | 'changes' | 'search'>('files');
     const [diffEnabled, setDiffEnabled] = useState<boolean>(loadDiffEnabled());
-    const [followEnabled, setFollowEnabled] = useState<boolean>(loadFollowEnabled());
+    // const [followEnabled, setFollowEnabled] = useState<boolean>(loadFollowEnabled());
     const [permissionMode, setPermissionMode] = useState<AcpPermissionMode>(loadAcpPermissionMode());
 
     const { wsRef, isConnected } = useSocket({});
@@ -74,13 +74,14 @@ const App: React.FC = () => {
     const agents = useAgents({
         wsRef,
         isConnected,
-        followEnabled,
+        // followEnabled,
+        followEnabled: false,
         openFile: editors.openFile,
         openFileDiff: editors.openFileDiff,
         onAgentStarted: () => {
             setRightPanelVisible(true);
             setDiffEnabled(true);
-            setFollowEnabled(true);
+            // setFollowEnabled(true);
         },
     });
 
@@ -181,9 +182,9 @@ const App: React.FC = () => {
         saveItem('diffEnabled', diffEnabled);
     }, [diffEnabled]);
 
-    useEffect(() => {
-        saveItem('followEnabled', followEnabled);
-    }, [followEnabled]);
+    // useEffect(() => {
+    //     saveItem('followEnabled', followEnabled);
+    // }, [followEnabled]);
 
     useEffect(() => {
         saveAcpPermissionMode(permissionMode);
@@ -259,9 +260,9 @@ const App: React.FC = () => {
         editors.setDiffForAllEditors(newDiffEnabled);
     }, [diffEnabled, editors]);
 
-    const toggleFollowMode = useCallback(() => {
-        setFollowEnabled((prev) => !prev);
-    }, []);
+    // const toggleFollowMode = useCallback(() => {
+    //     setFollowEnabled((prev) => !prev);
+    // }, []);
 
     const sessionsArray = useMemo(() => Array.from(agents.acpSessions.values()), [agents.acpSessions]);
     const currentSession = useMemo(
@@ -432,8 +433,8 @@ const App: React.FC = () => {
             onResumeSettingsSession={handleResumeSettingsSession}
             diffEnabled={diffEnabled}
             onToggleDiff={toggleDiffMode}
-            followEnabled={followEnabled}
-            onToggleFollow={toggleFollowMode}
+            // followEnabled={followEnabled}
+            // onToggleFollow={toggleFollowMode}
             onPermissionResponse={agents.sendPermissionResponse}
             onOpenFile={editors.openFile}
             onOpenFileDiff={editors.openFileDiff}

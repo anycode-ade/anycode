@@ -109,11 +109,12 @@ export const useAgents = ({
     }, []);
 
     const handleAcpMessage = useCallback((data: { agent_id: string; item: AcpMessage }) => {
-        if (data.item.role === 'open_file' && followEnabledRef.current) {
-            const openFileMsg = data.item as AcpOpenFileMessage;
-            openFile(openFileMsg.path, openFileMsg.line, 0);
-            return;
-        }
+        // Follow mode is temporarily disabled.
+        // if (data.item.role === 'open_file' && followEnabledRef.current) {
+        //     const openFileMsg = data.item as AcpOpenFileMessage;
+        //     openFile(openFileMsg.path, openFileMsg.line, 0);
+        //     return;
+        // }
 
         if (data.item.role === 'prompt_state') {
             const promptState = data.item as AcpPromptStateMessage;
@@ -209,20 +210,21 @@ export const useAgents = ({
         }
 
         if (data.item.role === 'tool_call' || data.item.role === 'tool_result' || data.item.role === 'tool_update' || data.item.role === 'permission_request') {
-            if (data.item.role === 'tool_result' && followEnabledRef.current) {
-                const toolResult = data.item as AcpToolResultMessage;
-                const session = acpSessionsRef.current.get(data.agent_id);
-                if (session) {
-                    const matchingToolCall = session.messages.find(
-                        (m) => m.role === 'tool_call' && (m as AcpToolCallMessage).id === toolResult.id,
-                    ) as AcpToolCallMessage | undefined;
-                    if (matchingToolCall?.locations && matchingToolCall.locations.length > 0) {
-                        const loc = matchingToolCall.locations[0];
-                        openFile(loc.path, loc.line, 0);
-                        openFileDiff(loc.path, loc.line, 0);
-                    }
-                }
-            }
+            // Follow mode is temporarily disabled.
+            // if (data.item.role === 'tool_result' && followEnabledRef.current) {
+            //     const toolResult = data.item as AcpToolResultMessage;
+            //     const session = acpSessionsRef.current.get(data.agent_id);
+            //     if (session) {
+            //         const matchingToolCall = session.messages.find(
+            //             (m) => m.role === 'tool_call' && (m as AcpToolCallMessage).id === toolResult.id,
+            //         ) as AcpToolCallMessage | undefined;
+            //         if (matchingToolCall?.locations && matchingToolCall.locations.length > 0) {
+            //             const loc = matchingToolCall.locations[0];
+            //             openFile(loc.path, loc.line, 0);
+            //             openFileDiff(loc.path, loc.line, 0);
+            //         }
+            //     }
+            // }
 
             updateSession(data.agent_id, (existing) => ({
                 agentId: data.agent_id,

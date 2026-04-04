@@ -10,6 +10,58 @@ use lsp_types::{TextDocumentContentChangeEvent, Range, Position};
 use std::path::PathBuf;
 use crate::code::{Operation, Edit};
 
+/// Apply edits to a Code instance and return LSP change events.
+/// If `use_history` is true, wraps edits in tx()/commit() for undo support.
+pub fn apply_edits_to_code(
+    code: &mut Code,
+    edits: &[Edit],
+    use_history: bool,
+) -> Vec<TextDocumentContentChangeEvent> {
+    let mut lsp_changes = Vec::new();
+
+    if use_history { code.tx(); }
+
+    for e in edits.iter() {
+        match e.operation {
+            Operation::Insert => {
+                let start_char = code.utf16_to_char_offset(e.start);
+                let (line, col_utf16) = code.char_to_position(start_char);
+                code.insert_text(&e.text, start_char);
+
+                lsp_changes.push(TextDocumentContentChangeEvent {
+                    range: Some(Range {
+                        start: Position::new(line as u32, col_utf16 as u32),
+                        end: Position::new(line as u32, col_utf16 as u32),
+                    }),
+                    range_length: None,
+                    text: e.text.clone(),
+                });
+            }
+            Operation::Remove => {
+                let start_char = code.utf16_to_char_offset(e.start);
+                let end_char = code.utf16_to_char_offset(e.start + e.text.encode_utf16().count());
+                let (start_line, start_col_utf16) = code.char_to_position(start_char);
+                let (end_line, end_col_utf16) = code.char_to_position(end_char);
+
+                code.remove_text(start_char, end_char);
+
+                lsp_changes.push(TextDocumentContentChangeEvent {
+                    range: Some(Range {
+                        start: Position::new(start_line as u32, start_col_utf16 as u32),
+                        end: Position::new(end_line as u32, end_col_utf16 as u32),
+                    }),
+                    range_length: None,
+                    text: String::new(),
+                });
+            }
+        }
+    }
+
+    if use_history { code.commit(); }
+
+    lsp_changes
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct FileOpenRequest {
     pub path: String,
@@ -229,8 +281,6 @@ pub async fn handle_file_change(
     };
 
     let mut lsp_manager = state.lsp_manager.lock().await;
-    let mut lsp_changes = Vec::new();
-
     let edits = change.edits.clone();
 
     let mut apply_tx = true;
@@ -246,45 +296,7 @@ pub async fn handle_file_change(
     }
 
     // Apply all edits to code and collect LSP changes
-    if apply_tx { code.tx(); }
-
-    for e in edits.iter() {
-        match e.operation {
-            Operation::Insert => {
-                let start_char = code.utf16_to_char_offset(e.start);
-                let (line, col_utf16) = code.char_to_position(start_char);
-                code.insert_text(&e.text, start_char); 
-
-                lsp_changes.push(TextDocumentContentChangeEvent {
-                    range: Some(Range {
-                        start: Position::new(line as u32, col_utf16 as u32),
-                        end: Position::new(line as u32, col_utf16 as u32),
-                    }),
-                    range_length: None,
-                    text: e.text.clone(),
-                });
-            }
-            Operation::Remove => {
-                let start_char = code.utf16_to_char_offset(e.start);
-                let end_char = code.utf16_to_char_offset(e.start + e.text.encode_utf16().count());
-                let (start_line, start_col_utf16) = code.char_to_position(start_char);
-                let (end_line, end_col_utf16) = code.char_to_position(end_char);
-
-                code.remove_text(start_char, end_char);
-
-                lsp_changes.push(TextDocumentContentChangeEvent {
-                    range: Some(Range {
-                        start: Position::new(start_line as u32, start_col_utf16 as u32),
-                        end: Position::new(end_line as u32, end_col_utf16 as u32),
-                    }),
-                    range_length: None,
-                    text: String::new(),
-                });
-            }
-        }
-    }
-
-    if apply_tx { code.commit(); }
+    let lsp_changes = apply_edits_to_code(code, &edits, apply_tx);
 
     // Send all changes to LSP in a single notification
     if !lsp_changes.is_empty() {
