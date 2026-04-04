@@ -383,8 +383,8 @@ export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: Us
         editor.applyChange({ edits });
     }, []);
 
-    const openChangedFileWithDiff = useCallback((path: string) => {
-        openFile(path);
+    const openFileDiff = useCallback((path: string, line?: number, column?: number) => {
+        openFile(path, line, column);
 
         if (wsRef.current && isConnected) {
             wsRef.current.emit('git:file-original', { path }, (response: any) => {
@@ -462,7 +462,7 @@ export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: Us
         closeFile,
         saveFile,
         openFile,
-        openChangedFileWithDiff,
+        openFileDiff,
         handleDiagnostics,
         handleWatcherEdits,
         undoCursor,

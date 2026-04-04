@@ -20,7 +20,7 @@ type UseAgentsParams = {
     isConnected: boolean;
     followEnabled: boolean;
     openFile: (path: string, line?: number, column?: number) => void;
-    openChangedFileWithDiff: (path: string) => void;
+    openFileDiff: (path: string, line?: number, column?: number) => void;
     onAgentStarted?: () => void;
 };
 
@@ -29,7 +29,7 @@ export const useAgents = ({
     isConnected,
     followEnabled,
     openFile,
-    openChangedFileWithDiff,
+    openFileDiff,
     onAgentStarted,
 }: UseAgentsParams) => {
     const [acpSessions, setAcpSessions] = useState<Map<string, AcpSession>>(new Map());
@@ -219,7 +219,7 @@ export const useAgents = ({
                     if (matchingToolCall?.locations && matchingToolCall.locations.length > 0) {
                         const loc = matchingToolCall.locations[0];
                         openFile(loc.path, loc.line, 0);
-                        openChangedFileWithDiff(loc.path);
+                        openFileDiff(loc.path, loc.line, 0);
                     }
                 }
             }
@@ -281,7 +281,7 @@ export const useAgents = ({
                 messages: [...existing.messages, messageToAdd],
             };
         });
-    }, [openFile, openChangedFileWithDiff, updateSession]);
+    }, [openFile, openFileDiff, updateSession]);
 
     const handleAcpHistory = useCallback((data: { agent_id: string; history: AcpMessage[] }) => {
         const reversedHistory = [...data.history].reverse();

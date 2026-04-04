@@ -80,6 +80,7 @@ interface AcpMessageProps {
   onPermissionResponse?: (permissionId: string, optionId: string) => void;
   onUndo?: () => void;
   onOpenFile?: (path: string, line?: number, column?: number) => void;
+  onOpenFileDiff?: (path: string, line?: number, column?: number) => void;
 }
 
 const ToolCallMessage: React.FC<{
@@ -88,7 +89,8 @@ const ToolCallMessage: React.FC<{
   toolUpdates?: AcpToolUpdateMessage[];
   isExpanded: boolean;
   onToggle: () => void;
-}> = ({ message, toolResult, toolUpdates, isExpanded, onToggle }) => {
+  onOpenFileDiff?: (path: string, line?: number, column?: number) => void;
+}> = ({ message, toolResult, toolUpdates, isExpanded, onToggle, onOpenFileDiff }) => {
 
   const displayCommand = message.command?.trim() || message.name;
   const toolCallView = React.useMemo(
@@ -145,6 +147,14 @@ const ToolCallMessage: React.FC<{
                 <div className="acp-tool-call-diffs">
                   {toolCallView.diffs.map((diffEntry, index) => (
                     <div key={`${diffEntry.path}-${index}`} className="acp-tool-call-diff">
+                      <button
+                        type="button"
+                        className="acp-tool-call-diff-link"
+                        onClick={() => onOpenFileDiff?.(diffEntry.path)}
+                        title={`Open ${diffEntry.path} in diff mode`}
+                      >
+                        {getFileNameFromPath(diffEntry.path)}
+                      </button>
                       <DiffCodeBlock diff={diffEntry} />
                     </div>
                   ))}
@@ -585,11 +595,13 @@ const parseMarkdownFileHref = (href: string): ParsedFileLink | null => {
 
 const MarkdownLink: React.FC<React.ComponentProps<'a'> & {
   onOpenFile?: (path: string, line?: number, column?: number) => void;
+  onOpenFileDiff?: (path: string, line?: number, column?: number) => void;
 }> = ({
   children,
   href,
   onClick,
   onOpenFile,
+  onOpenFileDiff,
   ...props
 }) => {
   const parsedFileLink = href ? parseMarkdownFileHref(href) : null;
@@ -600,9 +612,11 @@ const MarkdownLink: React.FC<React.ComponentProps<'a'> & {
       return;
     }
 
-    if (parsedFileLink && onOpenFile) {
+    const openFileLink = onOpenFileDiff ?? onOpenFile;
+
+    if (parsedFileLink && openFileLink) {
       event.preventDefault();
-      onOpenFile(parsedFileLink.path, parsedFileLink.line, parsedFileLink.column);
+      openFileLink(parsedFileLink.path, parsedFileLink.line, parsedFileLink.column);
       return;
     }
 
@@ -705,11 +719,18 @@ const parseMarkdownParts = (content: string): MarkdownPart[] => {
 const MarkdownTextBlock: React.FC<{
   content: string;
   onOpenFile?: (path: string, line?: number, column?: number) => void;
-}> = ({ content, onOpenFile }) => (
+  onOpenFileDiff?: (path: string, line?: number, column?: number) => void;
+}> = ({ content, onOpenFile, onOpenFileDiff }) => (
   <ReactMarkdown
     remarkPlugins={[remarkGfm, remarkBreaks]}
     components={{
-      a: ({ node: _node, ...props }) => <MarkdownLink {...props} onOpenFile={onOpenFile} />,
+      a: ({ node: _node, ...props }) => (
+        <MarkdownLink
+          {...props}
+          onOpenFile={onOpenFile}
+          onOpenFileDiff={onOpenFileDiff}
+        />
+      ),
       code: MarkdownInlineCode,
     }}
   >
@@ -894,7 +915,8 @@ const DiffCodeBlock: React.FC<{
 const StreamingMarkdownContent: React.FC<{
   content: string;
   onOpenFile?: (path: string, line?: number, column?: number) => void;
-}> = ({ content, onOpenFile }) => (
+  onOpenFileDiff?: (path: string, line?: number, column?: number) => void;
+}> = ({ content, onOpenFile, onOpenFileDiff }) => (
   <div className="acp-message-markdown">
     {parseMarkdownParts(content).map((part, index) => {
       if (part.kind === 'code') {
@@ -909,7 +931,12 @@ const StreamingMarkdownContent: React.FC<{
       }
 
       return (
-        <MarkdownTextBlock key={`text-${index}`} content={part.content} onOpenFile={onOpenFile} />
+        <MarkdownTextBlock
+          key={`text-${index}`}
+          content={part.content}
+          onOpenFile={onOpenFile}
+          onOpenFileDiff={onOpenFileDiff}
+        />
       );
     })}
   </div>
@@ -919,10 +946,15 @@ const TextMessage: React.FC<{
   message: AcpUserMessage | AcpAssistantMessage;
   onUndo?: () => void;
   onOpenFile?: (path: string, line?: number, column?: number) => void;
-}> = ({ message, onUndo, onOpenFile }) => (
+  onOpenFileDiff?: (path: string, line?: number, column?: number) => void;
+}> = ({ message, onUndo, onOpenFile, onOpenFileDiff }) => (
   <div className={`acp-message acp-message-${message.role}`}>
     <div className="acp-message-content acp-message-content-with-actions">
-      <StreamingMarkdownContent content={message.content} onOpenFile={onOpenFile} />
+      <StreamingMarkdownContent
+        content={message.content}
+        onOpenFile={onOpenFile}
+        onOpenFileDiff={onOpenFileDiff}
+      />
       {message.role === 'user' && onUndo && (
         <div className="acp-message-actions">
           <button className="acp-undo-button" onClick={onUndo} title="Undo">
@@ -1054,6 +1086,7 @@ export const AcpMessage: React.FC<AcpMessageProps> = ({
   onPermissionResponse,
   onUndo,
   onOpenFile,
+  onOpenFileDiff,
 }) => {
   switch (message.role) {
     case 'tool_call':
@@ -1065,6 +1098,7 @@ export const AcpMessage: React.FC<AcpMessageProps> = ({
             toolUpdates={toolUpdates}
             isExpanded={isExpanded}
             onToggle={onToggle}
+            onOpenFileDiff={onOpenFileDiff}
           />
       );
     case 'tool_result':
@@ -1086,9 +1120,22 @@ export const AcpMessage: React.FC<AcpMessageProps> = ({
         />
       );
     case 'user':
-      return <TextMessage message={message} onUndo={onUndo} onOpenFile={onOpenFile} />;
+      return (
+        <TextMessage
+          message={message}
+          onUndo={onUndo}
+          onOpenFile={onOpenFile}
+          onOpenFileDiff={onOpenFileDiff}
+        />
+      );
     case 'assistant':
-      return <TextMessage message={message} onOpenFile={onOpenFile} />;
+      return (
+        <TextMessage
+          message={message}
+          onOpenFile={onOpenFile}
+          onOpenFileDiff={onOpenFileDiff}
+        />
+      );
     case 'thought':
       if (!onToggle) return null;
       return (

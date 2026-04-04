@@ -316,6 +316,24 @@
     gap: 6px;
 }
 
+.acp-tool-call-diff-link {
+    align-self: flex-start;
+    border: none;
+    padding: 0;
+    background: transparent;
+    color: var(--accent-color, #7ab7ff);
+    font: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    text-decoration: underline;
+    text-align: left;
+}
+
+.acp-tool-call-diff-link:hover {
+    color: var(--accent-color-hover, #9ac8ff);
+}
+
 .acp-tool-call-diff-added {
     color: #4cc38a;
 }

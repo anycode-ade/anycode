@@ -76,7 +76,7 @@ const App: React.FC = () => {
         isConnected,
         followEnabled,
         openFile: editors.openFile,
-        openChangedFileWithDiff: editors.openChangedFileWithDiff,
+        openFileDiff: editors.openFileDiff,
         onAgentStarted: () => {
             setRightPanelVisible(true);
             setDiffEnabled(true);
@@ -370,7 +370,7 @@ const App: React.FC = () => {
                     <ChangesPanel
                         files={git.changedFiles}
                         branch={git.gitBranch}
-                        onFileClick={editors.openChangedFileWithDiff}
+                        onFileClick={editors.openFileDiff}
                         onRefresh={git.fetchGitStatus}
                         onCommit={git.commit}
                         onPush={git.push}
@@ -436,6 +436,7 @@ const App: React.FC = () => {
             onToggleFollow={toggleFollowMode}
             onPermissionResponse={agents.sendPermissionResponse}
             onOpenFile={editors.openFile}
+            onOpenFileDiff={editors.openFileDiff}
         />
     );
 

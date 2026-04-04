@@ -145,6 +145,7 @@ interface AcpDialogProps {
   followEnabled?: boolean;
   onToggleFollow?: () => void;
   onOpenFile?: (path: string, line?: number, column?: number) => void;
+  onOpenFileDiff?: (path: string, line?: number, column?: number) => void;
 }
 
 const AcpDialogComponent: React.FC<AcpDialogProps> = ({
@@ -182,6 +183,7 @@ const AcpDialogComponent: React.FC<AcpDialogProps> = ({
   followEnabled = false,
   onToggleFollow,
   onOpenFile,
+  onOpenFileDiff,
 }) => {
   const [inputValue, setInputValue] = useState('');
   const { expanded: expandedToolCalls, toggle: toggleToolCall } = useExpandableItems();
@@ -289,6 +291,7 @@ const AcpDialogComponent: React.FC<AcpDialogProps> = ({
               onPermissionResponse={handlePermissionResponse}
               onUndoMessage={handleUndoMessage}
               onOpenFile={onOpenFile}
+              onOpenFileDiff={onOpenFileDiff}
             />
           </div>
         </div>
