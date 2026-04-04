@@ -35,6 +35,7 @@ export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: Us
     const [editorStates, setEditorStates] = useState<Map<string, AnycodeEditor>>(new Map());
     const editorStatesRef = useRef<Map<string, AnycodeEditor>>(new Map());
     const editorRefs = useRef<Map<string, AnycodeEditor>>(new Map());
+    const defaultFileInitializedRef = useRef(false);
 
     const savedFileContentsRef = useRef<Map<string, string>>(new Map());
     const diagnosticsRef = useRef<Map<string, Diagnostic[]>>(new Map());
@@ -289,7 +290,8 @@ export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: Us
     }, [files, initializeEditors]);
 
     useEffect(() => {
-        if (files.length === 0) {
+        if (files.length === 0 && !defaultFileInitializedRef.current) {
+            defaultFileInitializedRef.current = true;
             setFiles([DEFAULT_FILE]);
             setActiveFileId(DEFAULT_FILE.id);
             cursorHistory.current.undoStack.push({ file: DEFAULT_FILE.id, cursor: { line: 0, column: 0 } });

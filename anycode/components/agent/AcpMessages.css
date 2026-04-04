@@ -6,7 +6,7 @@
 }
 
 .acp-dialog-messages-inner {
-    padding: 0 8px;
+    padding: 16px;
     display: flex;
     flex-direction: column;
     gap: 2px;

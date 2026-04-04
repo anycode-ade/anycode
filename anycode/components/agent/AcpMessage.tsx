@@ -95,9 +95,9 @@ const ToolCallMessage: React.FC<{
     () => getToolCallView(message, toolUpdates, toolResult),
     [message, toolResult, toolUpdates],
   );
-  const primaryDiff = toolCallView.diffs[0];
-  const toggleLabel = primaryDiff ? getFileNameFromPath(primaryDiff.path) : displayCommand;
-  const toggleStats = primaryDiff ? countDiffLines(primaryDiff.oldText, primaryDiff.newText) : undefined;
+  const diffFileNames = getToolCallFileNames(toolCallView.diffs);
+  const toggleLabel = formatToolCallLabel(diffFileNames, displayCommand);
+  const toggleStats = getToolCallStats(toolCallView.diffs);
 
   return (
     <div className="acp-message acp-message-tool_call">
@@ -362,6 +362,42 @@ const getLanguageFromPath = (path?: string): string => {
 
 const getFileNameFromPath = (path: string): string => {
   return path.split('/').pop() ?? path;
+};
+
+const formatToolCallLabel = (diffPaths: string[], fallbackLabel: string): string => {
+  if (diffPaths.length === 0) {
+    return fallbackLabel;
+  }
+
+  if (diffPaths.length === 1) {
+    return getFileNameFromPath(diffPaths[0]);
+  }
+
+  const visibleNames = diffPaths.slice(0, 2).map(getFileNameFromPath);
+  const hiddenCount = diffPaths.length - visibleNames.length;
+  return hiddenCount > 0
+    ? `${visibleNames.join(', ')} +${hiddenCount}`
+    : visibleNames.join(', ');
+};
+
+const getToolCallStats = (diffs: AcpDiffContent[]) => {
+  if (diffs.length === 0) {
+    return undefined;
+  }
+
+  return diffs.reduce(
+    (acc, diff) => {
+      const diffStats = countDiffLines(diff.oldText, diff.newText);
+      acc.added += diffStats.added;
+      acc.deleted += diffStats.deleted;
+      return acc;
+    },
+    { added: 0, deleted: 0 },
+  );
+};
+
+const getToolCallFileNames = (diffs: AcpDiffContent[]): string[] => {
+  return Array.from(new Set(diffs.map((diff) => getFileNameFromPath(diff.path))));
 };
 
 const asRecord = (value: unknown): Record<string, unknown> | undefined => {
