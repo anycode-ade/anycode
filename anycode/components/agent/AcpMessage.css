@@ -558,3 +558,46 @@
     font-size: 12px;
     line-height: 1.4;
 }
+
+@media (max-width: 768px) and (pointer: coarse) {
+    .acp-code {
+        padding: 0.35em;
+        max-height: 26vh;
+    }
+
+    .acp-code .anyeditor {
+        -webkit-text-size-adjust: none;
+        text-size-adjust: none;
+    }
+
+    .acp-code .anyeditor .code,
+    .acp-code .anyeditor .code * {
+        font-size: 11px !important;
+        line-height: 17px !important;
+    }
+
+    .acp-code .anyeditor .code div {
+        line-height: 17px !important;
+    }
+
+    .acp-code-block-fallback {
+        font-size: 11px;
+        line-height: 1.35;
+        padding: 0.5em;
+    }
+
+    .acp-tool-call-command,
+    .acp-tool-call-args,
+    .acp-tool-result-content,
+    .acp-tool-update-content {
+        font-size: 11px;
+    }
+
+    .acp-message-markdown code {
+        font-size: 0.86em;
+    }
+
+    .acp-message-markdown pre code {
+        font-size: 0.86em;
+    }
+}
