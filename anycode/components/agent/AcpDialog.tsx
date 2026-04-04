@@ -185,7 +185,7 @@ const AcpDialogComponent: React.FC<AcpDialogProps> = ({
   onOpenFile,
   onOpenFileDiff,
 }) => {
-  const [inputValue, setInputValue] = useState('');
+  const [inputValues, setInputValues] = useState<Record<string, string>>({});
   const { expanded: expandedToolCalls, toggle: toggleToolCall } = useExpandableItems();
   const { expanded: expandedToolResults, toggle: toggleToolResult } = useExpandableItems();
   const { expanded: expandedThoughts, toggle: toggleThought } = useExpandableItems();
@@ -222,15 +222,86 @@ const AcpDialogComponent: React.FC<AcpDialogProps> = ({
     );
   }
 
+  const inputValue = inputValues[agentId] ?? '';
+
+  const handleInputChange = useCallback((value: string) => {
+    setInputValues((prev) => {
+      if ((prev[agentId] ?? '') === value) {
+        return prev;
+      }
+
+      return {
+        ...prev,
+        [agentId]: value,
+      };
+    });
+  }, [agentId]);
+
   const handleSend = () => {
     if (inputValue.trim() && isConnected) {
       onSendPrompt(agentId, inputValue.trim());
-      setInputValue('');
+      setInputValues((prev) => {
+        if ((prev[agentId] ?? '') === '') {
+          return prev;
+        }
+
+        return {
+          ...prev,
+          [agentId]: '',
+        };
+      });
     }
   };
 
   return (
     <div className="acp-dialog" style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+      <div className="acp-dialog-content">
+        <div className="acp-dialog-messages" ref={contentRef}>
+          <div className="acp-dialog-messages-inner">
+            <AcpMessages
+              messages={messages}
+              toolCalls={toolCalls}
+              expandedToolCalls={expandedToolCalls}
+              expandedToolResults={expandedToolResults}
+              expandedThoughts={expandedThoughts}
+              expandedPermissions={expandedPermissions}
+              onToggleToolCall={toggleToolCall}
+              onToggleToolResult={toggleToolResult}
+              onToggleThought={toggleThought}
+              onTogglePermission={togglePermission}
+              onPermissionResponse={handlePermissionResponse}
+              onUndoMessage={handleUndoMessage}
+              onOpenFile={onOpenFile}
+              onOpenFileDiff={onOpenFileDiff}
+            />
+          </div>
+        </div>
+        {!autoScrollEnabled && (
+          <button
+            className="acp-scroll-to-bottom-btn"
+            onClick={enableAutoScroll}
+            title="Enable auto-scroll"
+            aria-label="Enable auto-scroll"
+          >
+            <AcpIcons.ScrollDown />
+          </button>
+        )}
+      </div>
+
+      <AcpInput
+        value={inputValue}
+        onChange={handleInputChange}
+        onSend={handleSend}
+        onCancel={() => onCancelPrompt(agentId)}
+        isConnected={isConnected}
+        isProcessing={isProcessing}
+        modelSelector={modelSelector}
+        reasoningSelector={reasoningSelector}
+        contextUsage={contextUsage}
+        onSelectModel={(option) => onSelectModel?.(agentId, option)}
+        onSelectReasoning={(option) => onSelectReasoning?.(agentId, option)}
+      />
+
       <div className="acp-dialog-header">
         <div className="acp-agents-container">
           <AcpAgentsList
@@ -273,53 +344,6 @@ const AcpDialogComponent: React.FC<AcpDialogProps> = ({
           </button>
         </div>
       </div>
-
-      <div className="acp-dialog-content">
-        <div className="acp-dialog-messages" ref={contentRef}>
-          <div className="acp-dialog-messages-inner">
-            <AcpMessages
-              messages={messages}
-              toolCalls={toolCalls}
-              expandedToolCalls={expandedToolCalls}
-              expandedToolResults={expandedToolResults}
-              expandedThoughts={expandedThoughts}
-              expandedPermissions={expandedPermissions}
-              onToggleToolCall={toggleToolCall}
-              onToggleToolResult={toggleToolResult}
-              onToggleThought={toggleThought}
-              onTogglePermission={togglePermission}
-              onPermissionResponse={handlePermissionResponse}
-              onUndoMessage={handleUndoMessage}
-              onOpenFile={onOpenFile}
-              onOpenFileDiff={onOpenFileDiff}
-            />
-          </div>
-        </div>
-        {!autoScrollEnabled && (
-          <button
-            className="acp-scroll-to-bottom-btn"
-            onClick={enableAutoScroll}
-            title="Enable auto-scroll"
-            aria-label="Enable auto-scroll"
-          >
-            <AcpIcons.ScrollDown />
-          </button>
-        )}
-      </div>
-
-      <AcpInput
-        value={inputValue}
-        onChange={setInputValue}
-        onSend={handleSend}
-        onCancel={() => onCancelPrompt(agentId)}
-        isConnected={isConnected}
-        isProcessing={isProcessing}
-        modelSelector={modelSelector}
-        reasoningSelector={reasoningSelector}
-        contextUsage={contextUsage}
-        onSelectModel={(option) => onSelectModel?.(agentId, option)}
-        onSelectReasoning={(option) => onSelectReasoning?.(agentId, option)}
-      />
     </div>
   );
 };

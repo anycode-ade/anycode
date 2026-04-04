@@ -468,8 +468,8 @@
     padding-bottom: 4px;
 }
 
-/* Add bottom padding only when terminal is closed - same approach as file-system-content */
-.app-container:not(.terminal-visible) .acp-dialog-input {
+/* Keep ACP bottom spacing on the bottom-most panel when terminal is closed */
+.app-container:not(.terminal-visible) .acp-dialog-header {
     margin-bottom: var(--toolbar-total-space);
 }
 /* Add bottom padding only when terminal is closed - same approach as file-system-content */
