@@ -33,15 +33,16 @@ const statusColors: Record<string, string> = {
     conflict: 'status-conflict',
 };
 
-const getFileName = (path: string): string => {
-    const parts = path.split('/');
-    return parts[parts.length - 1];
-};
-
 const getDirectory = (path: string): string => {
     const parts = path.split('/');
     if (parts.length <= 1) return '';
     return parts.slice(0, -1).join('/');
+};
+
+const getDisplayName = (path: string): string => {
+    const normalized = path.replace(/\\/g, '/');
+    const parts = normalized.split('/');
+    return parts[parts.length - 1] || path;
 };
 
 export const ChangesPanel: React.FC<ChangesPanelProps> = ({ 
@@ -194,7 +195,7 @@ export const ChangesPanel: React.FC<ChangesPanelProps> = ({
                             </span>
                             <div className="changes-file-info">
                                 <span className="changes-filename">
-                                    {getFileName(file.path)}
+                                    {getDisplayName(file.path)}
                                 </span>
                                 <span className="changes-directory">
                                     {getDirectory(file.path)}

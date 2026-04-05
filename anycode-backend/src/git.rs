@@ -1,14 +1,18 @@
-use std::path::{Path, PathBuf};
-use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
-use git2::{Repository, Status, StatusOptions};
 use anyhow::{Context, Result};
+use git2::{Repository, Status, StatusOptions};
+use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
+use std::path::{Path, PathBuf};
 use tracing::info;
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum FileStatus {
-    Modified, Added, Deleted, Renamed, Conflict,
+    Modified,
+    Added,
+    Deleted,
+    Renamed,
+    Conflict,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
@@ -106,8 +110,10 @@ impl GitManager {
     /// Get current git status
     pub fn status(&self) -> Result<GitStatus> {
         let repo = self.repo()?;
+        let repo_root = repo.workdir().unwrap_or(Path::new("."));
 
-        let branch = repo.head()
+        let branch = repo
+            .head()
             .map(|h| h.shorthand().unwrap_or("HEAD").to_string())
             .unwrap_or_else(|_| "HEAD".to_string());
 
@@ -121,25 +127,38 @@ impl GitManager {
         let mut files: Vec<GitFileStatus> = Vec::new();
 
         for entry in statuses.iter() {
-            let path = entry.path().unwrap_or("").to_string();
+            let relative_path = entry.path().unwrap_or("");
             let status = entry.status();
 
-            let file_status = if status.contains(Status::WT_NEW) || status.contains(Status::INDEX_NEW) {
+            let file_status = if status.contains(Status::WT_NEW)
+                || status.contains(Status::INDEX_NEW)
+            {
                 FileStatus::Added
-            } else if status.contains(Status::WT_DELETED) || status.contains(Status::INDEX_DELETED) {
+            } else if status.contains(Status::WT_DELETED) || status.contains(Status::INDEX_DELETED)
+            {
                 FileStatus::Deleted
-            } else if status.contains(Status::WT_MODIFIED) || status.contains(Status::INDEX_MODIFIED) {
+            } else if status.contains(Status::WT_MODIFIED)
+                || status.contains(Status::INDEX_MODIFIED)
+            {
                 FileStatus::Modified
-            } else if status.contains(Status::WT_RENAMED) || status.contains(Status::INDEX_RENAMED) {
+            } else if status.contains(Status::WT_RENAMED) || status.contains(Status::INDEX_RENAMED)
+            {
                 FileStatus::Renamed
             } else {
                 continue;
             };
 
-            files.push(GitFileStatus { path, status: file_status });
+            files.push(GitFileStatus {
+                path: repo_root.join(relative_path).to_string_lossy().to_string(),
+                status: file_status,
+            });
         }
 
-        info!("Git status: {} files changed on branch {}", files.len(), branch);
+        info!(
+            "Git status: {} files changed on branch {}",
+            files.len(),
+            branch
+        );
 
         Ok(GitStatus { files, branch })
     }
@@ -152,7 +171,11 @@ impl GitManager {
         };
 
         if self.status_cache != new_status {
-            info!("Git status changed: {} files on branch {}", new_status.files.len(), new_status.branch);
+            info!(
+                "Git status changed: {} files on branch {}",
+                new_status.files.len(),
+                new_status.branch
+            );
             self.status_cache = new_status.clone();
             Some(new_status)
         } else {
@@ -172,7 +195,8 @@ impl GitManager {
         let file_path = Path::new(path);
 
         let relative_path = if file_path.is_absolute() {
-            file_path.strip_prefix(repo_path)
+            file_path
+                .strip_prefix(repo_path)
                 .map(|p| p.to_string_lossy().to_string())
                 .unwrap_or_else(|_| path.to_string())
         } else {
@@ -183,15 +207,25 @@ impl GitManager {
         let entry = match tree.get_path(Path::new(&relative_path)) {
             Ok(e) => e,
             Err(_) => {
-                return Ok(FileOriginal { content: String::new(), is_new: true });
+                return Ok(FileOriginal {
+                    content: String::new(),
+                    is_new: true,
+                });
             }
         };
 
         let blob = repo.find_blob(entry.id())?;
         let content = std::str::from_utf8(blob.content())?.to_string();
 
-        info!("Got original content for {}: {} bytes", relative_path, content.len());
-        Ok(FileOriginal { content, is_new: false })
+        info!(
+            "Got original content for {}: {} bytes",
+            relative_path,
+            content.len()
+        );
+        Ok(FileOriginal {
+            content,
+            is_new: false,
+        })
     }
 
     /// Commit files
@@ -221,11 +255,12 @@ impl GitManager {
         let tree_id = index.write_tree()?;
         let tree = repo.find_tree(tree_id)?;
 
-        let sig = repo.signature().or_else(|_| {
-            git2::Signature::now("Anycode User", "user@anycode.dev")
-        })?;
+        let sig = repo
+            .signature()
+            .or_else(|_| git2::Signature::now("Anycode User", "user@anycode.dev"))?;
 
-        let parents: Vec<git2::Commit> = repo.head()
+        let parents: Vec<git2::Commit> = repo
+            .head()
             .ok()
             .and_then(|h| h.peel_to_commit().ok())
             .map(|c| vec![c])
@@ -246,8 +281,7 @@ impl GitManager {
         let mut remote = repo.find_remote("origin")?;
         let head = repo.head()?;
 
-        let branch_name = head.shorthand()
-            .context("Detached HEAD state")?;
+        let branch_name = head.shorthand().context("Detached HEAD state")?;
 
         let refspec = format!("refs/heads/{}:refs/heads/{}", branch_name, branch_name);
 
@@ -270,8 +304,7 @@ impl GitManager {
         let repo = self.repo()?;
         let mut remote = repo.find_remote("origin")?;
         let head = repo.head()?;
-        let branch_name = head.shorthand()
-            .context("Detached HEAD state")?;
+        let branch_name = head.shorthand().context("Detached HEAD state")?;
 
         // Fetch from remote
         let mut callbacks = git2::RemoteCallbacks::new();
@@ -299,9 +332,8 @@ impl GitManager {
             let mut reference = repo.find_reference(&refname)?;
             reference.set_target(remote_commit.id(), "Fast-forward pull")?;
 
-            let checkout_result = repo.checkout_head(Some(
-                git2::build::CheckoutBuilder::default().safe()
-            ));
+            let checkout_result =
+                repo.checkout_head(Some(git2::build::CheckoutBuilder::default().safe()));
 
             if let Err(e) = checkout_result {
                 reference.set_target(head.target().unwrap(), "Revert failed pull")?;
@@ -318,18 +350,22 @@ impl GitManager {
         let mut index = repo.index()?;
 
         if index.has_conflicts() {
-            let conflicts: Vec<String> = index.conflicts()?
+            let conflicts: Vec<String> = index
+                .conflicts()?
                 .filter_map(|c| c.ok())
                 .filter_map(|c| c.our.or(c.their).or(c.ancestor))
                 .filter_map(|entry| String::from_utf8(entry.path).ok())
                 .collect();
 
-            let checkout_result = repo.checkout_index(None, Some(
-                git2::build::CheckoutBuilder::default()
-                    .allow_conflicts(true)
-                    .conflict_style_merge(true)
-                    .safe()
-            ));
+            let checkout_result = repo.checkout_index(
+                None,
+                Some(
+                    git2::build::CheckoutBuilder::default()
+                        .allow_conflicts(true)
+                        .conflict_style_merge(true)
+                        .safe(),
+                ),
+            );
 
             if let Err(e) = checkout_result {
                 repo.cleanup_state()?;
@@ -344,9 +380,9 @@ impl GitManager {
         let tree_id = index.write_tree()?;
         let tree = repo.find_tree(tree_id)?;
 
-        let sig = repo.signature().or_else(|_| {
-            git2::Signature::now("Anycode User", "user@anycode.dev")
-        })?;
+        let sig = repo
+            .signature()
+            .or_else(|_| git2::Signature::now("Anycode User", "user@anycode.dev"))?;
 
         let local_commit = head.peel_to_commit()?;
         let remote_commit_obj = repo.find_commit(remote_commit.id())?;
@@ -357,7 +393,7 @@ impl GitManager {
             &sig,
             &format!("Merge remote-tracking branch 'origin/{}'", branch_name),
             &tree,
-            &[&local_commit, &remote_commit_obj]
+            &[&local_commit, &remote_commit_obj],
         )?;
 
         repo.cleanup_state()?;
@@ -384,15 +420,13 @@ impl GitManager {
 
         let statuses = repo.statuses(Some(&mut opts))?;
         let is_new_file = statuses.iter().any(|entry| {
-            entry.status().contains(Status::WT_NEW) ||
-            entry.status().contains(Status::INDEX_NEW)
+            entry.status().contains(Status::WT_NEW) || entry.status().contains(Status::INDEX_NEW)
         });
 
         if is_new_file {
             let full_path = repo_root.join(relative_path);
             if full_path.exists() {
-                std::fs::remove_file(&full_path)
-                    .context("Failed to delete untracked file")?;
+                std::fs::remove_file(&full_path).context("Failed to delete untracked file")?;
             }
             info!("Git revert: deleted untracked file {}", path);
         } else {
