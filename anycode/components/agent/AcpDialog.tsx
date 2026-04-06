@@ -202,6 +202,19 @@ const AcpDialogComponent: React.FC<AcpDialogProps> = ({
     },
     [agentId, onUndoPrompt],
   );
+  const inputValue = inputValues[agentId] ?? '';
+  const handleInputChange = useCallback((value: string) => {
+    setInputValues((prev) => {
+      if ((prev[agentId] ?? '') === value) {
+        return prev;
+      }
+
+      return {
+        ...prev,
+        [agentId]: value,
+      };
+    });
+  }, [agentId]);
 
   if (!isOpen) return null;
 
@@ -221,21 +234,6 @@ const AcpDialogComponent: React.FC<AcpDialogProps> = ({
       </div>
     );
   }
-
-  const inputValue = inputValues[agentId] ?? '';
-
-  const handleInputChange = useCallback((value: string) => {
-    setInputValues((prev) => {
-      if ((prev[agentId] ?? '') === value) {
-        return prev;
-      }
-
-      return {
-        ...prev,
-        [agentId]: value,
-      };
-    });
-  }, [agentId]);
 
   const handleSend = () => {
     if (inputValue.trim() && isConnected) {
