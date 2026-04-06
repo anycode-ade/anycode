@@ -1,11 +1,11 @@
-use serde::{Deserialize, Serialize};
-use serde_json::{self, json};
-use socketioxide::{extract::{AckSender, Data, State}};
-use tracing::{info, error};
 use crate::app_state::AppState;
 use crate::app_state::*;
 use crate::error_ack;
 use crate::utils::abs_file;
+use serde::{Deserialize, Serialize};
+use serde_json::{self, json};
+use socketioxide::extract::{AckSender, Data, State};
+use tracing::{error, info};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct CompletionRequest {
@@ -17,7 +17,7 @@ pub struct CompletionRequest {
 pub async fn handle_completion(
     Data(request): Data<CompletionRequest>,
     ack: AckSender,
-    state: State<AppState>
+    state: State<AppState>,
 ) {
     info!("handle_completion {:?}", request);
     let CompletionRequest { file, row, column } = request;
@@ -36,16 +36,16 @@ pub async fn handle_completion(
     let mut lsp_manager = state.lsp_manager.lock().await;
 
     let result = match lsp_manager.get(&code.lang).await {
-        Some(lsp) => {
-            lsp.completion(&abs_path, row, column).await
-                .ok().unwrap_or_else(|| Vec::new())
-        },
-        None => Vec::new()
+        Some(lsp) => lsp
+            .completion(&abs_path, row, column)
+            .await
+            .ok()
+            .unwrap_or_else(|| Vec::new()),
+        None => Vec::new(),
     };
 
     ack.send(&result).ok();
 }
-
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct HoverRequest {
@@ -57,7 +57,7 @@ pub struct HoverRequest {
 pub async fn handle_hover(
     Data(request): Data<HoverRequest>,
     ack: AckSender,
-    state: State<AppState>
+    state: State<AppState>,
 ) {
     info!("handle_completion {}", request.file);
     let HoverRequest { file, row, column } = request;
@@ -72,7 +72,7 @@ pub async fn handle_hover(
         Ok(c) => c,
         Err(e) => error_ack!(ack, &abs_path, "{:?}", e),
     };
-    
+
     let mut lsp_manager = state.lsp_manager.lock().await;
 
     if let Some(lsp) = lsp_manager.get(&code.lang).await {
@@ -81,12 +81,12 @@ pub async fn handle_hover(
                 ack.send(&hover).ok();
             }
             Err(e) => {
-                ack.send(&json!({ "error": format!("Hover request failed: {}", e) })).ok();
+                ack.send(&json!({ "error": format!("Hover request failed: {}", e) }))
+                    .ok();
             }
         }
     }
 }
-
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct DefinitionRequest {
@@ -98,7 +98,7 @@ pub struct DefinitionRequest {
 pub async fn handle_definition(
     Data(request): Data<DefinitionRequest>,
     ack: AckSender,
-    state: State<AppState>
+    state: State<AppState>,
 ) {
     info!("handle_definition {}", request.file);
     let DefinitionRequest { file, row, column } = request;
@@ -115,18 +115,18 @@ pub async fn handle_definition(
     };
 
     let mut lsp_manager = state.lsp_manager.lock().await;
-    
+
     let result = match lsp_manager.get(&code.lang).await {
-        Some(lsp) => {
-            lsp.definition(&abs_path, row, column).await
-                .ok().unwrap_or_else(|| Vec::new())
-        },
-        None => Vec::new()
+        Some(lsp) => lsp
+            .definition(&abs_path, row, column)
+            .await
+            .ok()
+            .unwrap_or_else(|| Vec::new()),
+        None => Vec::new(),
     };
 
     ack.send(&result).ok();
 }
-
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ReferencesRequest {
@@ -138,7 +138,7 @@ pub struct ReferencesRequest {
 pub async fn handle_references(
     Data(request): Data<ReferencesRequest>,
     ack: AckSender,
-    state: State<AppState>
+    state: State<AppState>,
 ) {
     info!("handle_references {}", request.file);
     let ReferencesRequest { file, row, column } = request;
@@ -155,11 +155,12 @@ pub async fn handle_references(
     };
 
     let result = match state.lsp_manager.lock().await.get(&code.lang).await {
-        Some(lsp) => {
-            lsp.references(&abs_path, row, column).await
-                .ok().unwrap_or_else(|| Vec::new())
-        },
-        None => Vec::new()
+        Some(lsp) => lsp
+            .references(&abs_path, row, column)
+            .await
+            .ok()
+            .unwrap_or_else(|| Vec::new()),
+        None => Vec::new(),
     };
 
     ack.send(&json!({ "items": result })).ok();

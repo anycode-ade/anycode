@@ -319,6 +319,7 @@ export interface SearchMatch {
 
 export interface SearchResult {
     file_path: string;
+    display_path: string;
     matches: SearchMatch[];
 }
 

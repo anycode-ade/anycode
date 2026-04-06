@@ -1,11 +1,11 @@
+use crate::app_state::{AppState, SocketData};
+use crate::search::{FileSearchResult, global_search};
+use serde::{Deserialize, Serialize};
 use serde_json::{self, json};
-use socketioxide::{extract::{Data, SocketRef, State}};
+use socketioxide::extract::{Data, SocketRef, State};
+use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
-use crate::{app_state::{AppState, SocketData}};
-use serde::{Deserialize, Serialize};
-use crate::search::{global_search, FileSearchResult};
-use tokio::sync::mpsc;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct SearchRequest {
@@ -15,7 +15,7 @@ pub struct SearchRequest {
 pub async fn handle_search(
     socket: SocketRef,
     Data(search_request): Data<SearchRequest>,
-    state: State<AppState>
+    state: State<AppState>,
 ) {
     info!("Received handle_search {}", search_request.pattern);
 
@@ -46,14 +46,16 @@ pub async fn handle_search(
 
     // Start the search in the background
     tokio::spawn(async move {
-        let search_result = global_search(
-            &current_dir, &search_request.pattern, cancel, result_tx
-        ).await;
+        let search_result =
+            global_search(&current_dir, &search_request.pattern, cancel, result_tx).await;
 
         if let Err(err) = search_result {
-            let _ = socket_clone.emit("search:error", &json!({
-                "error": "Search failed", "message": err.to_string()
-            }));
+            let _ = socket_clone.emit(
+                "search:error",
+                &json!({
+                    "error": "Search failed", "message": err.to_string()
+                }),
+            );
         }
     });
 
@@ -66,17 +68,17 @@ pub async fn handle_search(
             matches += file_result.matches.len();
         }
 
-        let _ = socket.emit("search:end", &json!({
-            "elapsed": start.elapsed().as_millis(),
-            "matches": matches
-        }));
+        let _ = socket.emit(
+            "search:end",
+            &json!({
+                "elapsed": start.elapsed().as_millis(),
+                "matches": matches
+            }),
+        );
     });
 }
 
-pub async fn handle_search_cancel(
-    socket: SocketRef,
-    state: State<AppState>
-) {
+pub async fn handle_search_cancel(socket: SocketRef, state: State<AppState>) {
     info!("Received handle_search_cancel");
 
     let sid = socket.id.as_str();

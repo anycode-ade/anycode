@@ -1,28 +1,59 @@
+use lsp_types::Uri;
 use pathdiff::diff_paths;
 use std::path::{Path, PathBuf};
-use lsp_types::Uri;
 
 pub const DEFAULT_IGNORE_DIRS: &[&str] = &[
     // Version control and IDEs
     ".git",
     // Python
-    "__pycache__", ".pytest_cache", 
-    
-    "target", "node_modules",
+    "__pycache__",
+    ".pytest_cache",
+    "target",
+    "node_modules",
 ];
 
 pub const DEFAULT_IGNORE_FILES: &[&str] = &[
     // System files
-    ".DS_Store", "Thumbs.db", "desktop.ini",
+    ".DS_Store",
+    "Thumbs.db",
+    "desktop.ini",
     // Certificate and key files
-    "*.pem", "*.key", "*.crt", "*.p12",
+    "*.pem",
+    "*.key",
+    "*.crt",
+    "*.p12",
     // Images and video
-    "*.png", "*.jpg", "*.jpeg", "*.gif", "*.bmp", "*.tiff", "*.webp",
-    "*.svg", "*.ico",
-    "*.mp4", "*.mov", "*.avi", "*.mkv", "*.webm", "*.flv", "*.wmv",
-    "*mp3", "*.wav", "*.ogg", "*.aac", "*.flac", "*.m4a", "*.opus", "*.wma",
+    "*.png",
+    "*.jpg",
+    "*.jpeg",
+    "*.gif",
+    "*.bmp",
+    "*.tiff",
+    "*.webp",
+    "*.svg",
+    "*.ico",
+    "*.mp4",
+    "*.mov",
+    "*.avi",
+    "*.mkv",
+    "*.webm",
+    "*.flv",
+    "*.wmv",
+    "*.mp3",
+    "*.wav",
+    "*.ogg",
+    "*.aac",
+    "*.flac",
+    "*.m4a",
+    "*.opus",
+    "*.wma",
     // Archives
-    "*.zip", "*.tar", "*.gz", "*.bz2", "*.xz", "*.7z",
+    "*.zip",
+    "*.tar",
+    "*.gz",
+    "*.bz2",
+    "*.xz",
+    "*.7z",
 ];
 
 // Directories that should be ignored during search (even if shown in tree)
@@ -55,7 +86,6 @@ pub const SEARCH_IGNORE_DIRS: &[&str] = &[
     // System files
     ".DS_Store",
 ];
-
 
 /// Get ignore directories with support for environment variable extension
 pub fn get_ignore_dirs() -> Vec<&'static str> {
@@ -97,9 +127,7 @@ pub fn get_ignore_files() -> Vec<&'static str> {
 pub fn is_ignored_dir(path: &std::path::Path) -> bool {
     let ignore_dirs = get_ignore_dirs();
     path.iter()
-        .any(|p|
-            ignore_dirs.contains(&p.to_string_lossy().as_ref())
-        )
+        .any(|p| ignore_dirs.contains(&p.to_string_lossy().as_ref()))
 }
 
 /// Checks if a file should be ignored based on its name or extension
@@ -176,7 +204,9 @@ pub fn relative_path(input: &str) -> String {
 
 pub fn relative_to_current_dir(path: &Path) -> Option<PathBuf> {
     let current_dir = std::env::current_dir().ok()?;
-    path.strip_prefix(&current_dir).ok().map(|p| p.to_path_buf())
+    path.strip_prefix(&current_dir)
+        .ok()
+        .map(|p| p.to_path_buf())
 }
 
 pub fn current_dir() -> PathBuf {
@@ -216,11 +246,12 @@ pub fn offset_to_byte(o: usize, s: &str) -> usize {
 
 pub fn path_to_uri(path: &str) -> anyhow::Result<Uri> {
     let path_obj = std::path::Path::new(path);
-    let canonical_path = path_obj.canonicalize()
+    let canonical_path = path_obj
+        .canonicalize()
         .unwrap_or_else(|_| path_obj.to_path_buf());
-    
+
     let path_str = canonical_path.to_string_lossy().replace('\\', "/");
-    
+
     let uri_str = if path_str.len() > 2 && &path_str[1..2] == ":" {
         // Windows path like C:/... -> file:///C:/...
         format!("file:///{}", path_str)
@@ -231,6 +262,8 @@ pub fn path_to_uri(path: &str) -> anyhow::Result<Uri> {
         // Relative path -> file:///path
         format!("file:///{}", path_str)
     };
-    
-    uri_str.parse().map_err(|e| anyhow::anyhow!("Failed to parse URI: {}", e))
+
+    uri_str
+        .parse()
+        .map_err(|e| anyhow::anyhow!("Failed to parse URI: {}", e))
 }

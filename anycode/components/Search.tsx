@@ -231,7 +231,7 @@ const Search = ({ id, onEnter, onCancel, onMatchClick, results, searchEnded }: S
                         <div key={index} className="file-result">
                             <p className="file-path active" onClick={() => handleFileClick(fileResult.file_path)}>
                                 <span className={`file-arrow ${isExpanded ? 'expanded' : ''}`}>▶</span>
-                                {fileResult.matches.length}: {fileResult.file_path}
+                                {fileResult.matches.length}: {fileResult.display_path}
                             </p>
                             {isExpanded && ( 
                                 <div className="matches">
@@ -261,4 +261,3 @@ const Search = ({ id, onEnter, onCancel, onMatchClick, results, searchEnded }: S
 };
 
 export default Search;
-

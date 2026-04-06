@@ -1,13 +1,15 @@
-use serde_json::{self, json};
-use socketioxide::{extract::{AckSender, Data, SocketRef, State}};
-use tracing::info;
-use crate::{app_state::{AppState,TerminalData}, terminal::Terminal};
+use crate::{
+    app_state::{AppState, TerminalData},
+    terminal::Terminal,
+};
 use serde::{Deserialize, Serialize};
+use serde_json::{self, json};
+use socketioxide::extract::{AckSender, Data, SocketRef, State};
 use std::{collections::VecDeque, sync::Arc};
 use tokio::sync::{Mutex, mpsc};
+use tracing::info;
 
 const MAX_TERMINAL_BUFFER: usize = 500;
-
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct TerminalStartRequest {
@@ -22,7 +24,7 @@ pub async fn handle_terminal_start(
     socket: SocketRef,
     Data(terminal_start_request): Data<TerminalStartRequest>,
     state: State<AppState>,
-    ack: AckSender
+    ack: AckSender,
 ) {
     info!("Received handle_terminal {:?}", terminal_start_request);
 
@@ -37,13 +39,13 @@ pub async fn handle_terminal_start(
             let terminals = state.terminals.lock().await;
             terminals.get(&id).cloned()
         };
-    
+
         if let Some(terminal_data) = terminal_data_opt {
             // Clear existing sockets and add the new one
             let mut sockets = terminal_data.sockets.lock().await;
             sockets.clear();
             sockets.push(socket);
-    
+
             let _ = ack.send(&json!({ "success": true }));
             info!("Terminal {} reconnected successfully", terminal_name);
         } else {
@@ -62,9 +64,15 @@ pub async fn handle_terminal_start(
 
     // Create terminal
     let term = Terminal::new(
-        terminal_name.clone(), session_id.clone(),
-        rows, cols, None, None, output_tx,
-    ).await;
+        terminal_name.clone(),
+        session_id.clone(),
+        rows,
+        cols,
+        None,
+        None,
+        output_tx,
+    )
+    .await;
 
     let terminal = match term {
         Ok(terminal) => terminal,
@@ -131,7 +139,6 @@ pub async fn handle_terminal_start(
     info!("Terminal {} started successfully", terminal_name);
 }
 
-
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct TerminalInputRequest {
     pub name: String,
@@ -142,13 +149,17 @@ pub struct TerminalInputRequest {
 pub async fn handle_terminal_input(
     socket: SocketRef,
     Data(request): Data<TerminalInputRequest>,
-    state: State<AppState>
+    state: State<AppState>,
 ) {
     info!("Received handle_terminal_input {:?}", request);
 
-    let TerminalInputRequest { name, input, session } = request;
+    let TerminalInputRequest {
+        name,
+        input,
+        session,
+    } = request;
     let id = format!("{}-{}", session, name);
-    
+
     let terminal_data_opt = {
         let terminals = state.terminals.lock().await;
         terminals.get(&id).cloned()
@@ -167,7 +178,6 @@ pub async fn handle_terminal_input(
     }
 }
 
-
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct TerminalResizeRequest {
     pub name: String,
@@ -179,10 +189,15 @@ pub struct TerminalResizeRequest {
 pub async fn handle_terminal_resize(
     socket: SocketRef,
     Data(request): Data<TerminalResizeRequest>,
-    state: State<AppState>
+    state: State<AppState>,
 ) {
     info!("Received handle_terminal_resize {:?}", request);
-    let TerminalResizeRequest { name, session, cols, rows } = request;
+    let TerminalResizeRequest {
+        name,
+        session,
+        cols,
+        rows,
+    } = request;
     let id = format!("{}-{}", session, name);
 
     let terminal_data_opt = {
@@ -203,7 +218,6 @@ pub async fn handle_terminal_resize(
     }
 }
 
-
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct TerminalCloseRequest {
     pub name: String,
@@ -213,7 +227,7 @@ pub struct TerminalCloseRequest {
 pub async fn handle_terminal_close(
     socket: SocketRef,
     Data(request): Data<TerminalCloseRequest>,
-    state: State<AppState>
+    state: State<AppState>,
 ) {
     info!("Received handle_terminal_close {:?}", request);
     let TerminalCloseRequest { name, session } = request;
@@ -240,7 +254,6 @@ pub async fn handle_terminal_close(
     }
 }
 
-
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct TerminalReconnectRequest {
     pub name: String,
@@ -251,7 +264,7 @@ pub async fn handle_terminal_reconnect(
     socket: SocketRef,
     Data(request): Data<TerminalReconnectRequest>,
     state: State<AppState>,
-    ack: AckSender
+    ack: AckSender,
 ) {
     info!("Received handle_terminal_reconnect {:?}", request);
     let TerminalReconnectRequest { name, session } = request;
@@ -276,17 +289,18 @@ pub async fn handle_terminal_reconnect(
             buffer_guard.drain(..).collect()
         };
         let buffered_output_len = buffered_output.len();
-                
-        // time sleep 100 milliseconds. TODO FIX THIS 
+
+        // time sleep 100 milliseconds. TODO FIX THIS
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
         for chunk in buffered_output {
             let channel = format!("terminal:data:{}", name);
             let _ = socket.emit(channel, &chunk);
         }
-        info!("Terminal {} reconnected with {} chunks of buffer successfully", 
-            name, buffered_output_len);
-
+        info!(
+            "Terminal {} reconnected with {} chunks of buffer successfully",
+            name, buffered_output_len
+        );
     } else {
         let _ = ack.send(&json!({ "success": false, "error": "Terminal not found" }));
         info!("Terminal {} not found for reconnection", name);

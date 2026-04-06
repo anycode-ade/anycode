@@ -46,7 +46,7 @@ mod terminal;
 use lsp_types::PublishDiagnosticsParams;
 use notify::{Event, RecursiveMode, Watcher, recommended_watcher};
 
-async fn on_connect(socket: SocketRef, state: State<AppState>) {
+async fn on_connect(socket: SocketRef, _state: State<AppState>) {
     info!("Socket.IO connected: {:?} {:?}", socket.ns(), socket.id);
 
     socket.on("file:open", handle_file_open);

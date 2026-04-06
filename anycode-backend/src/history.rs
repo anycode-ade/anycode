@@ -1,6 +1,6 @@
+use crate::code::Change;
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
-use crate::code::{Change};
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct History {

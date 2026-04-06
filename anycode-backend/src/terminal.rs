@@ -1,9 +1,9 @@
-use portable_pty::{native_pty_system, CommandBuilder, PtyPair, PtySize, Child};
-use tokio::sync::mpsc;
-use std::io::{Read, Write};
-use anyhow::Result;
-use std::path::{Path, PathBuf};
 use crate::utils::current_dir;
+use anyhow::Result;
+use portable_pty::{Child, CommandBuilder, PtyPair, PtySize, native_pty_system};
+use std::io::{Read, Write};
+use std::path::{Path, PathBuf};
+use tokio::sync::mpsc;
 
 pub struct Terminal {
     name: String,
@@ -79,10 +79,7 @@ impl Terminal {
             .to_string()
     }
 
-    fn spawn_pty_reader(
-        mut reader: Box<dyn Read + Send>,
-        pty_output_tx: mpsc::Sender<String>,
-    ) {
+    fn spawn_pty_reader(mut reader: Box<dyn Read + Send>, pty_output_tx: mpsc::Sender<String>) {
         tokio::task::spawn_blocking(move || {
             tracing::info!("PTY reader started");
             let mut buf = [0u8; 1024];
@@ -164,12 +161,11 @@ impl Terminal {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tokio::time::{timeout, Duration};
     use tokio::sync::mpsc;
+    use tokio::time::{Duration, timeout};
 
     #[tokio::test]
     async fn test_terminal_echo() -> Result<()> {
@@ -178,11 +174,13 @@ mod tests {
         let terminal = Terminal::new(
             "test".to_string(),
             "session1".to_string(),
-            30, 80,
+            30,
+            80,
             Some("bash".to_string()),
             None,
             tx,
-        ).await?;
+        )
+        .await?;
 
         terminal.send_input("echo test\n".to_string()).await?;
 
@@ -190,7 +188,9 @@ mod tests {
         let _ = timeout(Duration::from_secs(2), async {
             while let Some(chunk) = rx.recv().await {
                 output.push_str(&chunk);
-                if output.contains("test") { break }
+                if output.contains("test") {
+                    break;
+                }
             }
         })
         .await;

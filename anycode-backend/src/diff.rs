@@ -1,6 +1,6 @@
-use unicode_segmentation::UnicodeSegmentation;
+use crate::code::{Edit, Operation};
 use similar::{Algorithm, ChangeTag};
-use crate::code::{Operation, Edit};
+use unicode_segmentation::UnicodeSegmentation;
 
 /// Calculate text edits with offsets in UTF-16 code units
 pub fn compute_text_edits(old: &str, new: &str) -> Vec<Edit> {
@@ -57,16 +57,28 @@ mod tests {
     #[test]
     fn test_compute_edits_simple() {
         let before = "let mut foo = 2;\nfoo *= 50;";
-        let after =  "let mut foo = 5;\naaaa foo *= 50;";
+        let after = "let mut foo = 5;\naaaa foo *= 50;";
 
         let edits = compute_text_edits(before, after);
 
         assert_eq!(
             edits,
             vec![
-                Edit { start: 14, text: "2".to_string(), operation: Operation::Remove },
-                Edit { start: 14, text: "5".to_string(), operation: Operation::Insert },
-                Edit { start: 17, text: "aaaa ".to_string(), operation: Operation::Insert },
+                Edit {
+                    start: 14,
+                    text: "2".to_string(),
+                    operation: Operation::Remove
+                },
+                Edit {
+                    start: 14,
+                    text: "5".to_string(),
+                    operation: Operation::Insert
+                },
+                Edit {
+                    start: 17,
+                    text: "aaaa ".to_string(),
+                    operation: Operation::Insert
+                },
             ]
         );
     }
@@ -74,48 +86,83 @@ mod tests {
     #[test]
     fn test_compute_edits_simple2() {
         let before = r#"println!("Current value: {}", );"#;
-        let after =  r#"println!("Current value: {}", i);"#;
+        let after = r#"println!("Current value: {}", i);"#;
 
         let edits = compute_text_edits(before, after);
 
-        assert_eq!(edits, vec![
-            Edit { start: 30, text: "i".to_string(), operation: Operation::Insert },
-        ])
+        assert_eq!(
+            edits,
+            vec![Edit {
+                start: 30,
+                text: "i".to_string(),
+                operation: Operation::Insert
+            },]
+        )
     }
 
     #[test]
     fn test_compute_edits_simple3() {
         let before = r#"test"#;
-        let after =  r#"print()"#;
+        let after = r#"print()"#;
 
         let edits = compute_text_edits(before, after);
 
-        assert_eq!(edits, vec![
-            Edit { start: 0, text: "tes".to_string(), operation: Operation::Remove },
-            Edit { start: 0, text: "prin".to_string(), operation: Operation::Insert },
-            Edit { start: 5, text: "()".to_string(), operation: Operation::Insert },
-        ])
+        assert_eq!(
+            edits,
+            vec![
+                Edit {
+                    start: 0,
+                    text: "tes".to_string(),
+                    operation: Operation::Remove
+                },
+                Edit {
+                    start: 0,
+                    text: "prin".to_string(),
+                    operation: Operation::Insert
+                },
+                Edit {
+                    start: 5,
+                    text: "()".to_string(),
+                    operation: Operation::Insert
+                },
+            ]
+        )
     }
 
     #[test]
     fn test_compute_edits_simple4() {
         let before = r#"print()"#;
-        let after =  r#"hi"#;
+        let after = r#"hi"#;
 
         let edits = compute_text_edits(before, after);
 
-        assert_eq!(edits, vec![
-            Edit { start: 0, text: "pr".to_string(), operation: Operation::Remove },
-            Edit { start: 0, text: "h".to_string(), operation: Operation::Insert },
-            Edit { start: 2, text: "nt()".to_string(), operation: Operation::Remove },
-        ])
+        assert_eq!(
+            edits,
+            vec![
+                Edit {
+                    start: 0,
+                    text: "pr".to_string(),
+                    operation: Operation::Remove
+                },
+                Edit {
+                    start: 0,
+                    text: "h".to_string(),
+                    operation: Operation::Insert
+                },
+                Edit {
+                    start: 2,
+                    text: "nt()".to_string(),
+                    operation: Operation::Remove
+                },
+            ]
+        )
     }
 
     #[test]
     fn test_compute_edits_simple5() {
         let before = "hello world and universe";
-        let after  = "hello Rust and galaxy";
-        
+        let after = "hello Rust and galaxy";
+
         let edits = compute_text_edits(before, after);
         for e in &edits {
             println!("{:?}", e);
@@ -125,40 +172,77 @@ mod tests {
     #[test]
     fn test_compute_edits_simple6() {
         let before = r#"print()"#;
-        let after =  r#"hi"#;
+        let after = r#"hi"#;
 
         let edits = compute_text_edits(before, after);
 
-        assert_eq!(edits, vec![
-            Edit { start: 0, text: "pr".to_string(), operation: Operation::Remove },
-            Edit { start: 0, text: "h".to_string(), operation: Operation::Insert },
-            Edit { start: 2, text: "nt()".to_string(), operation: Operation::Remove },
-        ])
+        assert_eq!(
+            edits,
+            vec![
+                Edit {
+                    start: 0,
+                    text: "pr".to_string(),
+                    operation: Operation::Remove
+                },
+                Edit {
+                    start: 0,
+                    text: "h".to_string(),
+                    operation: Operation::Insert
+                },
+                Edit {
+                    start: 2,
+                    text: "nt()".to_string(),
+                    operation: Operation::Remove
+                },
+            ]
+        )
     }
 
     #[test]
     fn test_compute_edits_unicode() {
         let before = r#"println!("Current значение: {}", i);"#;
-        let after =  r#"println!("Current value: {}", i);"#;
+        let after = r#"println!("Current value: {}", i);"#;
 
         let edits = compute_text_edits(before, after);
 
-        assert_eq!(edits, vec![
-            Edit { start: 18, text: "значение".to_string(), operation: Operation::Remove },
-            Edit { start: 18, text: "value".to_string(), operation: Operation::Insert },
-        ])
+        assert_eq!(
+            edits,
+            vec![
+                Edit {
+                    start: 18,
+                    text: "значение".to_string(),
+                    operation: Operation::Remove
+                },
+                Edit {
+                    start: 18,
+                    text: "value".to_string(),
+                    operation: Operation::Insert
+                },
+            ]
+        )
     }
 
     #[test]
     fn test_compute_edits_unicod2() {
         let before = r#"println!("Current значение: {}", i);"#;
-        let after =  r#"println!("Current значение: {}", иии);"#;
+        let after = r#"println!("Current значение: {}", иии);"#;
 
         let edits = compute_text_edits(before, after);
 
-        assert_eq!(edits, vec![
-            Edit { start: 33, text: "i".to_string(), operation: Operation::Remove },
-            Edit { start: 33, text: "иии".to_string(), operation: Operation::Insert },
-        ])
+        assert_eq!(
+            edits,
+            vec![
+                Edit {
+                    start: 33,
+                    text: "i".to_string(),
+                    operation: Operation::Remove
+                },
+                Edit {
+                    start: 33,
+                    text: "иии".to_string(),
+                    operation: Operation::Insert
+                },
+            ]
+        )
     }
 }

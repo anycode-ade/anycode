@@ -1,6 +1,5 @@
 use crate::acp_fs::AcpFsCommand;
 use crate::acp_history::AcpHistoryManager;
-use crate::utils::relative_to_current_dir;
 use agent_client_protocol::{self as acp, Agent as _, Client};
 use agent_client_protocol_schema::{ProtocolVersion, SessionId};
 use anyhow::{Context, Result, anyhow};
@@ -310,13 +309,11 @@ impl Client for AcpClientImpl {
             serde_json::json!({})
         };
 
-        // Extract locations from tool call update (use relative path if possible)
+        // Keep ACP locations absolute to match the protocol and avoid path identity mismatches.
         let locations = tool_call_update.fields.locations.as_ref().map(|locs| {
             locs.iter()
                 .map(|loc| AcpLocation {
-                    path: relative_to_current_dir(&loc.path)
-                        .map(|p| p.to_string_lossy().to_string())
-                        .unwrap_or_else(|| loc.path.to_string_lossy().to_string()),
+                    path: loc.path.to_string_lossy().to_string(),
                     line: loc.line,
                 })
                 .collect()
@@ -462,7 +459,10 @@ impl Client for AcpClientImpl {
                 Err(acp::Error::internal_error())
             }
             Err(_) => {
-                error!("ACP fs response channel dropped for agent {}", self.agent_id);
+                error!(
+                    "ACP fs response channel dropped for agent {}",
+                    self.agent_id
+                );
                 Err(acp::Error::internal_error())
             }
         }
@@ -515,7 +515,10 @@ impl Client for AcpClientImpl {
                 Err(acp::Error::internal_error())
             }
             Err(_) => {
-                error!("ACP fs response channel dropped for agent {}", self.agent_id);
+                error!(
+                    "ACP fs response channel dropped for agent {}",
+                    self.agent_id
+                );
                 Err(acp::Error::internal_error())
             }
         }
@@ -782,12 +785,13 @@ impl AcpClientImpl {
         if let Some(raw_input) = tool_call.raw_input.as_ref() {
             if let Some(cmd) = raw_input.get("cmd").and_then(|value| value.as_str()) {
                 tool_command = Some(cmd.to_string());
-            } else if let Some(command) = raw_input.get("command").and_then(|value| value.as_str()) {
+            } else if let Some(command) = raw_input.get("command").and_then(|value| value.as_str())
+            {
                 tool_command = Some(command.to_string());
             }
         }
 
-        // Extract locations from tool call (use relative path if possible)
+        // Keep ACP locations absolute to match the protocol and avoid path identity mismatches.
         let locations = if tool_call.locations.is_empty() {
             None
         } else {
@@ -796,9 +800,7 @@ impl AcpClientImpl {
                     .locations
                     .iter()
                     .map(|loc| AcpLocation {
-                        path: relative_to_current_dir(&loc.path)
-                            .map(|p| p.to_string_lossy().to_string())
-                            .unwrap_or_else(|| loc.path.to_string_lossy().to_string()),
+                        path: loc.path.to_string_lossy().to_string(),
                         line: loc.line,
                     })
                     .collect(),
@@ -1148,7 +1150,12 @@ pub struct AcpAgent {
 }
 
 impl AcpAgent {
-    pub fn new(agent_id: String, agent_name: String, permission_mode: Arc<AtomicU8>, fs_sender: mpsc::Sender<AcpFsCommand>) -> Self {
+    pub fn new(
+        agent_id: String,
+        agent_name: String,
+        permission_mode: Arc<AtomicU8>,
+        fs_sender: mpsc::Sender<AcpFsCommand>,
+    ) -> Self {
         // Initialize history manager with current working directory and agent ID
         let project_root = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
         let mut history_manager = AcpHistoryManager::new(&project_root, &agent_id);
@@ -1343,18 +1350,18 @@ impl AcpAgent {
         Self::spawn_stderr_reader(stderr, message_sender.clone(), history_for_stderr);
 
         // Initialize connection and create session
-        let bootstrap =
-            match Self::initialize_connection(&conn, &agent_id, resume_session_id).await {
-                Ok(bootstrap) => {
-                    let _ = session_tx.send(bootstrap.session_id.clone()).await;
-                    ready.store(true, Ordering::SeqCst);
-                    Some(bootstrap)
-                }
-                Err(e) => {
-                    error!("Failed to initialize ACP agent {}: {}", agent_id, e);
-                    None
-                }
-            };
+        let bootstrap = match Self::initialize_connection(&conn, &agent_id, resume_session_id).await
+        {
+            Ok(bootstrap) => {
+                let _ = session_tx.send(bootstrap.session_id.clone()).await;
+                ready.store(true, Ordering::SeqCst);
+                Some(bootstrap)
+            }
+            Err(e) => {
+                error!("Failed to initialize ACP agent {}: {}", agent_id, e);
+                None
+            }
+        };
 
         // Handle prompts in a loop
         if let Some(bootstrap) = bootstrap {
@@ -1463,7 +1470,10 @@ impl AcpAgent {
         let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
         let bootstrap = Self::create_or_resume_session(conn, resume_session_id, cwd).await?;
 
-        info!("Session ready for agent {}: {}", agent_id, bootstrap.session_id);
+        info!(
+            "Session ready for agent {}: {}",
+            agent_id, bootstrap.session_id
+        );
         Ok(bootstrap)
     }
 
@@ -1481,9 +1491,7 @@ impl AcpAgent {
                 } => {
                     error!(
                         "Failed to restore ACP session {}. load_session error: {}. resume_session error: {}. Falling back to creating a new session.",
-                        resume_session_id,
-                        load_err,
-                        resume_err
+                        resume_session_id, load_err, resume_err
                     );
                 }
             }
@@ -1671,7 +1679,9 @@ impl AcpAgent {
 
         Ok(SessionConfigSelectors {
             model_selector: Self::parse_model_selector(Some(response.config_options.as_slice())),
-            reasoning_selector: Self::parse_reasoning_selector(Some(response.config_options.as_slice())),
+            reasoning_selector: Self::parse_reasoning_selector(Some(
+                response.config_options.as_slice(),
+            )),
         })
     }
 
@@ -2053,10 +2063,7 @@ impl AcpAgent {
         Ok(())
     }
 
-    pub async fn set_session_config_option(
-        &self,
-        option: AcpSelectOption,
-    ) -> Result<()> {
+    pub async fn set_session_config_option(&self, option: AcpSelectOption) -> Result<()> {
         let config_tx = self
             .config_sender
             .as_ref()

@@ -1,12 +1,12 @@
-use std::path::{Path, PathBuf};
-use tokio::io::{AsyncBufReadExt, BufReader};
-use serde::{Deserialize, Serialize};
-use tokio_util::sync::CancellationToken;
-use tokio::sync::{mpsc};
+use crate::utils::{is_ignored_path, is_search_ignored_dir, relative_to_current_dir};
 use anyhow::Result;
-use crate::utils::{is_ignored_path, is_search_ignored_dir, relative_path, relative_to_current_dir};
-use tokio::sync::Semaphore;
+use serde::{Deserialize, Serialize};
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::sync::Semaphore;
+use tokio::sync::mpsc;
+use tokio_util::sync::CancellationToken;
 
 pub fn collect_files_recursively(dir_path: &Path) -> Result<Vec<PathBuf>> {
     let mut collected_files = Vec::new();
@@ -49,18 +49,16 @@ fn collect_files_inner(dir_path: &Path, collected: &mut Vec<PathBuf>) -> Result<
     Ok(())
 }
 
-pub fn line_search(
-    line_content: &str, pattern: &str, line_number: usize
-) -> Vec<SearchResult> {
+pub fn line_search(line_content: &str, pattern: &str, line_number: usize) -> Vec<SearchResult> {
     let mut results = Vec::new();
     let mut search_start = 0;
 
     // Search for all occurrences in the line
     while let Some(byte_index) = line_content[search_start..].find(pattern) {
-        let match_start = search_start + byte_index;        
+        let match_start = search_start + byte_index;
         // Count characters correctly – Unicode taught me to be careful
         let symbol_column = line_content[..search_start + byte_index].chars().count();
-        
+
         let chars: Vec<char> = line_content.chars().collect();
         let match_char_start = line_content[..match_start].chars().count();
         let match_char_end = match_char_start + pattern.chars().count();
@@ -81,21 +79,18 @@ pub fn line_search(
     results
 }
 
-pub fn multiline_search(
-    content: &str,
-    pattern: &str,
-) -> Vec<SearchResult> {
+pub fn multiline_search(content: &str, pattern: &str) -> Vec<SearchResult> {
     let mut results = Vec::new();
     let mut search_start = 0;
-    
+
     // Find all occurrences of the pattern in the content
     while let Some(byte_index) = content[search_start..].find(pattern) {
         let match_start = search_start + byte_index;
-        
+
         // Count lines and characters up to the match start to find line number and column
         let mut line_number = 0;
         let mut column = 0;
-        
+
         for ch in content[..match_start].chars() {
             if ch == '\n' {
                 line_number += 1;
@@ -104,7 +99,7 @@ pub fn multiline_search(
                 column += 1;
             }
         }
-        
+
         // Create preview: extract surrounding context (up to 50 chars before and after)
         let chars: Vec<char> = content.chars().collect();
         let match_char_start = content[..match_start].chars().count();
@@ -126,7 +121,6 @@ pub fn multiline_search(
     results
 }
 
-
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct SearchResult {
     pub line: usize,
@@ -140,22 +134,22 @@ pub async fn file_search(
     cancel_token: CancellationToken,
 ) -> Result<Vec<SearchResult>> {
     let mut results = Vec::new();
-    
+
     // Check if pattern is multi-line (contains newline)
     let is_multiline = pattern.contains('\n');
-    
+
     if is_multiline {
         // For multi-line patterns, read entire file content
         if cancel_token.is_cancelled() {
             return Ok(results);
         }
-        
+
         let content = tokio::fs::read_to_string(file_path).await?;
-        
+
         if cancel_token.is_cancelled() {
             return Ok(results);
         }
-        
+
         results = multiline_search(&content, pattern);
     } else {
         // For single-line patterns, use line-by-line processing (more memory efficient)
@@ -171,7 +165,7 @@ pub async fn file_search(
                 line_result = lines.next_line() => {
                     match line_result? {
                         Some(content) => {
-                            if cancel_token.is_cancelled() { 
+                            if cancel_token.is_cancelled() {
                                 break;
                             }
 
@@ -180,12 +174,12 @@ pub async fn file_search(
                             line_number += 1;
                         }
                         // End of file reached
-                        None => { 
+                        None => {
                             break;
                         }
                     }
                 }
-                _ = cancel_token.cancelled() => { 
+                _ = cancel_token.cancelled() => {
                     break;
                 }
             }
@@ -198,6 +192,7 @@ pub async fn file_search(
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct FileSearchResult {
     pub file_path: String,
+    pub display_path: String,
     pub matches: Vec<SearchResult>,
 }
 
@@ -208,7 +203,7 @@ pub async fn global_search(
     result_tx: mpsc::Sender<FileSearchResult>,
 ) -> Result<()> {
     let mut files = collect_files_recursively(dir_path)?;
-    
+
     // Sort files by depth
     files.sort_by(|a, b| {
         let depth_a = a.components().count();
@@ -240,7 +235,7 @@ pub async fn global_search(
             let display_path = relative_to_current_dir(&path_buf)
                 .map(|p| p.to_string_lossy().to_string())
                 .unwrap_or_else(|| file_path_str.clone());
-            
+
             let matches = match file_search(&file_path_str, &pattern, cancel_token.clone()).await {
                 Ok(m) => m,
                 Err(_err) => {
@@ -250,10 +245,15 @@ pub async fn global_search(
             };
 
             if !matches.is_empty() {
-                if result_tx.send(FileSearchResult {
-                    file_path: display_path,
-                    matches,
-                }).await.is_err() {
+                if result_tx
+                    .send(FileSearchResult {
+                        file_path: file_path_str,
+                        display_path,
+                        matches,
+                    })
+                    .await
+                    .is_err()
+                {
                     // Global receiver dropped, skip results
                 }
             }
@@ -270,8 +270,8 @@ pub async fn global_search(
 }
 
 pub mod search_exp {
-    use super::*;
     
+
     #[test]
     fn test_line_search_simple() {
         let line = "This is a test string where test appears twice: test.";
@@ -293,7 +293,7 @@ pub mod search_exp {
         assert_eq!(results[2].column, 48);
         assert!(results[2].preview.contains(pattern));
     }
-    
+
     #[test]
     fn test_line_search_unicode() {
         let line = "Пример строки с шаблон шаблоном и ещё текст.";
@@ -301,7 +301,7 @@ pub mod search_exp {
         let results = line_search(line, pattern, 0);
 
         assert_eq!(results.len(), 2);
-        
+
         // First occurrence
         assert_eq!(results[0].line, 0);
         assert_eq!(results[0].column, 16);
@@ -311,7 +311,7 @@ pub mod search_exp {
         assert_eq!(results[1].column, 23);
         assert!(results[1].preview.contains(pattern));
     }
-    
+
     #[test]
     fn test_line_search_no_match() {
         let line = "Nothing to see here.";
@@ -320,23 +320,23 @@ pub mod search_exp {
 
         assert!(results.is_empty());
     }
-    
+
     #[test]
     fn test_line_search_long_preview_cutoff() {
         let line = "A".repeat(100) + "pattern" + &"B".repeat(100);
         let pattern = "pattern";
         let results = line_search(&line, pattern, 0);
-    
+
         assert_eq!(results.len(), 1);
         let result = &results[0];
-    
+
         assert_eq!(result.line, 0);
         assert_eq!(result.column, 100); // 100 'A's before pattern
         assert!(result.preview.contains(pattern));
-    
+
         let expected_preview_len = 50 + pattern.len() + 50;
         assert_eq!(result.preview.chars().count(), expected_preview_len);
-    
+
         assert!(result.preview.starts_with(&"A".repeat(50)));
         assert!(result.preview.ends_with(&"B".repeat(50)));
     }
@@ -344,9 +344,9 @@ pub mod search_exp {
     #[tokio::test]
     async fn test_search_in_file_with_cancel_named_tempfile() -> Result<()> {
         let pattern = "search_term";
-    
+
         let mut temp_file = tempfile::NamedTempFile::new()?;
-    
+
         use std::io::Write;
         writeln!(
             temp_file,
@@ -355,34 +355,30 @@ pub mod search_exp {
             This line does not.\n\
             Another line with search_term.\n"
         )?;
-    
+
         let temp_file_path = temp_file.path().to_path_buf();
-    
+
         let cancel = CancellationToken::new();
-    
-        let results = file_search(
-            temp_file_path.to_string_lossy().as_ref(),
-            pattern,
-            cancel,
-        ).await?;
-    
+
+        let results =
+            file_search(temp_file_path.to_string_lossy().as_ref(), pattern, cancel).await?;
+
         println!("Results: {:?}", results);
-    
+
         assert_eq!(results.len(), 2);
         assert_eq!(results[0].line, 1);
         assert!(results[0].preview.contains(pattern));
         assert_eq!(results[1].line, 3);
         assert!(results[1].preview.contains(pattern));
-        
+
         Ok(())
     }
 
     #[tokio::test]
     async fn test_search_in_file_with_cancel_cancelled() -> Result<()> {
-
         let pattern = "search_term";
         let mut temp_file = tempfile::NamedTempFile::new()?;
-    
+
         use std::io::Write;
         writeln!(
             temp_file,
@@ -391,20 +387,17 @@ pub mod search_exp {
             This line does not.\n\
             Another line with search_term.\n"
         )?;
-    
+
         let temp_file_path = temp_file.path().to_path_buf();
-        
+
         let cancel = CancellationToken::new();
-        
+
         // Send cancellation signal immediately
         cancel.cancel();
 
         // Search should return empty results when cancelled
-        let results = file_search(
-            temp_file_path.to_string_lossy().as_ref(),
-            pattern,
-            cancel,
-        ).await?;
+        let results =
+            file_search(temp_file_path.to_string_lossy().as_ref(), pattern, cancel).await?;
 
         println!("Results len: {}", results.len());
         println!("Results: {:?}", results);
@@ -412,7 +405,7 @@ pub mod search_exp {
         // Assert that processing stopped before completing
         // We expect 0 results to be returned.
         assert!(results.len() == 0);
-        
+
         Ok(())
     }
 
@@ -429,7 +422,10 @@ pub mod search_exp {
         let file_2 = dir_path.join("file2.txt");
 
         // Write some content to the files
-        std::fs::write(&file_1, "hello world\nюникод не помеха search_term here\nbye world")?;
+        std::fs::write(
+            &file_1,
+            "hello world\nюникод не помеха search_term here\nbye world",
+        )?;
         std::fs::write(&file_2, "nothing to match\nno search term\nstill nothing")?;
 
         // Create the cancellation token
@@ -449,9 +445,7 @@ pub mod search_exp {
         // Run batch search with a cancellation token
         let pattern = "search_term";
         tokio::spawn(async move {
-            let search_result = global_search(
-                &dir_path, pattern, cancel_clone, result_tx
-            ).await;
+            let search_result = global_search(&dir_path, pattern, cancel_clone, result_tx).await;
 
             if let Err(err) = search_result {
                 eprintln!("search failed: {}", err);
@@ -461,27 +455,43 @@ pub mod search_exp {
         // Collect results
         let mut collected_results = Vec::new();
         while let Some(file_result) = result_rx.recv().await {
-            println!("Results for file: {}", file_result.file_path);
+            println!("Results for file: {}", file_result.display_path);
             for result in &file_result.matches {
-                println!("  Line {}:{} {}", result.line, result.column, result.preview);
+                println!(
+                    "  Line {}:{} {}",
+                    result.line, result.column, result.preview
+                );
             }
             collected_results.push(file_result);
         }
-    
+
         // Assertions
-    
+
         // We expect only one file (file1.txt) to contain matches
         assert_eq!(collected_results.len(), 1, "Expected one file with matches");
-    
+
         let file1_results = &collected_results[0];
-        assert!(file1_results.file_path.ends_with("file1.txt"), "Expected matches in file1.txt");
-    
+        assert!(
+            file1_results.file_path.ends_with("file1.txt"),
+            "Expected matches in file1.txt"
+        );
+        assert!(
+            file1_results.display_path.ends_with("file1.txt"),
+            "Expected display path to remain readable"
+        );
+
         // We expect at least one match in that file
-        assert!(!file1_results.matches.is_empty(), "Expected at least one match");
-    
+        assert!(
+            !file1_results.matches.is_empty(),
+            "Expected at least one match"
+        );
+
         // Check that all matches contain the search pattern in their preview
         for search_result in &file1_results.matches {
-            assert!(search_result.preview.contains(pattern), "Preview should contain the pattern");
+            assert!(
+                search_result.preview.contains(pattern),
+                "Preview should contain the pattern"
+            );
         }
 
         Ok(())
@@ -501,29 +511,26 @@ pub mod search_exp {
     #[tokio::test]
     async fn test_file_search_multiline() -> Result<()> {
         let mut temp_file = tempfile::NamedTempFile::new()?;
-        
+
         use std::io::Write;
         writeln!(
             temp_file,
             "first line\nsecond line\nthird line\nfourth line\ntest\ntest"
         )?;
-        
+
         let temp_file_path = temp_file.path().to_path_buf();
         let pattern = "second line\nthird line";
-        
+
         let cancel = CancellationToken::new();
-        
-        let results = file_search(
-            temp_file_path.to_string_lossy().as_ref(),
-            pattern,
-            cancel,
-        ).await?;
-        
+
+        let results =
+            file_search(temp_file_path.to_string_lossy().as_ref(), pattern, cancel).await?;
+
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].line, 1); // second line is at index 1
         assert!(results[0].preview.contains("second line"));
         assert!(results[0].preview.contains("third line"));
-        
+
         Ok(())
     }
 
@@ -547,10 +554,10 @@ pub mod search_exp {
         let (result_tx, mut result_rx) = mpsc::channel::<FileSearchResult>(1000);
 
         let start = Instant::now();
-        
+
         // Run the search
         global_search(&rust_dir, pattern, cancel, result_tx).await?;
-        
+
         let elapsed = start.elapsed();
 
         // Collect all results
@@ -573,10 +580,7 @@ pub mod search_exp {
             for r in &file_result.matches {
                 println!(
                     "File: {}, Line: {}, Col: {}, preview: {}",
-                    file_result.file_path,
-                    r.line,
-                    r.column,
-                    r.preview
+                    file_result.file_path, r.line, r.column, r.preview
                 );
             }
         }

@@ -1,17 +1,16 @@
-use std::{collections::VecDeque, sync::Arc};
-use tokio::sync::Mutex;
+use crate::acp::AcpManager;
 use crate::code::Code;
 use crate::config::Config;
-use crate::lsp::LspManager;
-use crate::acp::AcpManager;
 use crate::git::GitManager;
-use socketioxide::{extract::{SocketRef, State}};
-use std::collections::HashSet;
-use tokio_util::sync::CancellationToken;
+use crate::lsp::LspManager;
 use crate::terminal::Terminal;
-use std::collections::hash_map::{HashMap, Entry};
 use anyhow::{Result, anyhow};
-
+use socketioxide::extract::{SocketRef, State};
+use std::collections::HashSet;
+use std::collections::hash_map::{Entry, HashMap};
+use std::{collections::VecDeque, sync::Arc};
+use tokio::sync::Mutex;
+use tokio_util::sync::CancellationToken;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -38,7 +37,6 @@ pub struct TerminalData {
     pub buffer: Arc<Mutex<VecDeque<String>>>,
 }
 
-
 #[macro_export]
 macro_rules! error_ack {
     ($ack:expr, $path:expr, $msg:expr $(, $args:expr)*) => {{
@@ -53,7 +51,10 @@ macro_rules! error_ack {
 /// Helper: send response based on Result
 /// Used with _impl pattern: handler calls send_response(ack, some_impl())
 /// where some_impl() returns anyhow::Result<Value> and can use ? operator with .context()
-pub fn send_response(ack: socketioxide::extract::AckSender, result: anyhow::Result<serde_json::Value>) {
+pub fn send_response(
+    ack: socketioxide::extract::AckSender,
+    result: anyhow::Result<serde_json::Value>,
+) {
     use serde_json::json;
     match result {
         Ok(data) => {
@@ -64,7 +65,8 @@ pub fn send_response(ack: socketioxide::extract::AckSender, result: anyhow::Resu
             ack.send(&response).ok();
         }
         Err(e) => {
-            ack.send(&json!({ "success": false, "error": format!("{:#}", e) })).ok();
+            ack.send(&json!({ "success": false, "error": format!("{:#}", e) }))
+                .ok();
         }
     }
 }
@@ -87,26 +89,31 @@ pub fn get_or_create_code<'a>(
 /// Get languages for files opened by a socket
 /// Returns None if socket was not found
 pub async fn get_socket_languages(
-    socket_id: &str, state: &State<AppState>,
+    socket_id: &str,
+    state: &State<AppState>,
 ) -> Option<HashSet<String>> {
     let sockets_data = state.socket2data.lock().await;
     let socket_data = sockets_data.get(socket_id)?;
-    
+
     let f2c = state.file2code.lock().await;
-    Some(socket_data.opened_files.iter()
-        .filter_map(|path| f2c.get(path).map(|code| code.lang.clone()))
-        .collect::<HashSet<_>>())
+    Some(
+        socket_data
+            .opened_files
+            .iter()
+            .filter_map(|path| f2c.get(path).map(|code| code.lang.clone()))
+            .collect::<HashSet<_>>(),
+    )
 }
 
 /// Check if a language has any opened files across all sockets
-pub async fn is_language_opened(
-    lang: &str, state: &State<AppState>,
-) -> bool {
+pub async fn is_language_opened(lang: &str, state: &State<AppState>) -> bool {
     let sockets_data = state.socket2data.lock().await;
-    let all_opened_files: Vec<String> = sockets_data.values()
+    let all_opened_files: Vec<String> = sockets_data
+        .values()
         .flat_map(|data| data.opened_files.iter())
-        .cloned().collect();
-    
+        .cloned()
+        .collect();
+
     let f2c = state.file2code.lock().await;
     all_opened_files.iter().any(|file_path| {
         f2c.get(file_path)

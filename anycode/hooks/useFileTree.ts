@@ -46,13 +46,15 @@ export const useFileTree = () => {
             return;
         }
 
+        const basePath = response.fullpath;
+
         if (response.relative_path === '.') {
-            const children = convertToTree(response.files, response.dirs, '.');
+            const children = convertToTree(response.files, response.dirs, basePath);
             const rootNode: TreeNode = {
-                id: '.',
+                id: basePath,
                 name: response.name || 'Root',
                 type: 'directory',
-                path: '.',
+                path: basePath,
                 children,
                 isExpanded: true,
                 isSelected: false,
@@ -66,10 +68,10 @@ export const useFileTree = () => {
         setFileTree((prev) => {
             const updateNode = (nodes: TreeNode[]): TreeNode[] => {
                 return nodes.map((node) => {
-                    if (node.id === response.relative_path) {
+                    if (node.id === basePath) {
                         return {
                             ...node,
-                            children: convertToTree(response.files, response.dirs, response.relative_path),
+                            children: convertToTree(response.files, response.dirs, basePath),
                             isExpanded: true,
                             isLoading: false,
                             hasLoaded: true,

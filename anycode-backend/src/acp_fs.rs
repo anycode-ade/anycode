@@ -5,7 +5,7 @@ use std::sync::Arc;
 use anyhow::{Context, Result};
 use serde_json::json;
 use socketioxide::SocketIo;
-use tokio::sync::{mpsc, oneshot, Mutex};
+use tokio::sync::{Mutex, mpsc, oneshot};
 use tracing::{error, info};
 
 use crate::code::Code;
@@ -78,11 +78,10 @@ async fn handle_write(
     content: &str,
     file2code: &Arc<Mutex<HashMap<String, Code>>>,
     lsp_manager: &Arc<Mutex<LspManager>>,
-    config: &Config,
+    _config: &Config,
     io: &Arc<SocketIo>,
 ) -> Result<()> {
-    let abs_path = abs_file(&path.to_string_lossy())
-        .context("Failed to resolve absolute path")?;
+    let abs_path = abs_file(&path.to_string_lossy()).context("Failed to resolve absolute path")?;
 
     // Lock file2code and check if file is open
     let mut f2c = file2code.lock().await;
@@ -184,8 +183,7 @@ async fn handle_read(
     path: &PathBuf,
     file2code: &Arc<Mutex<HashMap<String, Code>>>,
 ) -> Result<String> {
-    let abs_path = abs_file(&path.to_string_lossy())
-        .context("Failed to resolve absolute path")?;
+    let abs_path = abs_file(&path.to_string_lossy()).context("Failed to resolve absolute path")?;
 
     // Check if file is open in file2code
     let f2c = file2code.lock().await;

@@ -128,6 +128,13 @@ export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: Us
 
     const openFile = useCallback((path: string, line?: number, column?: number) => {
         const existingFile = filesRef.current.find((file) => file.id === path);
+        console.log('[openFile]', {
+            path,
+            line,
+            column,
+            hasExistingFile: !!existingFile,
+            openFiles: filesRef.current.map((file) => file.id),
+        });
 
         if (line !== undefined && column !== undefined) {
             pendingPositions.current.set(path, { line, column });
@@ -383,12 +390,6 @@ export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: Us
     const handleWatcherEdits = useCallback((watcherEdits: WatcherEdits) => {
         const { file, edits } = watcherEdits;
         const editor = editorRefs.current.get(file);
-        console.log('[watcher:edits] received', {
-            file,
-            editsCount: edits.length,
-            hasEditor: !!editor,
-            openEditors: Array.from(editorRefs.current.keys()),
-        });
         if (!editor) return;
 
         ignoreChangeFilesRef.current.add(file);

@@ -1,6 +1,6 @@
 use anyhow::Result;
-use serde::{Deserialize, Serialize};
-use std::{fmt::format, path::Path};
+use serde::Deserialize;
+use std::path::Path;
 
 use rust_embed::Embed;
 
@@ -72,7 +72,7 @@ pub fn get() -> Config {
                 Ok(toml_str) => toml_str,
                 Err(_) => read_assets_config().unwrap_or_default(),
             }
-        },
+        }
         Err(_) => {
             // checkout ~/.anycode/config.toml
             if let Some(home) = dirs::home_dir() {
@@ -85,23 +85,24 @@ pub fn get() -> Config {
                 eprintln!("Couldn't find home directory");
                 read_assets_config().unwrap_or_default()
             }
-        },
+        }
     };
 
     let config: Config = toml::from_str(&toml_str).expect("Unable to parse TOML");
     config
 }
 
-
 pub fn get_file_content_env(file_name: &str) -> anyhow::Result<String> {
-    let home = std::env::var("ANYCODE_HOME")
-        .map_err(|_| anyhow::anyhow!("ANYCODE_HOME not set"))?;
+    let home =
+        std::env::var("ANYCODE_HOME").map_err(|_| anyhow::anyhow!("ANYCODE_HOME not set"))?;
     let file_path = Path::new(&home).join(file_name);
     let file_content = std::fs::read_to_string(file_path)?;
-    log2::debug!("Read {} from ANYCODE_HOME environment successfully", file_name);
+    log2::debug!(
+        "Read {} from ANYCODE_HOME environment successfully",
+        file_name
+    );
     Ok(file_content)
 }
-
 
 pub fn get_file_content_home(file_name: &str) -> anyhow::Result<String> {
     // get the file content from home directory
@@ -112,9 +113,8 @@ pub fn get_file_content_home(file_name: &str) -> anyhow::Result<String> {
     Ok(file_content)
 }
 
-
 pub fn get_file_content_assets(file_name: &str) -> anyhow::Result<String> {
-    // get the file content from assets 
+    // get the file content from assets
     let config = Assets::get(file_name);
     match config {
         Some(config) => {
@@ -140,7 +140,6 @@ pub fn read_assets_config() -> anyhow::Result<String> {
         .map_err(|e| anyhow::anyhow!("Invalid UTF-8 in config.toml: {}", e))?;
     Ok(config_str.to_string())
 }
-
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct Terminal {

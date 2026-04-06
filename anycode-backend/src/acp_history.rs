@@ -1,7 +1,7 @@
-use anyhow::{anyhow, Context, Result};
-use git2::{build::CheckoutBuilder, IndexAddOption, Repository, ResetType, Signature};
+use anyhow::{Context, Result, anyhow};
+use git2::{IndexAddOption, Repository, ResetType, Signature, build::CheckoutBuilder};
 use std::path::{Path, PathBuf};
-use tracing::{info, warn, debug};
+use tracing::{debug, info, warn};
 
 /// Checkpoint representing a state before a user message
 #[derive(Debug, Clone)]
@@ -93,8 +93,7 @@ impl AcpHistoryManager {
         }
 
         // Create history directory if needed
-        std::fs::create_dir_all(&self.history_dir)
-            .context("Failed to create history directory")?;
+        std::fs::create_dir_all(&self.history_dir).context("Failed to create history directory")?;
 
         self.sync_shadow_gitignore()?;
 
@@ -110,7 +109,10 @@ impl AcpHistoryManager {
                 }
                 Err(e) => {
                     // Repository is corrupted or invalid, reinitialize
-                    warn!("Existing repository invalid ({}), removing and reinitializing", e);
+                    warn!(
+                        "Existing repository invalid ({}), removing and reinitializing",
+                        e
+                    );
                     std::fs::remove_dir_all(&git_dir)
                         .context("Failed to remove corrupted git directory")?;
                     self.initialize_new_repo()?;
@@ -127,11 +129,14 @@ impl AcpHistoryManager {
 
     /// Initialize a new git repository
     fn initialize_new_repo(&self) -> Result<()> {
-        info!("Initializing new history repository at {:?}", self.git_dir());
+        info!(
+            "Initializing new history repository at {:?}",
+            self.git_dir()
+        );
 
         // Initialize repository at git_dir
-        let _repo = Repository::init(&self.git_dir())
-            .context("Failed to initialize git repository")?;
+        let _repo =
+            Repository::init(&self.git_dir()).context("Failed to initialize git repository")?;
 
         // Now set the workdir to the project root
         let repo = self.open_repo()?;
@@ -146,8 +151,7 @@ impl AcpHistoryManager {
 
     /// Open the repository with workdir set to project root
     fn open_repo(&self) -> Result<Repository> {
-        let repo = Repository::open(&self.git_dir())
-            .context("Failed to open git repository")?;
+        let repo = Repository::open(&self.git_dir()).context("Failed to open git repository")?;
 
         // Set workdir to project root
         repo.set_workdir(&self.project_root, false)
@@ -167,7 +171,11 @@ impl AcpHistoryManager {
             IndexAddOption::DEFAULT,
             Some(&mut |path, _matched_spec| {
                 let path_str = path.to_string_lossy();
-                if path_str.starts_with(".anycode/") { 1 } else { 0 }
+                if path_str.starts_with(".anycode/") {
+                    1
+                } else {
+                    0
+                }
             }),
         )?;
         index.write()?;
@@ -213,10 +221,8 @@ impl AcpHistoryManager {
                 checkpoints.push(Checkpoint {
                     commit_hash: oid.to_string(),
                     prompt: prompt.clone(),
-                    created_at: chrono::DateTime::from_timestamp(
-                        commit.time().seconds(),
-                        0
-                    ).unwrap_or_else(chrono::Utc::now),
+                    created_at: chrono::DateTime::from_timestamp(commit.time().seconds(), 0)
+                        .unwrap_or_else(chrono::Utc::now),
                 });
             }
         }
@@ -246,7 +252,11 @@ impl AcpHistoryManager {
             IndexAddOption::DEFAULT,
             Some(&mut |path, _matched_spec| {
                 let path_str = path.to_string_lossy();
-                if path_str.starts_with(".anycode/") { 1 } else { 0 }
+                if path_str.starts_with(".anycode/") {
+                    1
+                } else {
+                    0
+                }
             }),
         )?;
 
@@ -268,14 +278,8 @@ impl AcpHistoryManager {
             let sig = Signature::now("AnyCode", "anycode@local")?;
             let commit_message = format!("checkpoint:{}", prompt);
 
-            let commit_id = repo.commit(
-                Some("HEAD"),
-                &sig,
-                &sig,
-                &commit_message,
-                &tree,
-                &[&head],
-            )?;
+            let commit_id =
+                repo.commit(Some("HEAD"), &sig, &sig, &commit_message, &tree, &[&head])?;
 
             commit_id.to_string()
         };
@@ -303,17 +307,19 @@ impl AcpHistoryManager {
     pub fn restore_to_commit(&self, commit_hash: &str) -> Result<()> {
         let repo = self.open_repo()?;
 
-        let oid = git2::Oid::from_str(commit_hash)
-            .context("Invalid commit hash")?;
-        let commit = repo.find_commit(oid)
-            .context("Commit not found")?;
+        let oid = git2::Oid::from_str(commit_hash).context("Invalid commit hash")?;
+        let commit = repo.find_commit(oid).context("Commit not found")?;
 
         // Hard reset to the target commit
         let mut checkout_opts = CheckoutBuilder::new();
         checkout_opts.force();
 
-        repo.reset(commit.as_object(), ResetType::Hard, Some(&mut checkout_opts))
-            .context("Failed to reset to checkpoint")?;
+        repo.reset(
+            commit.as_object(),
+            ResetType::Hard,
+            Some(&mut checkout_opts),
+        )
+        .context("Failed to reset to checkpoint")?;
 
         info!("Restored project to commit {}", commit_hash);
 

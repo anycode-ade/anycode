@@ -1,11 +1,11 @@
+use anyhow::Result;
+use serde_json::json;
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::collections::HashMap;
 use std::time::Duration;
 use tokio::sync::{Mutex, watch};
-use serde_json::json;
 use tracing::info;
-use anyhow::Result;
 
 const DEBOUNCE: Duration = Duration::from_millis(100);
 
@@ -15,28 +15,36 @@ use crate::diff::compute_text_edits;
 use crate::handlers::io_handler::apply_edits_to_code;
 use crate::lsp::LspManager;
 
-#[derive(Clone, Debug, PartialEq)] // Added Copy/Clone/PartialEq if needed by usage, sticking to original Clone/PartialEq + Debug
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 enum FileState {
     Exists,
     DoesNotExist,
 }
 
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+enum WatchAction {
+    Create,
+    Remove,
+    Modify,
+    Ignore,
+}
+
 pub struct FileWatchState {
-    pub state: FileState,
-    pub sender: watch::Sender<()>,
-    pub pending: bool,
+    state: FileState,
+    sender: watch::Sender<()>,
+    pending: bool,
 }
 
 async fn is_parent_dir_opened(
     path: &PathBuf,
-    socket2data: &Arc<Mutex<HashMap<String, SocketData>>>
+    socket2data: &Arc<Mutex<HashMap<String, SocketData>>>,
 ) -> bool {
     if let Some(parent) = path.parent() {
         if let Some(parent_str) = parent.to_str() {
             let sockets_data = socket2data.lock().await;
-            return sockets_data.values().any(|data| {
-                data.opened_dirs.contains(parent_str)
-            });
+            return sockets_data
+                .values()
+                .any(|data| data.opened_dirs.contains(parent_str));
         }
     }
     false
@@ -44,10 +52,34 @@ async fn is_parent_dir_opened(
 
 async fn is_file_opened(
     path_str: &str,
-    socket2data: &Arc<Mutex<HashMap<String, SocketData>>>
+    socket2data: &Arc<Mutex<HashMap<String, SocketData>>>,
 ) -> bool {
     let sockets_data = socket2data.lock().await;
-    sockets_data.values().any(|data| data.opened_files.contains(path_str))
+    sockets_data
+        .values()
+        .any(|data| data.opened_files.contains(path_str))
+}
+
+fn classify_watch_transition(
+    last_state: FileState,
+    current_state: FileState,
+    is_opened_file: bool,
+) -> WatchAction {
+    match (last_state, current_state) {
+        (FileState::DoesNotExist, FileState::Exists) => {
+            if is_opened_file {
+                // Atomic saves often surface as create/replace events for files that are
+                // already open. For opened files, we want to resync content instead of
+                // treating the first observed event as a brand-new file.
+                WatchAction::Modify
+            } else {
+                WatchAction::Create
+            }
+        }
+        (FileState::Exists, FileState::DoesNotExist) => WatchAction::Remove,
+        (FileState::Exists, FileState::Exists) => WatchAction::Modify,
+        _ => WatchAction::Ignore,
+    }
 }
 
 async fn handle_create_remove_event(
@@ -55,7 +87,7 @@ async fn handle_create_remove_event(
     path_str: &str,
     event_kind: &notify::EventKind,
     socket: &Arc<socketioxide::SocketIo>,
-    socket2data: &Arc<Mutex<HashMap<String, SocketData>>>
+    socket2data: &Arc<Mutex<HashMap<String, SocketData>>>,
 ) {
     if !is_parent_dir_opened(path, socket2data).await {
         return;
@@ -69,8 +101,6 @@ async fn handle_create_remove_event(
         _ => return,
     };
 
-    let relative_path = crate::utils::relative_path(path_str);
-
     // For create events, path.is_file() works because the file exists.
     // For remove events, path.is_file() always returns false (file is gone),
     // so we use a heuristic: if the path has a file extension, it's a file.
@@ -80,10 +110,15 @@ async fn handle_create_remove_event(
         _ => false,
     };
 
-    let _ = socket.emit(event_name, &json!({
-        "path": relative_path,
-        "isFile": is_file
-    })).await;
+    let _ = socket
+        .emit(
+            event_name,
+            &json!({
+                "path": path_str,
+                "isFile": is_file
+            }),
+        )
+        .await;
 }
 
 async fn handle_modify_event(
@@ -113,14 +148,19 @@ pub async fn handle_watch_event(
     lsp_manager: &Arc<Mutex<LspManager>>,
 ) {
     let path_str = match path.to_str() {
-        Some(s) => s.to_string(), None => return,
+        Some(s) => s.to_string(),
+        None => return,
     };
 
     let (should_spawn, rx) = {
         let mut states = file_states.lock().await;
         let entry = states.entry(path_str.clone()).or_insert_with(|| {
             let (tx, _) = watch::channel(());
-            FileWatchState { state: FileState::DoesNotExist, sender: tx, pending: false, }
+            FileWatchState {
+                state: FileState::DoesNotExist,
+                sender: tx,
+                pending: false,
+            }
         });
 
         let _ = entry.sender.send(());
@@ -134,7 +174,9 @@ pub async fn handle_watch_event(
         }
     };
 
-    if !should_spawn { return; }
+    if !should_spawn {
+        return;
+    }
 
     let mut rx = rx.unwrap();
 
@@ -154,22 +196,29 @@ pub async fn handle_watch_event(
             // Mark as seen so we wait for *new* changes
             let _ = rx.borrow_and_update();
             match tokio::time::timeout(DEBOUNCE, rx.changed()).await {
-                Ok(_) => continue,  // new event arrived — reset timer
-                Err(_) => break,    // timeout — silence, time to process
+                Ok(_) => continue, // new event arrived — reset timer
+                Err(_) => break,   // timeout — silence, time to process
             }
         }
 
         process_watch_event(
-            &path, &path_str_key, &socket, &file2code, &socket2data, &file_states, &git_manager, &lsp_manager,
-        ).await;
+            &path,
+            &path_str_key,
+            &socket,
+            &file2code,
+            &socket2data,
+            &file_states,
+            &git_manager,
+            &lsp_manager,
+        )
+        .await;
 
         // Mark as not pending so future events spawn a new task
-        
+
         let mut states = file_states.lock().await;
         if let Some(state) = states.get_mut(&path_str_key) {
             state.pending = false;
         }
-        
     });
 }
 
@@ -191,37 +240,47 @@ async fn process_watch_event(
 
     let last_state = {
         let states = file_states.lock().await;
-        states.get(path_str)
+        states
+            .get(path_str)
             .map(|s| s.state.clone())
             .unwrap_or(FileState::DoesNotExist) // never seen = didn't exist for us
     };
+    let is_opened_file = is_file_opened(path_str, socket2data).await;
 
-    info!("File state transition: {:?} -> {:?} for path: {:?}", last_state, current_state, path);
+    info!(
+        "File state transition: {:?} -> {:?} for path: {:?}",
+        last_state, current_state, path
+    );
 
-    match (&last_state, &current_state) {
-        (&FileState::DoesNotExist, &FileState::Exists) => {
+    match classify_watch_transition(last_state, current_state, is_opened_file) {
+        WatchAction::Create => {
             handle_create_remove_event(
                 path,
                 path_str,
                 &notify::EventKind::Create(notify::event::CreateKind::File),
                 socket,
                 socket2data,
-            ).await;
-        },
-        (&FileState::Exists, &FileState::DoesNotExist) => {
+            )
+            .await;
+        }
+        WatchAction::Remove => {
             handle_create_remove_event(
                 path,
                 path_str,
                 &notify::EventKind::Remove(notify::event::RemoveKind::File),
                 socket,
                 socket2data,
-            ).await;
-        },
-        (&FileState::Exists, &FileState::Exists) => {
+            )
+            .await;
+        }
+        WatchAction::Modify => {
             handle_modify_event(path, path_str, socket, file2code, socket2data, lsp_manager).await;
-        },
-        _ => {
-            info!("Ignoring state transition: {:?} -> {:?}", last_state, current_state);
+        }
+        WatchAction::Ignore => {
+            info!(
+                "Ignoring state transition: {:?} -> {:?}",
+                last_state, current_state
+            );
         }
     }
 
@@ -259,18 +318,21 @@ async fn handle_file_modification(
     file2code: &Arc<Mutex<HashMap<String, Code>>>,
     lsp_manager: &Arc<Mutex<LspManager>>,
 ) -> Result<()> {
-    
-    let path_str = path.to_str().ok_or_else(|| anyhow::anyhow!("Invalid UTF-8 in path"))?;
+    let path_str = path
+        .to_str()
+        .ok_or_else(|| anyhow::anyhow!("Invalid UTF-8 in path"))?;
 
     // Read new content from disk first (before locking)
-    let new_text = tokio::fs::read_to_string(path).await
+    let new_text = tokio::fs::read_to_string(path)
+        .await
         .map_err(|e| anyhow::anyhow!("Failed to read file {:?}: {}", path, e))?;
 
     // Lock file2code, check self_updated, compute diff, apply edits
     let (edits, lsp_changes, lang) = {
         let mut f2c = file2code.lock().await;
         let code = match f2c.get_mut(path_str) {
-            Some(c) => c, None => return Ok(()),
+            Some(c) => c,
+            None => return Ok(()),
         };
 
         if code.self_updated {
@@ -300,15 +362,11 @@ async fn handle_file_modification(
     };
     // file2code lock released here
 
-    // Notify frontend
-    let file = crate::utils::relative_path(path_str);
-    info!(
-        "emitting watcher:edits for path={} file={} edits={}",
-        path_str,
-        file,
-        edits.len()
-    );
-    socket.emit("watcher:edits", &json! {{ "file": file, "edits": edits }}).await
+    // Notify frontend using the absolute path to keep editor identity consistent.
+    let file = path_str.to_string();
+    socket
+        .emit("watcher:edits", &json! {{ "file": file, "edits": edits }})
+        .await
         .map_err(|e| anyhow::anyhow!("Failed to emit edits: {}", e))?;
 
     // Sync LSP
@@ -321,4 +379,33 @@ async fn handle_file_modification(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unopened_new_file_is_classified_as_create() {
+        assert_eq!(
+            classify_watch_transition(FileState::DoesNotExist, FileState::Exists, false,),
+            WatchAction::Create
+        );
+    }
+
+    #[test]
+    fn opened_newly_observed_file_is_treated_as_modify() {
+        assert_eq!(
+            classify_watch_transition(FileState::DoesNotExist, FileState::Exists, true,),
+            WatchAction::Modify
+        );
+    }
+
+    #[test]
+    fn existing_file_changes_are_modifications() {
+        assert_eq!(
+            classify_watch_transition(FileState::Exists, FileState::Exists, true,),
+            WatchAction::Modify
+        );
+    }
 }

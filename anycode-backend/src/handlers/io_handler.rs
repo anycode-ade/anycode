@@ -1,14 +1,17 @@
-use serde_json::{self, json};
-use socketioxide::{extract::{AckSender, Data, SocketRef, State}};
-use tracing::{info, error};
-use crate::{app_state::{AppState, SocketData}, code::Code};
-use serde::{Deserialize, Serialize};
-use crate::utils::{abs_file, is_ignored_path};
 use crate::app_state::*;
+use crate::code::{Edit, Operation};
 use crate::error_ack;
-use lsp_types::{TextDocumentContentChangeEvent, Range, Position};
+use crate::utils::{abs_file, is_ignored_path};
+use crate::{
+    app_state::{AppState, SocketData},
+    code::Code,
+};
+use lsp_types::{Position, Range, TextDocumentContentChangeEvent};
+use serde::{Deserialize, Serialize};
+use serde_json::{self, json};
+use socketioxide::extract::{AckSender, Data, SocketRef, State};
 use std::path::PathBuf;
-use crate::code::{Operation, Edit};
+use tracing::{error, info};
 
 /// Apply edits to a Code instance and return LSP change events.
 /// If `use_history` is true, wraps edits in tx()/commit() for undo support.
@@ -19,7 +22,9 @@ pub fn apply_edits_to_code(
 ) -> Vec<TextDocumentContentChangeEvent> {
     let mut lsp_changes = Vec::new();
 
-    if use_history { code.tx(); }
+    if use_history {
+        code.tx();
+    }
 
     for e in edits.iter() {
         match e.operation {
@@ -57,7 +62,9 @@ pub fn apply_edits_to_code(
         }
     }
 
-    if use_history { code.commit(); }
+    if use_history {
+        code.commit();
+    }
 
     lsp_changes
 }
@@ -71,7 +78,7 @@ pub async fn handle_file_open(
     socket: SocketRef,
     Data(request): Data<FileOpenRequest>,
     ack: AckSender,
-    state: State<AppState>
+    state: State<AppState>,
 ) {
     info!("Received file:open: {:?}", request);
 
@@ -85,25 +92,28 @@ pub async fn handle_file_open(
         Ok(c) => c,
         Err(e) => error_ack!(ack, &abs_path, "{:?}", e),
     };
-    
+
+    {
+        let sid = socket.id.as_str().to_string();
+        let mut sockets_data = state.socket2data.lock().await;
+        let data = sockets_data.entry(sid).or_insert_with(SocketData::default);
+        data.opened_files.insert(abs_path.clone());
+    }
+
     let content = code.text.to_string();
 
     ack.send(&json!({
-        "content": content, 
-        "path": request.path, 
-        "success": true, 
+        "content": content,
+        "path": request.path,
+        "success": true,
         "history": code.history,
-    })).ok();
+    }))
+    .ok();
 
     let mut lsp_manager = state.lsp_manager.lock().await;
     if let Some(lsp) = lsp_manager.get(&code.lang).await {
         lsp.did_open(&code.lang, &abs_path, &content);
-    } 
-
-    let sid = socket.id.as_str().to_string();
-    let mut sockets_data = state.socket2data.lock().await;
-    let data = sockets_data.entry(sid).or_insert_with(SocketData::default);
-    data.opened_files.insert(abs_path);
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -115,7 +125,7 @@ pub async fn handle_dir_list(
     socket: SocketRef,
     Data(request): Data<DirOpenRequest>,
     ack: AckSender,
-    state: State<AppState>
+    state: State<AppState>,
 ) {
     info!("Received dir:list: {:?}", request);
 
@@ -224,9 +234,11 @@ pub async fn handle_file_close(
         let mut sockets_data = state.socket2data.lock().await;
         let data = sockets_data.entry(sid).or_insert_with(SocketData::default);
         data.opened_files.remove(&abs_path);
-    
+
         // Check if file is still opened by other sockets
-        sockets_data.values().any(|data| data.opened_files.contains(&abs_path))
+        sockets_data
+            .values()
+            .any(|data| data.opened_files.contains(&abs_path))
     };
 
     // Remove from file2code if no other sockets have it open
@@ -236,14 +248,13 @@ pub async fn handle_file_close(
         info!("Removed file from file2code: {}", abs_path);
     }
 
-    // Lsp autoclose 
+    // Lsp autoclose
     if !is_language_opened(&lang, &state).await {
         let mut lsp_manager = state.lsp_manager.lock().await;
         lsp_manager.stop(&lang).await;
         info!("Lsp autoclose: '{}'", lang);
     }
 }
-
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct FileChange {
@@ -261,7 +272,11 @@ pub async fn handle_file_change(
     state: State<AppState>,
     _ack: AckSender,
 ) {
-    info!("Received file:change: edits={} file={}", change.edits.len(), change.file);
+    info!(
+        "Received file:change: edits={} file={}",
+        change.edits.len(),
+        change.file
+    );
 
     let abs_path = match abs_file(&change.file) {
         Ok(p) => p,
@@ -355,7 +370,6 @@ pub async fn handle_file_save(
     ack.send(&json!({ "success": true, "file": abs_path })).ok();
 }
 
-
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct CreateRequest {
     pub parent_path: String,
@@ -370,11 +384,11 @@ pub async fn handle_create(
     ack: AckSender,
 ) {
     info!("Received create: {:?}", request);
-    
+
     let parent_path = &request.parent_path;
     let name = &request.name;
     let is_file = request.is_file;
-    
+
     // Build path using PathBuf for cross-platform compatibility
     let full_path = if parent_path.is_empty() || parent_path == "." || parent_path == "./" {
         PathBuf::from(name)
@@ -390,13 +404,18 @@ pub async fn handle_create(
         let current_dir = std::env::current_dir().unwrap_or_default();
         current_dir.join(&full_path)
     };
-    
+
     let full_path_str = full_path.to_string_lossy().to_string();
 
     // Create parent directories if they don't exist
     if let Some(parent) = full_path.parent() {
         if let Err(e) = std::fs::create_dir_all(parent) {
-            error_ack!(ack, &request.name, "Failed to create parent directories: {:?}", e);
+            error_ack!(
+                ack,
+                &request.name,
+                "Failed to create parent directories: {:?}",
+                e
+            );
         }
     }
 
@@ -406,14 +425,19 @@ pub async fn handle_create(
             Ok(_) => {
                 info!("File created successfully: {}", full_path_str);
                 let mut f2c = state.file2code.lock().await;
-                let code = f2c.entry(full_path_str.clone()).or_insert_with(|| {
-                    Code::new()
-                });
+                let code = f2c
+                    .entry(full_path_str.clone())
+                    .or_insert_with(|| Code::new());
                 code.set_file_name(full_path_str.clone());
-                
-                socket.broadcast().emit("file:created", &full_path_str).await.ok();
-                ack.send(&json!({ "success": true, "file": full_path_str, "is_file": true })).ok();
-            },
+
+                socket
+                    .broadcast()
+                    .emit("file:created", &full_path_str)
+                    .await
+                    .ok();
+                ack.send(&json!({ "success": true, "file": full_path_str, "is_file": true }))
+                    .ok();
+            }
             Err(e) => {
                 error_ack!(ack, &request.name, "Failed to create file: {:?}", e);
             }
@@ -423,9 +447,14 @@ pub async fn handle_create(
         match std::fs::create_dir(&full_path) {
             Ok(_) => {
                 info!("Directory created successfully: {}", full_path_str);
-                socket.broadcast().emit("dir:created", &full_path_str).await.ok();
-                ack.send(&json!({ "success": true, "dir": full_path_str, "is_file": false })).ok();
-            },
+                socket
+                    .broadcast()
+                    .emit("dir:created", &full_path_str)
+                    .await
+                    .ok();
+                ack.send(&json!({ "success": true, "dir": full_path_str, "is_file": false }))
+                    .ok();
+            }
             Err(e) => {
                 error_ack!(ack, &request.name, "Failed to create directory: {:?}", e);
             }

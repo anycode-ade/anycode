@@ -1,10 +1,10 @@
+use crate::config::Config;
+use crate::history::History;
+use crate::utils::{self};
 use ropey::Rope;
+use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::{BufReader, BufWriter};
-use crate::config::{Config};
-use crate::utils::{self};
-use serde::{Deserialize, Serialize};
-use crate::history::History;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -28,7 +28,7 @@ pub struct Change {
 
 impl Change {
     pub fn new() -> Self {
-        Self { 
+        Self {
             edits: Vec::new(),
             timestamp: 0,
         }
@@ -77,14 +77,15 @@ impl Code {
     pub fn from_file(path: &str, conf: &Config) -> std::io::Result<Self> {
         let file = File::open(path)?;
         let text = Rope::from_reader(BufReader::new(file))?;
-        let abs_path = utils::abs_file(path)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        let abs_path =
+            utils::abs_file(path).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
         let file_name = utils::get_file_name(path);
 
         let lang = detect_lang::from_path(path)
             .map(|lang| lang.id().to_lowercase())
             .unwrap_or_else(|| {
-                conf.language.iter()
+                conf.language
+                    .iter()
                     .find(|l| l.types.iter().any(|t| path.ends_with(t)))
                     .map(|lang| lang.name.clone())
                     .unwrap_or_else(|| "text".to_string())
@@ -151,12 +152,14 @@ impl Code {
 
         if self.applying_history {
             self.change.edits.push(Edit {
-                start: offset, text: text.to_string(), operation: Operation::Insert,
+                start: offset,
+                text: text.to_string(),
+                operation: Operation::Insert,
             });
         }
     }
 
-    fn remove(&mut self, from: usize, to: usize)  {
+    fn remove(&mut self, from: usize, to: usize) {
         self.text.remove(from..to);
         self.changed = true;
     }
@@ -168,7 +171,9 @@ impl Code {
 
         if self.applying_history {
             self.change.edits.push(Edit {
-                start: from, text: text.to_string(), operation: Operation::Remove,
+                start: from,
+                text: text.to_string(),
+                operation: Operation::Remove,
             });
         }
     }
@@ -194,7 +199,6 @@ impl Code {
     }
 }
 
-
 #[cfg(test)]
 mod code_undo_tests {
     use super::*;
@@ -204,7 +208,7 @@ mod code_undo_tests {
         let buffer = Code::new();
         assert_eq!(buffer.text.to_string(), "");
     }
-    
+
     #[test]
     fn test_code_from_str() {
         let buffer = Code::from_str("hello");
@@ -222,10 +226,10 @@ mod code_undo_tests {
     #[test]
     fn test_code_remove() {
         let mut buffer = Code::new();
-        
+
         buffer.insert_text("hello world", 0);
         assert_eq!(buffer.text.to_string(), "hello world");
-    
+
         buffer.remove_text(5, 11);
         assert_eq!(buffer.text.to_string(), "hello");
     }
@@ -255,15 +259,25 @@ mod code_undo_tests {
 
         let batch = code.undo_change().expect("undo should return batch");
         assert_eq!(code.history.index, 1);
-        assert_eq!(batch.edits[0], Edit {
-            start: 6, text: "World".to_string(), operation: Operation::Insert 
-        });
+        assert_eq!(
+            batch.edits[0],
+            Edit {
+                start: 6,
+                text: "World".to_string(),
+                operation: Operation::Insert
+            }
+        );
 
         let batch = code.undo_change().expect("undo should return batch");
         assert_eq!(code.history.index, 0);
-        assert_eq!(batch.edits[0], Edit {
-            start: 0, text: "Hello ".to_string(), operation: Operation::Insert 
-        });
+        assert_eq!(
+            batch.edits[0],
+            Edit {
+                start: 0,
+                text: "Hello ".to_string(),
+                operation: Operation::Insert
+            }
+        );
 
         assert!(code.undo_change().is_none());
     }
@@ -280,15 +294,25 @@ mod code_undo_tests {
 
         let batch = code.undo_change().expect("undo should return batch");
         assert_eq!(code.history.index, 0);
-        assert_eq!(batch.edits[0], Edit { 
-            start: 0, text: "Hello".to_string(), operation: Operation::Insert 
-        });
+        assert_eq!(
+            batch.edits[0],
+            Edit {
+                start: 0,
+                text: "Hello".to_string(),
+                operation: Operation::Insert
+            }
+        );
 
         let batch = code.redo_change().expect("redo should return batch");
         assert_eq!(code.history.index, 1);
-        assert_eq!(batch.edits[0], Edit { 
-            start: 0, text: "Hello".to_string(), operation: Operation::Insert 
-        });
+        assert_eq!(
+            batch.edits[0],
+            Edit {
+                start: 0,
+                text: "Hello".to_string(),
+                operation: Operation::Insert
+            }
+        );
 
         let batch = code.redo_change();
         assert!(batch.is_none());
