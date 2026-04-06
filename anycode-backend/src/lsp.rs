@@ -2,19 +2,19 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::process::Stdio;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
-use tokio::sync::Mutex;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use tokio::io::{self};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::process::Command;
+use tokio::sync::Mutex;
 use tokio::sync::mpsc;
+use tokio::time::Duration;
 use tokio::time::{self};
-use tokio::time::{Duration};
-use tokio::io::{self};
-use tracing::{info, debug, error};
+use tracing::{debug, error, info};
 
-use lsp_types::*;
 use lsp_types::notification::*;
+use lsp_types::*;
 
 use crate::config::Config;
 use crate::utils::path_to_uri;
@@ -47,10 +47,12 @@ impl Lsp {
     }
 
     pub fn start(
-        &mut self, lang: &str, cmd: &str, lsp_name: Option<String>,
-        diagnostic_updates: Option<mpsc::Sender<PublishDiagnosticsParams>>
+        &mut self,
+        lang: &str,
+        cmd: &str,
+        lsp_name: Option<String>,
+        diagnostic_updates: Option<mpsc::Sender<PublishDiagnosticsParams>>,
     ) -> io::Result<()> {
-
         let s: Vec<&str> = cmd.split(" ").collect();
         let cmd = s[0];
         let args = &s[1..];
@@ -98,10 +100,16 @@ impl Lsp {
 
                 loop {
                     buf.clear();
-                    if reader.read_line(&mut buf).await.unwrap_or(0) == 0 { return; }
-                    if !buf.ends_with("\r\n") { return; }
+                    if reader.read_line(&mut buf).await.unwrap_or(0) == 0 {
+                        return;
+                    }
+                    if !buf.ends_with("\r\n") {
+                        return;
+                    }
                     let buf = &buf[..buf.len() - 2];
-                    if buf.is_empty() { break; }
+                    if buf.is_empty() {
+                        break;
+                    }
                     let mut parts = buf.splitn(2, ": ");
                     let header_name = parts.next().unwrap();
                     let header_value = parts.next().unwrap();
@@ -114,14 +122,14 @@ impl Lsp {
                 let mut content = vec![0; content_length];
                 let _ = reader.read_exact(&mut content).await;
 
-                let msg = std::str::from_utf8(&content)
-                    .expect("invalid utf8 from lsp server");
+                let msg = std::str::from_utf8(&content).expect("invalid utf8 from lsp server");
 
                 info!("<- {}", msg);
 
                 let parsed_json: Value = serde_json::from_str(msg).unwrap();
 
-                if let Some(id) = parsed_json["id"].as_u64() { // response
+                if let Some(id) = parsed_json["id"].as_u64() {
+                    // response
                     let id = id as usize;
                     if let Some(sender) = pending.lock().await.get(&id) {
                         let _ = sender.send(msg.to_string()).await;
@@ -130,9 +138,12 @@ impl Lsp {
                 }
 
                 match parsed_json.get("method").and_then(|v| v.as_str()) {
-                    Some("textDocument/publishDiagnostics") => { // diagnostics
+                    Some("textDocument/publishDiagnostics") => {
+                        // diagnostics
                         let v = parsed_json["params"].clone();
-                        if let Ok(params) = serde_json::from_value::<lsp_types::PublishDiagnosticsParams>(v) {
+                        if let Ok(params) =
+                            serde_json::from_value::<lsp_types::PublishDiagnosticsParams>(v)
+                        {
                             if let Some(sender) = diagnostic_updates.as_ref() {
                                 let _ = sender.send(params).await;
                                 continue;
@@ -162,7 +173,10 @@ impl Lsp {
 
     pub async fn stop(&mut self) -> anyhow::Result<()> {
         if let Some(kill_send) = self.kill_send.take() {
-            kill_send.send(()).await.map_err(|e| anyhow::anyhow!("Failed to send kill signal: {}", e))?;
+            kill_send
+                .send(())
+                .await
+                .map_err(|e| anyhow::anyhow!("Failed to send kill signal: {}", e))?;
             Ok(())
         } else {
             Ok(())
@@ -188,9 +202,7 @@ impl Lsp {
         self.pending.lock().await.remove(&id);
     }
 
-    pub async fn wait(
-        &mut self, timeout: usize, mut rx: mpsc::Receiver<String>
-    ) -> Option<String> {
+    pub async fn wait(&mut self, timeout: usize, mut rx: mpsc::Receiver<String>) -> Option<String> {
         let timeout = time::sleep(Duration::from_secs(timeout as u64));
         tokio::pin!(timeout);
 
@@ -209,13 +221,13 @@ impl Lsp {
         self.wait(5, rx).await;
         self.remove_pending(id).await;
         self.initialized();
-        
+
         if let Some(lsp_name) = &self.lsp_name {
             let settings = lsp_messages::read_vscode_settings(lsp_name, dir)
                 .unwrap_or_else(|| Value::Object(serde_json::Map::new()));
             self.did_change_configuration(settings);
         }
-        
+
         self.ready.store(true, Ordering::SeqCst)
     }
 
@@ -233,9 +245,7 @@ impl Lsp {
         self.send_async(msg.to_string());
     }
 
-    pub async fn send_request<R>(
-        &mut self, params: R::Params
-    ) -> anyhow::Result<R::Result>
+    pub async fn send_request<R>(&mut self, params: R::Params) -> anyhow::Result<R::Result>
     where
         R: lsp_types::request::Request,
         R::Params: Serialize,
@@ -259,8 +269,8 @@ impl Lsp {
         let response = self.wait(3, rx).await;
         self.remove_pending(id).await;
 
-        let response_str = response.ok_or_else(||
-            anyhow::anyhow!("no response for request {}", R::METHOD))?;
+        let response_str =
+            response.ok_or_else(|| anyhow::anyhow!("no response for request {}", R::METHOD))?;
 
         let raw: lsp_messages::LspRawResponse = serde_json::from_str(&response_str)?;
 
@@ -268,8 +278,9 @@ impl Lsp {
             return Err(anyhow::anyhow!("LSP error: {}", err));
         }
 
-        let result_value = raw.result.ok_or_else(||
-            anyhow::anyhow!("missing result field"))?;
+        let result_value = raw
+            .result
+            .ok_or_else(|| anyhow::anyhow!("missing result field"))?;
 
         let parsed = serde_json::from_value::<R::Result>(result_value)?;
 
@@ -290,9 +301,7 @@ impl Lsp {
     }
 
     pub fn did_change_configuration(&self, settings: Value) {
-        let params = DidChangeConfigurationParams {
-            settings,
-        };
+        let params = DidChangeConfigurationParams { settings };
         self.send_notification::<DidChangeConfiguration>(params);
     }
 
@@ -316,7 +325,7 @@ impl Lsp {
         }
         let params = DidCloseTextDocumentParams {
             text_document: TextDocumentIdentifier {
-                uri: path_to_uri(path).unwrap()
+                uri: path_to_uri(path).unwrap(),
             },
         };
         self.send_notification::<DidCloseTextDocument>(params);
@@ -325,7 +334,7 @@ impl Lsp {
     pub fn did_save(&mut self, path: &str, text: Option<&str>) {
         let params = DidSaveTextDocumentParams {
             text_document: TextDocumentIdentifier {
-                uri: path_to_uri(path).unwrap()
+                uri: path_to_uri(path).unwrap(),
             },
             text: text.map(|s| s.to_string()),
         };
@@ -333,32 +342,39 @@ impl Lsp {
     }
 
     fn get_next_version(&mut self, path: &str) -> usize {
-        let version = self.versions.entry(path.to_string())
+        let version = self
+            .versions
+            .entry(path.to_string())
             .or_insert_with(|| AtomicUsize::new(0));
 
         version.fetch_add(1, Ordering::SeqCst)
     }
 
-    fn get_next_id(&mut self, ) -> usize {
+    fn get_next_id(&mut self) -> usize {
         self.next_id.fetch_add(1, Ordering::SeqCst)
     }
 
     pub async fn did_change(
         &mut self,
-        start_line: usize, start_column: usize,
-        end_line: usize, end_column: usize,
-        path: &str, text: &str,
+        start_line: usize,
+        start_column: usize,
+        end_line: usize,
+        end_column: usize,
+        path: &str,
+        text: &str,
     ) {
-        self.did_change_multi(path, vec![
-            TextDocumentContentChangeEvent {
+        self.did_change_multi(
+            path,
+            vec![TextDocumentContentChangeEvent {
                 range: Some(Range {
                     start: Position::new(start_line as u32, start_column as u32),
                     end: Position::new(end_line as u32, end_column as u32),
                 }),
                 range_length: None,
                 text: text.to_string(),
-            }
-        ]).await;
+            }],
+        )
+        .await;
     }
 
     pub async fn did_change_multi(
@@ -378,9 +394,11 @@ impl Lsp {
     }
 
     pub async fn completion(
-        &mut self, path: &str, line: usize, character: usize
+        &mut self,
+        path: &str,
+        line: usize,
+        character: usize,
     ) -> anyhow::Result<Vec<CompletionItem>> {
-
         let params = CompletionParams {
             text_document_position: TextDocumentPositionParams {
                 text_document: TextDocumentIdentifier {
@@ -410,7 +428,10 @@ impl Lsp {
     }
 
     pub async fn definition(
-        &mut self, path: &str, line: usize, character: usize,
+        &mut self,
+        path: &str,
+        line: usize,
+        character: usize,
     ) -> anyhow::Result<Vec<Location>> {
         let params = lsp_types::GotoDefinitionParams {
             text_document_position_params: TextDocumentPositionParams {
@@ -431,18 +452,20 @@ impl Lsp {
         let locations = match response {
             lsp_types::GotoDefinitionResponse::Scalar(location) => vec![location],
             lsp_types::GotoDefinitionResponse::Array(locations) => locations,
-            lsp_types::GotoDefinitionResponse::Link(links) => {
-                links.into_iter()
-                    .map(|l| Location::new(l.target_uri, l.target_range))
-                    .collect()
-            }
+            lsp_types::GotoDefinitionResponse::Link(links) => links
+                .into_iter()
+                .map(|l| Location::new(l.target_uri, l.target_range))
+                .collect(),
         };
 
         Ok(locations)
     }
 
     pub async fn references(
-        &mut self, path: &str, line: usize, character: usize,
+        &mut self,
+        path: &str,
+        line: usize,
+        character: usize,
     ) -> anyhow::Result<Vec<Location>> {
         let params = ReferenceParams {
             text_document_position: TextDocumentPositionParams {
@@ -467,9 +490,11 @@ impl Lsp {
     }
 
     pub async fn hover(
-        &mut self, path: &str, line: usize, character: usize,
+        &mut self,
+        path: &str,
+        line: usize,
+        character: usize,
     ) -> anyhow::Result<Hover> {
-
         let params = HoverParams {
             text_document_position_params: TextDocumentPositionParams {
                 text_document: TextDocumentIdentifier {
@@ -500,10 +525,17 @@ mod tests {
         let lang = "python";
 
         let mut lsp = Lsp::new();
-        lsp.start(lang, "pyright-langserver --stdio", Some("pyright-langserver".to_string()), None)?;
+        lsp.start(
+            lang,
+            "pyright-langserver --stdio",
+            Some("pyright-langserver".to_string()),
+            None,
+        )?;
 
-        let dir = std::env::current_dir().unwrap()
-            .to_string_lossy().into_owned();
+        let dir = std::env::current_dir()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
 
         lsp.init(&dir).await;
 
@@ -524,14 +556,14 @@ mod tests {
         let hover_str = format!("{:?}", hover.contents);
         // println!("Hover: {:?}", hover_str);
         assert!(hover_str.contains("class range"));
-        
-        // Test definition on 'i'  
-        let definitions = lsp.definition(file_path, 0, 30).await?; 
+
+        // Test definition on 'i'
+        let definitions = lsp.definition(file_path, 0, 30).await?;
         let definition_str = format!("{:?}", definitions);
         // println!("Definitions: {:?}", definition_str);
         assert!(definition_str.contains("fast.py"));
         assert!(definition_str.contains("Position { line: 0, character: 5 }"));
-        
+
         // Test references on 'i'
         let references = lsp.references(file_path, 0, 4).await?;
         let references_str = format!("{:?}", references);
@@ -542,14 +574,13 @@ mod tests {
         lsp.stop().await;
         Ok(())
     }
-
 }
 
 pub mod lsp_messages {
     use super::*;
+    use crate::utils::path_to_uri;
     use serde_json::to_string;
     use std::path::PathBuf;
-    use crate::utils::path_to_uri;
 
     #[derive(Deserialize)]
     pub struct LspRawResponse {
@@ -561,7 +592,7 @@ pub mod lsp_messages {
 
     pub fn read_vscode_settings(lsp_name: &str, dir: &str) -> Option<Value> {
         let settings_path = PathBuf::from(dir).join(".vscode").join("settings.json");
-        
+
         if !settings_path.exists() {
             debug!("Settings file not found: {:?}", settings_path);
             return None;
@@ -590,7 +621,7 @@ pub mod lsp_messages {
             for (key, value) in obj {
                 if key.starts_with(&prefix) {
                     let setting_key = key.strip_prefix(&prefix).unwrap();
-                    
+
                     let parts: Vec<&str> = setting_key.split('.').collect();
                     if parts.is_empty() {
                         continue;
@@ -602,7 +633,10 @@ pub mod lsp_messages {
                             current.insert(part.to_string(), value.clone());
                         } else {
                             if !current.contains_key(*part) {
-                                current.insert(part.to_string(), Value::Object(serde_json::Map::new()));
+                                current.insert(
+                                    part.to_string(),
+                                    Value::Object(serde_json::Map::new()),
+                                );
                             }
                             match current.get_mut(*part) {
                                 Some(Value::Object(obj)) => {
@@ -638,12 +672,10 @@ pub mod lsp_messages {
             .unwrap_or("workspace")
             .to_string();
 
-        let workspace_folders = Some(vec![
-            WorkspaceFolder {
-                name: folder_name,
-                uri: uri.clone(),
-            }
-        ]);
+        let workspace_folders = Some(vec![WorkspaceFolder {
+            name: folder_name,
+            uri: uri.clone(),
+        }]);
 
         let capabilities = ClientCapabilities {
             text_document: Some(TextDocumentClientCapabilities {
@@ -713,7 +745,7 @@ pub mod lsp_messages {
 
 pub struct LspManager {
     config: Config,
-    lang2lsp: HashMap<String,Lsp>,
+    lang2lsp: HashMap<String, Lsp>,
     diagnostics_sender: Option<mpsc::Sender<PublishDiagnosticsParams>>,
 }
 
@@ -731,12 +763,15 @@ impl LspManager {
     }
 
     pub async fn get(&mut self, lang: &str) -> Option<&mut Lsp> {
-
-        let lang_conf = self.config.language.iter().find(|lang_conf| lang_conf.name == lang)?;
+        let lang_conf = self
+            .config
+            .language
+            .iter()
+            .find(|lang_conf| lang_conf.name == lang)?;
         let cmd = lang_conf.clone().lsp?.join(" ");
 
         if !self.lang2lsp.contains_key(lang) {
-           self.init_new(lang.to_string(), &cmd).await;
+            self.init_new(lang.to_string(), &cmd).await;
         }
 
         self.lang2lsp.get_mut(lang)
@@ -744,24 +779,26 @@ impl LspManager {
 
     pub async fn init_new(&mut self, lang: String, lsp_cmd: &str) {
         let mut lsp = Lsp::new();
-        let diagnostic_send = self.diagnostics_sender.as_mut().map(|s|s.clone());
+        let diagnostic_send = self.diagnostics_sender.as_mut().map(|s| s.clone());
         let lsp_name = lsp_cmd.split_whitespace().next().map(|s| s.to_string());
-        
+
         let result = lsp.start(&lang, &lsp_cmd, lsp_name, diagnostic_send);
 
         match result {
             Ok(_) => {
                 info!("lsp process started {}", &lsp_cmd);
-            },
+            }
             Err(e) => {
                 error!("error starting lsp process {}: {}", &lsp_cmd, e.to_string());
                 // panic!("error starting lsp process {}", e.to_string());
                 return;
-            },
+            }
         }
 
-        let dir = std::env::current_dir().unwrap()
-            .to_string_lossy().into_owned();
+        let dir = std::env::current_dir()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
 
         lsp.init(&dir).await;
 
