@@ -18,7 +18,7 @@ import {
     ensureDefaultAgents,
     updateAgents,
 } from './agents';
-import { AcpAgent, type AcpMessage, type AcpToolCall, type SearchMatch } from './types';
+import { AcpAgent, type SearchMatch } from './types';
 import './App.css';
 import {
     loadBottomVisible,
@@ -54,9 +54,6 @@ const App: React.FC = () => {
     const { wsRef, isConnected } = useSocket({});
 
     const fileTree = useFileTree();
-    const emptyToolCalls = useMemo<AcpToolCall[]>(() => [], []);
-    const emptyMessages = useMemo<AcpMessage[]>(() => [], []);
-
     const editors = useEditors({
         wsRef,
         isConnected,
@@ -265,10 +262,7 @@ const App: React.FC = () => {
     // }, []);
 
     const sessionsArray = useMemo(() => Array.from(agents.acpSessions.values()), [agents.acpSessions]);
-    const currentSession = useMemo(
-        () => (agents.selectedAgentId ? agents.acpSessions.get(agents.selectedAgentId) ?? null : null),
-        [agents.acpSessions, agents.selectedAgentId],
-    );
+    const availableAgents = useMemo<AcpAgent[]>(() => getAllAgents(), [agents.agentsVersion]);
     const defaultAgent = useMemo(() => getDefaultAgent(), [agents.agentsVersion]);
     const settingsAgents = useMemo<AcpAgent[]>(() => (
         agents.isAgentSettingsOpen ? getAllAgents() : []
@@ -279,15 +273,15 @@ const App: React.FC = () => {
     );
     const handleAddAgent = useCallback(() => {
         if (!defaultAgent) return;
-        agents.startAgent(defaultAgent);
+        return agents.startAgent(defaultAgent);
     }, [agents.startAgent, defaultAgent]);
+    const handleStartSpecificAgent = useCallback((agent: AcpAgent) => {
+        return agents.startAgent(agent);
+    }, [agents.startAgent]);
     const handleOpenAgentSettings = useCallback(() => {
         ensureDefaultAgents();
         agents.setIsAgentSettingsOpen(true);
     }, [agents.setIsAgentSettingsOpen]);
-    const handleCloseAgentPanel = useCallback(() => {
-        setRightPanelVisible(false);
-    }, []);
     const handleCloseAgentSettings = useCallback(() => {
         agents.setIsAgentSettingsOpen(false);
     }, [agents.setIsAgentSettingsOpen]);
@@ -403,24 +397,18 @@ const App: React.FC = () => {
         <AcpDialog
             key={`acp-${agents.agentsVersion}`}
             agents={sessionsArray}
+            availableAgents={availableAgents}
             selectedAgentId={agents.selectedAgentId}
             onSelectAgent={agents.setSelectedAgentId}
             onCloseAgent={agents.closeAgent}
             onAddAgent={handleAddAgent}
+            onStartAgent={handleStartSpecificAgent}
             onOpenSettings={handleOpenAgentSettings}
-            agentId={currentSession?.agentId || defaultAgent?.id || 'gemini'}
             isOpen={true}
-            onClose={handleCloseAgentPanel}
             onSendPrompt={agents.sendPrompt}
             onCancelPrompt={agents.cancelPrompt}
             onUndoPrompt={agents.undoPrompt}
-            messages={currentSession?.messages || emptyMessages}
-            toolCalls={emptyToolCalls}
-            isConnected={currentSession ? (currentSession.isActive && isConnected) : false}
-            isProcessing={currentSession?.isProcessing || false}
-            modelSelector={currentSession?.modelSelector}
-            reasoningSelector={currentSession?.reasoningSelector}
-            contextUsage={currentSession?.contextUsage}
+            isConnected={isConnected}
             onSelectModel={agents.setSessionModel}
             onSelectReasoning={agents.setSessionReasoning}
             showSettings={agents.isAgentSettingsOpen}

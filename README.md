@@ -3,6 +3,7 @@
 **anycode** is a lightning-fast web-based IDE that allows you to write, edit, and manage code directly from your browser. Built for speed and performance, anycode supports a wide range of programming languages and provides an intuitive interface with powerful features for a seamless development experience.
 
 ![editor](anycode/imgs/screen.png)
+![editor](anycode/imgs/screen_agents.png)
 
 ## Mobile Previews
 

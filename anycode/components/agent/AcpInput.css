@@ -13,8 +13,10 @@
     align-items: center;
     flex-wrap: wrap;
     justify-content: flex-end;
+    gap: 8px;
     overflow-x: auto;
     padding-bottom: 1px;
+    min-height: 30px;
 }
 
 .acp-input-controls-row > * {
@@ -68,6 +70,36 @@
     flex-shrink: 0;
     margin-top: auto;
     margin-bottom: auto;
+}
+
+.acp-input-agent-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+    max-width: 220px;
+}
+
+.acp-input-agent-chip-label {
+    font-size: 11px;
+    line-height: 1.2;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.acp-input-agent-close-btn {
+    width: 18px;
+    height: 18px;
+    opacity: 0;
+}
+
+.acp-input-agent-chip:hover .acp-input-agent-close-btn {
+    opacity: 0.6;
+}
+
+.acp-input-agent-chip:hover .acp-input-agent-close-btn:hover {
+    opacity: 1;
 }
 
 .acp-dialog-input textarea {

@@ -396,7 +396,7 @@ export const useAgents = ({
     }, [wsRef, isConnected, selectedAgentId]);
 
     const startAgent = useCallback((agent: AcpAgent | undefined, options?: { resumeSessionId?: string }) => {
-        if (!agent || !wsRef.current || !isConnected) return;
+        if (!agent || !wsRef.current || !isConnected) return null;
 
         const { id, name, command, args } = agent;
         const aid = generateAgentId(id);
@@ -430,6 +430,7 @@ export const useAgents = ({
                 alert('Failed to start agent ' + aid + ': ' + response.error);
             }
         });
+        return aid;
     }, [wsRef, isConnected, generateAgentId, onAgentStarted]);
 
     const fetchAvailableSessions = useCallback((agent: AcpAgent | undefined): Promise<AcpSessionSummary[]> => {

@@ -13,6 +13,8 @@ interface AcpInputProps {
   onChange: (value: string) => void;
   onSend: () => void;
   onCancel: () => void;
+  agentLabel?: string;
+  onCloseAgent?: () => void;
   isConnected: boolean;
   isProcessing?: boolean;
   modelSelector?: Omit<AcpModelSelectorMessage, 'role'>;
@@ -27,6 +29,8 @@ export const AcpInput: React.FC<AcpInputProps> = ({
   onChange,
   onSend,
   onCancel,
+  agentLabel,
+  onCloseAgent,
   isConnected,
   isProcessing = false,
   modelSelector,
@@ -128,8 +132,22 @@ export const AcpInput: React.FC<AcpInputProps> = ({
           </button>
         )}
       </div>
-      {(modelSelector || reasoningSelector || contextUsage) && (
+      {(agentLabel || modelSelector || reasoningSelector || contextUsage) && (
         <div className="acp-input-controls-row">
+          {agentLabel && (
+            <div className="acp-input-agent-chip" title={agentLabel}>
+              <span className="acp-input-agent-chip-label">{agentLabel}</span>
+              {onCloseAgent && (
+                <button
+                  className="acp-agent-close-btn acp-input-agent-close-btn"
+                  onClick={onCloseAgent}
+                  title="Close agent"
+                >
+                  <AcpIcons.Close />
+                </button>
+              )}
+            </div>
+          )}
           {renderSelect('acp-model-select', 'model', modelSelector, onSelectModel)}
           {renderSelect('acp-reasoning-select', 'thinking', reasoningSelector, onSelectReasoning)}
           {contextUsage && (
