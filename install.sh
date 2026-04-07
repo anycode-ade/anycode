@@ -2,7 +2,7 @@
 
 set -eu
 
-REPO="${ANYCODE_REPO:-anycode-ide/anycode}"
+REPO="${ANYCODE_REPO:-anycode-ade/anycode}"
 VERSION="${ANYCODE_VERSION:-latest}"
 PREFIX="${ANYCODE_INSTALL_DIR:-}"
 
@@ -11,7 +11,7 @@ usage() {
 Usage: install.sh [--version TAG] [--prefix DIR] [--repo OWNER/REPO]
 
 Environment variables:
-  ANYCODE_REPO           GitHub repository, default: anycode-ide/anycode
+  ANYCODE_REPO           GitHub repository, default: anycode-ade/anycode
   ANYCODE_VERSION        Release tag to install, default: latest
   ANYCODE_INSTALL_DIR    Installation directory, default: ~/.local/bin or /usr/local/bin for root
 EOF
