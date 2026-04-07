@@ -24,7 +24,7 @@
       Terminal
     </td>
     <td align="center" style="border: 0;">
-      <img src="anycode/imgs/phone3.PNG" alt="Search" width="240" /><br/>
+      <img src="anycode/imgs/phone3.png" alt="Search" width="240" /><br/>
       Search
     </td>
   </tr>

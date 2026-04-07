@@ -123,7 +123,7 @@ export const ChangesPanel: React.FC<ChangesPanelProps> = ({
 
     return (
         <div className="changes-panel">
-            <div className="changes-panel-title">SOURCE CONTROL</div>
+            <div className="changes-panel-title">Changes</div>
             <div className="changes-header">
                 <div className="changes-title">
                     <span className="changes-branch-icon"></span>
