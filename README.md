@@ -3,19 +3,29 @@
 **anycode** is a lightning-fast web-based IDE that allows you to write, edit, and manage code directly from your browser. Built for speed and performance, anycode supports a wide range of programming languages and provides an intuitive interface with powerful features for a seamless development experience.
 
 ![editor](anycode/imgs/screen.png)
-![editor](anycode/imgs/screen_agents.png)
+![agents](anycode/imgs/agents.png)
+![diff](anycode/imgs/diff.png)
+![diff](anycode/imgs/search_terminal.png)
 
 ## Mobile Previews
 
-<table>
+<table style="border-collapse: collapse; border: 0;">
   <tr>
-    <td align="center">
-      <img src="anycode/imgs/screen_phone.png" alt="ACP panel on phone" width="240" /><br/>
-      ACP panel on phone
+    <td align="center" style="border: 0;">
+      <img src="anycode/imgs/phone0.png" alt="Editor" width="240" /><br/>
+      Editor
     </td>
-    <td align="center">
-      <img src="anycode/imgs/screen_phone2.PNG" alt="README on phone" width="240" /><br/>
-      README on phone
+    <td align="center" style="border: 0;">
+      <img src="anycode/imgs/phone1.png" alt="Agent" width="240" /><br/>
+      Agent
+    </td>
+    <td align="center" style="border: 0;">
+      <img src="anycode/imgs/phone2.PNG" alt="Terminal" width="240" /><br/>
+      Terminal
+    </td>
+    <td align="center" style="border: 0;">
+      <img src="anycode/imgs/phone3.PNG" alt="Search" width="240" /><br/>
+      Search
     </td>
   </tr>
 </table>
@@ -27,7 +37,7 @@
 - **Advanced code experience**: Utilizes a custom code component based on **web-tree-sitter** for efficient parsing, syntax highlighting, and real-time code analysis.
 - **LSP integration**: LSP support for intelligent code completion, go-to-definition, hover information and real-time diagnostics.
 - **File system integration**: WebSocket-based backend for browsing and editing files from your local filesystem.
-- **Source control (Git)**: Built-in Changes panel with real-time status updates, per-file revert, commit, push, and pull.
+- **Changes**: Built-in git Changes panel, per-file revert, commit, push, and pull.
 - **Integrated terminal**: Full-featured terminal emulator with WebSocket-based communication, supporting real-time command execution and output.
 - **Search functionality**: Powerful search capabilities including local search within files and global search across project.
 - **ACP integration**: Agent Client Protocol (ACP) support for seamless integration with AI agents, including tool-call streaming, history-backed undo, session resume, frontend-controlled permission mode, model and reasoning selectors, streamed markdown and code blocks, markdown file links, and improved tool-call diff display.
