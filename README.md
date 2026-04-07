@@ -62,7 +62,7 @@ curl -fsSL https://raw.githubusercontent.com/anycode-ide/anycode/main/install.sh
 
 You can also pin a version:
 ```bash
-curl -fsSL https://raw.githubusercontent.com/anycode-ide/anycode/main/install.sh | sh -s -- --version v0.0.7
+curl -fsSL https://raw.githubusercontent.com/anycode-ide/anycode/main/install.sh | sh -s -- --version v0.0.10
 ```
 
 Linux (x86_64):
