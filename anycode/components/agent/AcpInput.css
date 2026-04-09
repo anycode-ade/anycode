@@ -1,11 +1,95 @@
 .acp-dialog-input {
     display: flex;
     flex-direction: column;
-    gap: 8px;
     padding: 8px 12px;
     border-top: 1px solid var(--border-color, #333);
     align-items: stretch;
     border-radius: 14px;
+    transition: padding 0.15s ease-in-out;
+}
+
+.acp-dialog-input-minimized {
+    padding: 8px 12px;
+    cursor: pointer;
+}
+
+.acp-input-preview-container {
+    display: grid;
+    grid-template-rows: 0fr;
+    transition: grid-template-rows 0.15s ease-in-out, opacity 0.15s ease-in-out;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.acp-dialog-input-minimized .acp-input-preview-container {
+    grid-template-rows: 1fr;
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.acp-input-preview-content {
+    min-height: 0;
+    overflow: hidden;
+}
+
+.acp-input-preview-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    width: 100%;
+}
+
+.acp-input-full-container {
+    display: grid;
+    grid-template-rows: 1fr;
+    transition: grid-template-rows 0.15s ease-in-out, opacity 0.15s ease-in-out;
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.acp-dialog-input-minimized .acp-input-full-container {
+    grid-template-rows: 0fr;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.acp-input-full-content {
+    min-height: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.acp-input-preview-text {
+    flex: 1;
+    font-weight: 500;
+    font-size: 14px;
+    line-height: 1.5;
+    color: rgba(255, 255, 255, 0.7);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    user-select: none;
+}
+
+.acp-input-toggle-btn {
+    background: transparent;
+    border: none;
+    color: rgba(255, 255, 255, 0.5);
+    padding: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: color 0.2s, background-color 0.2s;
+}
+
+.acp-input-toggle-btn:hover {
+    color: #fff;
+    background-color: rgba(255, 255, 255, 0.1);
 }
 
 .acp-input-controls-row {
@@ -109,8 +193,7 @@
     padding: 6px 8px;
     color: #fff;
     -webkit-text-fill-color: #fff;
-    font-family: inherit;
-    font-size: 13px;
+    font-size: 14px;
     resize: none;
     min-height: 32px;
 }
@@ -128,7 +211,7 @@
 .acp-dialog-input textarea::placeholder {
     color: rgba(255, 255, 255, 0.55);
     -webkit-text-fill-color: rgba(255, 255, 255, 0.55);
-    font-size: 11px;
+    font-size: 13px;
 }
 
 .acp-send-btn,
@@ -191,7 +274,8 @@
     .acp-input-select {
     }
 
-    .acp-dialog-input textarea {
+    .acp-dialog-input textarea,
+    .acp-input-preview-text {
         font-size: 16px;
     }
 }

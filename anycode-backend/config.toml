@@ -31,7 +31,7 @@ lsp = ["uvx", "ty", "server"]
 indent = { width = 4, unit = " " }
 executable = true
 exec = "python -u {file}"
-exectest = "python -m pytest -k {test} {file}"  
+exectest = "python -m pytest -k {test} {file}"
 
 [[language]]
 name = "javascript"
@@ -41,7 +41,7 @@ lsp = ["typescript-language-server", "--stdio"]
 indent = { width = 2, unit = " " }
 executable = true
 exec = "tsx {file}"
-exectest = "tsx -m pytest -k {test} {file}"  
+exectest = "tsx -m pytest -k {test} {file}"
 
 [[language]]
 name = "typescript"
@@ -51,7 +51,7 @@ lsp = ["typescript-language-server", "--stdio"]
 indent = { width = 2, unit = " " }
 executable = true
 exec = "tsx {file}"
-exectest = "tsx -m pytest -k {test} {file}"  
+exectest = "tsx -m pytest -k {test} {file}"
 
 [[language]]
 name = "javascriptreact"
@@ -71,7 +71,7 @@ lsp = ["typescript-language-server", "--stdio"]
 indent = { width = 2, unit = " " }
 executable = true
 exec = "tsx {file}"
-exectest = "tsx -m pytest -k {test} {file}"  
+exectest = "tsx -m pytest -k {test} {file}"
 
 [[language]]
 name = "css"
@@ -139,8 +139,7 @@ exec = "bash {file}"
 name = "csharp"
 types = [".cs"]
 comment = "//"
-lsp = ["dotnet", "/opt/omnisharp/OmniSharp.dll", "--languageserver"]
-# lsp = ["/usr/run", "--languageserver"]
+lsp = ["roslyn-language-server", "--stdio", "--autoLoadProjects"]
 indent = { width = 4, unit = " " }
 executable = true
 exec = "dotnet run {file}"

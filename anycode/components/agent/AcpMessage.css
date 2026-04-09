@@ -8,6 +8,7 @@
 
 .acp-message-user {
     align-items: flex-end;
+    margin-bottom: 4px;
 }
 
 .acp-message-assistant {
@@ -44,6 +45,15 @@
     line-height: 1.5;
     color: inherit;
     overflow-wrap: anywhere;
+}
+
+.acp-message-markdown * {
+}
+
+.acp-message-markdown code,
+.acp-message-markdown code *,
+.acp-message-markdown pre,
+.acp-message-markdown pre * {
 }
 
 .acp-message-markdown > :first-child {
@@ -476,6 +486,11 @@
     color: var(--text-color-secondary, #888);
     line-height: 1.4;
     white-space: pre-wrap;
+}
+
+.acp-thought-text * {
+    font-family: inherit;
+    font-weight: inherit;
 }
 
 .acp-thought-text-collapsed {

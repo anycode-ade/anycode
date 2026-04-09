@@ -332,10 +332,12 @@ const AcpDialogComponent: React.FC<AcpDialogProps> = ({
     const session = node.sessionId ? sessionMap.get(node.sessionId) ?? null : null;
 
     if (!session) {
+      const isActiveEmptyPane = hasMultiplePanes && node.id === activePaneId;
+
       return (
         <div
           key={node.id}
-          className={`acp-pane-empty ${node.id === activePaneId ? 'active' : ''}`}
+          className={`acp-pane-empty ${isActiveEmptyPane ? 'active' : ''}`}
           onMouseDown={() => setActivePaneId(node.id)}
         >
           <div className="acp-pane-empty-title">Empty pane</div>

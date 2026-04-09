@@ -7,6 +7,7 @@ import {
   AcpUserMessage,
 } from '../../types';
 import { AcpMessage } from './AcpMessage';
+import { AcpWorkGroup } from './AcpWorkGroup';
 import './AcpMessages.css';
 
 interface AcpMessagesProps {
@@ -103,64 +104,117 @@ const AcpMessagesComponent: React.FC<AcpMessagesProps> = ({
     };
   }, [messages]);
 
+  const groupedItems = useMemo(() => {
+    const items: Array<
+      | { type: 'message'; index: number; message: AcpMessageType }
+      | { type: 'group'; messages: Array<{ index: number; message: AcpMessageType }>; isLatest: boolean }
+    > = [];
+
+    let currentGroup: Array<{ index: number; message: AcpMessageType }> | null = null;
+    let lastGroupItemIndex = -1;
+
+    for (let i = 0; i < messages.length; i += 1) {
+      const message = messages[i];
+
+      // Skip rendering if they are meant to be skipped
+      if (message.role === 'tool_result' && toolResultIndexesToSkip.has(i)) {
+        continue;
+      }
+      if (message.role === 'tool_update' && toolUpdateIndexesToSkip.has(i)) {
+        continue;
+      }
+
+      if (message.role !== 'user') {
+        if (!currentGroup) {
+          currentGroup = [];
+        }
+        currentGroup.push({ index: i, message });
+      } else {
+        if (currentGroup && currentGroup.length > 0) {
+          lastGroupItemIndex = items.length;
+          items.push({ type: 'group', messages: currentGroup, isLatest: false });
+          currentGroup = null;
+        }
+        items.push({ type: 'message', index: i, message });
+      }
+    }
+
+    if (currentGroup && currentGroup.length > 0) {
+      lastGroupItemIndex = items.length;
+      items.push({ type: 'group', messages: currentGroup, isLatest: false });
+    }
+
+    if (lastGroupItemIndex !== -1) {
+      (items[lastGroupItemIndex] as any).isLatest = true;
+    }
+
+    return items;
+  }, [messages, toolResultIndexesToSkip, toolUpdateIndexesToSkip]);
+
+  const renderMessage = (message: AcpMessageType, index: number) => {
+    let isExpanded = false;
+    let onToggle: (() => void) | undefined = undefined;
+    let toolResult: AcpToolResultMessage | undefined = undefined;
+    let toolUpdates: AcpToolUpdateMessage[] | undefined = undefined;
+
+    if (message.role === 'tool_call') {
+      isExpanded = expandedToolCalls.has(index);
+      onToggle = () => onToggleToolCall(index);
+      const toolResultEntry = toolResultsById.get(message.id);
+      if (toolResultEntry && toolResultEntry.index > index) {
+        toolResult = toolResultEntry.message;
+      }
+      const toolUpdateEntries = toolUpdatesById.get(message.id) ?? [];
+      toolUpdates = toolUpdateEntries
+        .filter((entry) => entry.index > index)
+        .map((entry) => entry.message);
+    } else if (message.role === 'tool_result') {
+      isExpanded = expandedToolResults.has(index);
+      onToggle = () => onToggleToolResult(index);
+    } else if (message.role === 'tool_update') {
+      isExpanded = expandedToolResults.has(index);
+      onToggle = () => onToggleToolResult(index);
+    } else if (message.role === 'thought') {
+      isExpanded = expandedThoughts.has(index);
+      onToggle = () => onToggleThought(index);
+    } else if (message.role === 'permission_request') {
+      isExpanded = expandedPermissions.has(index);
+      onToggle = () => onTogglePermission(index);
+    }
+
+    return (
+      <AcpMessage
+        key={index}
+        message={message}
+        isExpanded={isExpanded}
+        onToggle={onToggle}
+        toolResult={toolResult}
+        toolUpdates={toolUpdates}
+        onPermissionResponse={onPermissionResponse}
+        onOpenFile={onOpenFile}
+        onOpenFileDiff={onOpenFileDiff}
+        onUndo={
+          message.role === 'user' && onUndoMessage
+            ? () => onUndoMessage(message)
+            : undefined
+        }
+      />
+    );
+  };
+
   return (
     <>
-      {messages.map((message, index) => {
-        // Determine if this message should be expandable
-        let isExpanded = false;
-        let onToggle: (() => void) | undefined = undefined;
-        let toolResult: AcpToolResultMessage | undefined = undefined;
-        let toolUpdates: AcpToolUpdateMessage[] | undefined = undefined;
-
-        if (message.role === 'tool_call') {
-          isExpanded = expandedToolCalls.has(index);
-          onToggle = () => onToggleToolCall(index);
-          const toolResultEntry = toolResultsById.get(message.id);
-          if (toolResultEntry && toolResultEntry.index > index) {
-            toolResult = toolResultEntry.message;
-          }
-          const toolUpdateEntries = toolUpdatesById.get(message.id) ?? [];
-          toolUpdates = toolUpdateEntries
-            .filter((entry) => entry.index > index)
-            .map((entry) => entry.message);
-        } else if (message.role === 'tool_result') {
-          if (toolResultIndexesToSkip.has(index)) {
-            return null;
-          }
-          isExpanded = expandedToolResults.has(index);
-          onToggle = () => onToggleToolResult(index);
-        } else if (message.role === 'tool_update') {
-          if (toolUpdateIndexesToSkip.has(index)) {
-            return null;
-          }
-          isExpanded = expandedToolResults.has(index);
-          onToggle = () => onToggleToolResult(index);
-        } else if (message.role === 'thought') {
-          isExpanded = expandedThoughts.has(index);
-          onToggle = () => onToggleThought(index);
-        } else if (message.role === 'permission_request') {
-          isExpanded = expandedPermissions.has(index);
-          onToggle = () => onTogglePermission(index);
+      {groupedItems.map((item, idx) => {
+        if (item.type === 'message') {
+          return renderMessage(item.message, item.index);
+        } else if (item.type === 'group') {
+          return (
+            <AcpWorkGroup key={`group-${idx}`} isLatest={item.isLatest} messageCount={item.messages.length}>
+              {item.messages.map((m) => renderMessage(m.message, m.index))}
+            </AcpWorkGroup>
+          );
         }
-
-        return (
-          <AcpMessage
-            key={index}
-            message={message}
-            isExpanded={isExpanded}
-            onToggle={onToggle}
-            toolResult={toolResult}
-            toolUpdates={toolUpdates}
-            onPermissionResponse={onPermissionResponse}
-            onOpenFile={onOpenFile}
-            onOpenFileDiff={onOpenFileDiff}
-            onUndo={
-              message.role === 'user' && onUndoMessage
-                ? () => onUndoMessage(message)
-                : undefined
-            }
-          />
-        );
+        return null;
       })}
 
       {toolCalls.length > 0 && (

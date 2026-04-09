@@ -39,6 +39,8 @@ export const AcpInput: React.FC<AcpInputProps> = ({
   onSelectModel,
   onSelectReasoning,
 }) => {
+  const [isMinimized, setIsMinimized] = React.useState(false);
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -102,66 +104,90 @@ export const AcpInput: React.FC<AcpInputProps> = ({
   };
 
   return (
-    <div className="acp-dialog-input">
-      <div className="acp-input-main-row">
-        <textarea
-          id="acp-prompt-input"
-          name="prompt"
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder="Ask anything..."
-          rows={3}
-          disabled={!isConnected}
-        />
-        {isProcessing ? (
-          <button
-            className="acp-stop-prompt-btn"
-            onClick={onCancel}
-            disabled={!isConnected}
-          >
-            <AcpIcons.Cancel />
-          </button>
-        ) : (
-          <button
-            className="acp-send-btn"
-            onClick={handleSend}
-            disabled={!value.trim() || !isConnected}
-          >
-            <AcpIcons.Send />
-          </button>
-        )}
-      </div>
-      {(agentLabel || modelSelector || reasoningSelector || contextUsage) && (
-        <div className="acp-input-controls-row">
-          {agentLabel && (
-            <div className="acp-input-agent-chip" title={agentLabel}>
-              <span className="acp-input-agent-chip-label">{agentLabel}</span>
-              {onCloseAgent && (
-                <button
-                  className="acp-agent-close-btn acp-input-agent-close-btn"
-                  onClick={onCloseAgent}
-                  title="Close agent"
-                >
-                  <AcpIcons.Close />
-                </button>
-              )}
-            </div>
-          )}
-          {renderSelect('acp-model-select', 'model', modelSelector, onSelectModel)}
-          {renderSelect('acp-reasoning-select', 'thinking', reasoningSelector, onSelectReasoning)}
-          {contextUsage && (
-            <div
-              className="acp-input-context"
-              title={formatContextTitle(contextUsage.used, contextUsage.size)}
+    <div className={`acp-dialog-input ${isMinimized ? 'acp-dialog-input-minimized' : ''}`}>
+      <div className="acp-input-preview-container">
+        <div className="acp-input-preview-content">
+          <div className="acp-input-preview-row" onClick={() => setIsMinimized(false)}>
+            <span className="acp-input-preview-text">{value ? value : "Ask anything..."}</span>
+            <button
+              className="acp-input-toggle-btn"
+              onClick={(e) => { e.stopPropagation(); setIsMinimized(false); }}
+              title="Expand"
             >
-              <div className="acp-input-context-value">
-                {formatContextPercent(contextUsage.used, contextUsage.size)}
-              </div>
-            </div>
-          )}
+              <AcpIcons.ChevronUp />
+            </button>
+          </div>
         </div>
-      )}
+      </div>
+
+      <div className="acp-input-full-container">
+        <div className="acp-input-full-content">
+          <div className="acp-input-main-row">
+            <textarea
+              id="acp-prompt-input"
+              name="prompt"
+              value={value}
+              onChange={(e) => onChange(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Ask anything..."
+              rows={3}
+              disabled={!isConnected}
+            />
+            {isProcessing ? (
+              <button
+                className="acp-stop-prompt-btn"
+                onClick={onCancel}
+                disabled={!isConnected}
+              >
+                <AcpIcons.Cancel />
+              </button>
+            ) : (
+              <button
+                className="acp-send-btn"
+                onClick={handleSend}
+                disabled={!value.trim() || !isConnected}
+              >
+                <AcpIcons.Send />
+              </button>
+            )}
+          </div>
+          <div className="acp-input-controls-row">
+            {agentLabel && (
+              <div className="acp-input-agent-chip" title={agentLabel}>
+                <span className="acp-input-agent-chip-label">{agentLabel}</span>
+                {onCloseAgent && (
+                  <button
+                    className="acp-agent-close-btn acp-input-agent-close-btn"
+                    onClick={onCloseAgent}
+                    title="Close agent"
+                  >
+                    <AcpIcons.Close />
+                  </button>
+                )}
+              </div>
+            )}
+            {renderSelect('acp-model-select', 'model', modelSelector, onSelectModel)}
+            {renderSelect('acp-reasoning-select', 'thinking', reasoningSelector, onSelectReasoning)}
+            {contextUsage && (
+              <div
+                className="acp-input-context"
+                title={formatContextTitle(contextUsage.used, contextUsage.size)}
+              >
+                <div className="acp-input-context-value">
+                  {formatContextPercent(contextUsage.used, contextUsage.size)}
+                </div>
+              </div>
+            )}
+            <button
+              className="acp-input-toggle-btn acp-input-minimize-btn"
+              onClick={() => setIsMinimized(true)}
+              title="Minimize"
+            >
+              <AcpIcons.ChevronDown />
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 };
