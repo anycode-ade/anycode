@@ -1,6 +1,6 @@
 use lsp_types::Uri;
 use pathdiff::diff_paths;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 pub const DEFAULT_IGNORE_DIRS: &[&str] = &[
     // Version control and IDEs
@@ -180,6 +180,34 @@ pub fn abs_file(input: &str) -> anyhow::Result<String> {
     let srcdir = std::path::PathBuf::from(input);
     let c = std::fs::canonicalize(&srcdir)?;
     Ok(c.to_string_lossy().to_string())
+}
+
+/// Normalize a path for watcher comparisons without requiring the file to exist.
+///
+/// This resolves `.` and `..` segments and makes relative paths absolute against the
+/// current working directory, but does not follow symlinks.
+pub fn normalize_watch_path(path: &Path) -> PathBuf {
+    let absolute = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        current_dir().join(path)
+    };
+
+    let mut normalized = PathBuf::new();
+
+    for component in absolute.components() {
+        match component {
+            Component::Prefix(prefix) => normalized.push(prefix.as_os_str()),
+            Component::RootDir => normalized.push(component.as_os_str()),
+            Component::CurDir => {}
+            Component::ParentDir => {
+                normalized.pop();
+            }
+            Component::Normal(part) => normalized.push(part),
+        }
+    }
+
+    normalized
 }
 
 pub fn file_name(input: &str) -> String {

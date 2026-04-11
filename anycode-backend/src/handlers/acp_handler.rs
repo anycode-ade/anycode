@@ -78,6 +78,16 @@ pub async fn handle_acp_start(
         }
         Err(e) => {
             error!("Failed to start ACP agent {}: {}", agent_id, e);
+            let _ = socket.emit(
+                "acp:message",
+                &json!({
+                    "agent_id": agent_id,
+                    "item": {
+                        "role": "error",
+                        "message": format!("Failed to start agent: {}", e),
+                    }
+                }),
+            );
             error_ack!(ack, &agent_id, "Failed to start agent: {}", e);
         }
     }

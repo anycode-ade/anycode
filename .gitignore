@@ -7,3 +7,4 @@ anycode/dist
 anycode-base/dist
 anycode-backend/dist/*
 !anycode-backend/dist/.gitkeep
+csharp-test-project

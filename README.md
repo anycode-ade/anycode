@@ -1,6 +1,6 @@
 # anycode
 
-**anycode** is a lightning-fast web-based IDE that allows you to write, edit, and manage code directly from your browser. Built for speed and performance, anycode supports a wide range of programming languages and provides an intuitive interface with powerful features for a seamless development experience.
+**anycode** is a web platform where people and agents build together. Run it locally or remotely and work from any device you want: desktop, laptop, mobile, or even VR. Use any agent, including Codex, Claude Code, OpenCode, as well as local models.
 
 ![editor](anycode/imgs/screen.png)
 ![agents](anycode/imgs/agents.png)
@@ -58,35 +58,6 @@ The project consists of several packages:
 One-shot installer:
 ```bash
 curl -fsSL https://raw.githubusercontent.com/anycode-ade/anycode/main/install.sh | sh
-```
-
-You can also pin a version:
-```bash
-curl -fsSL https://raw.githubusercontent.com/anycode-ade/anycode/main/install.sh | sh -s -- --version v0.0.10
-```
-
-Linux (x86_64):
-```bash
-curl -L https://github.com/anycode-ade/anycode/releases/latest/download/anycode-linux-x86_64-musl.tar.gz | tar -xz
-sudo mv anycode /usr/local/bin/
-sudo chmod +x /usr/local/bin/anycode
-anycode
-```
-
-Linux (ARM64):
-```bash
-curl -L https://github.com/anycode-ade/anycode/releases/latest/download/anycode-linux-aarch64-musl.tar.gz | tar -xz
-sudo mv anycode /usr/local/bin/
-sudo chmod +x /usr/local/bin/anycode
-anycode
-```
-
-MacOS:
-```bash
-curl -L https://github.com/anycode-ade/anycode/releases/latest/download/anycode-universal-apple-darwin.tar.gz | tar -xz
-sudo mv anycode /usr/local/bin/
-sudo chmod +x /usr/local/bin/anycode
-anycode
 ```
 
 ## Development

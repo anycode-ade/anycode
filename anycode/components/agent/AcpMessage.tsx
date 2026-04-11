@@ -55,7 +55,7 @@ const SUPPORTED_LANGUAGES: Record<string, string> = {
   cxx: 'cpp',
   hpp: 'cpp',
   h: 'c',
-  md: 'text',
+  md: 'markdown',
   markdown: 'text',
   diff: 'text',
   text: 'text',

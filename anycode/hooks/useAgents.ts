@@ -427,7 +427,8 @@ export const useAgents = ({
                 setSelectedAgentId(aid);
                 onAgentStarted?.();
             } else {
-                alert('Failed to start agent ' + aid + ': ' + response.error);
+                const errorMessage = response.error || `Failed to start agent ${aid}`;
+                alert(errorMessage);
             }
         });
         return aid;

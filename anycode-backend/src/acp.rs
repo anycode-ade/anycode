@@ -11,7 +11,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use tokio::io::{self, AsyncBufReadExt, BufReader};
 use tokio::process::Command;
-use tokio::sync::{Mutex, RwLock, broadcast, mpsc, oneshot::Sender};
+use tokio::sync::{Mutex, RwLock, broadcast, mpsc, oneshot};
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 use tracing::{debug, error, info};
 
@@ -229,7 +229,7 @@ struct AcpClientImpl {
     message_sender: broadcast::Sender<AcpMessage>,
     history: Arc<tokio::sync::Mutex<Vec<AcpMessage>>>,
     /// Pending permission requests waiting for user response
-    pending_permissions: Arc<Mutex<HashMap<String, Sender<PermissionResponse>>>>,
+    pending_permissions: Arc<Mutex<HashMap<String, oneshot::Sender<PermissionResponse>>>>,
     /// Channel to send file operations to the ACP filesystem background task
     fs_sender: Option<mpsc::Sender<AcpFsCommand>>,
 }
@@ -1099,7 +1099,7 @@ impl AcpClientImpl {
 
 /// Type alias for pending permissions map
 pub type PendingPermissionsMap =
-    Arc<tokio::sync::Mutex<HashMap<String, tokio::sync::oneshot::Sender<PermissionResponse>>>>;
+    Arc<tokio::sync::Mutex<HashMap<String, oneshot::Sender<PermissionResponse>>>>;
 
 enum RestoreSessionOutcome {
     Restored(SessionBootstrap),
@@ -1204,7 +1204,7 @@ impl AcpAgent {
             *cancel_sender_guard = Some(cancel_tx.clone());
         }
 
-        let (session_tx, mut session_rx) = mpsc::channel::<acp::SessionId>(1);
+        let (bootstrap_tx, bootstrap_rx) = oneshot::channel::<Result<SessionBootstrap>>();
 
         // Spawn agent process
         let (mut child, stdin, stdout, stderr) = Self::spawn_agent_process(cmd, args)?;
@@ -1237,7 +1237,7 @@ impl AcpAgent {
                             prompt_rx,
                             config_rx,
                             cancel_rx,
-                            session_tx,
+                            bootstrap_tx,
                             resume_session_id,
                         )
                         .await;
@@ -1255,15 +1255,19 @@ impl AcpAgent {
         });
         self.process_handle = Some(process_handle);
 
-        match tokio::time::timeout(tokio::time::Duration::from_secs(15), session_rx.recv()).await {
-            Ok(Some(session_id)) => {
-                self.session_id = Some(session_id.clone());
-                Ok(session_id.to_string())
+        match tokio::time::timeout(tokio::time::Duration::from_secs(15), bootstrap_rx).await {
+            Ok(Ok(Ok(bootstrap))) => {
+                self.session_id = Some(bootstrap.session_id.clone());
+                Ok(bootstrap.session_id.to_string())
             }
-            Ok(None) => {
+            Ok(Ok(Err(e))) => {
+                self.stop().await;
+                Err(e)
+            }
+            Ok(Err(_)) => {
                 self.stop().await;
                 Err(anyhow!(
-                    "ACP agent session channel closed before initialization"
+                    "ACP agent initialization channel closed before initialization"
                 ))
             }
             Err(_) => {
@@ -1313,7 +1317,7 @@ impl AcpAgent {
         mut prompt_rx: mpsc::Receiver<String>,
         mut config_rx: mpsc::Receiver<PendingConfigUpdate>,
         mut cancel_rx: mpsc::Receiver<()>,
-        session_tx: mpsc::Sender<acp::SessionId>,
+        bootstrap_tx: oneshot::Sender<Result<SessionBootstrap>>,
         resume_session_id: Option<String>,
     ) {
         // Clone history before moving client_impl
@@ -1353,47 +1357,41 @@ impl AcpAgent {
         let bootstrap = match Self::initialize_connection(&conn, &agent_id, resume_session_id).await
         {
             Ok(bootstrap) => {
-                let _ = session_tx.send(bootstrap.session_id.clone()).await;
                 ready.store(true, Ordering::SeqCst);
+                let _ = bootstrap_tx.send(Ok(bootstrap.clone()));
                 Some(bootstrap)
             }
             Err(e) => {
-                error!("Failed to initialize ACP agent {}: {}", agent_id, e);
+                let err = anyhow!("Failed to initialize ACP agent {}: {}", agent_id, e);
+                error!("{}", err);
+                let _ = bootstrap_tx.send(Err(err));
                 None
             }
         };
 
-        // Handle prompts in a loop
-        if let Some(bootstrap) = bootstrap {
-            Self::emit_session_config_messages(
-                &message_sender,
-                &history_for_prompt,
-                bootstrap.model_selector.clone(),
-                bootstrap.reasoning_selector.clone(),
-            )
-            .await;
+        let Some(bootstrap) = bootstrap else {
+            return;
+        };
 
-            Self::run_prompt_loop(
-                &conn,
-                &agent_id,
-                &message_sender,
-                history_for_prompt,
-                bootstrap.session_id,
-                &mut prompt_rx,
-                &mut config_rx,
-                &mut cancel_rx,
-            )
-            .await;
-        } else {
-            error!(
-                "No session ID for agent {}, cannot handle prompts",
-                agent_id
-            );
-            // Keep the connection alive if no session
-            loop {
-                tokio::time::sleep(tokio::time::Duration::from_secs(3600)).await;
-            }
-        }
+        Self::emit_session_config_messages(
+            &message_sender,
+            &history_for_prompt,
+            bootstrap.model_selector.clone(),
+            bootstrap.reasoning_selector.clone(),
+        )
+        .await;
+
+        Self::run_prompt_loop(
+            &conn,
+            &agent_id,
+            &message_sender,
+            history_for_prompt,
+            bootstrap.session_id,
+            &mut prompt_rx,
+            &mut config_rx,
+            &mut cancel_rx,
+        )
+        .await;
     }
 
     fn spawn_stderr_reader(

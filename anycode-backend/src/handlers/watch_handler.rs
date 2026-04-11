@@ -14,6 +14,7 @@ use crate::code::Code;
 use crate::diff::compute_text_edits;
 use crate::handlers::io_handler::apply_edits_to_code;
 use crate::lsp::LspManager;
+use crate::utils::normalize_watch_path;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 enum FileState {
@@ -147,10 +148,8 @@ pub async fn handle_watch_event(
     git_manager: &Arc<Mutex<crate::git::GitManager>>,
     lsp_manager: &Arc<Mutex<LspManager>>,
 ) {
-    let path_str = match path.to_str() {
-        Some(s) => s.to_string(),
-        None => return,
-    };
+    let normalized_path = normalize_watch_path(path);
+    let path_str = normalized_path.to_string_lossy().to_string();
 
     let (should_spawn, rx) = {
         let mut states = file_states.lock().await;
@@ -181,7 +180,7 @@ pub async fn handle_watch_event(
     let mut rx = rx.unwrap();
 
     // Spawn a single debounce task for this file
-    let path = path.clone();
+    let path = normalized_path.clone();
     let socket = socket.clone();
     let file2code = file2code.clone();
     let socket2data = socket2data.clone();
@@ -384,6 +383,8 @@ async fn handle_file_modification(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::current_dir;
+    use std::path::Path;
 
     #[test]
     fn unopened_new_file_is_classified_as_create() {
@@ -407,5 +408,15 @@ mod tests {
             classify_watch_transition(FileState::Exists, FileState::Exists, true,),
             WatchAction::Modify
         );
+    }
+
+    #[test]
+    fn watcher_paths_are_normalized_before_comparison() {
+        let cwd = current_dir();
+        let normalized = normalize_watch_path(Path::new("./test.js"));
+        assert_eq!(normalized, cwd.join("test.js"));
+
+        let normalized = normalize_watch_path(Path::new(&cwd.join("./test.js")));
+        assert_eq!(normalized, cwd.join("test.js"));
     }
 }

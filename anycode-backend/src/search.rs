@@ -270,7 +270,6 @@ pub async fn global_search(
 }
 
 pub mod search_exp {
-    
 
     #[test]
     fn test_line_search_simple() {
