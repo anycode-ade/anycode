@@ -595,13 +595,11 @@ const parseMarkdownFileHref = (href: string): ParsedFileLink | null => {
 
 const MarkdownLink: React.FC<React.ComponentProps<'a'> & {
   onOpenFile?: (path: string, line?: number, column?: number) => void;
-  onOpenFileDiff?: (path: string, line?: number, column?: number) => void;
 }> = ({
   children,
   href,
   onClick,
   onOpenFile,
-  onOpenFileDiff,
   ...props
 }) => {
   const parsedFileLink = href ? parseMarkdownFileHref(href) : null;
@@ -612,11 +610,9 @@ const MarkdownLink: React.FC<React.ComponentProps<'a'> & {
       return;
     }
 
-    const openFileLink = onOpenFileDiff ?? onOpenFile;
-
-    if (parsedFileLink && openFileLink) {
+    if (parsedFileLink && onOpenFile) {
       event.preventDefault();
-      openFileLink(parsedFileLink.path, parsedFileLink.line, parsedFileLink.column);
+      onOpenFile(parsedFileLink.path, parsedFileLink.line, parsedFileLink.column);
       return;
     }
 
@@ -651,6 +647,49 @@ const MarkdownInlineCode: React.FC<{
 type MarkdownPart =
   | { kind: 'text'; content: string }
   | { kind: 'code'; content: string; language: string; isOpen: boolean };
+
+const normalizeHtmlAnchorLinks = (content: string): string => {
+  const decodeHtmlEntities = (value: string): string => (
+    value
+      .replace(/&quot;/gi, '"')
+      .replace(/&#34;/g, '"')
+      .replace(/&#x22;/gi, '"')
+      .replace(/&#39;/g, '\'')
+      .replace(/&#x27;/gi, '\'')
+      .replace(/&amp;/gi, '&')
+      .replace(/&lt;/gi, '<')
+      .replace(/&gt;/gi, '>')
+  );
+
+  // Convert raw HTML anchors from ACP output into markdown links
+  // so ReactMarkdown routes them through the custom MarkdownLink handler.
+  const withEscapedAnchors = content.replace(
+    /&lt;a\s+[^&]*href=(?:&quot;|&#34;|&#x22;|&#39;|&#x27;)(.*?)(?:&quot;|&#34;|&#x22;|&#39;|&#x27;)[^&]*&gt;([\s\S]*?)&lt;\/a&gt;/gi,
+    (_full, href: string, label: string) => {
+      const decodedHref = decodeHtmlEntities(href).trim();
+      const safeLabel = decodeHtmlEntities(label).replace(/\n+/g, ' ').trim() || decodedHref;
+      return `[${safeLabel}](${decodedHref})`;
+    },
+  );
+
+  const withQuotedHrefAnchors = withEscapedAnchors.replace(
+    /<a\s+[^>]*href=(["'])(.*?)\1[^>]*>([\s\S]*?)<\/a>/gi,
+    (_full, _quote, href: string, label: string) => {
+      const decodedHref = decodeHtmlEntities(href).trim();
+      const safeLabel = decodeHtmlEntities(label).replace(/\n+/g, ' ').trim() || decodedHref;
+      return `[${safeLabel}](${decodedHref})`;
+    },
+  );
+
+  return withQuotedHrefAnchors.replace(
+    /<a\s+[^>]*href=([^\s>"']+)[^>]*>([\s\S]*?)<\/a>/gi,
+    (_full, href: string, label: string) => {
+      const decodedHref = decodeHtmlEntities(href).trim();
+      const safeLabel = decodeHtmlEntities(label).replace(/\n+/g, ' ').trim() || decodedHref;
+      return `[${safeLabel}](${decodedHref})`;
+    },
+  );
+};
 
 const normalizeFenceLanguage = (rawLanguage: string): string => {
   const language = rawLanguage.trim().toLowerCase();
@@ -720,23 +759,26 @@ const MarkdownTextBlock: React.FC<{
   content: string;
   onOpenFile?: (path: string, line?: number, column?: number) => void;
   onOpenFileDiff?: (path: string, line?: number, column?: number) => void;
-}> = ({ content, onOpenFile, onOpenFileDiff }) => (
-  <ReactMarkdown
-    remarkPlugins={[remarkGfm, remarkBreaks]}
-    components={{
-      a: ({ node: _node, ...props }) => (
-        <MarkdownLink
-          {...props}
-          onOpenFile={onOpenFile}
-          onOpenFileDiff={onOpenFileDiff}
-        />
-      ),
-      code: MarkdownInlineCode,
-    }}
-  >
-    {content}
-  </ReactMarkdown>
-);
+}> = ({ content, onOpenFile, onOpenFileDiff: _onOpenFileDiff }) => {
+  const normalizedContent = normalizeHtmlAnchorLinks(content);
+
+  return (
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm, remarkBreaks]}
+      components={{
+        a: ({ node: _node, ...props }) => (
+          <MarkdownLink
+            {...props}
+            onOpenFile={onOpenFile}
+          />
+        ),
+        code: MarkdownInlineCode,
+      }}
+    >
+      {normalizedContent}
+    </ReactMarkdown>
+  );
+};
 
 const MarkdownCodeBlock: React.FC<{
   code: string;

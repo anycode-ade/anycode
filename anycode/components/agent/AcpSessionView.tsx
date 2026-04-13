@@ -104,7 +104,6 @@ const useExpandableItems = () => {
 interface AcpSessionViewProps {
   agentId: string;
   title: string;
-  isActivePane: boolean;
   isConnected: boolean;
   isProcessing?: boolean;
   messages: AcpMessage[];
@@ -126,7 +125,6 @@ interface AcpSessionViewProps {
 export const AcpSessionView: React.FC<AcpSessionViewProps> = ({
   agentId,
   title,
-  isActivePane,
   isConnected,
   isProcessing = false,
   messages,
@@ -196,10 +194,7 @@ export const AcpSessionView: React.FC<AcpSessionViewProps> = ({
   };
 
   return (
-    <div
-      className={`acp-pane-session ${isActivePane ? 'active' : ''}`}
-      onMouseDown={onFocusPane}
-    >
+    <div className="acp-pane-session" onMouseDown={onFocusPane}>
       <div className="acp-dialog-content">
         <div className="acp-dialog-messages" ref={contentRef}>
           <div className="acp-dialog-messages-inner">

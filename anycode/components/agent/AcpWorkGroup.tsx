@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { AcpIcons } from './AcpIcons';
 import './AcpWorkGroup.css';
 
@@ -20,13 +20,13 @@ export const AcpWorkGroup: React.FC<AcpWorkGroupProps> = ({ isLatest, messageCou
       <>
         {children}
       </>
-    )
+    );
   }
 
   return (
     <div className={`acp-work-group ${isExpanded ? 'expanded' : 'collapsed'}`}>
-      <div 
-        className="acp-work-group-header" 
+      <div
+        className="acp-work-group-header"
         onClick={() => setIsExpanded(!isExpanded)}
       >
         <span className="acp-work-group-icon">

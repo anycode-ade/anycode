@@ -109,12 +109,13 @@ export const useAgents = ({
     }, []);
 
     const handleAcpMessage = useCallback((data: { agent_id: string; item: AcpMessage }) => {
-        // Follow mode is temporarily disabled.
-        // if (data.item.role === 'open_file' && followEnabledRef.current) {
-        //     const openFileMsg = data.item as AcpOpenFileMessage;
-        //     openFile(openFileMsg.path, openFileMsg.line, 0);
-        //     return;
-        // }
+        if (data.item.role === 'open_file') {
+            const openFileMsg = data.item as AcpOpenFileMessage;
+            if (followEnabledRef.current) {
+                openFile(openFileMsg.path, openFileMsg.line, 0);
+            }
+            return;
+        }
 
         if (data.item.role === 'prompt_state') {
             const promptState = data.item as AcpPromptStateMessage;

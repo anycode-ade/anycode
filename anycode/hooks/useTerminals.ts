@@ -104,7 +104,7 @@ export const useTerminals = ({ wsRef, isConnected, bottomPanelVisible }: UseTerm
         });
     }, [bottomPanelVisible, terminals, wsRef, isConnected]);
 
-    const addTerminal = useCallback(() => {
+    const addTerminal = useCallback((): string => {
         let nextId = terminalCounterRef.current + 1;
         while (terminals.find((t) => t.id === String(nextId))) {
             nextId += 1;
@@ -120,6 +120,7 @@ export const useTerminals = ({ wsRef, isConnected, bottomPanelVisible }: UseTerm
         if (bottomPanelVisible && wsRef.current && isConnected) {
             initializeTerminal(newTerminal);
         }
+        return id;
     }, [terminals, bottomPanelVisible, wsRef, isConnected, initializeTerminal]);
 
     const closeTerminal = useCallback((index: number) => {

@@ -116,7 +116,6 @@ const AcpMessagesComponent: React.FC<AcpMessagesProps> = ({
     for (let i = 0; i < messages.length; i += 1) {
       const message = messages[i];
 
-      // Skip rendering if they are meant to be skipped
       if (message.role === 'tool_result' && toolResultIndexesToSkip.has(i)) {
         continue;
       }
@@ -145,7 +144,7 @@ const AcpMessagesComponent: React.FC<AcpMessagesProps> = ({
     }
 
     if (lastGroupItemIndex !== -1) {
-      (items[lastGroupItemIndex] as any).isLatest = true;
+      (items[lastGroupItemIndex] as { type: 'group'; messages: Array<{ index: number; message: AcpMessageType }>; isLatest: boolean }).isLatest = true;
     }
 
     return items;
@@ -204,17 +203,16 @@ const AcpMessagesComponent: React.FC<AcpMessagesProps> = ({
 
   return (
     <>
-      {groupedItems.map((item, idx) => {
+      {groupedItems.map((item, index) => {
         if (item.type === 'message') {
           return renderMessage(item.message, item.index);
-        } else if (item.type === 'group') {
-          return (
-            <AcpWorkGroup key={`group-${idx}`} isLatest={item.isLatest} messageCount={item.messages.length}>
-              {item.messages.map((m) => renderMessage(m.message, m.index))}
-            </AcpWorkGroup>
-          );
         }
-        return null;
+
+        return (
+          <AcpWorkGroup key={`group-${index}`} isLatest={item.isLatest} messageCount={item.messages.length}>
+            {item.messages.map((entry) => renderMessage(entry.message, entry.index))}
+          </AcpWorkGroup>
+        );
       })}
 
       {toolCalls.length > 0 && (

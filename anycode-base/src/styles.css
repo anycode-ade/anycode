@@ -18,7 +18,7 @@
   text-align: center;
   background: inherit;
   min-width: 32px;
-  z-index: 10;
+  /*z-index: 10;*/
 }
 
 .anyeditor .buttons div {
@@ -37,7 +37,7 @@
   min-width: 48px;
   /* text-align: center; */
   color: #888;
-  z-index: 10;
+  /*z-index: 10;*/
 }
 
 .anyeditor .gutter .ln {
@@ -89,7 +89,7 @@
 
 .diff-changed {
   background-color: rgba(48, 123, 215, 0.246);
-  position: relative;
+  /*position: relative;*/
 }
 
 /* .gutter .ln.diff-changed::before {
@@ -104,7 +104,7 @@
 
 .diff-added {
   background-color: rgba(76, 175, 79, 0.206);
-  position: relative;
+  /*position: relative;*/
 }
 
 /* .gutter .ln.diff-added::before {
@@ -174,7 +174,7 @@
 
 .line-deleted-ghost {
   color: #f6564b;
-  opacity: 0.6;
+  /*opacity: 0.6;*/
   background-color: rgba(244, 67, 54, 0.15);
   /* pointer-events: none; */
   user-select: none;

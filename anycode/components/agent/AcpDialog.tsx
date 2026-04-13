@@ -372,7 +372,6 @@ const AcpDialogComponent: React.FC<AcpDialogProps> = ({
         key={node.id}
         agentId={session.agentId}
         title={session.agentName || session.agentId}
-        isActivePane={node.id === activePaneId}
         isConnected={session.isActive && isConnected}
         isProcessing={session.isProcessing || false}
         messages={session.messages}

@@ -18,6 +18,10 @@ import {
     Diagnostic,
     DiagnosticResponse,
 } from '../../anycode-base/src/lsp';
+import { loadItem, saveItem } from '../storage';
+
+const OPEN_EDITOR_FILES_STORAGE_KEY = 'openEditorFileIds';
+const ACTIVE_EDITOR_FILE_STORAGE_KEY = 'activeEditorFileId';
 
 type UseEditorsParams = {
     wsRef: React.RefObject<Socket | null>;
@@ -27,10 +31,14 @@ type UseEditorsParams = {
 };
 
 export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: UseEditorsParams) => {
+    const persistedOpenFileIdsRef = useRef<string[]>(loadItem<string[]>(OPEN_EDITOR_FILES_STORAGE_KEY) ?? []);
+    const persistedActiveFileIdRef = useRef<string | null>(loadItem<string | null>(ACTIVE_EDITOR_FILE_STORAGE_KEY) ?? null);
+
     const [files, setFiles] = useState<FileState[]>([]);
     const filesRef = useRef<FileState[]>([]);
     const [activeFileId, setActiveFileId] = useState<string | null>(null);
     const activeFileIdRef = useRef<string | null>(null);
+    const [isRestoreReady, setIsRestoreReady] = useState<boolean>(persistedOpenFileIdsRef.current.length === 0);
 
     const [editorStates, setEditorStates] = useState<Map<string, AnycodeEditor>>(new Map());
     const editorStatesRef = useRef<Map<string, AnycodeEditor>>(new Map());
@@ -45,6 +53,7 @@ export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: Us
     const pendingOriginalContentRef = useRef<Map<string, string>>(new Map());
     const pendingChangesRef = useRef<Map<string, PendingBatch>>(new Map());
     const ignoreChangeFilesRef = useRef<Set<string>>(new Set());
+    const didRestoreOpenFilesRef = useRef(false);
 
     const activeFile = files.find((f) => f.id === activeFileId);
 
@@ -128,13 +137,6 @@ export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: Us
 
     const openFile = useCallback((path: string, line?: number, column?: number) => {
         const existingFile = filesRef.current.find((file) => file.id === path);
-        console.log('[openFile]', {
-            path,
-            line,
-            column,
-            hasExistingFile: !!existingFile,
-            openFiles: filesRef.current.map((file) => file.id),
-        });
 
         if (line !== undefined && column !== undefined) {
             pendingPositions.current.set(path, { line, column });
@@ -302,6 +304,8 @@ export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: Us
     }, [files, initializeEditors]);
 
     useEffect(() => {
+        if (!isRestoreReady) return;
+
         if (files.length === 0 && !defaultFileInitializedRef.current) {
             defaultFileInitializedRef.current = true;
             setFiles([DEFAULT_FILE]);
@@ -309,7 +313,40 @@ export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: Us
             cursorHistory.current.undoStack.push({ file: DEFAULT_FILE.id, cursor: { line: 0, column: 0 } });
             savedFileContentsRef.current.set(DEFAULT_FILE.id, DEFAULT_FILE_CONTENT);
         }
-    }, [files.length]);
+    }, [files.length, isRestoreReady]);
+
+    useEffect(() => {
+        const persistedIds = persistedOpenFileIdsRef.current;
+        const hasPersistedFiles = persistedIds.length > 0;
+        const canRestoreNow = isConnected && !!wsRef.current;
+
+        if (didRestoreOpenFilesRef.current || !hasPersistedFiles || !canRestoreNow) return;
+
+        didRestoreOpenFilesRef.current = true;
+
+        const uniqueFileIds = Array.from(new Set(persistedIds.filter(Boolean)));
+        const activeId = persistedActiveFileIdRef.current && uniqueFileIds.includes(persistedActiveFileIdRef.current)
+            ? persistedActiveFileIdRef.current
+            : null;
+
+        uniqueFileIds
+            .filter((fileId) => fileId !== activeId)
+            .forEach((fileId) => openFile(fileId));
+
+        if (activeId) {
+            openFile(activeId);
+        }
+
+        setIsRestoreReady(true);
+    }, [isConnected, openFile, wsRef]);
+
+    useEffect(() => {
+        saveItem(OPEN_EDITOR_FILES_STORAGE_KEY, files.map((file) => file.id));
+    }, [files]);
+
+    useEffect(() => {
+        saveItem(ACTIVE_EDITOR_FILE_STORAGE_KEY, activeFileId);
+    }, [activeFileId]);
 
     const closeFile = useCallback((fileId: string) => {
         flushChanges(fileId);

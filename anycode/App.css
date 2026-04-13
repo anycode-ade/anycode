@@ -164,6 +164,347 @@
     display: none;
 }
 
+.workspace-root {
+    width: 100%;
+    height: 100%;
+}
+
+.workspace-root > .allotment,
+.workspace-root .allotment {
+    height: 100%;
+}
+
+.workspace-split-node {
+    height: 100%;
+    min-height: 0;
+    position: relative;
+}
+
+.workspace-split-node.active {
+    outline: 2px solid #7f7f7f;
+    outline-offset: -2px;
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+}
+
+.workspace-root [class*='splitView__'][class*='vertical__'] > [class*='splitViewContainer__'] > [class*='splitViewView__']:not(:first-child)::before,
+.workspace-root [class*='splitView__'][class*='horizontal__'] > [class*='splitViewContainer__'] > [class*='splitViewView__']:not(:first-child)::before {
+    background-color: transparent;
+}
+
+.workspace-root [class*='splitView__'][class*='vertical__'] > [class*='splitViewContainer__'] > [class*='splitViewView__']:not(:first-child)::before {
+    height: 1px;
+    width: 100%;
+    background: linear-gradient(to right, transparent, #555, transparent);
+}
+
+.workspace-root [class*='splitView__'][class*='horizontal__'] > [class*='splitViewContainer__'] > [class*='splitViewView__']:not(:first-child)::before {
+    width: 1px;
+    height: 100%;
+    background: linear-gradient(to bottom, transparent, #555, transparent);
+}
+
+.workspace-pane-frame {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    background: #232323;
+    border: none;
+}
+
+.workspace-pane-frame.active {
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25);
+    background: transparent;
+}
+
+.workspace-pane-body {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.workspace-toolbar-pane {
+    height: 100%;
+    display: flex;
+    gap: 12px;
+    padding: 10px;
+    box-sizing: border-box;
+    min-height: 0;
+}
+
+.workspace-toolbar-pane.vertical {
+    flex-direction: column;
+    flex-wrap: nowrap;
+    align-items: stretch;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: min(4px, 3%);
+}
+
+.workspace-toolbar-pane.horizontal {
+    flex-direction: row;
+    flex-wrap: nowrap;
+    align-items: center;
+    overflow-x: auto;
+    overflow-y: hidden;
+}
+
+.workspace-toolbar-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    align-content: flex-start;
+}
+
+.workspace-toolbar-pane.horizontal .workspace-toolbar-actions {
+    flex: 0 0 auto;
+}
+
+.workspace-toolbar-pane.vertical .workspace-toolbar-actions {
+    flex: 0 0 auto;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-content: flex-start;
+}
+
+.workspace-toolbar-action {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    /*border: 1px solid #484848;*/
+    background: transparent;
+    outline: none;
+    color: #dadada;
+    border-radius: 8px;
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+.workspace-toolbar-action.active {
+    border-color: #7c7c7c;
+    color: #fff;
+}
+
+.workspace-toolbar-action svg {
+    width: 15px;
+    height: 15px;
+}
+
+.workspace-toolbar-tabs {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    overflow: auto;
+    display: flex;
+    flex-wrap: wrap;
+    align-content: flex-start;
+    gap: 6px;
+}
+
+.workspace-toolbar-pane.horizontal .workspace-toolbar-tabs {
+    flex: 0 0 auto;
+    min-width: max-content;
+    overflow: visible;
+    flex-wrap: nowrap;
+    align-items: center;
+}
+
+.workspace-toolbar-tabs.list {
+    flex-direction: column;
+    flex-wrap: nowrap;
+    align-content: stretch;
+}
+
+.workspace-toolbar-pane.vertical .workspace-toolbar-tabs {
+    flex: 0 0 auto;
+    overflow: visible;
+}
+
+.workspace-toolbar-tabs.list .tab {
+    width: 100%;
+}
+
+.workspace-toolbar-terminals {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    overflow: auto;
+    display: flex;
+    flex-wrap: wrap;
+    align-content: flex-start;
+    gap: 6px;
+}
+
+.workspace-toolbar-pane.horizontal .workspace-toolbar-terminals {
+    flex: 0 0 auto;
+    min-width: max-content;
+    overflow: visible;
+    flex-wrap: nowrap;
+    align-items: center;
+}
+
+.workspace-toolbar-terminals.list {
+    flex-direction: column;
+    flex-wrap: nowrap;
+    align-content: stretch;
+}
+
+.workspace-toolbar-pane.vertical .workspace-toolbar-terminals {
+    flex: 0 0 auto;
+    overflow: visible;
+}
+
+.workspace-toolbar-terminals.list .tab {
+    width: 100%;
+}
+
+.workspace-toolbar-agents {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    overflow: auto;
+    display: flex;
+    flex-wrap: wrap;
+    align-content: flex-start;
+    gap: 6px;
+}
+
+.workspace-toolbar-pane.horizontal .workspace-toolbar-agents {
+    flex: 0 0 auto;
+    min-width: max-content;
+    overflow: visible;
+    flex-wrap: nowrap;
+    align-items: center;
+}
+
+.workspace-toolbar-agents.list {
+    flex-direction: column;
+    flex-wrap: nowrap;
+    align-content: stretch;
+}
+
+.workspace-toolbar-pane.vertical .workspace-toolbar-agents {
+    flex: 0 0 auto;
+    overflow: visible;
+}
+
+.workspace-toolbar-agents .acp-agents-list {
+    flex: 1;
+    min-width: 0;
+}
+
+.workspace-toolbar-pane.horizontal .workspace-toolbar-agents .acp-agents-list {
+    flex: 0 0 auto;
+    min-width: max-content;
+    overflow: visible;
+}
+
+.workspace-toolbar-agents.list .acp-agents-list {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    overflow-x: hidden;
+    overflow-y: auto;
+}
+
+.workspace-toolbar-agents.list .acp-agent-item {
+    width: 100%;
+}
+
+.workspace-agent-pane {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+.workspace-empty-pane {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: min(20px, 6%);
+}
+
+.workspace-empty-pane-title {
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #9a9a9a;
+}
+
+.workspace-empty-pane-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    width: 100%;
+    max-width: 560px;
+}
+
+.workspace-empty-pane-action {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 8px 10px;
+    border: 1px solid #3f3f3f;
+    border-radius: 8px;
+    background: #2a2a2a;
+    color: #d7d7d7;
+    cursor: pointer;
+}
+
+.workspace-empty-pane-action:hover {
+    border-color: #6e6e6e;
+    color: #ffffff;
+}
+
+.workspace-empty-pane-action.danger:hover {
+    border-color: #8a4b4b;
+    color: #ffd0d0;
+}
+
+.workspace-empty-pane-action svg {
+    width: 14px;
+    height: 14px;
+}
+
+.workspace-empty-pane-options {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    gap: 10px;
+    max-width: 560px;
+    width: 100%;
+}
+
+.workspace-empty-pane-option {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 10px 12px;
+    border: 1px solid #3f3f3f;
+    border-radius: 8px;
+    background: #2a2a2a;
+    color: #d7d7d7;
+    cursor: pointer;
+}
+
+.workspace-empty-pane-option:hover {
+    border-color: #6e6e6e;
+    color: #ffffff;
+}
+
+.workspace-empty-pane-option svg {
+    width: 16px;
+    height: 16px;
+}
+
 .toolbar button:focus {
     outline: none;
     border: none;
@@ -228,7 +569,6 @@
 }
 
 .toggle-tree-btn.active {
-    /* background-color: #444; */
     color: #fff;
     text-shadow: 0 0 6px rgba(255, 255, 255, 0.8);
 }
@@ -374,41 +714,39 @@
 }
 
 .allotment-splitter {
-    background-color: #555;
+    background: linear-gradient(to bottom, transparent, #555, transparent);
     border: none;
     width: 4px;
-    transition: background-color 0.2s ease;
+    transition: opacity 0.2s ease, background 0.2s ease;
     position: relative;
+    opacity: 0.85;
 }
 
 .allotment-splitter:hover {
-    background-color: #777;
+    opacity: 1;
 }
 
 .allotment-splitter:active {
-    background-color: #999;
+    opacity: 1;
 }
 
 .allotment-splitter::after {
     content: '';
     position: absolute;
-    left: 50%;
-    top: 50%;
-    transform: translate(-50%, -50%);
-    width: 2px;
-    height: 20px;
-    background-color: #333;
-    border-radius: 1px;
+    inset: 0;
+    background: linear-gradient(to bottom, transparent, rgba(255, 255, 255, 0.14), transparent);
+    opacity: 0.55;
+    pointer-events: none;
 }
 
 /* Main editor spacing for toolbar - only when terminal is closed */
-.app-container:not(.terminal-visible) .editor-container .anyeditor .code div:last-child {
+/*.app-container:not(.terminal-visible) .editor-container .anyeditor .code div:last-child {
     padding-bottom: calc(var(--toolbar-total-space));
 }
 
 .terminal-spacer {
     padding-bottom: var(--toolbar-total-space);
-}
+}*/
 
 /* File System Panel Styles */
 .file-system-panel {
@@ -422,7 +760,7 @@
     position: relative;
 }
 
-.file-system-panel::after {
+/*.file-system-panel::after {
     content: '';
     position: absolute;
     right: 0;
@@ -450,7 +788,7 @@
     bottom: 0;
     width: 1.5px;
     background: linear-gradient(to bottom, transparent, #555, transparent);
-}
+}*/
 
 .file-system-content {
     padding: 1px 4px 4px 4px;
@@ -460,34 +798,9 @@
     min-height: 0;
 }
 
-/* Add bottom padding only when terminal is closed */
-.app-container:not(.terminal-visible) .file-system-content {
-    padding-bottom: var(--toolbar-total-space);
-}
 
-.app-container.terminal-visible .file-system-content {
-    padding-bottom: 4px;
-}
 
-/* Keep ACP bottom spacing on the bottom-most panel when terminal is closed */
-.app-container:not(.terminal-visible) .acp-dialog-header {
-    margin-bottom: var(--toolbar-total-space);
-}
-/* Add bottom padding only when terminal is closed - same approach as file-system-content */
-.app-container:not(.terminal-visible) .agent-settings-add-btn {
-    margin-bottom: var(--toolbar-total-space);
-}
-
-/* Add bottom padding only when terminal is closed - same approach as file-system-content */
-.app-container:not(.terminal-visible) .search-results {
-    padding-bottom: var(--toolbar-total-space);
-}
-/* Add bottom padding only when terminal is closed - same approach as file-system-content */
-.app-container:not(.terminal-visible) .changes-list {
-    padding-bottom: var(--toolbar-total-space);
-}
-
-.acp-dialog::after {
+/*.acp-dialog::after {
     content: '';
     position: absolute;
     left: 0;
@@ -495,7 +808,7 @@
     bottom: 0;
     width: 1.5px;
     background: linear-gradient(to bottom, transparent, #555, transparent);
-}
+}*/
 
 
 .backend-connect-btn.connected {
@@ -551,7 +864,6 @@
 .terminal-panel {
     height: 100%;
     overflow: hidden;
-    padding-bottom: calc(var(--toolbar-total-space));
     box-sizing: border-box;
     display: flex;
     flex-direction: column;

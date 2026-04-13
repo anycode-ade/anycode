@@ -324,13 +324,11 @@
     box-shadow: inset 0 0 0 1px transparent;
 }
 
-.acp-pane-session.active,
 .acp-pane-empty.active {
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25);
     background: transparent;
 }
 
-.acp-pane-session.active::before,
 .acp-pane-empty.active::before {
     content: '';
     position: absolute;
@@ -341,14 +339,6 @@
     background: linear-gradient(to bottom, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.05) 45%, transparent);
     pointer-events: none;
     z-index: 1;
-}
-
-.acp-dialog-single-pane .acp-pane-session.active {
-    box-shadow: inset 0 0 0 1px transparent;
-}
-
-.acp-dialog-single-pane .acp-pane-session.active::before {
-    content: none;
 }
 
 .acp-pane-empty-subtitle {
