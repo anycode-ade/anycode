@@ -1,5 +1,6 @@
 .acp-dialog {
     height: 100%;
+    width: 100%;
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -311,9 +312,9 @@
     background: linear-gradient(to right, transparent, #555, transparent);
 }
 
-.acp-pane-session,
-.acp-pane-empty {
+.acp-pane-session {
     height: 100%;
+    width: 100%;
     display: flex;
     flex-direction: column;
     min-height: 0;
@@ -324,14 +325,12 @@
     box-shadow: inset 0 0 0 1px transparent;
 }
 
-.acp-pane-session.active,
-.acp-pane-empty.active {
+.acp-pane-session.active {
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25);
     background: transparent;
 }
 
-.acp-pane-session.active::before,
-.acp-pane-empty.active::before {
+.acp-pane-session.active::before {
     content: '';
     position: absolute;
     top: 1px;
@@ -349,52 +348,6 @@
 
 .acp-dialog-single-pane .acp-pane-session.active::before {
     content: none;
-}
-
-.acp-pane-empty-subtitle {
-    font-size: 11px;
-    line-height: 1.2;
-    color: #888;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.acp-pane-empty {
-    align-items: center;
-    justify-content: center;
-    text-align: center;
-    padding: 16px;
-}
-
-.acp-pane-empty-title {
-    font-size: 14px;
-    color: var(--text-color, #ccc);
-    margin-bottom: 4px;
-}
-
-.acp-pane-empty-actions {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: center;
-    gap: 8px;
-    margin-top: 12px;
-    max-width: 100%;
-}
-
-.acp-pane-empty-action {
-    background: transparent;
-    border: none;
-    color: var(--text-color, #ccc);
-    cursor: pointer;
-    font-size: 12px;
-    padding: 6px 10px;
-    border-radius: 8px;
-    transition: background-color 0.2s, color 0.2s;
-}
-
-.acp-pane-empty-action:hover {
-    background-color: var(--hover-bg, #2a2a2a);
 }
 
 .acp-scroll-to-bottom-btn {

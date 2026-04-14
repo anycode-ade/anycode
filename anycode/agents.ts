@@ -28,8 +28,8 @@ export const DEFAULT_AGENTS: AcpAgent[] = [
     {
         id: 'claude',
         name: 'Claude',
-        command: 'claude-code-acp',
-        args: ["--experimental-acp", "--yolo"],
+        command: 'claude-agent-acp',
+        args: [],
         description: 'Cluade AI coding agent',
     },
     {

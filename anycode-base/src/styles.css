@@ -174,7 +174,7 @@
 
 .line-deleted-ghost {
   color: #f6564b;
-  opacity: 0.6;
+  /*opacity: 0.6;*/
   background-color: rgba(244, 67, 54, 0.15);
   /* pointer-events: none; */
   user-select: none;

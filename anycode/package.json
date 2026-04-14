@@ -20,7 +20,7 @@
     "@xterm/addon-fit": "^0.10.0",
     "@xterm/addon-serialize": "^0.13.0",
     "@xterm/xterm": "^5.5.0",
-    "allotment": "^1.20.4",
+    "react-mosaic-component": "^7.0.0-beta0",
     "anycode-base": "workspace:*",
     "anycode-react": "workspace:*",
     "diff": "^8.0.2",

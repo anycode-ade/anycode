@@ -6,7 +6,7 @@ Anycode uses the Agent Client Protocol to connect the editor to external coding 
 
 Anycode runs the exact agent command configured in [`anycode/agents.ts`](../anycode/agents.ts). The only requirement is that the configured command is available on `PATH`.
 
-Some agents ship ACP as a separate package or wrapper binary. Others expose ACP through a CLI flag. In practice that means you may need to install an ACP-specific module like `codex-acp` or `claude-code-acp` before Anycode can launch the agent.
+Some agents ship ACP as a separate package or wrapper binary. Others expose ACP through a CLI flag. In practice that means you may need to install an ACP-specific module like `codex-acp` or `claude-agent-acp` before Anycode can launch the agent.
 
 ### Codex
 
@@ -26,7 +26,7 @@ npm install -g @google/gemini-cli
 
 ### Claude Code
 
-Install the ACP wrapper or package provided by the vendor, then make sure `claude-code-acp` is available on `PATH`:
+Install the ACP wrapper or package provided by the vendor, then make sure `claude-agent-acp` is available on `PATH`:
 
 ```bash
 npm install -g  @agentclientprotocol/claude-agent-acp

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Allotment } from 'allotment';
+
 import {
   type AcpAgent,
   type AcpPermissionMode,
@@ -193,6 +193,7 @@ interface AcpDialogProps {
   onToggleFollow?: () => void;
   onOpenFile?: (path: string, line?: number, column?: number) => void;
   onOpenFileDiff?: (path: string, line?: number, column?: number) => void;
+  showHeader?: boolean;
 }
 
 const AcpDialogComponent: React.FC<AcpDialogProps> = ({
@@ -226,6 +227,7 @@ const AcpDialogComponent: React.FC<AcpDialogProps> = ({
   onToggleFollow,
   onOpenFile,
   onOpenFileDiff,
+  showHeader = true,
 }) => {
   const sessionMap = useMemo(
     () => new Map(agents.map((session) => [session.agentId, session])),
@@ -239,8 +241,6 @@ const AcpDialogComponent: React.FC<AcpDialogProps> = ({
 
   useEffect(() => {
     const validSessionIds = new Set(agents.map((session) => session.agentId));
-    const selectedAgentChanged = prevSelectedAgentIdRef.current !== selectedAgentId;
-
     setLayout((prev) => {
       let nextLayout = sanitizeLayout(prev, validSessionIds);
       const sanitizedChanged = nextLayout !== prev;
@@ -258,9 +258,9 @@ const AcpDialogComponent: React.FC<AcpDialogProps> = ({
       }
 
       if (
-        selectedAgentChanged
-        && selectedAgentId
+        selectedAgentId
         && validSessionIds.has(selectedAgentId)
+        && getPaneSessionId(nextLayout, activePaneId) !== selectedAgentId
         && !hasAssignedSessionId(nextLayout, selectedAgentId)
       ) {
         nextLayout = replacePaneSession(nextLayout, activePaneId, selectedAgentId);
@@ -318,52 +318,46 @@ const AcpDialogComponent: React.FC<AcpDialogProps> = ({
   const renderPane = useCallback((node: AcpLayoutNode): React.ReactNode => {
     if (node.type === 'split') {
       return (
-        <Allotment key={node.id} vertical={node.direction === 'column'} separator={false}>
-          <Allotment.Pane key={`${node.id}-0`} minSize={180}>
+        <div
+          key={node.id}
+          className={`acp-split-container acp-split-${node.direction}`}
+          style={{
+            display: 'flex',
+            flexDirection: node.direction === 'column' ? 'column' : 'row',
+            flex: 1,
+            minHeight: 0,
+            minWidth: 0,
+            overflow: 'hidden',
+          }}
+        >
+          <div style={{ flex: 1, minHeight: 0, minWidth: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
             {renderPane(node.children[0])}
-          </Allotment.Pane>
-          <Allotment.Pane key={`${node.id}-1`} minSize={180}>
+          </div>
+          <div
+            className="acp-split-divider"
+            style={{
+              flexShrink: 0,
+              [node.direction === 'column' ? 'height' : 'width']: '2px',
+              background: 'rgba(80, 80, 80, 0.4)',
+            }}
+          />
+          <div style={{ flex: 1, minHeight: 0, minWidth: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
             {renderPane(node.children[1])}
-          </Allotment.Pane>
-        </Allotment>
+          </div>
+        </div>
       );
     }
 
     const session = node.sessionId ? sessionMap.get(node.sessionId) ?? null : null;
 
     if (!session) {
-      const isActiveEmptyPane = hasMultiplePanes && node.id === activePaneId;
-
+      const isActivePane = hasMultiplePanes && node.id === activePaneId;
       return (
         <div
           key={node.id}
-          className={`acp-pane-empty ${isActiveEmptyPane ? 'active' : ''}`}
+          className={`acp-pane-session ${isActivePane ? 'active' : ''}`}
           onMouseDown={() => setActivePaneId(node.id)}
-        >
-          <div className="acp-pane-empty-title">Empty pane</div>
-          <div className="acp-pane-empty-subtitle">Start an agent here or select one below.</div>
-          {availableAgents.length > 0 && (
-            <div className="acp-pane-empty-actions">
-              {availableAgents.map((agent) => (
-                <button
-                  key={agent.id}
-                  className="acp-pane-empty-action"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    setActivePaneId(node.id);
-                    const startedAgentId = onStartAgent(agent);
-                    if (startedAgentId) {
-                      pendingPaneByAgentIdRef.current.set(startedAgentId, node.id);
-                    }
-                  }}
-                  title={agent.description || agent.name}
-                >
-                  {agent.name}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
+        />
       );
     }
 
@@ -403,12 +397,10 @@ const AcpDialogComponent: React.FC<AcpDialogProps> = ({
     onPermissionResponse,
     onUndoPrompt,
     onSelectAgent,
-    onStartAgent,
     onSelectModel,
     onSelectReasoning,
     onOpenFile,
     onOpenFileDiff,
-    availableAgents,
   ]);
 
   if (!isOpen) return null;
@@ -441,69 +433,71 @@ const AcpDialogComponent: React.FC<AcpDialogProps> = ({
         {renderPane(layout)}
       </div>
 
-      <div className="acp-dialog-header">
-        <div className="acp-agents-container">
-          <AcpAgentsList
-            agents={agents}
-            selectedAgentId={activeSessionId}
-            onSelectAgent={assignSessionToActivePane}
-            onCloseAgent={onCloseAgent}
-          />
-          <button
-            className="acp-add-agent-btn"
-            onClick={handleAddAgentToActivePane}
-            title="Add agent"
-          >
-            <AcpIcons.Add />
-          </button>
-          <button
-            className="acp-split-btn"
-            onClick={() => handleSplitPane('row')}
-            title="Split horizontally"
-          >
-            <AcpIcons.SplitHorizontal />
-          </button>
-          <button
-            className="acp-split-btn"
-            onClick={() => handleSplitPane('column')}
-            title="Split vertically"
-          >
-            <AcpIcons.SplitVertical />
-          </button>
-          <button
-            className="acp-split-btn"
-            onClick={handleClosePane}
-            title="Close active pane"
-          >
-            <AcpIcons.CloseMedium />
-          </button>
-          {onToggleFollow && (
+      {showHeader && (
+        <div className="acp-dialog-header">
+          <div className="acp-agents-container">
+            <AcpAgentsList
+              agents={agents}
+              selectedAgentId={activeSessionId}
+              onSelectAgent={assignSessionToActivePane}
+              onCloseAgent={onCloseAgent}
+            />
             <button
-              className={`acp-follow-btn ${followEnabled ? 'active' : ''}`}
-              onClick={onToggleFollow}
-              title={followEnabled ? 'Disable Follow Mode' : 'Enable Follow Mode'}
+              className="acp-add-agent-btn"
+              onClick={handleAddAgentToActivePane}
+              title="Add agent"
             >
-              <AcpIcons.Follow />
+              <AcpIcons.Add />
             </button>
-          )}
-          {onToggleDiff && (
             <button
-              className={`acp-diff-btn ${diffEnabled ? 'active' : ''}`}
-              onClick={onToggleDiff}
-              title={diffEnabled ? 'Disable Diff Mode' : 'Enable Diff Mode'}
+              className="acp-split-btn"
+              onClick={() => handleSplitPane('row')}
+              title="Split horizontally"
             >
-              <AcpIcons.Diff />
+              <AcpIcons.SplitHorizontal />
             </button>
-          )}
-          <button
-            className="acp-settings-btn"
-            onClick={onOpenSettings}
-            title="Agent settings"
-          >
-            <AcpIcons.Settings />
-          </button>
+            <button
+              className="acp-split-btn"
+              onClick={() => handleSplitPane('column')}
+              title="Split vertically"
+            >
+              <AcpIcons.SplitVertical />
+            </button>
+            <button
+              className="acp-split-btn"
+              onClick={handleClosePane}
+              title="Close active pane"
+            >
+              <AcpIcons.CloseMedium />
+            </button>
+            {onToggleFollow && (
+              <button
+                className={`acp-follow-btn ${followEnabled ? 'active' : ''}`}
+                onClick={onToggleFollow}
+                title={followEnabled ? 'Disable Follow Mode' : 'Enable Follow Mode'}
+              >
+                <AcpIcons.Follow />
+              </button>
+            )}
+            {onToggleDiff && (
+              <button
+                className={`acp-diff-btn ${diffEnabled ? 'active' : ''}`}
+                onClick={onToggleDiff}
+                title={diffEnabled ? 'Disable Diff Mode' : 'Enable Diff Mode'}
+              >
+                <AcpIcons.Diff />
+              </button>
+            )}
+            <button
+              className="acp-settings-btn"
+              onClick={onOpenSettings}
+              title="Agent settings"
+            >
+              <AcpIcons.Settings />
+            </button>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 };

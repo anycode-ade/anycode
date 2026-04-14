@@ -229,7 +229,11 @@ const Search = ({ id, onEnter, onCancel, onMatchClick, results, searchEnded }: S
                         const isExpanded = !!visibleMatches[fileResult.file_path];
                         return (
                         <div key={index} className="file-result">
-                            <p className="file-path active" onClick={() => handleFileClick(fileResult.file_path)}>
+                            <p
+                                className="file-path active"
+                                onClick={() => handleFileClick(fileResult.file_path)}
+                                title={fileResult.file_path}
+                            >
                                 <span className={`file-arrow ${isExpanded ? 'expanded' : ''}`}>▶</span>
                                 {fileResult.matches.length}: {fileResult.display_path}
                             </p>

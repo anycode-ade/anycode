@@ -17,26 +17,12 @@ interface ChangesPanelProps {
     onRevert: (path: string) => void;
 }
 
-const statusIcons: Record<string, string> = {
-    modified: 'M',
-    added: 'A',
-    deleted: 'D',
-    renamed: 'R',
-    conflict: '!',
-};
-
-const statusColors: Record<string, string> = {
-    modified: 'status-modified',
-    added: 'status-added',
-    deleted: 'status-deleted',
-    renamed: 'status-renamed',
-    conflict: 'status-conflict',
-};
-
-const getDirectory = (path: string): string => {
-    const parts = path.split('/');
-    if (parts.length <= 1) return '';
-    return parts.slice(0, -1).join('/');
+const statusTextColors: Record<ChangedFile['status'], string> = {
+    modified: 'file-status-modified',
+    added: 'file-status-added',
+    deleted: 'file-status-deleted',
+    renamed: 'file-status-renamed',
+    conflict: 'file-status-conflict',
 };
 
 const getDisplayName = (path: string): string => {
@@ -123,7 +109,7 @@ export const ChangesPanel: React.FC<ChangesPanelProps> = ({
 
     return (
         <div className="changes-panel">
-            <div className="changes-panel-title">Changes</div>
+            {/*<div className="changes-panel-title">Changes</div>*/}
             <div className="changes-header">
                 <div className="changes-title">
                     <span className="changes-branch-icon"></span>
@@ -190,20 +176,25 @@ export const ChangesPanel: React.FC<ChangesPanelProps> = ({
                             className={`changes-item ${selectedFiles.has(file.path) ? 'selected' : ''}`}
                             onClick={() => onFileClick(file.path)}
                         >
-                            <span className={`changes-status ${statusColors[file.status]}`}>
-                                {statusIcons[file.status]}
-                            </span>
                             <div className="changes-file-info">
-                                <span className="changes-filename">
+                                <span
+                                    className={`changes-filename ${statusTextColors[file.status]}`}
+                                    title={file.path}
+                                >
                                     {getDisplayName(file.path)}
-                                </span>
-                                <span className="changes-directory">
-                                    {getDirectory(file.path)}
                                 </span>
                             </div>
                             <button
                                 className="changes-revert-btn"
-                                onClick={(e) => { e.stopPropagation(); onRevert(file.path); }}
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    const confirmed = window.confirm(
+                                        `Discard changes for "${file.path}"? This cannot be undone.`
+                                    );
+                                    if (confirmed) {
+                                        onRevert(file.path);
+                                    }
+                                }}
                                 title="Discard Changes"
                             >
                                 ↩

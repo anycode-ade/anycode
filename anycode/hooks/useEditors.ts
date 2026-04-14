@@ -126,7 +126,7 @@ export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: Us
         });
     }, [wsRef]);
 
-    const openFile = useCallback((path: string, line?: number, column?: number) => {
+    const openFile = useCallback((path: string, line?: number, column?: number, onComplete?: (success: boolean) => void) => {
         const existingFile = filesRef.current.find((file) => file.id === path);
         console.log('[openFile]', {
             path,
@@ -146,10 +146,12 @@ export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: Us
             if (editor && line !== undefined && column !== undefined) {
                 editor.requestFocus(line, column, true);
             }
+            if (onComplete) onComplete(true);
             return;
         }
 
         if (pendingOpenFilesRef.current.has(path)) {
+            if (onComplete) onComplete(false);
             return;
         }
 
@@ -165,8 +167,11 @@ export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: Us
                     setFiles((prev) => (prev.some((f) => f.id === path) ? prev : [...prev, newFile]));
                     setActiveFileId(newFile.id);
                 }
+                if (onComplete) onComplete(Boolean(response.success));
             });
+            return;
         }
+        if (onComplete) onComplete(false);
     }, [wsRef, isConnected]);
 
     const handleGoToDefinition = useCallback((definitionRequest: DefinitionRequest): Promise<DefinitionResponse> => {

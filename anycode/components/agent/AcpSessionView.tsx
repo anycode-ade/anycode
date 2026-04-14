@@ -126,7 +126,6 @@ interface AcpSessionViewProps {
 export const AcpSessionView: React.FC<AcpSessionViewProps> = ({
   agentId,
   title,
-  isActivePane,
   isConnected,
   isProcessing = false,
   messages,
@@ -197,7 +196,7 @@ export const AcpSessionView: React.FC<AcpSessionViewProps> = ({
 
   return (
     <div
-      className={`acp-pane-session ${isActivePane ? 'active' : ''}`}
+      className="acp-pane-session"
       onMouseDown={onFocusPane}
     >
       <div className="acp-dialog-content">
