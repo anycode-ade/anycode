@@ -131,14 +131,57 @@
     transform: translate(-50%, -50%);
 }
 
-/* Expand button icon */
-.anycode-mosaic .mosaic-window .mosaic-window-controls .expand-button {
+/* Add tabs button icon */
+.anycode-mosaic .mosaic-window .mosaic-window-controls .add-tabs-button {
     font-size: 0;
     position: relative;
 }
-.anycode-mosaic .mosaic-window .mosaic-window-controls .expand-button::before {
-    content: "⤢";
-    font-size: 16px;
+.anycode-mosaic .mosaic-window .mosaic-window-controls .add-tabs-button::before {
+    content: "";
+    position: absolute;
+    width: 10px;
+    height: 8px;
+    border: 1.5px solid currentColor;
+    border-radius: 2px;
+    left: 50%;
+    top: 50%;
+    transform: translate(-56%, -60%);
+    box-sizing: border-box;
+}
+.anycode-mosaic .mosaic-window .mosaic-window-controls .add-tabs-button::after {
+    content: "";
+    position: absolute;
+    width: 10px;
+    height: 8px;
+    border: 1.5px solid currentColor;
+    border-radius: 2px;
+    left: 50%;
+    top: 50%;
+    transform: translate(-30%, -36%);
+    box-sizing: border-box;
+}
+
+/* Collapse toggle icon */
+.anycode-mosaic .mosaic-window .mosaic-window-controls .collapse-toggle-button {
+    font-size: 0;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.anycode-mosaic .mosaic-window .mosaic-window-controls .collapse-toggle-button.expanded::before {
+    content: "";
+    width: 10px;
+    height: 6px;
+    background: currentColor;
+    clip-path: polygon(0 0, 50% 100%, 100% 0, 85% 0, 50% 70%, 15% 0);
+}
+.anycode-mosaic .mosaic-window .mosaic-window-controls .collapse-toggle-button.collapsed::before {
+    content: "";
+    width: 10px;
+    height: 6px;
+    background: currentColor;
+    clip-path: polygon(0 100%, 50% 0, 100% 100%, 85% 100%, 50% 30%, 15% 100%);
 }
 
 /* Remove/close button icon */
@@ -168,6 +211,56 @@
 }
 
 .anycode-mosaic .mosaic-window.toolbar-pane-window .mosaic-window-toolbar {
+    display: none;
+}
+
+/* Mosaic tabs mode (Search/Changes etc.) */
+.anycode-mosaic .mosaic-tabs-container {
+    border-radius: 8px;
+    overflow: hidden;
+    border: 0.5px solid var(--mosaic-border);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+}
+
+.anycode-mosaic .mosaic-tabs-container .mosaic-tab-bar {
+    height: var(--mosaic-toolbar-height);
+    min-height: var(--mosaic-toolbar-height);
+    padding: 0 6px;
+    border-bottom: 0.5px solid var(--mosaic-border);
+    background: var(--background-color, transparent) !important;
+    box-shadow: none;
+}
+
+.anycode-mosaic .mosaic-tabs-container .mosaic-tab-bar.draggable {
+    border-bottom: none;
+}
+
+.anycode-mosaic .mosaic-tabs-container .mosaic-tab-bar-controls {
+    display: none;
+}
+
+.anycode-mosaic .mosaic-tabs-container .mosaic-tab-button {
+    height: 20px;
+    padding: 0 8px;
+    border-radius: 4px;
+    color: #888;
+    font-size: 11px;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    font-weight: 600;
+}
+
+.anycode-mosaic .mosaic-tabs-container .mosaic-tab-button:hover {
+    color: #ddd;
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.anycode-mosaic .mosaic-tabs-container .mosaic-tab-button.-active {
+    color: #fff;
+    background: rgba(255, 255, 255, 0.12);
+}
+
+.anycode-mosaic .mosaic-tabs-container .mosaic-tab-button .mosaic-tab-close-button {
     display: none;
 }
 
@@ -779,7 +872,6 @@
     min-height: 0;
 }
 
-/* Standalone search/changes panes border */
 .search-container {
     position: relative;
     height: 100%;

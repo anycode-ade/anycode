@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AnycodeEditorReact } from 'anycode-react';
 import {
   Mosaic, MosaicWindow, MosaicNode, MosaicPath,
-  ExpandButton, RemoveButton, MosaicContext, MosaicWindowContext
+  RemoveButton, MosaicContext, MosaicWindowContext
 } from 'react-mosaic-component';
 import 'react-mosaic-component/react-mosaic-component.css';
 import {
@@ -93,6 +93,7 @@ function isPaneType(value: string): value is PaneType {
 }
 
 function getPaneTypeFromId(id: PaneId): PaneType {
+    if (typeof id !== 'string') return 'editor';
     const [rawType] = id.split(':');
     return isPaneType(rawType) ? rawType : 'editor';
 }
@@ -129,6 +130,46 @@ function getNodeAtPath(node: MosaicNode<PaneId> | null, path: MosaicPath): Mosai
         return null;
     }
     return current;
+}
+
+function replaceNodeAtPath(
+    node: MosaicNode<PaneId> | null,
+    path: MosaicPath,
+    replacement: MosaicNode<PaneId>,
+): MosaicNode<PaneId> | null {
+    if (!node) return null;
+    if (path.length === 0) return replacement;
+    if (typeof node === 'string') return node;
+
+    const [index, ...rest] = path;
+    if ('children' in node) {
+        const currentChild = node.children[index];
+        if (currentChild === undefined) return node;
+        const nextChild = replaceNodeAtPath(currentChild, rest, replacement);
+        if (nextChild === currentChild) return node;
+        const nextChildren = [...node.children];
+        nextChildren[index] = nextChild;
+        return { ...node, children: nextChildren };
+    }
+
+    if ('tabs' in node) {
+        const currentTab = node.tabs[index];
+        if (currentTab === undefined) return node;
+        const nextTab = replaceNodeAtPath(currentTab, rest, replacement);
+        if (nextTab === currentTab) return node;
+        const nextTabs = [...node.tabs];
+        nextTabs[index] = nextTab;
+        return { ...node, tabs: nextTabs };
+    }
+
+    return node;
+}
+
+function normalizePercentages(values: number[]): number[] {
+    if (values.length === 0) return values;
+    const total = values.reduce((sum, value) => sum + value, 0);
+    if (total <= 0) return Array(values.length).fill(100 / values.length);
+    return values.map((value) => (value / total) * 100);
 }
 
 function getLeafPaneIds(node: MosaicNode<PaneId> | null): PaneId[] {
@@ -445,6 +486,7 @@ const App: React.FC = () => {
     const [editorPaneFileIds, setEditorPaneFileIds] = useState<Record<PaneId, string>>({});
     const [terminalPaneTerminalIds, setTerminalPaneTerminalIds] = useState<Record<PaneId, string>>({});
     const [agentPaneSessionIds, setAgentPaneSessionIds] = useState<Record<PaneId, string>>({});
+    const [collapsedPaneSizes, setCollapsedPaneSizes] = useState<Record<PaneId, number>>({});
 
     const [diffEnabled, setDiffEnabled] = useState<boolean>(loadDiffEnabled());
     const [permissionMode, setPermissionMode] = useState<AcpPermissionMode>(loadAcpPermissionMode());
@@ -556,6 +598,22 @@ const App: React.FC = () => {
         if (!restoreBootstrappedRef.current) return;
         saveItem(OPEN_FILES_STORAGE_KEY, editors.files.map((file) => file.id));
     }, [editors.files]);
+
+    useEffect(() => {
+        const activePaneIds = new Set(getLeafPaneIds(mosaicValue));
+        setCollapsedPaneSizes((prev) => {
+            let changed = false;
+            const next: Record<PaneId, number> = {};
+            for (const [paneId, size] of Object.entries(prev)) {
+                if (activePaneIds.has(paneId)) {
+                    next[paneId] = size;
+                } else {
+                    changed = true;
+                }
+            }
+            return changed ? next : prev;
+        });
+    }, [mosaicValue]);
 
     useEffect(() => {
         if (!restoreBootstrappedRef.current) return;
@@ -836,6 +894,59 @@ const App: React.FC = () => {
     const handleMosaicChange = useCallback((newNode: MosaicNode<PaneId> | null) => {
         setMosaicValue(newNode);
     }, []);
+
+    const togglePaneCollapsed = useCallback((paneId: PaneId, path: MosaicPath) => {
+        if (!mosaicValue || path.length === 0) return;
+
+        const parentPath = path.slice(0, -1);
+        const childIndex = path[path.length - 1];
+        const parentNode = getNodeAtPath(mosaicValue, parentPath);
+        if (!parentNode || typeof parentNode === 'string' || !('children' in parentNode)) return;
+
+        const childCount = parentNode.children.length;
+        if (childIndex >= childCount || childCount < 2) return;
+
+        const currentPercentages = parentNode.splitPercentages?.length === childCount
+            ? [...parentNode.splitPercentages]
+            : Array(childCount).fill(100 / childCount);
+        const currentSize = currentPercentages[childIndex];
+        const collapsedSize = 4;
+        const storedSize = collapsedPaneSizes[paneId];
+        const isCollapsed = storedSize !== undefined;
+        const targetSize = isCollapsed ? storedSize : collapsedSize;
+        if (currentSize === undefined || Math.abs(currentSize - targetSize) < 0.01) return;
+
+        const siblings = currentPercentages
+            .map((_, index) => index)
+            .filter((index) => index !== childIndex);
+        const siblingTotal = siblings.reduce((sum, index) => sum + currentPercentages[index], 0);
+        if (siblingTotal <= 0) return;
+
+        const delta = targetSize - currentSize;
+        const nextPercentages = [...currentPercentages];
+        nextPercentages[childIndex] = targetSize;
+
+        for (const siblingIndex of siblings) {
+            const siblingShare = currentPercentages[siblingIndex] / siblingTotal;
+            nextPercentages[siblingIndex] = currentPercentages[siblingIndex] - (delta * siblingShare);
+        }
+
+        const normalized = normalizePercentages(nextPercentages).map((value) => Math.max(value, 0.5));
+        const nextParentNode: MosaicNode<PaneId> = {
+            ...parentNode,
+            splitPercentages: normalizePercentages(normalized),
+        };
+        const nextLayout = replaceNodeAtPath(mosaicValue, parentPath, nextParentNode);
+        setMosaicValue(nextLayout);
+
+        setCollapsedPaneSizes((prev) => {
+            if (isCollapsed) {
+                const { [paneId]: _, ...rest } = prev;
+                return rest;
+            }
+            return { ...prev, [paneId]: currentSize };
+        });
+    }, [mosaicValue, collapsedPaneSizes]);
 
     // Reset layout to default
     const handleResetLayout = useCallback(() => {
@@ -1158,6 +1269,20 @@ const App: React.FC = () => {
             const root = rootCtx.mosaicActions.getRoot() as MosaicNode<PaneId> | null;
             const currentNode = getNodeAtPath(root, path);
             if (!currentNode) return;
+            const parentPath = path.slice(0, -1);
+            const parentNode = getNodeAtPath(root, parentPath);
+
+            // If current pane is inside tabs, split the whole tab group.
+            // Splitting only a single tab would produce an invalid tabs payload.
+            if (parentNode && typeof parentNode !== 'string' && 'tabs' in parentNode) {
+                rootCtx.mosaicActions.replaceWith(parentPath, {
+                    type: 'split',
+                    direction: 'row',
+                    children: [parentNode, createPaneId('empty')],
+                    splitPercentages: [50, 50],
+                } as MosaicNode<PaneId>);
+                return;
+            }
 
             rootCtx.mosaicActions.replaceWith(path, {
                 type: 'split',
@@ -1175,6 +1300,62 @@ const App: React.FC = () => {
                 type="button"
             >
                 Split
+            </button>
+        );
+    };
+
+    const AddTabsButton: React.FC = () => {
+        const rootCtx = React.useContext(MosaicContext);
+        const windowCtx = React.useContext(MosaicWindowContext);
+
+        const onClick = useCallback(() => {
+            const path = windowCtx.mosaicWindowActions.getPath();
+            const root = rootCtx.mosaicActions.getRoot() as MosaicNode<PaneId> | null;
+            const currentNode = getNodeAtPath(root, path);
+            if (!currentNode || typeof currentNode !== 'string') return;
+
+            const parentPath = path.slice(0, -1);
+            const parentNode = getNodeAtPath(root, parentPath);
+            const emptyPaneId = createPaneId('empty');
+            if (parentNode && typeof parentNode !== 'string' && 'tabs' in parentNode) {
+                rootCtx.mosaicActions.replaceWith(parentPath, {
+                    ...parentNode,
+                    tabs: [...parentNode.tabs, emptyPaneId],
+                    activeTabIndex: parentNode.tabs.length,
+                } as MosaicNode<PaneId>);
+                return;
+            }
+
+            rootCtx.mosaicActions.replaceWith(path, {
+                type: 'tabs',
+                tabs: [currentNode, emptyPaneId],
+                activeTabIndex: 1,
+            } as MosaicNode<PaneId>);
+        }, [rootCtx, windowCtx, createPaneId]);
+
+        return (
+            <button
+                className="mosaic-default-control add-tabs-button"
+                onClick={onClick}
+                title="Add tabs"
+                type="button"
+            >
+                Tabs
+            </button>
+        );
+    };
+
+    const CollapseToggleButton: React.FC<{ paneId: PaneId; path: MosaicPath }> = ({ paneId, path }) => {
+        const isCollapsed = collapsedPaneSizes[paneId] !== undefined;
+
+        return (
+            <button
+                className={`mosaic-default-control collapse-toggle-button ${isCollapsed ? 'collapsed' : 'expanded'}`}
+                onClick={() => togglePaneCollapsed(paneId, path)}
+                title={isCollapsed ? `Expand ${PANE_TITLES[getPaneTypeFromId(paneId)]}` : `Collapse ${PANE_TITLES[getPaneTypeFromId(paneId)]}`}
+                type="button"
+            >
+                Toggle
             </button>
         );
     };
@@ -1240,7 +1421,8 @@ const App: React.FC = () => {
         const isToolbarPane = paneType === 'toolbar';
         const toolbarControls = isToolbarPane ? [] : [
             <SplitRightButton key="split" paneType={paneType} />,
-            <ExpandButton key="expand" />,
+            <AddTabsButton key="add-tabs" />,
+            <CollapseToggleButton key="collapse" paneId={id} path={path} />,
             <RemoveButton key="remove" />,
         ];
 
@@ -1274,6 +1456,7 @@ const App: React.FC = () => {
             <div className="main-content">
                 <Mosaic<PaneId>
                     renderTile={renderTile}
+                    renderTabTitle={({ tabKey }) => PANE_TITLES[getPaneTypeFromId(tabKey)]}
                     value={mosaicValue}
                     onChange={handleMosaicChange}
                     resize={{ minimumPaneSizePercentage: 0.1 }}
