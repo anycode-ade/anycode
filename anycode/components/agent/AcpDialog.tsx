@@ -1,5 +1,4 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Allotment } from 'allotment';
 import {
   type AcpAgent,
   type AcpPermissionMode,
@@ -12,6 +11,7 @@ import { AcpSettings } from './AcpSettings';
 import { AcpAgentsList } from './AcpAgentsList';
 import { AcpIcons } from './AcpIcons';
 import { AcpSessionView } from './AcpSessionView';
+import { Split } from '../layout/Layout';
 
 type AcpLayoutPaneNode = {
   id: string;
@@ -318,14 +318,23 @@ const AcpDialogComponent: React.FC<AcpDialogProps> = ({
   const renderPane = useCallback((node: AcpLayoutNode): React.ReactNode => {
     if (node.type === 'split') {
       return (
-        <Allotment key={node.id} vertical={node.direction === 'column'} separator={false}>
-          <Allotment.Pane key={`${node.id}-0`} minSize={180}>
-            {renderPane(node.children[0])}
-          </Allotment.Pane>
-          <Allotment.Pane key={`${node.id}-1`} minSize={180}>
-            {renderPane(node.children[1])}
-          </Allotment.Pane>
-        </Allotment>
+        <Split
+          key={node.id}
+          direction={node.direction}
+          className="acp-pane-split"
+          panes={[
+            {
+              id: `${node.id}-0`,
+              content: renderPane(node.children[0]),
+              minSize: 180,
+            },
+            {
+              id: `${node.id}-1`,
+              content: renderPane(node.children[1]),
+              minSize: 180,
+            },
+          ]}
+        />
       );
     }
 
@@ -437,10 +446,6 @@ const AcpDialogComponent: React.FC<AcpDialogProps> = ({
       className={`acp-dialog ${hasMultiplePanes ? 'acp-dialog-multi-pane' : 'acp-dialog-single-pane'}`}
       style={{ height: '100%', display: 'flex', flexDirection: 'column' }}
     >
-      <div className="acp-dialog-content acp-workspace-content">
-        {renderPane(layout)}
-      </div>
-
       <div className="acp-dialog-header">
         <div className="acp-agents-container">
           <AcpAgentsList
@@ -503,6 +508,10 @@ const AcpDialogComponent: React.FC<AcpDialogProps> = ({
             <AcpIcons.Settings />
           </button>
         </div>
+      </div>
+
+      <div className="acp-dialog-content acp-workspace-content">
+        {renderPane(layout)}
       </div>
     </div>
   );

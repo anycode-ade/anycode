@@ -1,7 +1,4 @@
 :root {
-    --toolbar-height: 20px;
-    --toolbar-bottom-margin: 10px;
-    --toolbar-total-space: calc(var(--toolbar-height) + var(--toolbar-bottom-margin) + 16px);
     --floating-terminal-height: 0px;
 }
 
@@ -10,8 +7,10 @@
     display: flex;
     flex-direction: column;
     position: relative;
+    background: var(--background-color, #242424);
+    padding: 2px;
+    box-sizing: border-box;
 }
-
 
 .tab-bar {
     display: flex;
@@ -110,26 +109,36 @@
 
 .toolbar {
     display: flex;
-    /* background-color: #2d2d2d; */
-    background: rgba(45, 45, 45, 0.5);
-    backdrop-filter: blur(2px);
-    -webkit-backdrop-filter: blur(2px);
-    backdrop-filter: blur(2px);
-    /* border-bottom: 1px solid rgba(255, 255, 255, 0.1); */
-    padding: 6px 16px;
-    gap: 8px;
+    width: 100%;
+    height: 100%;
+    background: var(--background-color, #242424);
+    padding: 4px 10px;
+    gap: 6px;
     align-items: center;
-    position: absolute;
-    bottom: var(--toolbar-bottom-margin);
-    left: 8px;
-    right: 8px;
     user-select: none;
-    z-index: 1000;
-    border-radius: 12px;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
-    height: var(--toolbar-height);
-    border: 1px solid rgb(70, 70, 70);
-    overflow-y: hidden;
+    border-radius: 0;
+    box-shadow: none;
+    border: none;
+    overflow: hidden;
+    box-sizing: border-box;
+}
+
+.toolbar-title {
+    color: #a6a6a6;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-size: 12px;
+    line-height: 1;
+    flex-shrink: 0;
+    padding-right: 2px;
+}
+
+.app-container.toolbar-header-visible .layout-dock-panel--toolbar .toolbar-title {
+    display: none;
+}
+
+.app-container.toolbar-header-compact .layout-dock-panel--toolbar .toolbar-title {
+    display: block;
 }
 
 /* .toolbar::after {
@@ -275,6 +284,11 @@
     color: #fff;
 }
 
+.toggle-mode-btn.active {
+    color: #fff;
+    text-shadow: 0 0 6px rgba(255, 255, 255, 0.8);
+}
+
 .editor-toggle-btn {
     background: none;
     border: none;
@@ -366,54 +380,15 @@
     position: relative;
     z-index: 1;
     height: 100vh;
+    background: var(--background-color, #242424);
 }
 
-/* Allotment customization */
-.allotment {
-    background-color: #2d2d2d;
-}
-
-.allotment-splitter {
-    background-color: #555;
-    border: none;
-    width: 4px;
-    transition: background-color 0.2s ease;
-    position: relative;
-}
-
-.allotment-splitter:hover {
-    background-color: #777;
-}
-
-.allotment-splitter:active {
-    background-color: #999;
-}
-
-.allotment-splitter::after {
-    content: '';
-    position: absolute;
-    left: 50%;
-    top: 50%;
-    transform: translate(-50%, -50%);
-    width: 2px;
-    height: 20px;
-    background-color: #333;
-    border-radius: 1px;
-}
-
-/* Main editor spacing for toolbar - only when terminal is closed */
-.app-container:not(.terminal-visible) .editor-container .anyeditor .code div:last-child {
-    padding-bottom: calc(var(--toolbar-total-space));
-}
-
-.terminal-spacer {
-    padding-bottom: var(--toolbar-total-space);
-}
+/* Legacy spacing for floating toolbar removed after docked-toolbar migration. */
 
 /* File System Panel Styles */
 .file-system-panel {
     /* background-color: #2d2d2d; */
-    border-right: 1px solid #555;
+    border-right: none;
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -423,33 +398,15 @@
 }
 
 .file-system-panel::after {
-    content: '';
-    position: absolute;
-    right: 0;
-    top: 0;
-    bottom: 0;
-    width: 1.5px;
-    background: linear-gradient(to bottom, transparent, #555, transparent);
+    display: none;
 }
 
 .search-container::after {
-    content: '';
-    position: absolute;
-    right: 0;
-    top: 0;
-    bottom: 0;
-    width: 1.5px;
-    background: linear-gradient(to bottom, transparent, #555, transparent);
+    display: none;
 }
 
 .changes-panel::after {
-    content: '';
-    position: absolute;
-    right: 0;
-    top: 0;
-    bottom: 0;
-    width: 1.5px;
-    background: linear-gradient(to bottom, transparent, #555, transparent);
+    display: none;
 }
 
 .file-system-content {
@@ -460,41 +417,12 @@
     min-height: 0;
 }
 
-/* Add bottom padding only when terminal is closed */
-.app-container:not(.terminal-visible) .file-system-content {
-    padding-bottom: var(--toolbar-total-space);
-}
-
-.app-container.terminal-visible .file-system-content {
+.file-system-content {
     padding-bottom: 4px;
 }
 
-/* Keep ACP bottom spacing on the bottom-most panel when terminal is closed */
-.app-container:not(.terminal-visible) .acp-dialog-header {
-    margin-bottom: var(--toolbar-total-space);
-}
-/* Add bottom padding only when terminal is closed - same approach as file-system-content */
-.app-container:not(.terminal-visible) .agent-settings-add-btn {
-    margin-bottom: var(--toolbar-total-space);
-}
-
-/* Add bottom padding only when terminal is closed - same approach as file-system-content */
-.app-container:not(.terminal-visible) .search-results {
-    padding-bottom: var(--toolbar-total-space);
-}
-/* Add bottom padding only when terminal is closed - same approach as file-system-content */
-.app-container:not(.terminal-visible) .changes-list {
-    padding-bottom: var(--toolbar-total-space);
-}
-
 .acp-dialog::after {
-    content: '';
-    position: absolute;
-    left: 0;
-    top: 0;
-    bottom: 0;
-    width: 1.5px;
-    background: linear-gradient(to bottom, transparent, #555, transparent);
+    display: none;
 }
 
 
@@ -551,7 +479,7 @@
 .terminal-panel {
     height: 100%;
     overflow: hidden;
-    padding-bottom: calc(var(--toolbar-total-space));
+    padding-bottom: 0;
     box-sizing: border-box;
     display: flex;
     flex-direction: column;
@@ -588,11 +516,6 @@
 }
 
 @media (max-width: 768px) and (pointer: coarse) {
-    :root {
-        --toolbar-height: 32px;
-        --toolbar-bottom-margin: 8px;
-    }
-    
     .toolbar button svg {
         width: 32px;
         height: 32px;
@@ -600,8 +523,6 @@
 
     .toolbar {
         padding: 4px 8px;
-        left: 4px;
-        right: 4px;
     }
     .toolbar-buttons button {
         padding: 0px;

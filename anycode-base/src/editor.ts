@@ -364,6 +364,13 @@ export class AnycodeEditor {
         this.container.scrollTop = this.lastScrollTop;
     }
 
+    public onAttach() {
+        this.restoreScroll();
+        const state = this.getEditorState();
+        this.renderer.renderScroll(state, this.search);
+        this.renderer.renderCursorOrSelection(state);
+    }
+
     private getEditorState(): EditorState {
         return {
             code: this.code,

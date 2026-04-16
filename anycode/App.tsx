@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnycodeEditorReact } from 'anycode-react';
-import { Allotment } from 'allotment';
-import 'allotment/dist/style.css';
+import 'dockview/dist/styles/dockview.css';
 import {
     TreeNodeComponent,
     TerminalComponent,
@@ -11,6 +10,7 @@ import {
 } from './components';
 import Search from './components/Search';
 import { Icons } from './components/Icons';
+import { Split, Layout, type PanelId } from './components/layout/Layout';
 import {
     getAllAgents,
     getDefaultAgent,
@@ -28,6 +28,7 @@ import {
     loadLeftPanelVisible,
     loadRightPanelVisible,
     loadAcpPermissionMode,
+    loadItem,
     saveAcpPermissionMode,
     saveItem,
 } from './storage';
@@ -41,12 +42,14 @@ import { useAgents } from './hooks/useAgents';
 import { type AcpPermissionMode } from './types';
 
 const App: React.FC = () => {
-    const [leftPanelVisible, setLeftPanelVisible] = useState<boolean>(loadLeftPanelVisible());
+    const [leftPanelVisible, setLeftPanelVisible] = useState<boolean>(loadItem<boolean>('filesPanelVisible') ?? loadLeftPanelVisible());
+    const [searchPanelVisible, setSearchPanelVisible] = useState<boolean>(loadItem<boolean>('searchPanelVisible') ?? false);
+    const [changesPanelVisible, setChangesPanelVisible] = useState<boolean>(loadItem<boolean>('changesPanelVisible') ?? false);
     const [bottomPanelVisible, setBottomPanelVisible] = useState<boolean>(loadBottomVisible());
     const [rightPanelVisible, setRightPanelVisible] = useState<boolean>(loadRightPanelVisible());
     const [centerPanelVisible, setCenterPanelVisible] = useState<boolean>(loadCenterPaneVisible());
+    const [toolbarHeaderVisible, setToolbarHeaderVisible] = useState<boolean>(loadItem<boolean>('toolbarHeaderVisible') ?? false);
 
-    const [leftPanelMode, setLeftPanelMode] = useState<'files' | 'changes' | 'search'>('files');
     const [diffEnabled, setDiffEnabled] = useState<boolean>(loadDiffEnabled());
     // const [followEnabled, setFollowEnabled] = useState<boolean>(loadFollowEnabled());
     const [permissionMode, setPermissionMode] = useState<AcpPermissionMode>(loadAcpPermissionMode());
@@ -161,7 +164,16 @@ const App: React.FC = () => {
 
     useEffect(() => {
         saveItem('leftPanelVisible', leftPanelVisible);
+        saveItem('filesPanelVisible', leftPanelVisible);
     }, [leftPanelVisible]);
+
+    useEffect(() => {
+        saveItem('searchPanelVisible', searchPanelVisible);
+    }, [searchPanelVisible]);
+
+    useEffect(() => {
+        saveItem('changesPanelVisible', changesPanelVisible);
+    }, [changesPanelVisible]);
 
     useEffect(() => {
         saveItem('rightPanelVisible', rightPanelVisible);
@@ -170,6 +182,10 @@ const App: React.FC = () => {
     useEffect(() => {
         saveItem('centerPanelVisible', centerPanelVisible);
     }, [centerPanelVisible]);
+
+    useEffect(() => {
+        saveItem('toolbarHeaderVisible', toolbarHeaderVisible);
+    }, [toolbarHeaderVisible]);
 
     useEffect(() => {
         saveItem('terminalSelected', terminals.terminalSelected);
@@ -230,19 +246,6 @@ const App: React.FC = () => {
         };
     }, [editors.activeFileId, editors.saveFile, editors.undoCursor, editors.redoCursor]);
 
-    const handleLeftPanelVisibleChange = (index: number, visible: boolean) => {
-        if (index === 0) setLeftPanelVisible(visible);
-    };
-
-    const handleBottomPanelVisibleChange = (index: number, visible: boolean) => {
-        if (index === 1) setBottomPanelVisible(visible);
-    };
-
-    const handleRightPanelVisibleChange = (index: number, visible: boolean) => {
-        if (index === 0) setCenterPanelVisible(visible);
-        if (index === 1) setRightPanelVisible(visible);
-    };
-
     const handleSearch = ({ pattern }: { id: string; pattern: string }) => {
         search.startSearch(pattern);
     };
@@ -296,34 +299,6 @@ const App: React.FC = () => {
         agents.setAgentsVersion((prev) => prev + 1);
     }, [agents.setAgentsVersion]);
 
-    const leftPanelModeButtons = (() => {
-        switch (leftPanelMode) {
-            case 'files':
-                return (
-                    <>
-                        <button onClick={() => setLeftPanelMode('search')} className="toggle-mode-btn" title="Search"><Icons.Search /></button>
-                        <button onClick={() => { setLeftPanelMode('changes'); git.fetchGitStatus(); }} className="toggle-mode-btn" title="Changes"><Icons.Git /></button>
-                    </>
-                );
-            case 'search':
-                return (
-                    <>
-                        <button onClick={() => setLeftPanelMode('files')} className="toggle-mode-btn" title="Files"><Icons.Tree /></button>
-                        <button onClick={() => { setLeftPanelMode('changes'); git.fetchGitStatus(); }} className="toggle-mode-btn" title="Changes"><Icons.Git /></button>
-                    </>
-                );
-            case 'changes':
-                return (
-                    <>
-                        <button onClick={() => setLeftPanelMode('search')} className="toggle-mode-btn" title="Search"><Icons.Search /></button>
-                        <button onClick={() => setLeftPanelMode('files')} className="toggle-mode-btn" title="Files"><Icons.Tree /></button>
-                    </>
-                );
-            default:
-                return null;
-        }
-    })();
-
     const fileTreePanel = (
         <div className="file-system-panel">
             <div className="file-system-content">
@@ -347,51 +322,52 @@ const App: React.FC = () => {
         </div>
     );
 
-    const leftPanel = (() => {
-        switch (leftPanelMode) {
-            case 'search':
-                return (
-                    <Search
-                        id="search"
-                        onEnter={handleSearch}
-                        onCancel={search.cancelSearch}
-                        results={search.searchResults}
-                        searchEnded={search.searchEnded}
-                        onMatchClick={handleSearchResultClick}
-                    />
-                );
-            case 'changes':
-                return (
-                    <ChangesPanel
-                        files={git.changedFiles}
-                        branch={git.gitBranch}
-                        onFileClick={editors.openFileDiff}
-                        onRefresh={git.fetchGitStatus}
-                        onCommit={git.commit}
-                        onPush={git.push}
-                        onPull={git.pull}
-                        onRevert={git.revert}
-                    />
-                );
-            case 'files':
-            default:
-                return fileTreePanel;
-        }
-    })();
-
-    const editorPanel = (
-        <div className="editor-container">
-            {editors.activeFile && editors.editorStates.has(editors.activeFile.id) ? (
-                <AnycodeEditorReact
-                    key={editors.activeFile.id}
-                    id={editors.activeFile.id}
-                    editorState={editors.editorStates.get(editors.activeFile.id)!}
-                />
-            ) : (
-                <div className="no-editor"></div>
-            )}
-        </div>
+    const searchPanel = (
+        <Search
+            id="search"
+            onEnter={handleSearch}
+            onCancel={search.cancelSearch}
+            results={search.searchResults}
+            searchEnded={search.searchEnded}
+            onMatchClick={handleSearchResultClick}
+        />
     );
+
+    const changesPanel = (
+        <ChangesPanel
+            files={git.changedFiles}
+            branch={git.gitBranch}
+            onFileClick={editors.openFileDiff}
+            onRefresh={git.fetchGitStatus}
+            onCommit={git.commit}
+            onPush={git.push}
+            onPull={git.pull}
+            onRevert={git.revert}
+        />
+    );
+
+    const renderEditorPanel = useCallback((panelKey: string) => {
+        const paneFileId = editors.getActiveFileIdForPane(panelKey);
+        const paneFile = paneFileId ? editors.files.find((file) => file.id === paneFileId) : null;
+        const editorState = paneFile ? editors.editorStates.get(paneFile.id) : null;
+
+        return (
+            <div
+                className="editor-container"
+                onMouseDown={() => editors.setActiveEditorPaneId(panelKey)}
+            >
+                {paneFile && editorState ? (
+                    <AnycodeEditorReact
+                        key={panelKey}
+                        id={paneFile.id}
+                        editorState={editorState}
+                    />
+                ) : (
+                    <div className="no-editor"></div>
+                )}
+            </div>
+        );
+    }, [editors]);
 
     const acpPanel = (
         <AcpDialog
@@ -472,14 +448,21 @@ const App: React.FC = () => {
 
     const terminalPanel = (
         <div className="terminal-panel">
-            <Allotment vertical={false} separator={false} defaultSizes={[20, 80]}>
-                <Allotment.Pane snap minSize={100}>
-                    {terminalTabsPanel}
-                </Allotment.Pane>
-                <Allotment.Pane>
-                    {terminalContentPanel}
-                </Allotment.Pane>
-            </Allotment>
+            <Split
+                direction="row"
+                className="app-layout-split"
+                panes={[
+                    {
+                        id: 'terminal-tabs',
+                        content: terminalTabsPanel,
+                        size: 180,
+                    },
+                    {
+                        id: 'terminal-content',
+                        content: terminalContentPanel,
+                    },
+                ]}
+            />
         </div>
     );
 
@@ -489,12 +472,31 @@ const App: React.FC = () => {
                 <button
                     onClick={() => setLeftPanelVisible(!leftPanelVisible)}
                     className={`toggle-tree-btn ${leftPanelVisible ? 'active' : ''}`}
-                    title={leftPanelVisible ? 'Hide File Tree' : 'Show File Tree'}
+                    title={leftPanelVisible ? 'Hide Files Panel' : 'Show Files Panel'}
                 >
                     {leftPanelVisible ? <Icons.LeftPanelOpened /> : <Icons.LeftPanelClosed />}
                 </button>
 
-                {leftPanelVisible && leftPanelModeButtons}
+                <button
+                    onClick={() => setSearchPanelVisible(!searchPanelVisible)}
+                    className={`toggle-mode-btn ${searchPanelVisible ? 'active' : ''}`}
+                    title={searchPanelVisible ? 'Hide Search Panel' : 'Show Search Panel'}
+                >
+                    <Icons.Search />
+                </button>
+
+                <button
+                    onClick={() => {
+                        if (!changesPanelVisible) {
+                            git.fetchGitStatus();
+                        }
+                        setChangesPanelVisible(!changesPanelVisible);
+                    }}
+                    className={`toggle-mode-btn ${changesPanelVisible ? 'active' : ''}`}
+                    title={changesPanelVisible ? 'Hide Changes Panel' : 'Show Changes Panel'}
+                >
+                    <Icons.Git />
+                </button>
 
                 <button
                     onClick={() => setBottomPanelVisible(!bottomPanelVisible)}
@@ -519,6 +521,14 @@ const App: React.FC = () => {
                 >
                     {rightPanelVisible ? <Icons.RightPanelOpened /> : <Icons.RightPanelClosed />}
                 </button>
+
+                <button
+                    onClick={() => setToolbarHeaderVisible((prev) => !prev)}
+                    className={`toggle-mode-btn ${toolbarHeaderVisible ? 'active' : ''}`}
+                    title={toolbarHeaderVisible ? 'Hide Anycode Header' : 'Show Anycode Header'}
+                >
+                    <Icons.ChevronUpDown />
+                </button>
             </div>
 
             <div className="toolbar-tabs">
@@ -536,34 +546,65 @@ const App: React.FC = () => {
         </div>
     );
 
-    return (
-        <div className={`app-container ${bottomPanelVisible ? 'terminal-visible' : ''}`}>
-            <div className="main-content" style={{ flex: 1, display: 'flex' }}>
-                <Allotment vertical={true} defaultSizes={[70, 30]} separator={true} onVisibleChange={handleBottomPanelVisibleChange}>
-                    <Allotment.Pane>
-                        <Allotment vertical={false} defaultSizes={[20, 80]} separator={false} onVisibleChange={handleLeftPanelVisibleChange}>
-                            <Allotment.Pane snap visible={leftPanelVisible}>
-                                {leftPanel}
-                            </Allotment.Pane>
-                            <Allotment.Pane snap>
-                                <Allotment vertical={false} defaultSizes={[60, 40]} separator={false} onVisibleChange={handleRightPanelVisibleChange}>
-                                    <Allotment.Pane snap visible={centerPanelVisible}>
-                                        {editorPanel}
-                                    </Allotment.Pane>
-                                    <Allotment.Pane snap visible={rightPanelVisible} minSize={100}>
-                                        {acpPanel}
-                                    </Allotment.Pane>
-                                </Allotment>
-                            </Allotment.Pane>
-                        </Allotment>
-                    </Allotment.Pane>
-                    <Allotment.Pane snap visible={bottomPanelVisible}>
-                        {terminalPanel}
-                    </Allotment.Pane>
-                </Allotment>
-            </div>
+    const dockPanels = useMemo(() => ({
+        files: fileTreePanel,
+        search: searchPanel,
+        changes: changesPanel,
+        editor: <div className="editor-container" />,
+        agent: acpPanel,
+        terminal: terminalPanel,
+        toolbar,
+    }), [fileTreePanel, searchPanel, changesPanel, acpPanel, terminalPanel, toolbar]);
 
-            {toolbar}
+    const dockVisibility = useMemo(() => ({
+        files: leftPanelVisible,
+        search: searchPanelVisible,
+        changes: changesPanelVisible,
+        editor: centerPanelVisible,
+        agent: rightPanelVisible,
+        terminal: bottomPanelVisible,
+        toolbar: true,
+    }), [
+        leftPanelVisible,
+        searchPanelVisible,
+        changesPanelVisible,
+        centerPanelVisible,
+        rightPanelVisible,
+        bottomPanelVisible,
+    ]);
+
+    const handleDockPanelVisibilityChange = useCallback((id: PanelId, visible: boolean) => {
+        if (id === 'files') setLeftPanelVisible(visible);
+        if (id === 'search') setSearchPanelVisible(visible);
+        if (id === 'changes') setChangesPanelVisible(visible);
+        if (id === 'editor') setCenterPanelVisible(visible);
+        if (id === 'agent') setRightPanelVisible(visible);
+        if (id === 'terminal') setBottomPanelVisible(visible);
+    }, []);
+
+    return (
+        <div className={`app-container ${toolbarHeaderVisible ? 'toolbar-header-visible' : 'toolbar-header-compact'}`}>
+            <div className="main-content" style={{ flex: 1, display: 'flex' }}>
+                <Layout
+                    panels={dockPanels}
+                    visibility={dockVisibility}
+                    toolbarHeaderVisible={toolbarHeaderVisible}
+                    onPanelVisibilityChange={handleDockPanelVisibilityChange}
+                    panelContentOverrides={{ editor: renderEditorPanel }}
+                    onPanelAdded={(panelId, panelKey) => {
+                        if (panelId !== 'editor') return;
+                        editors.registerEditorPane(panelKey);
+                    }}
+                    onPanelRemoved={(panelId, panelKey) => {
+                        if (panelId !== 'editor') return;
+                        editors.unregisterEditorPane(panelKey);
+                    }}
+                    onPanelActivated={(panelId, panelKey) => {
+                        if (panelId !== 'editor') return;
+                        editors.setActiveEditorPaneId(panelKey);
+                    }}
+                />
+            </div>
         </div>
     );
 };

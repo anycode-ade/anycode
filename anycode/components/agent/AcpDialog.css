@@ -279,20 +279,17 @@
     overflow: hidden;
 }
 
-.acp-workspace-content .sash,
-.acp-workspace-content .sash-module_sash__K-9lB {
+.acp-workspace-content .dv-sash {
     background: transparent;
 }
 
-.acp-workspace-content .sash::after,
-.acp-workspace-content .sash-module_sash__K-9lB::after {
+.acp-workspace-content .dv-sash::after {
     content: '';
     position: absolute;
     pointer-events: none;
 }
 
-.acp-workspace-content .sash.sash-vertical::after,
-.acp-workspace-content .sash-module_sash__K-9lB.sash-module_vertical__pB-rs::after {
+.acp-workspace-content .dv-vertical > .dv-sash-container > .dv-sash::after {
     left: 50%;
     top: 0;
     bottom: 0;
@@ -301,8 +298,7 @@
     background: linear-gradient(to bottom, transparent, #555, transparent);
 }
 
-.acp-workspace-content .sash.sash-horizontal::after,
-.acp-workspace-content .sash-module_sash__K-9lB.sash-module_horizontal__kFbiw::after {
+.acp-workspace-content .dv-horizontal > .dv-sash-container > .dv-sash::after {
     left: 0;
     right: 0;
     top: 50%;

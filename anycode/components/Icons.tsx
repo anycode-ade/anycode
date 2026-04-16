@@ -66,5 +66,29 @@ export const Icons = {
       <path d="M16 8V12C16 14 14 16 12 16H8" stroke="currentColor" strokeWidth="2"/>
     </svg>
   ),
+  ChevronUpDown: () => (
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+      <path d="M10 4L7.5 6.5M10 4L12.5 6.5M10 4V16" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+      <path d="M10 16L7.5 13.5M10 16L12.5 13.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  ),
+  LayoutSplitRight: () => (
+    <svg viewBox="0 0 16 16" aria-hidden="true" className="layout-header-action-icon">
+      <rect x="2" y="3" width="4" height="10" rx="1" />
+      <rect x="10" y="3" width="4" height="10" rx="1" />
+      <rect x="7" y="2" width="2" height="12" rx="1" />
+    </svg>
+  ),
+  LayoutSplitDown: () => (
+    <svg viewBox="0 0 16 16" aria-hidden="true" className="layout-header-action-icon">
+      <rect x="3" y="2" width="10" height="4" rx="1" />
+      <rect x="3" y="10" width="10" height="4" rx="1" />
+      <rect x="2" y="7" width="12" height="2" rx="1" />
+    </svg>
+  ),
+  LayoutClose: () => (
+    <svg viewBox="0 0 16 16" aria-hidden="true" className="layout-header-action-icon">
+      <path d="M4 4L12 12M12 4L4 12" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  ),
 };
-
