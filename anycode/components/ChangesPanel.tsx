@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import './ChangesPanel.css';
 
+const COMMIT_MESSAGE_STORAGE_KEY = 'anycode.commitMessage';
+
 export interface ChangedFile {
     path: string;
     status: 'modified' | 'added' | 'deleted' | 'renamed' | 'conflict';
@@ -11,7 +13,7 @@ interface ChangesPanelProps {
     branch: string;
     onFileClick: (path: string) => void;
     onRefresh: () => void;
-    onCommit: (files: string[], message: string) => void;
+    onCommit: (files: string[], message: string) => Promise<boolean>;
     onPush: () => void;
     onPull: () => void;
     onRevert: (path: string) => void;
@@ -41,8 +43,20 @@ export const ChangesPanel: React.FC<ChangesPanelProps> = ({
     onPull,
     onRevert
 }) => {
-    const [message, setMessage] = useState('');
+    const [message, setMessage] = useState(() => {
+        if (typeof window === 'undefined') return '';
+        return localStorage.getItem(COMMIT_MESSAGE_STORAGE_KEY) ?? '';
+    });
     const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
+
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+        if (message) {
+            localStorage.setItem(COMMIT_MESSAGE_STORAGE_KEY, message);
+        } else {
+            localStorage.removeItem(COMMIT_MESSAGE_STORAGE_KEY);
+        }
+    }, [message]);
 
     // Initialize selection behavior
     useEffect(() => {
@@ -90,10 +104,12 @@ export const ChangesPanel: React.FC<ChangesPanelProps> = ({
         });
     };
 
-    const handleCommit = () => {
+    const handleCommit = async () => {
         if (message.trim() && selectedFiles.size > 0) {
-            onCommit(Array.from(selectedFiles), message);
-            setMessage('');
+            const success = await onCommit(Array.from(selectedFiles), message);
+            if (success) {
+                setMessage('');
+            }
         }
     };
 

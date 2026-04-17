@@ -1,7 +1,9 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Socket } from 'socket.io-client';
 import type { Terminal } from '../types';
 import { loadTerminalSelected, loadTerminals } from '../storage';
+
+const TERMINAL_DELAY_MS = 300;
 
 type UseTerminalsParams = {
     wsRef: React.RefObject<Socket | null>;
@@ -15,6 +17,29 @@ export const useTerminals = ({ wsRef, isConnected, bottomPanelVisible }: UseTerm
     const terminalCounterRef = useRef<number>(1);
     const newTerminalsRef = useRef<Set<string>>(new Set());
     const terminalListenersRef = useRef<Map<string, Set<(data: string) => void>>>(new Map());
+    const pendingResizeRef = useRef<Map<string, { cols: number; rows: number }>>(new Map());
+    const resizeTimerRef = useRef<Map<string, number>>(new Map());
+    const lastResizeSentRef = useRef<Map<string, { cols: number; rows: number }>>(new Map());
+
+    const clearResizeState = useCallback((name?: string) => {
+        if (!name) {
+            resizeTimerRef.current.forEach((timerId) => {
+                clearTimeout(timerId);
+            });
+            resizeTimerRef.current.clear();
+            pendingResizeRef.current.clear();
+            lastResizeSentRef.current.clear();
+            return;
+        }
+
+        const timerId = resizeTimerRef.current.get(name);
+        if (timerId) {
+            clearTimeout(timerId);
+            resizeTimerRef.current.delete(name);
+        }
+        pendingResizeRef.current.delete(name);
+        lastResizeSentRef.current.delete(name);
+    }, []);
 
     const initializeTerminal = useCallback((terminal: Terminal) => {
         if (!wsRef.current) return;
@@ -95,13 +120,32 @@ export const useTerminals = ({ wsRef, isConnected, bottomPanelVisible }: UseTerm
 
         const terminal = terminals.find((t) => t.name === name);
         if (!terminal || !wsRef.current || !isConnected) return;
+        pendingResizeRef.current.set(name, { cols, rows });
 
-        wsRef.current.emit('terminal:resize', {
-            name: terminal.name,
-            session: terminal.session,
-            cols,
-            rows,
-        });
+        if (resizeTimerRef.current.get(name)) {
+            return;
+        }
+
+        const timerId = window.setTimeout(() => {
+            resizeTimerRef.current.delete(name);
+            const pending = pendingResizeRef.current.get(name);
+            if (!pending || !wsRef.current || !isConnected) return;
+
+            const lastSent = lastResizeSentRef.current.get(name);
+            if (lastSent && lastSent.cols === pending.cols && lastSent.rows === pending.rows) {
+                return;
+            }
+
+            wsRef.current.emit('terminal:resize', {
+                name: terminal.name,
+                session: terminal.session,
+                cols: pending.cols,
+                rows: pending.rows,
+            });
+            lastResizeSentRef.current.set(name, pending);
+        }, TERMINAL_DELAY_MS);
+
+        resizeTimerRef.current.set(name, timerId);
     }, [bottomPanelVisible, terminals, wsRef, isConnected]);
 
     const addTerminal = useCallback((): Terminal => {
@@ -128,6 +172,9 @@ export const useTerminals = ({ wsRef, isConnected, bottomPanelVisible }: UseTerm
         if (!terminalToRemove) return;
 
         newTerminalsRef.current.delete(terminalToRemove.id);
+        localStorage.removeItem(`terminal:data:${terminalToRemove.name}`);
+        localStorage.removeItem(`terminal:mouseMode:${terminalToRemove.name}`);
+        clearResizeState(terminalToRemove.name);
         setTerminals((prev) => prev.filter((_, i) => i !== index));
 
         if (terminalSelected >= terminals.length - 1) {
@@ -140,7 +187,18 @@ export const useTerminals = ({ wsRef, isConnected, bottomPanelVisible }: UseTerm
                 session: terminalToRemove.session,
             });
         }
-    }, [terminals, terminalSelected, wsRef, isConnected]);
+    }, [clearResizeState, terminals, terminalSelected, wsRef, isConnected]);
+
+    useEffect(() => {
+        if (bottomPanelVisible) return;
+        clearResizeState();
+    }, [bottomPanelVisible, clearResizeState]);
+
+    useEffect(() => {
+        return () => {
+            clearResizeState();
+        };
+    }, [clearResizeState]);
 
     return {
         terminals,

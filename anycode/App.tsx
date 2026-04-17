@@ -1,10 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnycodeEditorReact } from 'anycode-react';
-import {
-  Mosaic, MosaicWindow, MosaicNode, MosaicPath,
-  RemoveButton, MosaicContext, MosaicWindowContext
-} from 'react-mosaic-component';
-import 'react-mosaic-component/react-mosaic-component.css';
+import { DockviewReact, type IDockviewHeaderActionsProps, type IDockviewPanelProps } from 'dockview';
+import 'dockview/dist/styles/dockview.css';
 import {
     TreeNodeComponent,
     TerminalComponent,
@@ -13,16 +10,12 @@ import {
 import { AcpAgentsList } from './components/agent/AcpAgentsList';
 import { AcpSessionView } from './components/agent/AcpSessionView';
 import Search from './components/Search';
-import { Icons } from './components/Icons';
 import {
     getAllAgents,
-    getDefaultAgent,
-    getDefaultAgentId,
-    ensureDefaultAgents,
-    updateAgents,
 } from './agents';
-import { AcpAgent, type SearchMatch } from './types';
+import { AcpAgent, type SearchMatch, type AcpSession } from './types';
 import './App.css';
+import './components/layout/Layout.css';
 import {
     loadDiffEnabled,
     loadAcpPermissionMode,
@@ -39,9 +32,18 @@ import { useEditors } from './hooks/useEditors';
 import { useAgents } from './hooks/useAgents';
 import { type AcpPermissionMode } from './types';
 
-// Pane type identifiers
 type PaneType = 'fileTree' | 'search' | 'changes' | 'editor' | 'terminal' | 'agent' | 'toolbar' | 'empty';
-type PaneId = string;
+type RealPaneType = Exclude<PaneType, 'empty'>;
+
+const PANE_IDS: Record<RealPaneType, string> = {
+    fileTree: 'pane:fileTree',
+    search: 'pane:search',
+    changes: 'pane:changes',
+    editor: 'pane:editor',
+    terminal: 'pane:terminal',
+    agent: 'pane:agent',
+    toolbar: 'pane:toolbar',
+};
 
 const PANE_TITLES: Record<PaneType, string> = {
     fileTree: 'Files',
@@ -53,8 +55,7 @@ const PANE_TITLES: Record<PaneType, string> = {
     toolbar: 'Toolbar',
     empty: 'Empty',
 };
-
-const AVAILABLE_PANES: Array<{ type: Exclude<PaneType, 'empty'>; label: string }> = [
+const AVAILABLE_PANES: Array<{ type: RealPaneType; label: string }> = [
     { type: 'fileTree', label: 'File Tree' },
     { type: 'search', label: 'Search' },
     { type: 'changes', label: 'Changes' },
@@ -64,436 +65,438 @@ const AVAILABLE_PANES: Array<{ type: Exclude<PaneType, 'empty'>; label: string }
     { type: 'toolbar', label: 'Toolbar' },
 ];
 
-const DEFAULT_LAYOUT: MosaicNode<PaneId> = {
-    type: 'split',
-    direction: 'column',
-    splitPercentages: [68, 24, 8],
-    children: [
-        {
-            type: 'split',
-            direction: 'row',
-            splitPercentages: [20, 80],
-            children: [
-                'fileTree:1',
-                {
-                    type: 'split',
-                    direction: 'row',
-                    splitPercentages: [60, 40],
-                    children: ['editor:1', 'agent:1'],
-                },
-            ],
-        },
-        'terminal:1',
-        'toolbar:1',
-    ],
-};
-
-function isPaneType(value: string): value is PaneType {
-    return value in PANE_TITLES;
-}
-
-function getPaneTypeFromId(id: PaneId): PaneType {
-    if (typeof id !== 'string') return 'editor';
-    const [rawType] = id.split(':');
-    return isPaneType(rawType) ? rawType : 'editor';
-}
-
-function getMaxPaneIndex(node: MosaicNode<PaneId> | null): number {
-    if (!node) return 0;
-    if (typeof node === 'string') {
-        const [, rawIndex] = node.split(':');
-        const parsed = Number(rawIndex);
-        return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
-    }
-    if ('children' in node) {
-        return node.children.reduce((max, child) => Math.max(max, getMaxPaneIndex(child)), 0);
-    }
-    if ('tabs' in node) {
-        return node.tabs.reduce((max, child) => Math.max(max, getMaxPaneIndex(child)), 0);
-    }
-    return 0;
-}
-
-function getNodeAtPath(node: MosaicNode<PaneId> | null, path: MosaicPath): MosaicNode<PaneId> | null {
-    if (!node) return null;
-    let current: MosaicNode<PaneId> | null = node;
-    for (const index of path) {
-        if (!current || typeof current === 'string') return null;
-        if ('children' in current) {
-            current = current.children[index] ?? null;
-            continue;
-        }
-        if ('tabs' in current) {
-            current = current.tabs[index] ?? null;
-            continue;
-        }
-        return null;
-    }
-    return current;
-}
-
-function replaceNodeAtPath(
-    node: MosaicNode<PaneId> | null,
-    path: MosaicPath,
-    replacement: MosaicNode<PaneId>,
-): MosaicNode<PaneId> | null {
-    if (!node) return null;
-    if (path.length === 0) return replacement;
-    if (typeof node === 'string') return node;
-
-    const [index, ...rest] = path;
-    if ('children' in node) {
-        const currentChild = node.children[index];
-        if (currentChild === undefined) return node;
-        const nextChild = replaceNodeAtPath(currentChild, rest, replacement);
-        if (nextChild === currentChild) return node;
-        const nextChildren = [...node.children];
-        nextChildren[index] = nextChild;
-        return { ...node, children: nextChildren };
-    }
-
-    if ('tabs' in node) {
-        const currentTab = node.tabs[index];
-        if (currentTab === undefined) return node;
-        const nextTab = replaceNodeAtPath(currentTab, rest, replacement);
-        if (nextTab === currentTab) return node;
-        const nextTabs = [...node.tabs];
-        nextTabs[index] = nextTab;
-        return { ...node, tabs: nextTabs };
-    }
-
-    return node;
-}
-
-function normalizePercentages(values: number[]): number[] {
-    if (values.length === 0) return values;
-    const total = values.reduce((sum, value) => sum + value, 0);
-    if (total <= 0) return Array(values.length).fill(100 / values.length);
-    return values.map((value) => (value / total) * 100);
-}
-
-function getLeafPaneIds(node: MosaicNode<PaneId> | null): PaneId[] {
-    if (!node) return [];
-    if (typeof node === 'string') return [node];
-    if ('children' in node) {
-        return node.children.flatMap((child) => getLeafPaneIds(child));
-    }
-    if ('tabs' in node) {
-        return node.tabs.flatMap((child) => getLeafPaneIds(child));
-    }
-    return [];
-}
-
-function getFirstPaneIdByType(node: MosaicNode<PaneId> | null, paneType: PaneType): PaneId | null {
-    const leaves = getLeafPaneIds(node);
-    const match = leaves.find((id) => getPaneTypeFromId(id) === paneType);
-    return match ?? null;
-}
-
-function loadLayout(): MosaicNode<PaneId> | null {
-    const stored = loadItem<MosaicNode<PaneId>>('mosaicLayout');
-    return stored ?? null;
-}
-
-function saveLayout(layout: MosaicNode<PaneId> | null): void {
-    saveItem('mosaicLayout', layout);
-}
-
 const OPEN_FILES_STORAGE_KEY = 'openFileIds';
 const ACTIVE_FILE_STORAGE_KEY = 'activeFileId';
+const DOCKVIEW_LAYOUT_STORAGE_KEY = 'dockviewLayout:v2';
+const TERMINAL_PANE_BINDINGS_STORAGE_KEY = 'terminalPaneTerminalIds:v1';
+const AGENT_PANE_BINDINGS_STORAGE_KEY = 'agentPaneSessionIds:v1';
+const PANEL_CONSTRAINTS = { minimumWidth: 0, minimumHeight: 0 } as const;
+const TOOLBAR_PANEL_HEIGHT = 35;
+const TOOLBAR_PANEL_CONSTRAINTS = {
+    minimumWidth: 0,
+    minimumHeight: TOOLBAR_PANEL_HEIGHT,
+    maximumHeight: TOOLBAR_PANEL_HEIGHT,
+} as const;
 
-function ensureToolbarPane(layout: MosaicNode<PaneId> | null): MosaicNode<PaneId> | null {
-    if (!layout) return layout;
-    if (getFirstPaneIdByType(layout, 'toolbar')) return layout;
-
-    const toolbarId = `toolbar:${getMaxPaneIndex(layout) + 1}`;
-    if (typeof layout !== 'string' && 'children' in layout && layout.direction === 'column') {
-        const childCount = layout.children.length;
-        const existingPercentages = layout.splitPercentages?.length === childCount
-            ? layout.splitPercentages
-            : Array(childCount).fill(100 / childCount);
-        const scaledPercentages = existingPercentages.map((value) => value * 0.9);
-        return {
-            ...layout,
-            children: [...layout.children, toolbarId],
-            splitPercentages: [...scaledPercentages, 10],
-        };
-    }
-
-    return {
-        type: 'split',
-        direction: 'column',
-        children: [layout, toolbarId],
-        splitPercentages: [90, 10],
-    };
-}
-
-type ToolbarPaneContentProps = {
-    editors: ReturnType<typeof useEditors>;
-    terminals: ReturnType<typeof useTerminals>;
-    agents: ReturnType<typeof useAgents>;
-    focusedEditorPaneId: PaneId | null;
-    focusedAgentPaneId: PaneId | null;
-    focusedTerminalPaneId: PaneId | null;
-    editorPaneFileIds: Record<PaneId, string>;
-    terminalPaneTerminalIds: Record<PaneId, string>;
-    agentPaneSessionIds: Record<PaneId, string>;
-    setFocusedEditorPaneId: React.Dispatch<React.SetStateAction<PaneId | null>>;
-    setTerminalPaneTerminalIds: React.Dispatch<React.SetStateAction<Record<PaneId, string>>>;
-    setAgentPaneSessionIds: React.Dispatch<React.SetStateAction<Record<PaneId, string>>>;
-    setEditorPaneFileIds: React.Dispatch<React.SetStateAction<Record<PaneId, string>>>;
-    getTargetEditorPaneId: () => PaneId | null;
-    bindTerminalToTargetPane: (terminalId: string) => void;
-    bindAgentToTargetPane: (agentId: string) => void;
-    createPaneId: (paneType: PaneType) => PaneId;
+type FileTreePanelContextValue = {
+    fileTree: ReturnType<typeof useFileTree>;
+    openFolder: (path: string) => void;
+    openFileInEditorPane: (filePath: string, line?: number, column?: number) => void;
 };
 
-const ToolbarPaneContentInner: React.FC<ToolbarPaneContentProps> = ({
-    editors,
-    terminals,
-    agents,
-    focusedEditorPaneId,
-    focusedAgentPaneId,
-    focusedTerminalPaneId,
-    editorPaneFileIds,
-    terminalPaneTerminalIds,
-    agentPaneSessionIds,
-    setFocusedEditorPaneId,
-    setTerminalPaneTerminalIds,
-    setAgentPaneSessionIds,
-    setEditorPaneFileIds,
-    getTargetEditorPaneId,
-    bindTerminalToTargetPane,
-    bindAgentToTargetPane,
-    createPaneId,
-}) => {
-    const containerRef = useRef<HTMLDivElement | null>(null);
-    const [isVertical, setIsVertical] = useState(false);
-    const rootCtx = React.useContext(MosaicContext);
-    const windowCtx = React.useContext(MosaicWindowContext);
-    const sessionsArray = useMemo(() => Array.from(agents.acpSessions.values()), [agents.acpSessions]);
+const FileTreePanelContext = React.createContext<FileTreePanelContextValue | null>(null);
+type SearchPanelContextValue = {
+    search: ReturnType<typeof useSearch>;
+    onSearch: ({ pattern }: { id: string; pattern: string }) => void;
+    onMatchClick: (filePath: string, match: SearchMatch) => void;
+};
+const SearchPanelContext = React.createContext<SearchPanelContextValue | null>(null);
 
+type ChangesPanelContextValue = {
+    git: ReturnType<typeof useGit>;
+    openFileDiffInEditorPane: (filePath: string, line?: number, column?: number) => void;
+};
+const ChangesPanelContext = React.createContext<ChangesPanelContextValue | null>(null);
+
+type EditorPanelContextValue = {
+    editors: ReturnType<typeof useEditors>;
+};
+
+const EditorPanelContext = React.createContext<EditorPanelContextValue | null>(null);
+type TerminalPanelContextValue = {
+    terminals: ReturnType<typeof useTerminals>;
+    isConnected: boolean;
+    terminalPaneTerminalIds: Record<string, string>;
+    focusedTerminalPaneId: string | null;
+    bindTerminalToPane: (paneId: string, terminalId: string) => void;
+    setFocusedTerminalPaneId: React.Dispatch<React.SetStateAction<string | null>>;
+};
+type AgentPanelContextValue = {
+    agents: ReturnType<typeof useAgents>;
+    agentPaneSessionIds: Record<string, string>;
+    focusedAgentPaneId: string | null;
+    isConnected: boolean;
+    availableAgents: AcpAgent[];
+    bindAgentToPane: (paneId: string, agentId: string) => void;
+    handleStartSpecificAgentInPane: (paneId: string, agent: AcpAgent) => string | undefined;
+    handleCloseAgentEverywhere: (agentId: string) => void;
+    openFileInEditorPane: (filePath: string, line?: number, column?: number) => void;
+    openFileDiffInEditorPane: (filePath: string, line?: number, column?: number) => void;
+    setFocusedAgentPaneId: React.Dispatch<React.SetStateAction<string | null>>;
+};
+type ToolbarPanelContextValue = {
+    editors: ReturnType<typeof useEditors>;
+    terminals: ReturnType<typeof useTerminals>;
+    sessionsArray: AcpSession[];
+    focusedAgentId: string | null;
+    focusedTerminalId: string | null;
+    bindTerminalToFocusedPane: (terminalId: string) => void;
+    bindAgentToFocusedPane: (agentId: string) => void;
+    handleCloseAgentEverywhere: (agentId: string) => void;
+};
+
+const TerminalPanelContext = React.createContext<TerminalPanelContextValue | null>(null);
+const AgentPanelContext = React.createContext<AgentPanelContextValue | null>(null);
+const ToolbarPanelContext = React.createContext<ToolbarPanelContextValue | null>(null);
+
+const FileTreeDockPanel: React.FC<IDockviewPanelProps> = () => {
+    const ctx = React.useContext(FileTreePanelContext);
+    if (!ctx) return null;
+
+    return (
+        <div className="file-system-panel">
+            <div className="file-system-content">
+                {ctx.fileTree.fileTree.length === 0 ? (
+                    <p className="file-system-empty">No files loaded yet</p>
+                ) : (
+                    <div className="file-tree">
+                        {ctx.fileTree.fileTree.map((node) => (
+                            <TreeNodeComponent
+                                key={node.id}
+                                node={node}
+                                onToggle={ctx.fileTree.toggleNode}
+                                onSelect={ctx.fileTree.selectNode}
+                                onOpenFile={ctx.openFileInEditorPane}
+                                onLoadFolder={ctx.openFolder}
+                            />
+                        ))}
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+};
+
+const SearchDockPanel: React.FC<IDockviewPanelProps> = () => {
+    const ctx = React.useContext(SearchPanelContext);
+    if (!ctx) return null;
+
+    return (
+        <Search
+            id="search-pane"
+            onEnter={ctx.onSearch}
+            onCancel={ctx.search.cancelSearch}
+            results={ctx.search.searchResults}
+            searchEnded={ctx.search.searchEnded}
+            onMatchClick={ctx.onMatchClick}
+        />
+    );
+};
+
+const ChangesDockPanel: React.FC<IDockviewPanelProps> = () => {
+    const ctx = React.useContext(ChangesPanelContext);
+    if (!ctx) return null;
+
+    return (
+        <ChangesPanel
+            files={ctx.git.changedFiles}
+            branch={ctx.git.gitBranch}
+            onFileClick={ctx.openFileDiffInEditorPane}
+            onRefresh={ctx.git.fetchGitStatus}
+            onCommit={ctx.git.commit}
+            onPush={ctx.git.push}
+            onPull={ctx.git.pull}
+            onRevert={ctx.git.revert}
+        />
+    );
+};
+
+const EditorDockPanel: React.FC<IDockviewPanelProps> = () => {
+    const ctx = React.useContext(EditorPanelContext);
+    if (!ctx) return null;
+
+    const paneFileId = ctx.editors.activeFileId;
+    const paneFile = paneFileId ? ctx.editors.files.find((file) => file.id === paneFileId) : null;
+
+    return (
+        <div className="editor-container">
+            {paneFile && ctx.editors.editorStates.has(paneFile.id) ? (
+                <AnycodeEditorReact
+                    key={`editor:${paneFile.id}`}
+                    id={paneFile.id}
+                    editorState={ctx.editors.editorStates.get(paneFile.id)!}
+                />
+            ) : (
+                <div className="no-editor"></div>
+            )}
+        </div>
+    );
+};
+
+const TerminalDockPanel: React.FC<IDockviewPanelProps> = ({ api }) => {
+    const ctx = React.useContext(TerminalPanelContext);
+    if (!ctx) return null;
+    const paneId = api.id;
+
+    const paneTerminalId = ctx.terminalPaneTerminalIds[paneId] ?? null;
+    const paneHasBoundTerminal = paneTerminalId
+        ? ctx.terminals.terminals.some((term) => term.id === paneTerminalId)
+        : false;
     useEffect(() => {
-        const node = containerRef.current;
-        if (!node) return;
+        if (paneHasBoundTerminal) return;
 
-        const updateOrientation = () => {
-            const next = node.clientHeight > node.clientWidth;
-            setIsVertical((prev) => (prev === next ? prev : next));
-        };
-        updateOrientation();
+        const fallbackTerminalId =
+            ctx.terminals.terminals[ctx.terminals.terminalSelected]?.id
+            ?? ctx.terminals.terminals[0]?.id
+            ?? null;
 
-        const observer = new ResizeObserver(() => updateOrientation());
-        observer.observe(node);
-        return () => observer.disconnect();
-    }, []);
+        if (fallbackTerminalId) {
+            ctx.bindTerminalToPane(paneId, fallbackTerminalId);
+            return;
+        }
 
-    useEffect(() => {
-        const node = containerRef.current;
-        if (!node) return;
-        const mosaicWindow = node.closest('.mosaic-window');
-        if (!mosaicWindow) return;
-
-        mosaicWindow.classList.toggle('toolbar-pane-vertical', isVertical);
-        mosaicWindow.classList.toggle('toolbar-pane-horizontal', !isVertical);
-
-        return () => {
-            mosaicWindow.classList.remove('toolbar-pane-vertical');
-            mosaicWindow.classList.remove('toolbar-pane-horizontal');
-        };
-    }, [isVertical]);
-
-    const activeFileId = focusedEditorPaneId
-        ? (editorPaneFileIds[focusedEditorPaneId] ?? editors.activeFileId)
-        : editors.activeFileId;
-    const activeAgentId = focusedAgentPaneId
-        ? (agentPaneSessionIds[focusedAgentPaneId] ?? agents.selectedAgentId)
-        : agents.selectedAgentId;
-    const selectedTerminalId = terminals.terminals[terminals.terminalSelected]?.id ?? null;
-    const activeTerminalId = focusedTerminalPaneId
-        ? (terminalPaneTerminalIds[focusedTerminalPaneId] ?? selectedTerminalId)
-        : selectedTerminalId;
-
-    const splitToolbarPane = useCallback(() => {
-        const path = windowCtx.mosaicWindowActions.getPath();
-        const root = rootCtx.mosaicActions.getRoot() as MosaicNode<PaneId> | null;
-        const currentNode = getNodeAtPath(root, path);
-        if (!currentNode) return;
-
-        rootCtx.mosaicActions.replaceWith(path, {
-            type: 'split',
-            direction: 'row',
-            children: [currentNode, createPaneId('empty')],
-            splitPercentages: [50, 50],
-        } as MosaicNode<PaneId>);
-    }, [windowCtx, rootCtx, createPaneId]);
-
-    const closeToolbarPane = useCallback(() => {
-        const path = windowCtx.mosaicWindowActions.getPath();
-        if (path.length === 0) return;
-        rootCtx.mosaicActions.remove(path);
-    }, [windowCtx, rootCtx]);
+        const newTerminal = ctx.terminals.addTerminal();
+        ctx.bindTerminalToPane(paneId, newTerminal.id);
+    }, [paneHasBoundTerminal, paneId, ctx.terminals, ctx.bindTerminalToPane]);
 
     return (
         <div
-            ref={containerRef}
-            className={`toolbar toolbar-pane ${isVertical ? 'toolbar-vertical' : 'toolbar-horizontal'}`}
+            className="terminal-panel"
+            onMouseDown={() => {
+                ctx.setFocusedTerminalPaneId(paneId);
+            }}
         >
+            <div className="terminal-pane-content">
+                {ctx.terminals.terminals.map((term) => (
+                    <div
+                        key={term.id}
+                        className="terminal-container"
+                        style={{
+                            visibility: term.id === paneTerminalId && paneHasBoundTerminal ? 'visible' : 'hidden',
+                            opacity: term.id === paneTerminalId && paneHasBoundTerminal ? 1 : 0,
+                            pointerEvents: term.id === paneTerminalId && paneHasBoundTerminal ? 'auto' : 'none',
+                            height: '100%',
+                            position: term.id === paneTerminalId ? 'relative' : 'absolute',
+                            width: '100%',
+                            top: 0,
+                            left: 0,
+                        }}
+                    >
+                        <TerminalComponent
+                            name={term.name}
+                            onData={ctx.terminals.handleTerminalData}
+                            onMessage={ctx.terminals.handleTerminalDataCallback}
+                            onResize={ctx.terminals.handleTerminalResize}
+                            rows={term.rows}
+                            cols={term.cols}
+                            isConnected={ctx.isConnected}
+                        />
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+};
+
+const ToolbarDockPanel: React.FC<IDockviewPanelProps> = () => {
+    const ctx = React.useContext(ToolbarPanelContext);
+    if (!ctx) return null;
+
+    return (
+        <div className="toolbar toolbar-horizontal">
             <div className="toolbar-scroll-content">
                 <div className="toolbar-tabs">
-                    {editors.files.map((file) => (
+                    {ctx.editors.files.map((file) => (
                         <div
                             key={file.id}
-                            className={`tab ${activeFileId === file.id ? 'active' : ''}`}
-                            onClick={() => {
-                                editors.setActiveFileId(file.id);
-                                const targetPaneId = getTargetEditorPaneId();
-                                if (!targetPaneId) return;
-                                setEditorPaneFileIds((prev) => {
-                                    if (prev[targetPaneId] === file.id) return prev;
-                                    return { ...prev, [targetPaneId]: file.id };
-                                });
-                                setFocusedEditorPaneId(targetPaneId);
-                            }}
+                            className={`tab ${ctx.editors.activeFileId === file.id ? 'active' : ''}`}
+                            onClick={() => ctx.editors.setActiveFileId(file.id)}
                         >
                             <span className="tab-filename"> {file.name} </span>
-                            <button className="tab-close-button" onClick={(e) => { e.stopPropagation(); editors.closeFile(file.id); }}>×</button>
+                            <button className="tab-close-button" onClick={(e) => { e.stopPropagation(); ctx.editors.closeFile(file.id); }}>×</button>
                         </div>
                     ))}
                 </div>
 
                 <div className="toolbar-terminals">
-                    {terminals.terminals.map((term, index) => (
+                    {ctx.terminals.terminals.map((term, index) => (
                         <div
                             key={term.id}
-                            className={`tab ${activeTerminalId === term.id ? 'active' : ''}`}
-                            onClick={() => bindTerminalToTargetPane(term.id)}
+                            className={`tab ${ctx.focusedTerminalId === term.id ? 'active' : ''}`}
+                            onClick={() => ctx.bindTerminalToFocusedPane(term.id)}
                         >
                             <span className="tab-filename">{term.name}</span>
                             <button
                                 className="tab-close-button"
                                 onClick={(e) => {
                                     e.stopPropagation();
-                                    setTerminalPaneTerminalIds((prev) => {
-                                        const next = { ...prev };
-                                        for (const [mapPaneId, mapTerminalId] of Object.entries(next)) {
-                                            if (mapTerminalId === term.id) {
-                                                delete next[mapPaneId];
-                                            }
-                                        }
-                                        return next;
-                                    });
-                                    terminals.closeTerminal(index);
+                                    ctx.terminals.closeTerminal(index);
                                 }}
                             >
                                 ×
                             </button>
                         </div>
                     ))}
+                    <button
+                        type="button"
+                        className="terminal-toolbar-add-btn"
+                        title="New terminal"
+                        onClick={() => {
+                            const newTerminal = ctx.terminals.addTerminal();
+                            ctx.bindTerminalToFocusedPane(newTerminal.id);
+                        }}
+                    >
+                        +
+                    </button>
                 </div>
 
                 <div className="acp-agents-container app-toolbar-agents">
                     <AcpAgentsList
-                        agents={sessionsArray}
-                        selectedAgentId={activeAgentId}
-                        onSelectAgent={bindAgentToTargetPane}
-                        onCloseAgent={(agentId) => {
-                            agents.closeAgent(agentId);
-                            setAgentPaneSessionIds((prev) => {
-                                const next = { ...prev };
-                                for (const [mapPaneId, mapSessionId] of Object.entries(next)) {
-                                    if (mapSessionId === agentId) {
-                                        delete next[mapPaneId];
-                                    }
-                                }
-                                return next;
-                            });
-                        }}
+                        agents={ctx.sessionsArray}
+                        selectedAgentId={ctx.focusedAgentId}
+                        onSelectAgent={ctx.bindAgentToFocusedPane}
+                        onCloseAgent={ctx.handleCloseAgentEverywhere}
                     />
                 </div>
-            </div>
-
-            <div className="toolbar-pane-right-controls">
-                {windowCtx.mosaicWindowActions.connectDragSource(
-                    <button
-                        type="button"
-                        className={`toolbar-pane-control drag ${isVertical ? 'vertical' : 'horizontal'}`}
-                        title="Drag toolbar pane"
-                    >
-                        <svg className="toolbar-pane-drag-icon" viewBox="0 0 20 20" aria-hidden="true">
-                            <path d="M10 2v16M2 10h16" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-                            <path d="M10 1l2.6 2.6H7.4L10 1zM10 19l-2.6-2.6h5.2L10 19zM1 10l2.6-2.6v5.2L1 10zM19 10l-2.6 2.6V7.4L19 10z" fill="currentColor" />
-                        </svg>
-                    </button>
-                )}
-                <button
-                    type="button"
-                    className="toolbar-pane-control split"
-                    title="Split toolbar pane"
-                    onClick={splitToolbarPane}
-                />
-                <button
-                    type="button"
-                    className="toolbar-pane-control close"
-                    title="Close toolbar pane"
-                    onClick={closeToolbarPane}
-                />
             </div>
         </div>
     );
 };
 
-const ToolbarPaneContent = React.memo(ToolbarPaneContentInner, (prev, next) => {
+const EmptyAgentDockPane: React.FC<{ paneId: string }> = ({ paneId }) => {
+    const ctx = React.useContext(AgentPanelContext);
+    if (!ctx) return null;
+
+    const runningSessions = Array.from(ctx.agents.acpSessions.values());
+
     return (
-        prev.focusedEditorPaneId === next.focusedEditorPaneId &&
-        prev.focusedAgentPaneId === next.focusedAgentPaneId &&
-        prev.focusedTerminalPaneId === next.focusedTerminalPaneId &&
-        prev.editorPaneFileIds === next.editorPaneFileIds &&
-        prev.terminalPaneTerminalIds === next.terminalPaneTerminalIds &&
-        prev.agentPaneSessionIds === next.agentPaneSessionIds &&
-        prev.getTargetEditorPaneId === next.getTargetEditorPaneId &&
-        prev.bindTerminalToTargetPane === next.bindTerminalToTargetPane &&
-        prev.bindAgentToTargetPane === next.bindAgentToTargetPane &&
-        prev.createPaneId === next.createPaneId &&
-        prev.editors.files === next.editors.files &&
-        prev.editors.activeFileId === next.editors.activeFileId &&
-        prev.terminals.terminals === next.terminals.terminals &&
-        prev.terminals.terminalSelected === next.terminals.terminalSelected &&
-        prev.agents.selectedAgentId === next.agents.selectedAgentId &&
-        prev.agents.acpSessions === next.agents.acpSessions
+        <div className="empty-pane empty-agent-pane">
+            <div className="empty-pane-title">Agent Pane</div>
+            <div className="empty-agent-section">
+                <div className="empty-agent-section-title">Running agents</div>
+                <ul className="empty-pane-list empty-agent-list">
+                    {runningSessions.length === 0 ? (
+                        <li className="empty-agent-empty">No running agents</li>
+                    ) : (
+                        runningSessions.map((session) => (
+                            <li key={session.agentId}>
+                                <button
+                                    type="button"
+                                    className="empty-pane-item-btn"
+                                    onClick={() => ctx.bindAgentToPane(paneId, session.agentId)}
+                                >
+                                    {session.agentName || session.agentId}
+                                </button>
+                            </li>
+                        ))
+                    )}
+                </ul>
+            </div>
+
+            <div className="empty-agent-section">
+                <div className="empty-agent-section-title">Start new agent</div>
+                <ul className="empty-pane-list empty-agent-list">
+                    {ctx.availableAgents.length === 0 ? (
+                        <li className="empty-agent-empty">No configured agents</li>
+                    ) : (
+                        ctx.availableAgents.map((agent) => (
+                            <li key={agent.id}>
+                                <button
+                                    type="button"
+                                    className="empty-pane-item-btn"
+                                    onClick={() => ctx.handleStartSpecificAgentInPane(paneId, agent)}
+                                >
+                                    {agent.name}
+                                </button>
+                            </li>
+                        ))
+                    )}
+                </ul>
+            </div>
+        </div>
     );
-});
+};
+
+const AgentDockPanel: React.FC<IDockviewPanelProps> = ({ api }) => {
+    const ctx = React.useContext(AgentPanelContext);
+    if (!ctx) return null;
+    const paneId = api.id;
+    const paneAgentId = ctx.agentPaneSessionIds[paneId] ?? null;
+
+    if (!paneAgentId) {
+        return <EmptyAgentDockPane paneId={paneId} />;
+    }
+
+    const paneSession = ctx.agents.acpSessions.get(paneAgentId) ?? null;
+    if (!paneSession) {
+        return <EmptyAgentDockPane paneId={paneId} />;
+    }
+
+    return (
+        <AcpSessionView
+            key={`acp-pane-${paneSession.agentId}`}
+            agentId={paneSession.agentId}
+            title={paneSession.agentName || paneSession.agentId}
+            isActivePane={true}
+            isConnected={paneSession.isActive && ctx.isConnected}
+            isProcessing={paneSession.isProcessing || false}
+            messages={paneSession.messages}
+            modelSelector={paneSession.modelSelector}
+            reasoningSelector={paneSession.reasoningSelector}
+            contextUsage={paneSession.contextUsage}
+            onFocusPane={() => {
+                ctx.setFocusedAgentPaneId(paneId);
+                ctx.agents.setSelectedAgentId(paneSession.agentId);
+            }}
+            onSendPrompt={ctx.agents.sendPrompt}
+            onCancelPrompt={ctx.agents.cancelPrompt}
+            onPermissionResponse={ctx.agents.sendPermissionResponse}
+            onUndoPrompt={ctx.agents.undoPrompt}
+            onCloseAgent={ctx.handleCloseAgentEverywhere}
+            onSelectModel={ctx.agents.setSessionModel}
+            onSelectReasoning={ctx.agents.setSessionReasoning}
+            onOpenFile={ctx.openFileInEditorPane}
+            onOpenFileDiff={ctx.openFileDiffInEditorPane}
+        />
+    );
+};
+
+const EmptyDockPanel: React.FC<IDockviewPanelProps> = ({ api, containerApi }) => {
+    const replaceWithPane = (paneType: RealPaneType) => {
+        const currentPanel = containerApi.getPanel(api.id);
+        if (!currentPanel) return;
+
+        containerApi.addPanel({
+            id: `pane:${paneType}:split:${Date.now()}`,
+            title: PANE_TITLES[paneType],
+            component: paneType,
+            params: { paneType },
+            ...(paneType === 'toolbar' ? TOOLBAR_PANEL_CONSTRAINTS : PANEL_CONSTRAINTS),
+            position: {
+                referencePanel: currentPanel,
+                direction: 'within',
+            },
+        });
+        currentPanel.api.close();
+    };
+
+    return (
+        <div className="empty-pane">
+            <div className="empty-pane-title">Select Pane Type</div>
+            <ul className="empty-pane-list">
+                {AVAILABLE_PANES.map((pane) => (
+                    <li key={pane.type}>
+                        <button
+                            type="button"
+                            className="empty-pane-item-btn"
+                            onClick={() => replaceWithPane(pane.type)}
+                        >
+                            {pane.label}
+                        </button>
+                    </li>
+                ))}
+            </ul>
+        </div>
+    );
+};
 
 const App: React.FC = () => {
-    const initialLayout = useMemo(
-        () => ensureToolbarPane(loadLayout() ?? DEFAULT_LAYOUT),
-        [],
-    );
-    const [mosaicValue, setMosaicValue] = useState<MosaicNode<PaneId> | null>(initialLayout);
-    const nextPaneIdRef = useRef<number>(getMaxPaneIndex(initialLayout) + 1);
-    const createPaneId = useCallback((paneType: PaneType = 'editor'): PaneId => {
-        return `${paneType}:${nextPaneIdRef.current++}`;
-    }, []);
-    const [focusedEditorPaneId, setFocusedEditorPaneId] = useState<PaneId | null>(
-        () => getFirstPaneIdByType(initialLayout, 'editor'),
-    );
-    const [focusedTerminalPaneId, setFocusedTerminalPaneId] = useState<PaneId | null>(
-        () => getFirstPaneIdByType(initialLayout, 'terminal'),
-    );
-    const [focusedAgentPaneId, setFocusedAgentPaneId] = useState<PaneId | null>(
-        () => getFirstPaneIdByType(initialLayout, 'agent'),
-    );
-    const [editorPaneFileIds, setEditorPaneFileIds] = useState<Record<PaneId, string>>({});
-    const [terminalPaneTerminalIds, setTerminalPaneTerminalIds] = useState<Record<PaneId, string>>({});
-    const [agentPaneSessionIds, setAgentPaneSessionIds] = useState<Record<PaneId, string>>({});
-    const [collapsedPaneSizes, setCollapsedPaneSizes] = useState<Record<PaneId, number>>({});
-
     const [diffEnabled, setDiffEnabled] = useState<boolean>(loadDiffEnabled());
     const [permissionMode, setPermissionMode] = useState<AcpPermissionMode>(loadAcpPermissionMode());
     const restoredOpenFilesRef = useRef(false);
     const restoreBootstrappedRef = useRef(false);
 
-    const { wsRef, isConnected } = useSocket({});
+    const { wsRef, isConnected, connectionError } = useSocket({});
 
     const fileTree = useFileTree();
     const editors = useEditors({
@@ -520,6 +523,16 @@ const App: React.FC = () => {
             setDiffEnabled(true);
         },
     });
+
+    const [agentPaneSessionIds, setAgentPaneSessionIds] = useState<Record<string, string>>(
+        () => loadItem<Record<string, string>>(AGENT_PANE_BINDINGS_STORAGE_KEY) ?? {},
+    );
+    const [focusedAgentPaneId, setFocusedAgentPaneId] = useState<string | null>(null);
+    const [terminalPaneTerminalIds, setTerminalPaneTerminalIds] = useState<Record<string, string>>(
+        () => loadItem<Record<string, string>>(TERMINAL_PANE_BINDINGS_STORAGE_KEY) ?? {},
+    );
+    const [focusedTerminalPaneId, setFocusedTerminalPaneId] = useState<string | null>(null);
+    const splitPanelCounterRef = useRef<number>(1);
 
     const openFolder = useMemo(() => {
         return (path: string) => {
@@ -578,6 +591,20 @@ const App: React.FC = () => {
     }, [isConnected, openFolder, terminals.reconnectTerminals, agents.reconnectToAcpAgents, git.fetchGitStatus]);
 
     useEffect(() => {
+        if (!isConnected) return;
+        if (fileTree.fileTree.length > 0) return;
+
+        const intervalId = setInterval(() => {
+            if (fileTree.fileTree.length === 0) {
+                openFolder('.');
+            }
+        }, 1500);
+
+        openFolder('.');
+        return () => clearInterval(intervalId);
+    }, [isConnected, fileTree.fileTree.length, openFolder]);
+
+    useEffect(() => {
         return () => {
             editors.flushAllPendingChanges();
         };
@@ -585,35 +612,16 @@ const App: React.FC = () => {
 
     useEffect(() => {
         if (!editors.activeFileId) return;
-        const file = editors.files.find((f) => f.id === editors.activeFileId);
-        if (!file) return;
-
-        const node = fileTree.findNodeByPath(fileTree.fileTree, file.id);
+        const node = fileTree.findNodeByPath(fileTree.fileTree, editors.activeFileId);
         if (node && !node.isSelected) {
             fileTree.selectNode(node.id);
         }
-    }, [editors.activeFileId, editors.files, fileTree.fileTree, fileTree.findNodeByPath, fileTree.selectNode]);
+    }, [editors.activeFileId, fileTree.fileTree, fileTree.findNodeByPath, fileTree.selectNode]);
 
     useEffect(() => {
         if (!restoreBootstrappedRef.current) return;
         saveItem(OPEN_FILES_STORAGE_KEY, editors.files.map((file) => file.id));
     }, [editors.files]);
-
-    useEffect(() => {
-        const activePaneIds = new Set(getLeafPaneIds(mosaicValue));
-        setCollapsedPaneSizes((prev) => {
-            let changed = false;
-            const next: Record<PaneId, number> = {};
-            for (const [paneId, size] of Object.entries(prev)) {
-                if (activePaneIds.has(paneId)) {
-                    next[paneId] = size;
-                } else {
-                    changed = true;
-                }
-            }
-            return changed ? next : prev;
-        });
-    }, [mosaicValue]);
 
     useEffect(() => {
         if (!restoreBootstrappedRef.current) return;
@@ -651,81 +659,6 @@ const App: React.FC = () => {
             restoreBootstrappedRef.current = true;
         });
     }, [isConnected, editors.openFile]);
-
-    useEffect(() => {
-        const existingEditorPaneIds = new Set(
-            getLeafPaneIds(mosaicValue).filter((paneId) => getPaneTypeFromId(paneId) === 'editor'),
-        );
-        const existingTerminalPaneIds = new Set(
-            getLeafPaneIds(mosaicValue).filter((paneId) => getPaneTypeFromId(paneId) === 'terminal'),
-        );
-        const existingAgentPaneIds = new Set(
-            getLeafPaneIds(mosaicValue).filter((paneId) => getPaneTypeFromId(paneId) === 'agent'),
-        );
-        const existingFileIds = new Set(editors.files.map((file) => file.id));
-        const existingTerminalIds = new Set(terminals.terminals.map((terminal) => terminal.id));
-        const existingSessionIds = new Set(Array.from(agents.acpSessions.keys()));
-
-        setEditorPaneFileIds((prev) => {
-            const next: Record<PaneId, string> = {};
-            for (const [paneId, fileId] of Object.entries(prev)) {
-                if (existingEditorPaneIds.has(paneId) && existingFileIds.has(fileId)) {
-                    next[paneId] = fileId;
-                }
-            }
-            return next;
-        });
-        const fallbackTerminalId = terminals.terminals[terminals.terminalSelected]?.id
-            ?? terminals.terminals[0]?.id
-            ?? null;
-        setTerminalPaneTerminalIds((prev) => {
-            const next: Record<PaneId, string> = {};
-            for (const paneId of existingTerminalPaneIds) {
-                const mappedTerminalId = prev[paneId];
-                if (mappedTerminalId && existingTerminalIds.has(mappedTerminalId)) {
-                    next[paneId] = mappedTerminalId;
-                    continue;
-                }
-                if (fallbackTerminalId && existingTerminalIds.has(fallbackTerminalId)) {
-                    next[paneId] = fallbackTerminalId;
-                }
-            }
-            return next;
-        });
-        setAgentPaneSessionIds((prev) => {
-            const next: Record<PaneId, string> = {};
-            for (const [paneId, sessionId] of Object.entries(prev)) {
-                if (existingAgentPaneIds.has(paneId) && existingSessionIds.has(sessionId)) {
-                    next[paneId] = sessionId;
-                }
-            }
-            return next;
-        });
-
-        if (!focusedEditorPaneId || !existingEditorPaneIds.has(focusedEditorPaneId)) {
-            setFocusedEditorPaneId(getFirstPaneIdByType(mosaicValue, 'editor'));
-        }
-        if (!focusedTerminalPaneId || !existingTerminalPaneIds.has(focusedTerminalPaneId)) {
-            setFocusedTerminalPaneId(getFirstPaneIdByType(mosaicValue, 'terminal'));
-        }
-        if (!focusedAgentPaneId || !existingAgentPaneIds.has(focusedAgentPaneId)) {
-            setFocusedAgentPaneId(getFirstPaneIdByType(mosaicValue, 'agent'));
-        }
-    }, [
-        mosaicValue,
-        editors.files,
-        terminals.terminals,
-        terminals.terminalSelected,
-        focusedEditorPaneId,
-        focusedTerminalPaneId,
-        focusedAgentPaneId,
-        agents.acpSessions,
-    ]);
-
-    // Persist layout on change
-    useEffect(() => {
-        saveLayout(mosaicValue);
-    }, [mosaicValue]);
 
     useEffect(() => {
         saveItem('terminalSelected', terminals.terminalSelected);
@@ -780,690 +713,491 @@ const App: React.FC = () => {
         search.startSearch(pattern);
     };
 
-    const getTargetEditorPaneId = useCallback((): PaneId | null => {
-        if (focusedEditorPaneId && getPaneTypeFromId(focusedEditorPaneId) === 'editor') {
-            return focusedEditorPaneId;
-        }
-        return getFirstPaneIdByType(mosaicValue, 'editor');
-    }, [focusedEditorPaneId, mosaicValue]);
-
-    const getTargetAgentPaneId = useCallback((): PaneId | null => {
-        if (focusedAgentPaneId && getPaneTypeFromId(focusedAgentPaneId) === 'agent') {
-            return focusedAgentPaneId;
-        }
-        return getFirstPaneIdByType(mosaicValue, 'agent');
-    }, [focusedAgentPaneId, mosaicValue]);
-
-    const getTargetTerminalPaneId = useCallback((): PaneId | null => {
-        if (focusedTerminalPaneId && getPaneTypeFromId(focusedTerminalPaneId) === 'terminal') {
-            return focusedTerminalPaneId;
-        }
-        return getFirstPaneIdByType(mosaicValue, 'terminal');
-    }, [focusedTerminalPaneId, mosaicValue]);
-
-    const bindFileToTargetEditorPane = useCallback((fileId: string) => {
-        const targetPaneId = getTargetEditorPaneId();
-        if (!targetPaneId) return;
-        setEditorPaneFileIds((prev) => {
-            if (prev[targetPaneId] === fileId) return prev;
-            return { ...prev, [targetPaneId]: fileId };
-        });
-        setFocusedEditorPaneId(targetPaneId);
-    }, [getTargetEditorPaneId]);
-
     const openFileInEditorPane = useCallback((filePath: string, line?: number, column?: number) => {
         editors.openFile(filePath, line, column);
-        bindFileToTargetEditorPane(filePath);
-    }, [editors, bindFileToTargetEditorPane]);
+    }, [editors]);
 
     const openFileDiffInEditorPane = useCallback((filePath: string, line?: number, column?: number) => {
         editors.openFileDiff(filePath, line, column);
-        bindFileToTargetEditorPane(filePath);
-    }, [editors, bindFileToTargetEditorPane]);
+    }, [editors]);
 
-    const bindAgentToTargetPane = useCallback((agentId: string) => {
-        const targetPaneId = getTargetAgentPaneId();
-        if (!targetPaneId) return;
-        setAgentPaneSessionIds((prev) => {
-            if (prev[targetPaneId] === agentId) return prev;
-            return { ...prev, [targetPaneId]: agentId };
-        });
-        setFocusedAgentPaneId(targetPaneId);
-        agents.setSelectedAgentId(agentId);
-    }, [getTargetAgentPaneId, agents]);
-
-    const bindTerminalToTargetPane = useCallback((terminalId: string) => {
-        const targetPaneId = getTargetTerminalPaneId();
-        if (!targetPaneId) return;
-        setTerminalPaneTerminalIds((prev) => {
-            if (prev[targetPaneId] === terminalId) return prev;
-            return { ...prev, [targetPaneId]: terminalId };
-        });
-        setFocusedTerminalPaneId(targetPaneId);
+    const bindTerminalToPane = useCallback((paneId: string, terminalId: string) => {
+        setTerminalPaneTerminalIds((prev) => ({ ...prev, [paneId]: terminalId }));
+        setFocusedTerminalPaneId(paneId);
         const selectedIndex = terminals.terminals.findIndex((term) => term.id === terminalId);
         if (selectedIndex >= 0 && selectedIndex !== terminals.terminalSelected) {
             terminals.setTerminalSelected(selectedIndex);
         }
-    }, [getTargetTerminalPaneId, terminals]);
+    }, [terminals]);
+
+    const bindTerminalToFocusedPane = useCallback((terminalId: string) => {
+        const targetPaneId = focusedTerminalPaneId ?? PANE_IDS.terminal;
+        bindTerminalToPane(targetPaneId, terminalId);
+    }, [focusedTerminalPaneId, bindTerminalToPane]);
+
+    const bindAgentToPane = useCallback((paneId: string, agentId: string) => {
+        setAgentPaneSessionIds((prev) => ({ ...prev, [paneId]: agentId }));
+        setFocusedAgentPaneId(paneId);
+        agents.setSelectedAgentId(agentId);
+    }, [agents]);
+
+    const bindAgentToFocusedPane = useCallback((agentId: string) => {
+        if (!focusedAgentPaneId) return;
+        bindAgentToPane(focusedAgentPaneId, agentId);
+    }, [focusedAgentPaneId, bindAgentToPane]);
 
     const handleSearchResultClick = (filePath: string, match: SearchMatch) => {
         openFileInEditorPane(filePath, match.line, match.column);
     };
 
-    const toggleDiffMode = useCallback(() => {
-        const newDiffEnabled = !diffEnabled;
-        setDiffEnabled(newDiffEnabled);
-        editors.setDiffForAllEditors(newDiffEnabled);
-    }, [diffEnabled, editors]);
-
     const sessionsArray = useMemo(() => Array.from(agents.acpSessions.values()), [agents.acpSessions]);
     const availableAgents = useMemo<AcpAgent[]>(() => getAllAgents(), [agents.agentsVersion]);
-    const defaultAgent = useMemo(() => getDefaultAgent(), [agents.agentsVersion]);
-    const settingsAgents = useMemo<AcpAgent[]>(() => (
-        agents.isAgentSettingsOpen ? getAllAgents() : []
-    ), [agents.isAgentSettingsOpen, agents.agentsVersion]);
-    const settingsDefaultAgentId = useMemo(
-        () => (agents.isAgentSettingsOpen ? getDefaultAgentId() : null),
-        [agents.isAgentSettingsOpen, agents.agentsVersion],
-    );
-    const handleAddAgent = useCallback(() => {
-        if (!defaultAgent) return;
-        return agents.startAgent(defaultAgent);
-    }, [agents.startAgent, defaultAgent]);
-    const handleStartSpecificAgent = useCallback((agent: AcpAgent) => {
-        return agents.startAgent(agent);
-    }, [agents.startAgent]);
-    const handleOpenAgentSettings = useCallback(() => {
-        ensureDefaultAgents();
-        agents.setIsAgentSettingsOpen(true);
-    }, [agents.setIsAgentSettingsOpen]);
-    const handleCloseAgentSettings = useCallback(() => {
-        agents.setIsAgentSettingsOpen(false);
-    }, [agents.setIsAgentSettingsOpen]);
-    const handleResumeSettingsSession = useCallback((agent: AcpAgent, sessionId: string) => {
-        agents.setIsAgentSettingsOpen(false);
-        agents.resumeSession(agent, sessionId);
-    }, [agents.resumeSession, agents.setIsAgentSettingsOpen]);
 
-    const handleSaveAgents = useCallback((agentList: AcpAgent[], defaultAgentId: string | null, nextPermissionMode: AcpPermissionMode) => {
-        updateAgents(agentList, defaultAgentId);
-        setPermissionMode(nextPermissionMode);
-        agents.setAgentsVersion((prev) => prev + 1);
-    }, [agents.setAgentsVersion]);
+    const focusedAgentId = useMemo(() => {
+        if (!focusedAgentPaneId) return null;
+        const paneAgentId = agentPaneSessionIds[focusedAgentPaneId] ?? null;
+        if (!paneAgentId) return null;
+        return agents.acpSessions.has(paneAgentId) ? paneAgentId : null;
+    }, [focusedAgentPaneId, agentPaneSessionIds, agents.acpSessions]);
 
-    const handleMosaicChange = useCallback((newNode: MosaicNode<PaneId> | null) => {
-        setMosaicValue(newNode);
-    }, []);
-
-    const togglePaneCollapsed = useCallback((paneId: PaneId, path: MosaicPath) => {
-        if (!mosaicValue || path.length === 0) return;
-
-        const parentPath = path.slice(0, -1);
-        const childIndex = path[path.length - 1];
-        const parentNode = getNodeAtPath(mosaicValue, parentPath);
-        if (!parentNode || typeof parentNode === 'string' || !('children' in parentNode)) return;
-
-        const childCount = parentNode.children.length;
-        if (childIndex >= childCount || childCount < 2) return;
-
-        const currentPercentages = parentNode.splitPercentages?.length === childCount
-            ? [...parentNode.splitPercentages]
-            : Array(childCount).fill(100 / childCount);
-        const currentSize = currentPercentages[childIndex];
-        const collapsedSize = 4;
-        const storedSize = collapsedPaneSizes[paneId];
-        const isCollapsed = storedSize !== undefined;
-        const targetSize = isCollapsed ? storedSize : collapsedSize;
-        if (currentSize === undefined || Math.abs(currentSize - targetSize) < 0.01) return;
-
-        const siblings = currentPercentages
-            .map((_, index) => index)
-            .filter((index) => index !== childIndex);
-        const siblingTotal = siblings.reduce((sum, index) => sum + currentPercentages[index], 0);
-        if (siblingTotal <= 0) return;
-
-        const delta = targetSize - currentSize;
-        const nextPercentages = [...currentPercentages];
-        nextPercentages[childIndex] = targetSize;
-
-        for (const siblingIndex of siblings) {
-            const siblingShare = currentPercentages[siblingIndex] / siblingTotal;
-            nextPercentages[siblingIndex] = currentPercentages[siblingIndex] - (delta * siblingShare);
-        }
-
-        const normalized = normalizePercentages(nextPercentages).map((value) => Math.max(value, 0.5));
-        const nextParentNode: MosaicNode<PaneId> = {
-            ...parentNode,
-            splitPercentages: normalizePercentages(normalized),
-        };
-        const nextLayout = replaceNodeAtPath(mosaicValue, parentPath, nextParentNode);
-        setMosaicValue(nextLayout);
-
-        setCollapsedPaneSizes((prev) => {
-            if (isCollapsed) {
-                const { [paneId]: _, ...rest } = prev;
-                return rest;
+    useEffect(() => {
+        const existingTerminalIds = new Set(terminals.terminals.map((terminal) => terminal.id));
+        setTerminalPaneTerminalIds((prev) => {
+            let changed = false;
+            const next: Record<string, string> = {};
+            for (const [paneId, terminalId] of Object.entries(prev)) {
+                if (existingTerminalIds.has(terminalId)) {
+                    next[paneId] = terminalId;
+                } else {
+                    changed = true;
+                }
             }
-            return { ...prev, [paneId]: currentSize };
+            return changed ? next : prev;
         });
-    }, [mosaicValue, collapsedPaneSizes]);
+    }, [terminals.terminals]);
 
-    // Reset layout to default
-    const handleResetLayout = useCallback(() => {
-        setMosaicValue(DEFAULT_LAYOUT);
-    }, []);
+    useEffect(() => {
+        saveItem(TERMINAL_PANE_BINDINGS_STORAGE_KEY, terminalPaneTerminalIds);
+    }, [terminalPaneTerminalIds]);
 
-    // Pane icon lookup
-    const getPaneIcon = useCallback((id: PaneId): React.ReactNode => {
-        switch (getPaneTypeFromId(id)) {
-            case 'fileTree': return <Icons.Tree />;
-            case 'search': return <Icons.Search />;
-            case 'changes': return <Icons.Git />;
-            case 'editor': return <Icons.EditorOpened />;
-            case 'terminal': return <Icons.BottomPanelOpened />;
-            case 'agent': return <Icons.RightPanelOpened />;
-            case 'toolbar': return <Icons.LeftPanelOpened />;
-            default: return null;
+    useEffect(() => {
+        saveItem(AGENT_PANE_BINDINGS_STORAGE_KEY, agentPaneSessionIds);
+    }, [agentPaneSessionIds]);
+
+    const handleStartSpecificAgentInPane = useCallback((paneId: string, agent: AcpAgent) => {
+        const startedAgentId = agents.startAgent(agent);
+        if (startedAgentId) {
+            bindAgentToPane(paneId, startedAgentId);
         }
-    }, []);
+        return startedAgentId;
+    }, [agents, bindAgentToPane]);
 
-    const EmptyAgentPane: React.FC<{ paneId: PaneId }> = ({ paneId }) => {
-        const runningSessions = Array.from(agents.acpSessions.values());
-
-        const bindSessionToPane = (sessionId: string) => {
-            setFocusedAgentPaneId(paneId);
-            setAgentPaneSessionIds((prev) => {
-                if (prev[paneId] === sessionId) return prev;
-                return { ...prev, [paneId]: sessionId };
-            });
-            agents.setSelectedAgentId(sessionId);
-        };
-
-        const startAgentInPane = (agent: AcpAgent) => {
-            const startedAgentId = handleStartSpecificAgent(agent);
-            if (!startedAgentId) return;
-            setFocusedAgentPaneId(paneId);
-            setAgentPaneSessionIds((prev) => {
-                if (prev[paneId] === startedAgentId) return prev;
-                return { ...prev, [paneId]: startedAgentId };
-            });
-            agents.setSelectedAgentId(startedAgentId);
-        };
-
-        return (
-            <div className="empty-pane empty-agent-pane">
-                <div className="empty-pane-title">Agent Pane</div>
-                <div className="empty-agent-section">
-                    <div className="empty-agent-section-title">Running agents</div>
-                    <ul className="empty-pane-list empty-agent-list">
-                        {runningSessions.length === 0 ? (
-                            <li className="empty-agent-empty">No running agents</li>
-                        ) : (
-                            runningSessions.map((session) => (
-                                <li key={session.agentId}>
-                                    <button
-                                        type="button"
-                                        className="empty-pane-item-btn"
-                                        onClick={() => bindSessionToPane(session.agentId)}
-                                    >
-                                        {session.agentName || session.agentId}
-                                    </button>
-                                </li>
-                            ))
-                        )}
-                    </ul>
-                </div>
-
-                <div className="empty-agent-section">
-                    <div className="empty-agent-section-title">Start new agent</div>
-                    <ul className="empty-pane-list empty-agent-list">
-                        {availableAgents.length === 0 ? (
-                            <li className="empty-agent-empty">No configured agents</li>
-                        ) : (
-                            availableAgents.map((agent) => (
-                                <li key={agent.id}>
-                                    <button
-                                        type="button"
-                                        className="empty-pane-item-btn"
-                                        onClick={() => startAgentInPane(agent)}
-                                    >
-                                        {agent.name}
-                                    </button>
-                                </li>
-                            ))
-                        )}
-                    </ul>
-                </div>
-            </div>
-        );
-    };
-
-    // Render content for a given pane
-    const renderPaneContent = useCallback((paneType: PaneType, paneId: PaneId): React.ReactNode => {
-        switch (paneType) {
-            case 'fileTree':
-                return (
-                    <div className="file-system-panel">
-                        <div className="file-system-content">
-                            {fileTree.fileTree.length === 0 ? (
-                                <p className="file-system-empty"> </p>
-                            ) : (
-                                <div className="file-tree">
-                                    {fileTree.fileTree.map((node) => (
-                                        <TreeNodeComponent
-                                            key={node.id}
-                                            node={node}
-                                            onToggle={fileTree.toggleNode}
-                                            onSelect={fileTree.selectNode}
-                                            onOpenFile={openFileInEditorPane}
-                                            onLoadFolder={openFolder}
-                                        />
-                                    ))}
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                );
-
-            case 'search':
-                return (
-                    <Search
-                        id="search-pane"
-                        onEnter={handleSearch}
-                        onCancel={search.cancelSearch}
-                        results={search.searchResults}
-                        searchEnded={search.searchEnded}
-                        onMatchClick={handleSearchResultClick}
-                    />
-                );
-
-            case 'changes':
-                return (
-                    <ChangesPanel
-                        files={git.changedFiles}
-                        branch={git.gitBranch}
-                        onFileClick={openFileDiffInEditorPane}
-                        onRefresh={git.fetchGitStatus}
-                        onCommit={git.commit}
-                        onPush={git.push}
-                        onPull={git.pull}
-                        onRevert={git.revert}
-                    />
-                );
-
-            case 'editor': {
-                const paneFileId = editorPaneFileIds[paneId] ?? editors.activeFileId;
-                const paneFile = paneFileId ? editors.files.find((file) => file.id === paneFileId) : null;
-                return (
-                    <div
-                        className="editor-container"
-                        onMouseDown={() => {
-                            setFocusedEditorPaneId(paneId);
-                            if (paneFile?.id) editors.setActiveFileId(paneFile.id);
-                        }}
-                    >
-                        {paneFile && editors.editorStates.has(paneFile.id) ? (
-                            <AnycodeEditorReact
-                                key={`${paneId}:${paneFile.id}`}
-                                id={paneFile.id}
-                                editorState={editors.editorStates.get(paneFile.id)!}
-                            />
-                        ) : (
-                            <div className="no-editor"></div>
-                        )}
-                    </div>
-                );
+    const handleCloseAgentEverywhere = useCallback((agentId: string) => {
+        agents.closeAgent(agentId);
+        setAgentPaneSessionIds((prev) => {
+            const next: Record<string, string> = {};
+            for (const [paneId, paneAgentId] of Object.entries(prev)) {
+                if (paneAgentId !== agentId) {
+                    next[paneId] = paneAgentId;
+                }
             }
+            return next;
+        });
+    }, [agents]);
 
-            case 'terminal':
-                const selectedTerminalId = terminals.terminals[terminals.terminalSelected]?.id ?? null;
-                const paneTerminalId = terminalPaneTerminalIds[paneId] ?? selectedTerminalId;
-                return (
-                    <div
-                        className="terminal-panel"
-                        onMouseDown={() => {
-                            setFocusedTerminalPaneId(paneId);
-                            if (!paneTerminalId) return;
-                            const terminalIndex = terminals.terminals.findIndex((term) => term.id === paneTerminalId);
-                            if (terminalIndex >= 0 && terminalIndex !== terminals.terminalSelected) {
-                                terminals.setTerminalSelected(terminalIndex);
-                            }
-                        }}
-                    >
-                        <div className="terminal-pane-content">
-                            {terminals.terminals.map((term, index) => (
-                                <div
-                                    key={term.id}
-                                    className="terminal-container"
-                                    style={{
-                                        visibility: term.id === paneTerminalId ? 'visible' : 'hidden',
-                                        opacity: term.id === paneTerminalId ? 1 : 0,
-                                        pointerEvents: term.id === paneTerminalId ? 'auto' : 'none',
-                                        height: '100%',
-                                        position: term.id === paneTerminalId ? 'relative' : 'absolute',
-                                        width: '100%',
-                                        top: 0,
-                                        left: 0,
-                                    }}
-                                >
-                                    <TerminalComponent
-                                        name={term.name}
-                                        onData={terminals.handleTerminalData}
-                                        onMessage={terminals.handleTerminalDataCallback}
-                                        onResize={terminals.handleTerminalResize}
-                                        rows={term.rows}
-                                        cols={term.cols}
-                                        isConnected={isConnected}
-                                    />
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                );
+    const createDefaultLayout = useCallback((api: any) => {
+        const fileTreePanel = api.addPanel({
+            id: PANE_IDS.fileTree,
+            title: PANE_TITLES.fileTree,
+            component: 'fileTree',
+            params: { paneType: 'fileTree' },
+            ...PANEL_CONSTRAINTS,
+        });
 
-            case 'toolbar':
-                return (
-                    <ToolbarPaneContent
-                        editors={editors}
-                        terminals={terminals}
-                        agents={agents}
-                        focusedEditorPaneId={focusedEditorPaneId}
-                        focusedAgentPaneId={focusedAgentPaneId}
-                        focusedTerminalPaneId={focusedTerminalPaneId}
-                        editorPaneFileIds={editorPaneFileIds}
-                        terminalPaneTerminalIds={terminalPaneTerminalIds}
-                        agentPaneSessionIds={agentPaneSessionIds}
-                        setFocusedEditorPaneId={setFocusedEditorPaneId}
-                        setTerminalPaneTerminalIds={setTerminalPaneTerminalIds}
-                        setAgentPaneSessionIds={setAgentPaneSessionIds}
-                        setEditorPaneFileIds={setEditorPaneFileIds}
-                        getTargetEditorPaneId={getTargetEditorPaneId}
-                        bindTerminalToTargetPane={bindTerminalToTargetPane}
-                        bindAgentToTargetPane={bindAgentToTargetPane}
-                        createPaneId={createPaneId}
-                    />
-                );
+        api.addPanel({
+            id: PANE_IDS.search,
+            title: PANE_TITLES.search,
+            component: 'search',
+            params: { paneType: 'search' },
+            inactive: true,
+            ...PANEL_CONSTRAINTS,
+            position: {
+                referencePanel: fileTreePanel,
+                direction: 'within',
+            },
+        });
 
-            case 'agent':
-                const paneAgentId = agentPaneSessionIds[paneId] ?? null;
-                if (!paneAgentId) {
-                    return <EmptyAgentPane paneId={paneId} />;
-                }
-                const paneSession = agents.acpSessions.get(paneAgentId) ?? null;
-                if (!paneSession) {
-                    return <EmptyAgentPane paneId={paneId} />;
-                }
-                return (
-                    <AcpSessionView
-                        key={`acp-pane-${paneId}-${paneSession.agentId}`}
-                        agentId={paneSession.agentId}
-                        title={paneSession.agentName || paneSession.agentId}
-                        isActivePane={focusedAgentPaneId === paneId}
-                        isConnected={paneSession.isActive && isConnected}
-                        isProcessing={paneSession.isProcessing || false}
-                        messages={paneSession.messages}
-                        modelSelector={paneSession.modelSelector}
-                        reasoningSelector={paneSession.reasoningSelector}
-                        contextUsage={paneSession.contextUsage}
-                        onFocusPane={() => {
-                            setFocusedAgentPaneId(paneId);
-                            agents.setSelectedAgentId(paneSession.agentId);
-                        }}
-                        onSendPrompt={agents.sendPrompt}
-                        onCancelPrompt={agents.cancelPrompt}
-                        onPermissionResponse={agents.sendPermissionResponse}
-                        onUndoPrompt={agents.undoPrompt}
-                        onCloseAgent={(agentId) => {
-                            agents.closeAgent(agentId);
-                            setAgentPaneSessionIds((prev) => {
-                                const next = { ...prev };
-                                for (const [mapPaneId, mapAgentId] of Object.entries(next)) {
-                                    if (mapAgentId === agentId) {
-                                        delete next[mapPaneId];
-                                    }
-                                }
-                                return next;
-                            });
-                        }}
-                        onSelectModel={agents.setSessionModel}
-                        onSelectReasoning={agents.setSessionReasoning}
-                        onOpenFile={openFileInEditorPane}
-                        onOpenFileDiff={openFileDiffInEditorPane}
-                    />
-                );
+        api.addPanel({
+            id: PANE_IDS.changes,
+            title: PANE_TITLES.changes,
+            component: 'changes',
+            params: { paneType: 'changes' },
+            inactive: true,
+            ...PANEL_CONSTRAINTS,
+            position: {
+                referencePanel: fileTreePanel,
+                direction: 'within',
+            },
+        });
 
-            case 'empty':
-                return (
-                    <div className="empty-pane">
-                        <div className="empty-pane-title">Available panes</div>
-                        <ul className="empty-pane-list">
-                            {AVAILABLE_PANES.map((pane) => (
-                                <li key={pane.type}>{pane.label}</li>
-                            ))}
-                        </ul>
-                    </div>
-                );
+        const editorPanel = api.addPanel({
+            id: PANE_IDS.editor,
+            title: PANE_TITLES.editor,
+            component: 'editor',
+            params: { paneType: 'editor' },
+            ...PANEL_CONSTRAINTS,
+            position: {
+                referencePanel: fileTreePanel,
+                direction: 'right',
+            },
+        });
 
-            default:
-                return <div className="no-editor">Unknown pane: {paneType}</div>;
+        api.addPanel({
+            id: PANE_IDS.agent,
+            title: PANE_TITLES.agent,
+            component: 'agent',
+            params: { paneType: 'agent' },
+            ...PANEL_CONSTRAINTS,
+            position: {
+                referencePanel: editorPanel,
+                direction: 'right',
+            },
+        });
+
+        const terminalPanel = api.addPanel({
+            id: PANE_IDS.terminal,
+            title: PANE_TITLES.terminal,
+            component: 'terminal',
+            params: { paneType: 'terminal' },
+            ...PANEL_CONSTRAINTS,
+            position: {
+                referencePanel: editorPanel,
+                direction: 'below',
+            },
+        });
+
+        const toolbarPanel = api.addPanel({
+            id: PANE_IDS.toolbar,
+            title: PANE_TITLES.toolbar,
+            component: 'toolbar',
+            params: { paneType: 'toolbar' },
+            ...TOOLBAR_PANEL_CONSTRAINTS,
+            position: {
+                referencePanel: terminalPanel,
+                direction: 'below',
+            },
+        });
+
+        fileTreePanel.group?.api.setSize({ width: 280 });
+        terminalPanel.group?.api.setSize({ height: 220 });
+        toolbarPanel.group?.api.setSize({ height: TOOLBAR_PANEL_HEIGHT });
+        toolbarPanel.api?.setConstraints?.(TOOLBAR_PANEL_CONSTRAINTS);
+        toolbarPanel.group?.api?.setConstraints?.(TOOLBAR_PANEL_CONSTRAINTS);
+    }, []);
+
+    const createEmptySplitPanel = useCallback((containerApi: any, referencePanel: any, direction: 'right' | 'below') => {
+        const panelId = `pane:empty:split:${splitPanelCounterRef.current++}`;
+        return containerApi.addPanel({
+            id: panelId,
+            title: PANE_TITLES.empty,
+            component: 'empty',
+            params: { paneType: 'empty' },
+            ...PANEL_CONSTRAINTS,
+            position: {
+                referencePanel,
+                direction,
+            },
+        });
+    }, []);
+    const createEmptyTabPanel = useCallback((containerApi: any, referencePanel: any) => {
+        const panelId = `pane:empty:tab:${splitPanelCounterRef.current++}`;
+        return containerApi.addPanel({
+            id: panelId,
+            title: PANE_TITLES.empty,
+            component: 'empty',
+            params: { paneType: 'empty' },
+            ...PANEL_CONSTRAINTS,
+            position: {
+                referencePanel,
+                direction: 'within',
+            },
+        });
+    }, []);
+
+    const dockviewApiRef = useRef<any>(null);
+    const dockviewDisposerRef = useRef<{ dispose: () => void } | null>(null);
+
+    useEffect(() => {
+        return () => {
+            dockviewDisposerRef.current?.dispose();
+            dockviewDisposerRef.current = null;
+        };
+    }, []);
+
+    const handleDockviewReady = useCallback((event: { api: any }) => {
+        dockviewApiRef.current = event.api;
+        const applyPanelConstraints = () =>
+            [...event.api.groups, ...event.api.panels].forEach((item: any) => item.api?.setConstraints?.(PANEL_CONSTRAINTS));
+        const applyToolbarConstraints = () => {
+            const toolbarPanels = event.api.panels.filter((panel: any) => panel?.id?.startsWith('pane:toolbar'));
+            toolbarPanels.forEach((toolbarPanel: any) => {
+                toolbarPanel.api?.setConstraints?.(TOOLBAR_PANEL_CONSTRAINTS);
+                toolbarPanel.group?.api?.setConstraints?.(TOOLBAR_PANEL_CONSTRAINTS);
+            });
+        };
+        const applyToolbarSizeOnce = () => {
+            const toolbarPanels = event.api.panels.filter((panel: any) => panel?.id?.startsWith('pane:toolbar'));
+            toolbarPanels.forEach((toolbarPanel: any) => {
+                toolbarPanel.group?.api?.setSize?.({ height: TOOLBAR_PANEL_HEIGHT });
+            });
+        };
+
+        const savedLayout = loadItem<any>(DOCKVIEW_LAYOUT_STORAGE_KEY);
+        if (savedLayout) {
+            try {
+                event.api.fromJSON(savedLayout);
+            } catch (error) {
+                console.warn('Failed to restore dockview layout, fallback to default', error);
+                event.api.clear();
+                createDefaultLayout(event.api);
+            }
+        } else {
+            createDefaultLayout(event.api);
         }
-    }, [
-        fileTree, editors, terminals, git, search, agents,
-        openFolder, handleSearch, handleSearchResultClick, isConnected,
-        sessionsArray, availableAgents, handleAddAgent, handleStartSpecificAgent,
-        handleOpenAgentSettings, handleCloseAgentSettings, handleResumeSettingsSession,
-        settingsAgents, settingsDefaultAgentId, permissionMode, handleSaveAgents,
-        diffEnabled, toggleDiffMode, openFileInEditorPane, openFileDiffInEditorPane,
-        editorPaneFileIds, terminalPaneTerminalIds, agentPaneSessionIds,
-        focusedEditorPaneId, focusedTerminalPaneId, focusedAgentPaneId,
-        getTargetEditorPaneId, bindTerminalToTargetPane, bindAgentToTargetPane,
+        applyPanelConstraints();
+        applyToolbarConstraints();
+        applyToolbarSizeOnce();
+
+        const fileTreePanel = event.api.getPanel(PANE_IDS.fileTree);
+        fileTreePanel?.api.setActive();
+        fileTreePanel?.group?.api.setSize({ width: 280 });
+
+        const terminalPanel = event.api.getPanel(PANE_IDS.terminal);
+        terminalPanel?.group?.api.setSize({ height: 220 });
+        const initialTerminalId =
+            terminals.terminals[terminals.terminalSelected]?.id
+            ?? terminals.terminals[0]?.id
+            ?? null;
+        if (terminalPanel && initialTerminalId) {
+            setTerminalPaneTerminalIds((prev) => {
+                const existingTerminalId = prev[terminalPanel.id];
+                if (existingTerminalId && terminals.terminals.some((term) => term.id === existingTerminalId)) {
+                    return prev;
+                }
+                if (existingTerminalId === initialTerminalId) return prev;
+                return { ...prev, [terminalPanel.id]: initialTerminalId };
+            });
+            setFocusedTerminalPaneId((prev) => prev ?? terminalPanel.id);
+        }
+
+        dockviewDisposerRef.current?.dispose();
+        const onDidLayoutChange = event.api.onDidLayoutChange(() => {
+            applyPanelConstraints();
+            applyToolbarConstraints();
+            saveItem(DOCKVIEW_LAYOUT_STORAGE_KEY, event.api.toJSON());
+        });
+        const onDidAddGroup = event.api.onDidAddGroup((group: any) => {
+            group.api?.setConstraints?.(PANEL_CONSTRAINTS);
+            applyToolbarConstraints();
+        });
+        const onDidAddPanel = event.api.onDidAddPanel((panel: any) => {
+            panel.api?.setConstraints?.(PANEL_CONSTRAINTS);
+            if (panel?.id?.startsWith('pane:toolbar')) {
+                panel.api?.setConstraints?.(TOOLBAR_PANEL_CONSTRAINTS);
+                panel.group?.api?.setConstraints?.(TOOLBAR_PANEL_CONSTRAINTS);
+                panel.group?.api?.setSize?.({ height: TOOLBAR_PANEL_HEIGHT });
+            }
+        });
+        dockviewDisposerRef.current = {
+            dispose: () => {
+                onDidLayoutChange.dispose();
+                onDidAddGroup.dispose();
+                onDidAddPanel.dispose();
+            },
+        };
+
+        saveItem(DOCKVIEW_LAYOUT_STORAGE_KEY, event.api.toJSON());
+    }, [createDefaultLayout, terminals.terminals, terminals.terminalSelected]);
+
+    const dockviewComponents = useMemo(() => ({
+        fileTree: FileTreeDockPanel,
+        search: SearchDockPanel,
+        changes: ChangesDockPanel,
+        editor: EditorDockPanel,
+        terminal: TerminalDockPanel,
+        toolbar: ToolbarDockPanel,
+        agent: AgentDockPanel,
+        empty: EmptyDockPanel,
+    } satisfies Record<PaneType, React.FC<IDockviewPanelProps>>), []);
+
+    const fileTreePanelContextValue = useMemo<FileTreePanelContextValue>(() => ({
+        fileTree,
+        openFolder,
+        openFileInEditorPane,
+    }), [fileTree, openFolder, openFileInEditorPane]);
+    const searchPanelContextValue = useMemo<SearchPanelContextValue>(() => ({
+        search,
+        onSearch: handleSearch,
+        onMatchClick: handleSearchResultClick,
+    }), [search, handleSearch, handleSearchResultClick]);
+    const changesPanelContextValue = useMemo<ChangesPanelContextValue>(() => ({
+        git,
+        openFileDiffInEditorPane,
+    }), [git, openFileDiffInEditorPane]);
+    const editorPanelContextValue = useMemo<EditorPanelContextValue>(() => ({
+        editors,
+    }), [editors]);
+    const terminalPanelContextValue = useMemo<TerminalPanelContextValue>(() => ({
+        terminals,
+        isConnected,
+        terminalPaneTerminalIds,
+        focusedTerminalPaneId,
+        bindTerminalToPane,
+        setFocusedTerminalPaneId,
+    }), [
+        terminals,
+        isConnected,
+        terminalPaneTerminalIds,
+        focusedTerminalPaneId,
+        bindTerminalToPane,
+        setFocusedTerminalPaneId,
     ]);
+    const agentPanelContextValue = useMemo<AgentPanelContextValue>(() => ({
+        agents,
+        agentPaneSessionIds,
+        focusedAgentPaneId,
+        isConnected,
+        availableAgents,
+        bindAgentToPane,
+        handleStartSpecificAgentInPane,
+        handleCloseAgentEverywhere,
+        openFileInEditorPane,
+        openFileDiffInEditorPane,
+        setFocusedAgentPaneId,
+    }), [
+        agents,
+        agentPaneSessionIds,
+        focusedAgentPaneId,
+        isConnected,
+        availableAgents,
+        bindAgentToPane,
+        handleStartSpecificAgentInPane,
+        handleCloseAgentEverywhere,
+        openFileInEditorPane,
+        openFileDiffInEditorPane,
+        setFocusedAgentPaneId,
+    ]);
+    const focusedTerminalId = useMemo(() => {
+        if (!focusedTerminalPaneId) return null;
+        const paneTerminalId = terminalPaneTerminalIds[focusedTerminalPaneId] ?? null;
+        if (!paneTerminalId) return null;
+        return terminals.terminals.some((term) => term.id === paneTerminalId) ? paneTerminalId : null;
+    }, [focusedTerminalPaneId, terminalPaneTerminalIds, terminals.terminals]);
 
-    // Custom toolbar controls with SVG icons
-    const SplitRightButton: React.FC<{ paneType: PaneType }> = ({ paneType }) => {
-        const rootCtx = React.useContext(MosaicContext);
-        const windowCtx = React.useContext(MosaicWindowContext);
+    const toolbarPanelContextValue = useMemo<ToolbarPanelContextValue>(() => ({
+        editors,
+        terminals,
+        sessionsArray,
+        focusedAgentId,
+        focusedTerminalId,
+        bindTerminalToFocusedPane,
+        bindAgentToFocusedPane,
+        handleCloseAgentEverywhere,
+    }), [
+        editors,
+        terminals,
+        sessionsArray,
+        focusedAgentId,
+        focusedTerminalId,
+        bindTerminalToFocusedPane,
+        bindAgentToFocusedPane,
+        handleCloseAgentEverywhere,
+    ]);
+    const HeaderActions: React.FC<IDockviewHeaderActionsProps> = useCallback(({ activePanel, containerApi }) => {
+        if (!activePanel) return null;
 
-        const onClick = useCallback(() => {
-            const path = windowCtx.mosaicWindowActions.getPath();
-            const root = rootCtx.mosaicActions.getRoot() as MosaicNode<PaneId> | null;
-            const currentNode = getNodeAtPath(root, path);
-            if (!currentNode) return;
-            const parentPath = path.slice(0, -1);
-            const parentNode = getNodeAtPath(root, parentPath);
+        const addTab = () => {
+            createEmptyTabPanel(containerApi, activePanel);
+        };
 
-            // If current pane is inside tabs, split the whole tab group.
-            // Splitting only a single tab would produce an invalid tabs payload.
-            if (parentNode && typeof parentNode !== 'string' && 'tabs' in parentNode) {
-                rootCtx.mosaicActions.replaceWith(parentPath, {
-                    type: 'split',
-                    direction: 'row',
-                    children: [parentNode, createPaneId('empty')],
-                    splitPercentages: [50, 50],
-                } as MosaicNode<PaneId>);
-                return;
-            }
+        const splitHorizontal = () => {
+            createEmptySplitPanel(containerApi, activePanel, 'below');
+        };
 
-            rootCtx.mosaicActions.replaceWith(path, {
-                type: 'split',
-                direction: 'row',
-                children: [currentNode, createPaneId('empty')],
-                splitPercentages: [50, 50],
-            } as MosaicNode<PaneId>);
-        }, [rootCtx, windowCtx, createPaneId]);
-
-        return (
-            <button
-                className="mosaic-default-control split-button"
-                onClick={onClick}
-                title={`Split ${PANE_TITLES[paneType]} Right`}
-                type="button"
-            >
-                Split
-            </button>
-        );
-    };
-
-    const AddTabsButton: React.FC = () => {
-        const rootCtx = React.useContext(MosaicContext);
-        const windowCtx = React.useContext(MosaicWindowContext);
-
-        const onClick = useCallback(() => {
-            const path = windowCtx.mosaicWindowActions.getPath();
-            const root = rootCtx.mosaicActions.getRoot() as MosaicNode<PaneId> | null;
-            const currentNode = getNodeAtPath(root, path);
-            if (!currentNode || typeof currentNode !== 'string') return;
-
-            const parentPath = path.slice(0, -1);
-            const parentNode = getNodeAtPath(root, parentPath);
-            const emptyPaneId = createPaneId('empty');
-            if (parentNode && typeof parentNode !== 'string' && 'tabs' in parentNode) {
-                rootCtx.mosaicActions.replaceWith(parentPath, {
-                    ...parentNode,
-                    tabs: [...parentNode.tabs, emptyPaneId],
-                    activeTabIndex: parentNode.tabs.length,
-                } as MosaicNode<PaneId>);
-                return;
-            }
-
-            rootCtx.mosaicActions.replaceWith(path, {
-                type: 'tabs',
-                tabs: [currentNode, emptyPaneId],
-                activeTabIndex: 1,
-            } as MosaicNode<PaneId>);
-        }, [rootCtx, windowCtx, createPaneId]);
+        const splitVertical = () => {
+            createEmptySplitPanel(containerApi, activePanel, 'right');
+        };
 
         return (
-            <button
-                className="mosaic-default-control add-tabs-button"
-                onClick={onClick}
-                title="Add tabs"
-                type="button"
-            >
-                Tabs
-            </button>
-        );
-    };
-
-    const CollapseToggleButton: React.FC<{ paneId: PaneId; path: MosaicPath }> = ({ paneId, path }) => {
-        const isCollapsed = collapsedPaneSizes[paneId] !== undefined;
-
-        return (
-            <button
-                className={`mosaic-default-control collapse-toggle-button ${isCollapsed ? 'collapsed' : 'expanded'}`}
-                onClick={() => togglePaneCollapsed(paneId, path)}
-                title={isCollapsed ? `Expand ${PANE_TITLES[getPaneTypeFromId(paneId)]}` : `Collapse ${PANE_TITLES[getPaneTypeFromId(paneId)]}`}
-                type="button"
-            >
-                Toggle
-            </button>
-        );
-    };
-
-    const EmptyPaneSelector: React.FC<{ path: MosaicPath }> = ({ path }) => {
-        const rootCtx = React.useContext(MosaicContext);
-        const handleSelect = useCallback((paneType: Exclude<PaneType, 'empty'>) => {
-            const paneId = createPaneId(paneType);
-            rootCtx.mosaicActions.replaceWith(path, paneId);
-            if (paneType === 'editor') {
-                setFocusedEditorPaneId(paneId);
-                if (editors.activeFileId) {
-                    setEditorPaneFileIds((prev) => {
-                        if (prev[paneId] === editors.activeFileId) return prev;
-                        return { ...prev, [paneId]: editors.activeFileId! };
-                    });
-                }
-            }
-            if (paneType === 'agent') {
-                setFocusedAgentPaneId(paneId);
-            }
-            if (paneType === 'terminal') {
-                const newTerminal = terminals.addTerminal();
-                setFocusedTerminalPaneId(paneId);
-                setTerminalPaneTerminalIds((prev) => {
-                    if (prev[paneId] === newTerminal.id) return prev;
-                    return { ...prev, [paneId]: newTerminal.id };
-                });
-            }
-        }, [
-            path,
-            rootCtx,
-            createPaneId,
-            editors.activeFileId,
-            terminals.addTerminal,
-            terminals.terminals,
-            terminals.terminalSelected,
-        ]);
-
-        return (
-            <div className="empty-pane">
-                <div className="empty-pane-title">Available panes</div>
-                <ul className="empty-pane-list">
-                    {AVAILABLE_PANES.map((pane) => (
-                        <li key={pane.type}>
-                            <button
-                                type="button"
-                                className="empty-pane-item-btn"
-                                onClick={() => handleSelect(pane.type)}
-                            >
-                                {pane.label}
-                            </button>
-                        </li>
-                    ))}
-                </ul>
+            <div className="dockview-header-actions">
+                <button
+                    type="button"
+                    className="dockview-header-action"
+                    title="Add tab"
+                    onClick={addTab}
+                >
+                    +
+                </button>
+                <button
+                    type="button"
+                    className="dockview-header-action"
+                    title="Split horizontal"
+                    onClick={splitHorizontal}
+                >
+                    <svg viewBox="0 0 16 16" aria-hidden="true">
+                        <rect x="2.5" y="2.5" width="11" height="11" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.2" />
+                        <path d="M3.5 8h9" stroke="currentColor" strokeWidth="1.2" />
+                    </svg>
+                </button>
+                <button
+                    type="button"
+                    className="dockview-header-action"
+                    title="Split vertical"
+                    onClick={splitVertical}
+                >
+                    <svg viewBox="0 0 16 16" aria-hidden="true">
+                        <rect x="2.5" y="2.5" width="11" height="11" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.2" />
+                        <path d="M8 3.5v9" stroke="currentColor" strokeWidth="1.2" />
+                    </svg>
+                </button>
+                <button
+                    type="button"
+                    className="dockview-header-action close"
+                    title="Close panel"
+                    onClick={() => activePanel.api.close()}
+                >
+                    <svg viewBox="0 0 16 16" aria-hidden="true">
+                        <path d="M4.2 4.2l7.6 7.6M11.8 4.2l-7.6 7.6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+                    </svg>
+                </button>
             </div>
         );
-    };
-
-    // Mosaic tile renderer
-    const renderTile = useCallback((id: PaneId, path: MosaicPath) => {
-        const paneType = getPaneTypeFromId(id);
-        const isToolbarPane = paneType === 'toolbar';
-        const toolbarControls = isToolbarPane ? [] : [
-            <SplitRightButton key="split" paneType={paneType} />,
-            <AddTabsButton key="add-tabs" />,
-            <CollapseToggleButton key="collapse" paneId={id} path={path} />,
-            <RemoveButton key="remove" />,
-        ];
-
-        return (
-            <MosaicWindow<PaneId>
-                path={path}
-                className={isToolbarPane ? 'toolbar-pane-window' : undefined}
-                title={isToolbarPane ? '' : PANE_TITLES[paneType]}
-                createNode={() => createPaneId(paneType)}
-                toolbarControls={toolbarControls}
-                draggable={true}
-            >
-                <div
-                    className="pane-root"
-                    onMouseDown={() => {
-                        if (paneType === 'editor') setFocusedEditorPaneId(id);
-                        if (paneType === 'terminal') setFocusedTerminalPaneId(id);
-                        if (paneType === 'agent') setFocusedAgentPaneId(id);
-                    }}
-                >
-                    {paneType === 'empty'
-                        ? <EmptyPaneSelector path={path} />
-                        : renderPaneContent(paneType, id)}
-                </div>
-            </MosaicWindow>
-        );
-    }, [renderPaneContent, createPaneId]);
+    }, [createEmptySplitPanel, createEmptyTabPanel]);
 
     return (
         <div className="app-container">
-            <div className="main-content">
-                <Mosaic<PaneId>
-                    renderTile={renderTile}
-                    renderTabTitle={({ tabKey }) => PANE_TITLES[getPaneTypeFromId(tabKey)]}
-                    value={mosaicValue}
-                    onChange={handleMosaicChange}
-                    resize={{ minimumPaneSizePercentage: 0.1 }}
-                    createNode={() => createPaneId('editor')}
-                    className="anycode-mosaic"
-                />
-            </div>
+            <FileTreePanelContext.Provider value={fileTreePanelContextValue}>
+                <SearchPanelContext.Provider value={searchPanelContextValue}>
+                    <ChangesPanelContext.Provider value={changesPanelContextValue}>
+                        <EditorPanelContext.Provider value={editorPanelContextValue}>
+                            <TerminalPanelContext.Provider value={terminalPanelContextValue}>
+                                <AgentPanelContext.Provider value={agentPanelContextValue}>
+                                    <ToolbarPanelContext.Provider value={toolbarPanelContextValue}>
+                                        <div className="main-content layout dockview-theme-dark anycode-dockview-theme">
+                                            <DockviewReact
+                                                className="anycode-dockview"
+                                                components={dockviewComponents}
+                                                rightHeaderActionsComponent={HeaderActions}
+                                                onReady={handleDockviewReady}
+                                            />
+                                        </div>
+                                    </ToolbarPanelContext.Provider>
+                                </AgentPanelContext.Provider>
+                            </TerminalPanelContext.Provider>
+                        </EditorPanelContext.Provider>
+                    </ChangesPanelContext.Provider>
+                </SearchPanelContext.Provider>
+            </FileTreePanelContext.Provider>
         </div>
     );
 };

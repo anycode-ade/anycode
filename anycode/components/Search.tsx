@@ -173,9 +173,6 @@ const Search = ({ id, onEnter, onCancel, onMatchClick, results, searchEnded }: S
 
     return (
         <div className="search-container">
-            <div className="search-header">
-                Search
-            </div>
             
             <div className="search-input-wrapper">
                 <textarea

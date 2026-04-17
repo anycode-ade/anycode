@@ -30,9 +30,24 @@ function hello() {
 `;
 
 // Backend connection settings
-// if curent port is 5173 then use 3000 else use current port
-const port = window.location.port === '5173' ? '3000' : window.location.port;
-export const BACKEND_URL = `${window.location.protocol}//${window.location.hostname}:${port}`;
+const PROTOCOL = window.location.protocol === 'file:' ? 'http:' : window.location.protocol;
+const HOSTNAME = window.location.hostname || 'localhost';
+const CURRENT_PORT = window.location.port;
+const DEV_PORTS = new Set(['5173', '5174', '5175', '4173']);
+
+function uniqueUrls(urls: string[]): string[] {
+    return Array.from(new Set(urls.filter(Boolean)));
+}
+
+export const BACKEND_URL_CANDIDATES = uniqueUrls([
+    typeof import.meta !== 'undefined' ? String(import.meta.env?.VITE_BACKEND_URL || '') : '',
+    ...(DEV_PORTS.has(CURRENT_PORT) ? [`${PROTOCOL}//${HOSTNAME}:3000`] : []),
+    ...(CURRENT_PORT ? [`${PROTOCOL}//${HOSTNAME}:${CURRENT_PORT}`] : []),
+    `${PROTOCOL}//${HOSTNAME}:3000`,
+    `${PROTOCOL}//localhost:3000`,
+]);
+
+export const BACKEND_URL = BACKEND_URL_CANDIDATES[0] || `${PROTOCOL}//localhost:3000`;
 
 // File change batching delay in milliseconds
 export const BATCH_DELAY_MS = 30;
