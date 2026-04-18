@@ -58,22 +58,56 @@
     margin: 0 !important;
     user-select: none;
     -webkit-user-select: none;
-    container-type: inline-size;
+    min-height: var(--dv-tabs-and-actions-container-height, 35px);
+    align-items: stretch;
+    position: relative;
+}
+
+/* Dockview custom scrollbars in tab header are unstable under frequent relayout.
+   Use native horizontal scrolling for tabs and reserve geometry for actions. */
+.layout .dv-tabs-and-actions-container .dv-scrollable {
+    flex: 1 1 auto;
+    min-width: 0;
+    width: 100%;
+    overflow: hidden !important;
+}
+
+.layout .dv-tabs-and-actions-container .dv-scrollable .dv-scrollbar {
+    display: none !important;
 }
 
 .layout.dockview-theme-dark .dv-groupview > .dv-tabs-and-actions-container .dv-tabs-container {
     background-color: var(--background-color, #242424) !important;
     min-width: 0;
     flex: 1 1 auto;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+    height: 100%;
+}
+
+.layout.dockview-theme-dark .dv-groupview > .dv-tabs-and-actions-container .dv-tabs-container::-webkit-scrollbar {
+    display: none;
 }
 
 .layout .dv-tabs-and-actions-container .dv-right-actions-container {
     display: flex;
-    flex-direction: column;
-    justify-content: center;
+    flex-direction: row;
+    justify-content: flex-end;
     align-items: center;
-    flex: 0 0 auto;
-    min-width: 0;
+    position: absolute;
+    top: 50%;
+    right: 4px;
+    transform: translateY(-50%);
+    z-index: 4;
+    padding-right: 2px;
+    box-sizing: border-box;
+    pointer-events: none;
+}
+
+.layout .dv-tabs-and-actions-container:hover .dv-right-actions-container {
+    pointer-events: auto;
 }
 
 .layout .dv-groupview > .dv-content-container {
@@ -176,6 +210,15 @@
     height: 100%;
 }
 
+.layout-header-actions:hover {
+    background-color: var(--background-color, #242424);
+}
+
+.layout .dv-tabs-and-actions-container .dv-right-actions-container:hover {
+    background-color: var(--background-color, #242424) !important;
+    border-radius: 8px;
+}
+
 .layout-header-action-btn {
     border: 1px solid transparent;
     background: transparent;
@@ -195,7 +238,7 @@
     justify-content: center;
     opacity: 0;
     pointer-events: none;
-    transition: opacity 0.12s ease, color 0.12s ease, background-color 0.12s ease;
+    transition: color 0.12s ease, background-color 0.12s ease, opacity 0.12s ease;
     transform: translate3d(0, 0, 0);
     -webkit-transform: translate3d(0, 0, 0);
     backface-visibility: hidden;
@@ -240,12 +283,6 @@
 
 .layout-header-action-btn--close {
     margin-right: 2px;
-}
-
-@container (max-width: 220px) {
-    .layout-header-action-btn:not(.layout-header-action-btn--close) {
-        display: none;
-    }
 }
 
 @supports (-webkit-touch-callout: none) {

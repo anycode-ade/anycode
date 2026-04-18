@@ -431,6 +431,9 @@ export const Layout: React.FC<LayoutProps> = ({
     const apiRef = useRef<DockviewApi | null>(null);
     const listenersRef = useRef<Array<{ dispose: () => void }>>([]);
     const layoutSaveTimerRef = useRef<number | null>(null);
+    const splitRightRef = useRef<(api: DockviewApi, referencePanelId: string) => void>(() => {});
+    const splitDownRef = useRef<(api: DockviewApi, referencePanelId: string) => void>(() => {});
+    const addTabRef = useRef<(api: DockviewApi, referencePanelId: string) => void>(() => {});
 
     const panelEntries = useMemo(() => (
         panelSyncOrder.map((id) => ({
@@ -595,6 +598,21 @@ export const Layout: React.FC<LayoutProps> = ({
         addPickerPanel(api, referencePanelId, 'within');
     }, [addPickerPanel]);
 
+    useEffect(() => {
+        splitRightRef.current = handleSplitPanelRight;
+        splitDownRef.current = handleSplitPanelDown;
+        addTabRef.current = handleAddEmptyTab;
+    }, [handleAddEmptyTab, handleSplitPanelDown, handleSplitPanelRight]);
+
+    const renderRightHeaderActions = useCallback((props: IDockviewHeaderActionsProps) => (
+        <LayoutHeaderActions
+            {...props}
+            onSplitRight={(api, referencePanelId) => splitRightRef.current(api, referencePanelId)}
+            onSplitDown={(api, referencePanelId) => splitDownRef.current(api, referencePanelId)}
+            onAddTab={(api, referencePanelId) => addTabRef.current(api, referencePanelId)}
+        />
+    ), []);
+
     useEffect(() => () => {
         if (layoutSaveTimerRef.current !== null) {
             clearTimeout(layoutSaveTimerRef.current);
@@ -677,14 +695,7 @@ export const Layout: React.FC<LayoutProps> = ({
                 components={{ layoutPanel: LayoutPanel, panelPicker: PanelPicker }}
                 className="layout-root"
                 onReady={handleReady}
-                rightHeaderActionsComponent={(props) => (
-                    <LayoutHeaderActions
-                        {...props}
-                        onSplitRight={handleSplitPanelRight}
-                        onSplitDown={handleSplitPanelDown}
-                        onAddTab={handleAddEmptyTab}
-                    />
-                )}
+                rightHeaderActionsComponent={renderRightHeaderActions}
             />
         </div>
     );

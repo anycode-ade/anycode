@@ -555,11 +555,18 @@ const App: React.FC = () => {
         const selectedAgentId = getSelectedAgentIdForPane(panelKey);
         const selectedSession = selectedAgentId ? agents.acpSessions.get(selectedAgentId) ?? null : null;
         const handleSelectAgentForPane = (agentId: string) => {
-            setAgentSelectedByPane((prev) => ({
-                ...prev,
-                [panelKey]: agentId,
-            }));
-            agents.setSelectedAgentId(agentId);
+            setAgentSelectedByPane((prev) => {
+                if (prev[panelKey] === agentId) {
+                    return prev;
+                }
+                return {
+                    ...prev,
+                    [panelKey]: agentId,
+                };
+            });
+            if (agents.selectedAgentId !== agentId) {
+                agents.setSelectedAgentId(agentId);
+            }
         };
 
         if (agents.isAgentSettingsOpen && panelKey === activeAgentPaneId) {
@@ -607,7 +614,12 @@ const App: React.FC = () => {
                         modelSelector={selectedSession.modelSelector}
                         reasoningSelector={selectedSession.reasoningSelector}
                         contextUsage={selectedSession.contextUsage}
-                        onFocusPane={() => handleSelectAgentForPane(selectedSession.agentId)}
+                        onFocusPane={() => {
+                            // if (activeAgentPaneId === panelKey && agents.selectedAgentId === selectedSession.agentId) {
+                            //     return;
+                            // }
+                            // handleSelectAgentForPane(selectedSession.agentId);
+                        }}
                         onSendPrompt={agents.sendPrompt}
                         onCancelPrompt={agents.cancelPrompt}
                         onPermissionResponse={agents.sendPermissionResponse}
