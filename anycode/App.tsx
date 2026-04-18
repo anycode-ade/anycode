@@ -453,10 +453,12 @@ const App: React.FC = () => {
     }, []);
 
     const handleTerminalTabSelect = useCallback((index: number) => {
+        if (!bottomPanelVisible) {
+            return;
+        }
         const paneKey = activeTerminalPaneId || 'terminal';
         setSelectedTerminalForPane(paneKey, index);
-        setBottomPanelVisible(true);
-    }, [activeTerminalPaneId, setBottomPanelVisible, setSelectedTerminalForPane]);
+    }, [activeTerminalPaneId, bottomPanelVisible, setSelectedTerminalForPane]);
 
     const handleTerminalTabClose = useCallback((index: number) => {
         terminals.closeTerminal(index);
