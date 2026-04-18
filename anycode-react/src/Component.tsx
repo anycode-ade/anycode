@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useLayoutEffect, useRef } from 'react';
 import { AnycodeEditor } from 'anycode-base';
 
 interface AnycodeEditorProps {
@@ -10,7 +10,7 @@ export default function AnycodeEditorReact({ id, editorState,  }: AnycodeEditorP
 
     const containerRef = useRef<HTMLDivElement>(null);
 
-    useEffect(() => {
+    useLayoutEffect(() => {
         if (!editorState || !containerRef.current) return;
 
         containerRef.current.innerHTML = '';
