@@ -66,5 +66,21 @@ export const Icons = {
       <path d="M16 8V12C16 14 14 16 12 16H8" stroke="currentColor" strokeWidth="2"/>
     </svg>
   ),
+  SplitHorizontal: () => (
+    <svg viewBox="0 0 16 16" aria-hidden="true">
+      <rect x="2.5" y="2.5" width="11" height="11" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.2" />
+      <path d="M3.5 8h9" stroke="currentColor" strokeWidth="1.2" />
+    </svg>
+  ),
+  SplitVertical: () => (
+    <svg viewBox="0 0 16 16" aria-hidden="true">
+      <rect x="2.5" y="2.5" width="11" height="11" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.2" />
+      <path d="M8 3.5v9" stroke="currentColor" strokeWidth="1.2" />
+    </svg>
+  ),
+  Close: () => (
+    <svg viewBox="0 0 16 16" aria-hidden="true">
+      <path d="M4.2 4.2l7.6 7.6M11.8 4.2l-7.6 7.6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+    </svg>
+  ),
 };
-
