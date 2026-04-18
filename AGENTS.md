@@ -61,7 +61,7 @@ pnpm test             # Run tests
 - `App.tsx` - Main React component, manages all UI state
 - `types.ts` - TypeScript interfaces
 - `agents.ts` - AI agent configuration
-- `components/agent/` - ACP dialog and message components
+- `components/agent/` - ACP components
 
 ### Backend (anycode-backend/src/)
 - `main.rs` - Entry point, server setup

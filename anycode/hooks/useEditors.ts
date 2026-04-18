@@ -67,6 +67,10 @@ export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: Us
         return paneActiveFileIdsRef.current[paneId] ?? null;
     }, []);
 
+    const getEditorState = useCallback((fileId: string): AnycodeEditor | null => {
+        return editorRefs.current.get(fileId) ?? editorStatesRef.current.get(fileId) ?? null;
+    }, []);
+
     const setActiveFileId = useCallback((fileId: string | null, paneId?: string) => {
         const targetPaneId = paneId ?? activeEditorPaneIdRef.current ?? DEFAULT_EDITOR_PANE_ID;
         setPaneActiveFileIds((prev) => {
@@ -550,6 +554,7 @@ export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: Us
         activeFileId,
         activeEditorPaneId,
         getActiveFileIdForPane,
+        getEditorState,
         setActiveFileId,
         setActiveEditorPaneId,
         registerEditorPane,

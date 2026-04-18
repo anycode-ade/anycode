@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Socket } from 'socket.io-client';
 import type { Terminal } from '../types';
-import { loadTerminalSelected, loadTerminals } from '../storage';
+import { loadTerminals } from '../storage';
 
 type UseTerminalsParams = {
     wsRef: React.RefObject<Socket | null>;
@@ -9,18 +9,17 @@ type UseTerminalsParams = {
     bottomPanelVisible: boolean;
 };
 
+const TERMINAL_DELAY_MS = 100;
+
 export const useTerminals = ({ wsRef, isConnected, bottomPanelVisible }: UseTerminalsParams) => {
     const [terminals, setTerminals] = useState<Terminal[]>(loadTerminals);
-    const [terminalSelected, setTerminalSelected] = useState<number>(loadTerminalSelected());
     const terminalCounterRef = useRef<number>(1);
     const newTerminalsRef = useRef<Set<string>>(new Set());
     const terminalListenersRef = useRef<Map<string, Set<(data: string) => void>>>(new Map());
     const pendingResizeRef = useRef<Map<string, { cols: number; rows: number }>>(new Map());
     const resizeTimerRef = useRef<Map<string, number>>(new Map());
     const lastResizeSentRef = useRef<Map<string, { cols: number; rows: number }>>(new Map());
-    const resizeThrottleMsRef = useRef<number>(
-        /^((?!chrome|android).)*safari/i.test(navigator.userAgent) ? 120 : 66
-    );
+    const resizeThrottleMsRef = useRef<number>(TERMINAL_DELAY_MS);
 
     const clearResizeState = useCallback((name?: string) => {
         if (!name) {
@@ -160,7 +159,6 @@ export const useTerminals = ({ wsRef, isConnected, bottomPanelVisible }: UseTerm
         const newTerminal: Terminal = { id, name: id, session: 'anycode', cols: 60, rows: 20 };
         newTerminalsRef.current.add(id);
         setTerminals((prev) => [...prev, newTerminal]);
-        setTerminalSelected(terminals.length);
 
         if (bottomPanelVisible && wsRef.current && isConnected) {
             initializeTerminal(newTerminal);
@@ -175,17 +173,13 @@ export const useTerminals = ({ wsRef, isConnected, bottomPanelVisible }: UseTerm
         clearResizeState(terminalToRemove.name);
         setTerminals((prev) => prev.filter((_, i) => i !== index));
 
-        if (terminalSelected >= terminals.length - 1) {
-            setTerminalSelected(Math.max(0, terminals.length - 2));
-        }
-
         if (wsRef.current && isConnected) {
             wsRef.current.emit('terminal:close', {
                 name: terminalToRemove.name,
                 session: terminalToRemove.session,
             });
         }
-    }, [clearResizeState, terminals, terminalSelected, wsRef, isConnected]);
+    }, [clearResizeState, terminals, wsRef, isConnected]);
 
     useEffect(() => {
         if (bottomPanelVisible) return;
@@ -200,8 +194,6 @@ export const useTerminals = ({ wsRef, isConnected, bottomPanelVisible }: UseTerm
 
     return {
         terminals,
-        terminalSelected,
-        setTerminalSelected,
         handleTerminalData,
         handleTerminalResize,
         handleTerminalDataCallback,

@@ -1,8 +1,8 @@
 import React, { useEffect, useRef } from "react";
-import { Terminal } from "@xterm/xterm";
+import { Terminal as XTermTerminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { SerializeAddon } from "@xterm/addon-serialize";
-import "./TerminalComponent.css";
+import "./Terminal.css";
 import "@xterm/xterm/css/xterm.css";
 
 function debounce<T extends (...args: any[]) => any>(
@@ -26,7 +26,9 @@ interface XTerminalProps {
   isConnected: boolean;
 }
 
-const TerminalComponent: React.FC<XTerminalProps> = ({
+const TERMINAL_DELAY_MS = 100;
+
+const Terminal: React.FC<XTerminalProps> = ({
   name,
   onData,
   onMessage,
@@ -36,7 +38,7 @@ const TerminalComponent: React.FC<XTerminalProps> = ({
   isConnected,
 }) => {
   const terminalRef = useRef<HTMLDivElement | null>(null);
-  const xtermRef = useRef<Terminal | null>(null);
+  const xtermRef = useRef<XTermTerminal | null>(null);
   const resizeObserverRef = useRef<ResizeObserver | null>(null);
   const serializeAddonRef = useRef<SerializeAddon | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
@@ -47,9 +49,6 @@ const TerminalComponent: React.FC<XTerminalProps> = ({
   const saveSnapshotTimerRef = useRef<number | null>(null);
   const onDataRef = useRef(onData);
   const onResizeRef = useRef(onResize);
-  const isSafariRef = useRef<boolean>(
-    /^((?!chrome|android).)*safari/i.test(navigator.userAgent)
-  );
 
   useEffect(() => {
     onDataRef.current = onData;
@@ -62,7 +61,7 @@ const TerminalComponent: React.FC<XTerminalProps> = ({
     savedSnapshotRef.current = snapshot;
     localStorage.setItem(`terminal:data:${name}`, snapshot);
     localStorage.setItem(`terminal:mouseMode:${name}`, mouseModeRef.current.toString());
-  }, isSafariRef.current ? 1200 : 350);
+  }, TERMINAL_DELAY_MS);
 
   const queueSnapshotSave = () => {
     if (saveSnapshotTimerRef.current !== null) {
@@ -71,10 +70,10 @@ const TerminalComponent: React.FC<XTerminalProps> = ({
     saveSnapshotTimerRef.current = window.setTimeout(() => {
       saveSnapshotTimerRef.current = null;
       saveTerminalState();
-    }, isSafariRef.current ? 300 : 120);
+    }, TERMINAL_DELAY_MS);
   };
 
-  const restoreTerminalState = (terminal: Terminal) => {
+  const restoreTerminalState = (terminal: XTermTerminal) => {
     const snapshot = savedSnapshotRef.current || localStorage.getItem(`terminal:data:${name}`);
 
     if (serializeAddonRef.current) {
@@ -130,7 +129,7 @@ const TerminalComponent: React.FC<XTerminalProps> = ({
     }
 
     if (!xtermRef.current) {
-      const terminal = new Terminal({
+      const terminal = new XTermTerminal({
         cursorBlink: true,
         rows,
         cols,
@@ -164,7 +163,6 @@ const TerminalComponent: React.FC<XTerminalProps> = ({
       });
 
       const resizeObserver = new ResizeObserver(() => {
-        const fitDelay = isSafariRef.current ? 180 : 24;
         if (fitDebounceTimerRef.current !== null) {
           clearTimeout(fitDebounceTimerRef.current);
         }
@@ -175,7 +173,7 @@ const TerminalComponent: React.FC<XTerminalProps> = ({
             resizeRafRef.current = null;
             fitAddon.fit();
           });
-        }, fitDelay);
+        }, TERMINAL_DELAY_MS);
       });
 
       if (terminalRef.current) {
@@ -256,4 +254,4 @@ const TerminalComponent: React.FC<XTerminalProps> = ({
   );
 };
 
-export default React.memo(TerminalComponent);
+export default React.memo(Terminal);

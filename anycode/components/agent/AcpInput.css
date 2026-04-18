@@ -1,4 +1,4 @@
-.acp-dialog-input {
+.acp-input {
     display: flex;
     flex-direction: column;
     padding: 8px 12px;
@@ -8,7 +8,7 @@
     transition: padding 0.15s ease-in-out;
 }
 
-.acp-dialog-input-minimized {
+.acp-input-minimized {
     padding: 8px 12px;
     cursor: pointer;
 }
@@ -21,7 +21,7 @@
     pointer-events: none;
 }
 
-.acp-dialog-input-minimized .acp-input-preview-container {
+.acp-input-minimized .acp-input-preview-container {
     grid-template-rows: 1fr;
     opacity: 1;
     pointer-events: auto;
@@ -48,7 +48,7 @@
     pointer-events: auto;
 }
 
-.acp-dialog-input-minimized .acp-input-full-container {
+.acp-input-minimized .acp-input-full-container {
     grid-template-rows: 0fr;
     opacity: 0;
     pointer-events: none;
@@ -186,7 +186,7 @@
     opacity: 1;
 }
 
-.acp-dialog-input textarea {
+.acp-input textarea {
     flex: 1;
     background-color: transparent;
     border: none;
@@ -198,17 +198,17 @@
     min-height: 32px;
 }
 
-.acp-dialog-input textarea:focus {
+.acp-input textarea:focus {
     outline: none;
     border-color: var(--focus-border, #007acc);
 }
 
-.acp-dialog-input textarea:disabled {
+.acp-input textarea:disabled {
     opacity: 0.5;
     cursor: not-allowed;
 }
 
-.acp-dialog-input textarea::placeholder {
+.acp-input textarea::placeholder {
     color: rgba(255, 255, 255, 0.55);
     -webkit-text-fill-color: rgba(255, 255, 255, 0.55);
     font-size: 13px;
@@ -264,7 +264,7 @@
 
 /* Mobile styles for buttons */
 @media (max-width: 768px) {
-    .acp-dialog-input {
+    .acp-input {
         gap: 7px;
     }
 
@@ -274,7 +274,7 @@
     .acp-input-select {
     }
 
-    .acp-dialog-input textarea,
+    .acp-input textarea,
     .acp-input-preview-text {
         font-size: 16px;
     }

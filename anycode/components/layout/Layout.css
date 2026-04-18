@@ -58,10 +58,13 @@
     margin: 0 !important;
     user-select: none;
     -webkit-user-select: none;
+    container-type: inline-size;
 }
 
 .layout.dockview-theme-dark .dv-groupview > .dv-tabs-and-actions-container .dv-tabs-container {
     background-color: var(--background-color, #242424) !important;
+    min-width: 0;
+    flex: 1 1 auto;
 }
 
 .layout .dv-tabs-and-actions-container .dv-right-actions-container {
@@ -69,6 +72,8 @@
     flex-direction: column;
     justify-content: center;
     align-items: center;
+    flex: 0 0 auto;
+    min-width: 0;
 }
 
 .layout .dv-groupview > .dv-content-container {
@@ -126,6 +131,10 @@
 .layout .dv-tab .dv-default-tab .dv-default-tab-content {
     text-transform: uppercase;
     color: #9a9a9a;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 100%;
 }
 
 .layout .dv-tab.dv-active-tab .dv-default-tab .dv-default-tab-content {
@@ -231,6 +240,12 @@
 
 .layout-header-action-btn--close {
     margin-right: 2px;
+}
+
+@container (max-width: 220px) {
+    .layout-header-action-btn:not(.layout-header-action-btn--close) {
+        display: none;
+    }
 }
 
 @supports (-webkit-touch-callout: none) {

@@ -195,8 +195,12 @@ const getPanelBaseId = (panelKey: string): PanelId | null => {
         return directMatch;
     }
 
-    if (panelKey.startsWith(`editor${PANEL_INSTANCE_SEPARATOR}`)) {
-        return 'editor';
+    const separatorIndex = panelKey.indexOf(PANEL_INSTANCE_SEPARATOR);
+    if (separatorIndex !== -1) {
+        const baseId = panelKey.slice(0, separatorIndex) as PanelId;
+        if (Object.hasOwn(panelDefinitionById, baseId)) {
+            return baseId;
+        }
     }
 
     return null;
@@ -254,6 +258,7 @@ const panelDefinitions = [
         id: 'agent',
         title: 'Agent',
         pickerVisible: true,
+        allowMultiple: true,
         defaultPlacements: [
             { direction: 'right', referenceIds: ['editor'] },
         ],
@@ -262,6 +267,7 @@ const panelDefinitions = [
         id: 'terminal',
         title: 'Terminal',
         pickerVisible: true,
+        allowMultiple: true,
         defaultPlacements: [
             { direction: 'below', referenceIds: ['editor'] },
         ],
@@ -331,7 +337,7 @@ const LayoutHeaderActions: React.FC<IDockviewHeaderActionsProps & {
             </button>
 
             <button
-                className="layout-header-action-btn"
+                className="layout-header-action-btn layout-header-action-btn--split-right"
                 onClick={() => onSplitRight(containerApi, activePanel.id)}
                 type="button"
                 title="Split Right"
@@ -341,7 +347,7 @@ const LayoutHeaderActions: React.FC<IDockviewHeaderActionsProps & {
             </button>
 
             <button
-                className="layout-header-action-btn"
+                className="layout-header-action-btn layout-header-action-btn--split-down"
                 onClick={() => onSplitDown(containerApi, activePanel.id)}
                 type="button"
                 title="Split Down"

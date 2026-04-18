@@ -6,6 +6,7 @@ import {
   type AcpReasoningSelectorMessage,
   type AcpSelectOption,
 } from '../../types';
+import './AcpSession.css';
 import { AcpInput } from './AcpInput';
 import { AcpMessages } from './AcpMessages';
 import { AcpIcons } from './AcpIcons';
@@ -101,10 +102,9 @@ const useExpandableItems = () => {
   return { expanded, toggle };
 };
 
-interface AcpSessionViewProps {
+interface AcpSessionProps {
   agentId: string;
   title: string;
-  isActivePane: boolean;
   isConnected: boolean;
   isProcessing?: boolean;
   messages: AcpMessage[];
@@ -123,10 +123,9 @@ interface AcpSessionViewProps {
   onOpenFileDiff?: (path: string, line?: number, column?: number) => void;
 }
 
-export const AcpSessionView: React.FC<AcpSessionViewProps> = ({
+export const AcpSession: React.FC<AcpSessionProps> = ({
   agentId,
   title,
-  isActivePane,
   isConnected,
   isProcessing = false,
   messages,
@@ -197,12 +196,12 @@ export const AcpSessionView: React.FC<AcpSessionViewProps> = ({
 
   return (
     <div
-      className={`acp-pane-session ${isActivePane ? 'active' : ''}`}
+      className="acp-session"
       onMouseDown={onFocusPane}
     >
-      <div className="acp-dialog-content">
-        <div className="acp-dialog-messages" ref={contentRef}>
-          <div className="acp-dialog-messages-inner">
+      <div className="acp-session-content">
+        <div className="acp-messages" ref={contentRef}>
+          <div className="acp-messages-inner">
             <AcpMessages
               messages={messages}
               toolCalls={[]}

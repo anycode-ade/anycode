@@ -104,7 +104,7 @@ export const AcpInput: React.FC<AcpInputProps> = ({
   };
 
   return (
-    <div className={`acp-dialog-input ${isMinimized ? 'acp-dialog-input-minimized' : ''}`}>
+    <div className={`acp-input ${isMinimized ? 'acp-input-minimized' : ''}`}>
       <div className="acp-input-preview-container">
         <div className="acp-input-preview-content">
           <div className="acp-input-preview-row" onClick={() => setIsMinimized(false)}>
