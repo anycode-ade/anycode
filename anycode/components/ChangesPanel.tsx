@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import './ChangesPanel.css';
 
+const COMMIT_MESSAGE_STORAGE_KEY = 'anycode.commitMessage';
+
 export interface ChangedFile {
     path: string;
     status: 'modified' | 'added' | 'deleted' | 'renamed' | 'conflict';
@@ -11,32 +13,18 @@ interface ChangesPanelProps {
     branch: string;
     onFileClick: (path: string) => void;
     onRefresh: () => void;
-    onCommit: (files: string[], message: string) => void;
+    onCommit: (files: string[], message: string) => Promise<boolean>;
     onPush: () => void;
     onPull: () => void;
     onRevert: (path: string) => void;
 }
 
-const statusIcons: Record<string, string> = {
-    modified: 'M',
-    added: 'A',
-    deleted: 'D',
-    renamed: 'R',
-    conflict: '!',
-};
-
-const statusColors: Record<string, string> = {
-    modified: 'status-modified',
-    added: 'status-added',
-    deleted: 'status-deleted',
-    renamed: 'status-renamed',
-    conflict: 'status-conflict',
-};
-
-const getDirectory = (path: string): string => {
-    const parts = path.split('/');
-    if (parts.length <= 1) return '';
-    return parts.slice(0, -1).join('/');
+const statusTextColors: Record<ChangedFile['status'], string> = {
+    modified: 'file-status-modified',
+    added: 'file-status-added',
+    deleted: 'file-status-deleted',
+    renamed: 'file-status-renamed',
+    conflict: 'file-status-conflict',
 };
 
 const getDisplayName = (path: string): string => {
@@ -55,8 +43,20 @@ export const ChangesPanel: React.FC<ChangesPanelProps> = ({
     onPull,
     onRevert
 }) => {
-    const [message, setMessage] = useState('');
+    const [message, setMessage] = useState(() => {
+        if (typeof window === 'undefined') return '';
+        return localStorage.getItem(COMMIT_MESSAGE_STORAGE_KEY) ?? '';
+    });
     const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
+
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+        if (message) {
+            localStorage.setItem(COMMIT_MESSAGE_STORAGE_KEY, message);
+        } else {
+            localStorage.removeItem(COMMIT_MESSAGE_STORAGE_KEY);
+        }
+    }, [message]);
 
     // Initialize selection behavior
     useEffect(() => {
@@ -104,10 +104,12 @@ export const ChangesPanel: React.FC<ChangesPanelProps> = ({
         });
     };
 
-    const handleCommit = () => {
+    const handleCommit = async () => {
         if (message.trim() && selectedFiles.size > 0) {
-            onCommit(Array.from(selectedFiles), message);
-            setMessage('');
+            const success = await onCommit(Array.from(selectedFiles), message);
+            if (success) {
+                setMessage('');
+            }
         }
     };
 
@@ -123,6 +125,7 @@ export const ChangesPanel: React.FC<ChangesPanelProps> = ({
 
     return (
         <div className="changes-panel">
+            {/*<div className="changes-panel-title">Changes</div>*/}
             <div className="changes-header">
                 <div className="changes-title">
                     <span className="changes-branch-icon"></span>
@@ -189,20 +192,25 @@ export const ChangesPanel: React.FC<ChangesPanelProps> = ({
                             className={`changes-item ${selectedFiles.has(file.path) ? 'selected' : ''}`}
                             onClick={() => onFileClick(file.path)}
                         >
-                            <span className={`changes-status ${statusColors[file.status]}`}>
-                                {statusIcons[file.status]}
-                            </span>
                             <div className="changes-file-info">
-                                <span className="changes-filename">
+                                <span
+                                    className={`changes-filename ${statusTextColors[file.status]}`}
+                                    title={file.path}
+                                >
                                     {getDisplayName(file.path)}
-                                </span>
-                                <span className="changes-directory">
-                                    {getDirectory(file.path)}
                                 </span>
                             </div>
                             <button
                                 className="changes-revert-btn"
-                                onClick={(e) => { e.stopPropagation(); onRevert(file.path); }}
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    const confirmed = window.confirm(
+                                        `Discard changes for "${file.path}"? This cannot be undone.`
+                                    );
+                                    if (confirmed) {
+                                        onRevert(file.path);
+                                    }
+                                }}
                                 title="Discard Changes"
                             >
                                 ↩
