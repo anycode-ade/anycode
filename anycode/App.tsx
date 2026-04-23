@@ -424,7 +424,7 @@ const App: React.FC = () => {
             >
                 {paneFile && editorState ? (
                     <AnycodeEditorReact
-                        key={panelKey}
+                        key={`${panelKey}:${paneFile.id}`}
                         id={paneFile.id}
                         editorState={editorState}
                     />
@@ -839,6 +839,7 @@ const App: React.FC = () => {
                     onPanelAdded={(panelId, panelKey) => {
                         if (panelId === 'editor') {
                             editors.registerEditorPane(panelKey);
+                            editors.setActiveEditorPaneId(panelKey);
                             return;
                         }
                         if (panelId === 'agent') {

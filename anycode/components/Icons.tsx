@@ -66,6 +66,31 @@ export const Icons = {
       <path d="M16 8V12C16 14 14 16 12 16H8" stroke="currentColor" strokeWidth="2"/>
     </svg>
   ),
+  GitCommit: () => (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M20 7L10 17L5 12" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  ),
+  GitPull: () => (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M12 4V17" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      <path d="M8 15L12 19L16 15" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  ),
+  GitPush: () => (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M12 20V6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      <path d="M8 10L12 6L16 10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  ),
+  Refresh: () => (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M20 5V10H15" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M4 19V14H9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M20 10C18.7 6.9 15.7 5 12.4 5C8.8 5 5.6 7.2 4.3 10.6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      <path d="M4 14C5.3 17.1 8.3 19 11.6 19C15.2 19 18.4 16.8 19.7 13.4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  ),
   ChevronUpDown: () => (
     <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
       <path d="M10 4L7.5 6.5M10 4L12.5 6.5M10 4V16" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>

@@ -59,6 +59,17 @@
     transition: background-color 0.1s ease;
 }
 
+.changes-action-btn-icon {
+    width: 24px;
+    padding: 0;
+}
+
+.changes-action-btn-icon svg {
+    display: block;
+    width: 14px;
+    height: 14px;
+}
+
 .changes-action-btn:hover {
     background-color: #3c3c3c;
 }

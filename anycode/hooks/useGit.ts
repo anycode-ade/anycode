@@ -30,15 +30,22 @@ export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
         setGitBranch(data.branch || '');
     }, []);
 
-    const commit = useCallback((files: string[], message: string) => {
-        if (!wsRef.current || !isConnected) return;
-
-        wsRef.current.emit('git:commit', { files, message }, (response: any) => {
-            if (response.success) {
-                fetchGitStatus();
-            } else {
-                alert('Commit failed: ' + response.error);
+    const commit = useCallback((files: string[], message: string): Promise<boolean> => {
+        return new Promise((resolve) => {
+            if (!wsRef.current || !isConnected) {
+                resolve(false);
+                return;
             }
+
+            wsRef.current.emit('git:commit', { files, message }, (response: any) => {
+                if (response.success) {
+                    fetchGitStatus();
+                    resolve(true);
+                } else {
+                    alert('Commit failed: ' + response.error);
+                    resolve(false);
+                }
+            });
         });
     }, [wsRef, isConnected, fetchGitStatus]);
 

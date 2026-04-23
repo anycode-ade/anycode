@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
+import { Icons } from './Icons';
 import './ChangesPanel.css';
 
-const COMMIT_MESSAGE_STORAGE_KEY = 'anycode.commitMessage';
+const COMMIT_MESSAGE_STORAGE_KEY = 'commitMessage';
 
 export interface ChangedFile {
     path: string;
@@ -133,21 +134,37 @@ export const ChangesPanel: React.FC<ChangesPanelProps> = ({
                 </div>
                 <div className="changes-actions-right">
                     <button 
-                        className="changes-action-btn" 
+                        className="changes-action-btn changes-action-btn-icon"
                         onClick={handleCommit}
                         disabled={!message.trim() || selectedFiles.size === 0}
                         title="Commit"
+                        aria-label="Commit"
                     >
-                        Commit
+                        <Icons.GitCommit />
                     </button>
-                    <button className="changes-action-btn" onClick={onPull} title="Pull">
-                        Pull
+                    <button
+                        className="changes-action-btn changes-action-btn-icon"
+                        onClick={onPull}
+                        title="Pull"
+                        aria-label="Pull"
+                    >
+                        <Icons.GitPull />
                     </button>
-                    <button className="changes-action-btn" onClick={onPush} title="Push">
-                        Push
+                    <button
+                        className="changes-action-btn changes-action-btn-icon"
+                        onClick={onPush}
+                        title="Push"
+                        aria-label="Push"
+                    >
+                        <Icons.GitPush />
                     </button>
-                    <button className="changes-action-btn" onClick={onRefresh} title="Refresh">
-                        Refresh
+                    <button
+                        className="changes-action-btn changes-action-btn-icon"
+                        onClick={onRefresh}
+                        title="Refresh"
+                        aria-label="Refresh"
+                    >
+                        <Icons.Refresh />
                     </button>
                 </div>
             </div>

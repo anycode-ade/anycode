@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { Socket } from 'socket.io-client';
 import { AnycodeEditor } from 'anycode-react';
 import type { Change, Position } from '../../anycode-base/src/code';
@@ -26,18 +26,22 @@ type UseEditorsParams = {
     onFileClosed?: (fileId: string) => void;
 };
 
+type PendingExistingOpenRequest = {
+    path: string;
+    line?: number;
+    column?: number;
+    paneId: string;
+};
+
+const DEFAULT_EDITOR_PANE_ID = 'editor';
+
 export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: UseEditorsParams) => {
-    const DEFAULT_EDITOR_PANE_ID = 'editor';
     const [files, setFiles] = useState<FileState[]>([]);
     const filesRef = useRef<FileState[]>([]);
     const [activeEditorPaneId, setActiveEditorPaneId] = useState<string>(DEFAULT_EDITOR_PANE_ID);
     const activeEditorPaneIdRef = useRef<string>(DEFAULT_EDITOR_PANE_ID);
-    const [paneActiveFileIds, setPaneActiveFileIds] = useState<Record<string, string | null>>({
-        [DEFAULT_EDITOR_PANE_ID]: null,
-    });
-    const paneActiveFileIdsRef = useRef<Record<string, string | null>>({
-        [DEFAULT_EDITOR_PANE_ID]: null,
-    });
+    const [paneActiveFileIds, setPaneActiveFileIds] = useState<Record<string, string | null>>({[DEFAULT_EDITOR_PANE_ID]: null});
+    const paneActiveFileIdsRef = useRef<Record<string, string | null>>({[DEFAULT_EDITOR_PANE_ID]: null});
     const activeFileId = paneActiveFileIds[activeEditorPaneId] ?? null;
     const activeFileIdRef = useRef<string | null>(null);
 
@@ -54,11 +58,55 @@ export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: Us
     const pendingOriginalContentRef = useRef<Map<string, string>>(new Map());
     const pendingChangesRef = useRef<Map<string, PendingBatch>>(new Map());
     const ignoreChangeFilesRef = useRef<Set<string>>(new Set());
+    const [pendingExistingOpenRequest, setPendingExistingOpenRequest] = useState<PendingExistingOpenRequest | null>(null);
+    const lastFocusedEditorPaneIdRef = useRef<string>(DEFAULT_EDITOR_PANE_ID);
 
     const activeFile = files.find((f) => f.id === activeFileId);
 
+    // Choose the editor pane we should target for an open/select action.
+    // The order is intentionally explicit so the UX stays predictable:
+    // 1) an explicit paneId from the caller
+    // 2) the pane that already owns the file, if the file is already open
+    // 3) the last editor pane the user focused
+    // 4) the only visible editor pane
+    // 5) the default editor pane as a safe fallback
+    const resolveTargetPaneId = useCallback((paneId?: string, fileId?: string) => {
+        const paneEntries = Object.entries(paneActiveFileIdsRef.current);
+        const paneIds = paneEntries.map(([id]) => id);
+        const visiblePaneIds = paneIds.filter((id) => id !== DEFAULT_EDITOR_PANE_ID);
+        const isKnownPane = (id: string) => Object.hasOwn(paneActiveFileIdsRef.current, id);
+
+        if (paneId && isKnownPane(paneId)) {
+            return paneId;
+        }
+
+        if (fileId) {
+            for (const [candidatePaneId, activeFileIdForPane] of paneEntries) {
+                if (activeFileIdForPane === fileId) {
+                    return candidatePaneId;
+                }
+            }
+        }
+
+        const lastFocusedPaneId = lastFocusedEditorPaneIdRef.current;
+        if (lastFocusedPaneId !== DEFAULT_EDITOR_PANE_ID && isKnownPane(lastFocusedPaneId)) {
+            return lastFocusedPaneId;
+        }
+
+        if (visiblePaneIds.length === 1) {
+            return visiblePaneIds[0];
+        }
+
+        return visiblePaneIds[0] ?? paneIds[0] ?? DEFAULT_EDITOR_PANE_ID;
+    }, []);
+
     useEffect(() => { filesRef.current = files; }, [files]);
     useEffect(() => { activeEditorPaneIdRef.current = activeEditorPaneId; }, [activeEditorPaneId]);
+    useEffect(() => {
+        if (activeEditorPaneId !== DEFAULT_EDITOR_PANE_ID) {
+            lastFocusedEditorPaneIdRef.current = activeEditorPaneId;
+        }
+    }, [activeEditorPaneId]);
     useEffect(() => { paneActiveFileIdsRef.current = paneActiveFileIds; }, [paneActiveFileIds]);
     useEffect(() => { activeFileIdRef.current = activeFileId; }, [activeFileId]);
     useEffect(() => { editorStatesRef.current = editorStates; }, [editorStates]);
@@ -72,7 +120,7 @@ export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: Us
     }, []);
 
     const setActiveFileId = useCallback((fileId: string | null, paneId?: string) => {
-        const targetPaneId = paneId ?? activeEditorPaneIdRef.current ?? DEFAULT_EDITOR_PANE_ID;
+        const targetPaneId = resolveTargetPaneId(paneId, fileId ?? undefined);
         setPaneActiveFileIds((prev) => {
             const next = { ...prev };
 
@@ -87,7 +135,7 @@ export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: Us
             next[targetPaneId] = fileId;
             return next;
         });
-    }, []);
+    }, [resolveTargetPaneId]);
 
     const registerEditorPane = useCallback((paneId: string) => {
         setPaneActiveFileIds((prev) => {
@@ -98,6 +146,26 @@ export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: Us
             };
         });
     }, []);
+
+    useLayoutEffect(() => {
+        if (!pendingExistingOpenRequest) return;
+
+        const { path, line, column, paneId } = pendingExistingOpenRequest;
+        setPendingExistingOpenRequest(null);
+
+        // Reattach the already-open file to the pane we resolved earlier.
+        setActiveEditorPaneId(paneId);
+        setActiveFileId(path, paneId);
+
+        const editor = editorRefs.current.get(path);
+        if (!editor) return;
+
+        if (line !== undefined && column !== undefined) {
+            editor.requestFocus(line, column, true);
+        } else {
+            editor.onAttach();
+        }
+    }, [pendingExistingOpenRequest, setActiveFileId]);
 
     const unregisterEditorPane = useCallback((paneId: string) => {
         setPaneActiveFileIds((prev) => {
@@ -195,8 +263,8 @@ export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: Us
     }, [wsRef]);
 
     const openFile = useCallback((path: string, line?: number, column?: number, paneId?: string) => {
-        const targetPaneId = paneId ?? activeEditorPaneIdRef.current ?? DEFAULT_EDITOR_PANE_ID;
         const existingFile = filesRef.current.find((file) => file.id === path);
+        const targetPaneId = resolveTargetPaneId(paneId, existingFile?.id);
         console.log('[openFile]', {
             path,
             line,
@@ -211,12 +279,13 @@ export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: Us
         }
 
         if (existingFile) {
-            setActiveEditorPaneId(targetPaneId);
-            setActiveFileId(existingFile.id, targetPaneId);
-            const editor = editorRefs.current.get(existingFile.id);
-            if (editor && line !== undefined && column !== undefined) {
-                editor.requestFocus(line, column, true);
-            }
+            // Defer the focus switch until the editor has a chance to reattach.
+            setPendingExistingOpenRequest({
+                path: existingFile.id,
+                line,
+                column,
+                paneId: targetPaneId,
+            });
             return;
         }
 
@@ -239,7 +308,7 @@ export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: Us
                 }
             });
         }
-    }, [setActiveFileId, wsRef, isConnected]);
+    }, [resolveTargetPaneId, setActiveFileId, wsRef, isConnected]);
 
     const handleGoToDefinition = useCallback((definitionRequest: DefinitionRequest): Promise<DefinitionResponse> => {
         return new Promise((resolve, reject) => {
