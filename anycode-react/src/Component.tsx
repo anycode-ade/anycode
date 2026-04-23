@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useLayoutEffect, useRef } from 'react';
 import { AnycodeEditor } from 'anycode-base';
 
 interface AnycodeEditorProps {
@@ -10,35 +10,38 @@ export default function AnycodeEditorReact({ id, editorState,  }: AnycodeEditorP
 
     const containerRef = useRef<HTMLDivElement>(null);
 
-    useEffect(() => {
+    useLayoutEffect(() => {
         if (!editorState || !containerRef.current) return;
 
-        containerRef.current.innerHTML = '';
+        const host = containerRef.current;
+        const editorContainer = editorState.getContainer();
+        host.replaceChildren(editorContainer);
+
         if (editorState.hasScroll()) {
-            containerRef.current.appendChild(editorState.getContainer());
             let focus = editorState.requestedFocus();
 
-            if(focus) {
+            if (focus) {
                 let { line, column } = editorState.getCursor();
                 if (line !== undefined && column !== undefined) {
                     editorState.requestFocus(line, column);
                     editorState.renderCursorOrSelection();
                 }
             } else {
-                editorState.restoreScroll();
-                editorState.renderCursorOrSelection();
+                editorState.onAttach();
             }
         } else {
             editorState.render();
-            containerRef.current.appendChild(editorState.getContainer());
-
             let { line, column } = editorState.getCursor();
             if (line !== undefined && column !== undefined) {
                 editorState.requestFocus(line, column);
                 editorState.renderCursorOrSelection();
             }
         }
-    
+
+        return () => {
+            // The editor node is moved between hosts on the next mount.
+            // Avoid clearing here to prevent a brief blank frame during switches.
+        };
     }, [id, editorState]);
 
   return <div ref={containerRef} style={{ width: '100%', height: '100%' }} />;

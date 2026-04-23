@@ -8,7 +8,7 @@ import {
     type PendingBatch,
     type WatcherEdits,
 } from '../types';
-import { BATCH_DELAY_MS, DEFAULT_FILE, DEFAULT_FILE_CONTENT } from '../constants';
+import { BATCH_DELAY_MS } from '../constants';
 import { getFileName, getLanguageFromFileName } from '../utils';
 import {
     Completion,
@@ -48,7 +48,6 @@ export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: Us
     const [editorStates, setEditorStates] = useState<Map<string, AnycodeEditor>>(new Map());
     const editorStatesRef = useRef<Map<string, AnycodeEditor>>(new Map());
     const editorRefs = useRef<Map<string, AnycodeEditor>>(new Map());
-    const defaultFileInitializedRef = useRef(false);
 
     const savedFileContentsRef = useRef<Map<string, string>>(new Map());
     const diagnosticsRef = useRef<Map<string, Diagnostic[]>>(new Map());
@@ -441,17 +440,6 @@ export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: Us
             initializeEditors();
         }
     }, [files, initializeEditors]);
-
-    useEffect(() => {
-        if (files.length === 0 && !defaultFileInitializedRef.current) {
-            defaultFileInitializedRef.current = true;
-            setFiles([DEFAULT_FILE]);
-            setPaneActiveFileIds((prev) => ({ ...prev, [DEFAULT_EDITOR_PANE_ID]: DEFAULT_FILE.id }));
-            setActiveEditorPaneId(DEFAULT_EDITOR_PANE_ID);
-            cursorHistory.current.undoStack.push({ file: DEFAULT_FILE.id, cursor: { line: 0, column: 0 } });
-            savedFileContentsRef.current.set(DEFAULT_FILE.id, DEFAULT_FILE_CONTENT);
-        }
-    }, [files.length]);
 
     const closeFile = useCallback((fileId: string) => {
         flushChanges(fileId);
