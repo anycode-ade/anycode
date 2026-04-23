@@ -7,13 +7,12 @@ import {
     ChangesPanel,
 } from './components';
 import Search from './components/Search';
-import { Icons } from './components/Icons';
 import { Layout, type PanelId } from './components/layout/Layout';
-import { AcpIcons } from './components/agent/AcpIcons';
 import { AcpSettings } from './components/agent/AcpSettings';
 import { AcpSession } from './components/agent/AcpSession';
 import { AcpEmptyPane } from './components/agent/AcpEmptyPane';
 import { TerminalEmptyPane } from './components/terminal/TerminalEmptyPane';
+import { Toolbar } from './components/toolbar/Toolbar';
 import {
     getAllAgents,
     getDefaultAgent,
@@ -24,12 +23,8 @@ import {
 import { AcpAgent, type SearchMatch } from './types';
 import './App.css';
 import {
-    loadBottomVisible,
-    loadCenterPaneVisible,
     loadDiffEnabled,
     // loadFollowEnabled,
-    loadLeftPanelVisible,
-    loadRightPanelVisible,
     loadAcpPermissionMode,
     loadItem,
     saveAcpPermissionMode,
@@ -45,13 +40,6 @@ import { useAgents } from './hooks/useAgents';
 import { type AcpPermissionMode } from './types';
 
 const App: React.FC = () => {
-    const [leftPanelVisible, setLeftPanelVisible] = useState<boolean>(loadItem<boolean>('filesPanelVisible') ?? loadLeftPanelVisible());
-    const [searchPanelVisible, setSearchPanelVisible] = useState<boolean>(loadItem<boolean>('searchPanelVisible') ?? false);
-    const [changesPanelVisible, setChangesPanelVisible] = useState<boolean>(loadItem<boolean>('changesPanelVisible') ?? false);
-    const [bottomPanelVisible, setBottomPanelVisible] = useState<boolean>(loadBottomVisible());
-    const [rightPanelVisible, setRightPanelVisible] = useState<boolean>(loadRightPanelVisible());
-    const [centerPanelVisible, setCenterPanelVisible] = useState<boolean>(loadCenterPaneVisible());
-    const [toolbarHeaderVisible, setToolbarHeaderVisible] = useState<boolean>(loadItem<boolean>('toolbarHeaderVisible') ?? false);
     const [terminalSelectedByPane, setTerminalSelectedByPane] = useState<Record<string, number | null>>(() => (
         loadItem<Record<string, number | null>>('terminalSelectedByPane') ?? { terminal: null }
     ));
@@ -78,7 +66,7 @@ const App: React.FC = () => {
         },
     });
 
-    const terminals = useTerminals({ wsRef, isConnected, bottomPanelVisible });
+    const terminals = useTerminals({ wsRef, isConnected });
     const git = useGit({ wsRef, isConnected });
     const search = useSearch({ wsRef, isConnected });
     const wasConnectedRef = useRef<boolean>(false);
@@ -90,7 +78,6 @@ const App: React.FC = () => {
         openFile: editors.openFile,
         openFileDiff: editors.openFileDiff,
         onAgentStarted: () => {
-            setRightPanelVisible(true);
             setDiffEnabled(true);
             // setFollowEnabled(true);
         },
@@ -170,35 +157,6 @@ const App: React.FC = () => {
     }, [editors.activeFileId, editors.files, fileTree.fileTree, fileTree.findNodeByPath, fileTree.selectNode]);
 
     useEffect(() => {
-        saveItem('bottomPanelVisible', bottomPanelVisible);
-    }, [bottomPanelVisible]);
-
-    useEffect(() => {
-        saveItem('leftPanelVisible', leftPanelVisible);
-        saveItem('filesPanelVisible', leftPanelVisible);
-    }, [leftPanelVisible]);
-
-    useEffect(() => {
-        saveItem('searchPanelVisible', searchPanelVisible);
-    }, [searchPanelVisible]);
-
-    useEffect(() => {
-        saveItem('changesPanelVisible', changesPanelVisible);
-    }, [changesPanelVisible]);
-
-    useEffect(() => {
-        saveItem('rightPanelVisible', rightPanelVisible);
-    }, [rightPanelVisible]);
-
-    useEffect(() => {
-        saveItem('centerPanelVisible', centerPanelVisible);
-    }, [centerPanelVisible]);
-
-    useEffect(() => {
-        saveItem('toolbarHeaderVisible', toolbarHeaderVisible);
-    }, [toolbarHeaderVisible]);
-
-    useEffect(() => {
         saveItem('terminalSelectedByPane', terminalSelectedByPane);
     }, [terminalSelectedByPane]);
 
@@ -256,11 +214,6 @@ const App: React.FC = () => {
                     editors.saveFile(editors.activeFileId);
                 }
             }
-
-            if (e.ctrlKey && e.key === '1') setLeftPanelVisible((prev) => !prev);
-            if (e.ctrlKey && e.key === '2') setBottomPanelVisible((prev) => !prev);
-            if (e.ctrlKey && e.key === '3') setCenterPanelVisible((prev) => !prev);
-            if (e.ctrlKey && e.key === '4') setRightPanelVisible((prev) => !prev);
 
             if (e.ctrlKey && e.key === '-') {
                 e.preventDefault();
@@ -326,7 +279,6 @@ const App: React.FC = () => {
     const handleOpenAgentSettings = useCallback(() => {
         ensureDefaultAgents();
         agents.setIsAgentSettingsOpen(true);
-        setRightPanelVisible(true);
     }, [agents.setIsAgentSettingsOpen]);
     const handleCloseAgentSettings = useCallback(() => {
         agents.setIsAgentSettingsOpen(false);
@@ -343,7 +295,6 @@ const App: React.FC = () => {
             [paneKey]: agentId,
         }));
         agents.setSelectedAgentId(agentId);
-        setRightPanelVisible(true);
     }, [activeAgentPaneId, agents.setSelectedAgentId]);
 
     const handleAgentToolbarAdd = useCallback(() => {
@@ -356,7 +307,6 @@ const App: React.FC = () => {
             }));
             agents.setSelectedAgentId(startedAgentId);
         }
-        setRightPanelVisible(true);
     }, [activeAgentPaneId, handleAddAgent, agents.setSelectedAgentId]);
 
     const handleSaveAgents = useCallback((agentList: AcpAgent[], defaultAgentId: string | null, nextPermissionMode: AcpPermissionMode) => {
@@ -453,12 +403,9 @@ const App: React.FC = () => {
     }, []);
 
     const handleTerminalTabSelect = useCallback((index: number) => {
-        if (!bottomPanelVisible) {
-            return;
-        }
         const paneKey = activeTerminalPaneId || 'terminal';
         setSelectedTerminalForPane(paneKey, index);
-    }, [activeTerminalPaneId, bottomPanelVisible, setSelectedTerminalForPane]);
+    }, [activeTerminalPaneId, setSelectedTerminalForPane]);
 
     const handleTerminalTabClose = useCallback((index: number) => {
         terminals.closeTerminal(index);
@@ -487,8 +434,7 @@ const App: React.FC = () => {
         terminals.addTerminal();
         const paneKey = activeTerminalPaneId || 'terminal';
         setSelectedTerminalForPane(paneKey, terminals.terminals.length);
-        setBottomPanelVisible(true);
-    }, [activeTerminalPaneId, terminals, setBottomPanelVisible, setSelectedTerminalForPane]);
+    }, [activeTerminalPaneId, terminals, setSelectedTerminalForPane]);
 
     const renderTerminalPanel = useCallback((panelKey: string) => {
         const selectedIndex = getSelectedTerminalIndex(panelKey);
@@ -499,7 +445,6 @@ const App: React.FC = () => {
                         terminals={terminals.terminals}
                         onSelectTerminal={(index) => {
                             setSelectedTerminalForPane(panelKey, index);
-                            setBottomPanelVisible(true);
                         }}
                         onCloseTerminal={handleTerminalTabClose}
                         onCreateTerminal={handleAddTerminalFromToolbar}
@@ -536,7 +481,6 @@ const App: React.FC = () => {
         handleAddTerminalFromToolbar,
         isConnected,
         setSelectedTerminalForPane,
-        setBottomPanelVisible,
         terminals.terminals,
         terminals.handleTerminalData,
         terminals.handleTerminalDataCallback,
@@ -665,130 +609,21 @@ const App: React.FC = () => {
     ]);
 
     const toolbar = (
-        <div className="toolbar">
-            <div className="toolbar-buttons">
-                <button
-                    onClick={() => setLeftPanelVisible(!leftPanelVisible)}
-                    className={`toggle-tree-btn ${leftPanelVisible ? 'active' : ''}`}
-                    title={leftPanelVisible ? 'Hide Files Panel' : 'Show Files Panel'}
-                >
-                    {leftPanelVisible ? <Icons.LeftPanelOpened /> : <Icons.LeftPanelClosed />}
-                </button>
-
-                <button
-                    onClick={() => setSearchPanelVisible(!searchPanelVisible)}
-                    className={`toggle-mode-btn ${searchPanelVisible ? 'active' : ''}`}
-                    title={searchPanelVisible ? 'Hide Search Panel' : 'Show Search Panel'}
-                >
-                    <Icons.Search />
-                </button>
-
-                <button
-                    onClick={() => {
-                        if (!changesPanelVisible) {
-                            git.fetchGitStatus();
-                        }
-                        setChangesPanelVisible(!changesPanelVisible);
-                    }}
-                    className={`toggle-mode-btn ${changesPanelVisible ? 'active' : ''}`}
-                    title={changesPanelVisible ? 'Hide Changes Panel' : 'Show Changes Panel'}
-                >
-                    <Icons.Git />
-                </button>
-
-                <button
-                    onClick={() => setBottomPanelVisible(!bottomPanelVisible)}
-                    className={`terminal-toggle-btn ${bottomPanelVisible ? 'active' : ''}`}
-                    title={bottomPanelVisible ? 'Hide Terminal' : 'Show Terminal'}
-                >
-                    {bottomPanelVisible ? <Icons.BottomPanelOpened /> : <Icons.BottomPanelClosed />}
-                </button>
-
-                <button
-                    onClick={() => setCenterPanelVisible(!centerPanelVisible)}
-                    className={`editor-toggle-btn ${centerPanelVisible ? 'active' : ''}`}
-                    title={centerPanelVisible ? 'Hide Editor' : 'Show Editor'}
-                >
-                    {centerPanelVisible ? <Icons.EditorOpened /> : <Icons.EditorClosed />}
-                </button>
-
-                <button
-                    onClick={() => setRightPanelVisible(!rightPanelVisible)}
-                    className={`acp-toggle-btn ${rightPanelVisible ? 'active' : ''}`}
-                    title={rightPanelVisible ? 'Hide AI Agent' : 'Show AI Agent'}
-                >
-                    {rightPanelVisible ? <Icons.RightPanelOpened /> : <Icons.RightPanelClosed />}
-                </button>
-
-                <button
-                    onClick={() => setToolbarHeaderVisible((prev) => !prev)}
-                    className={`toggle-mode-btn ${toolbarHeaderVisible ? 'active' : ''}`}
-                    title={toolbarHeaderVisible ? 'Hide Anycode Header' : 'Show Anycode Header'}
-                >
-                    <Icons.ChevronUpDown />
-                </button>
-            </div>
-
-            <div className="toolbar-tabs">
-                {editors.files.map((file) => (
-                    <div
-                        key={file.id}
-                        className={`tab ${editors.activeFileId === file.id ? 'active' : ''}`}
-                        onClick={() => editors.setActiveFileId(file.id)}
-                    >
-                        <span className="tab-filename"> {file.name} </span>
-                        <button className="tab-close-button" onClick={(e) => { e.stopPropagation(); editors.closeFile(file.id); }}> × </button>
-                    </div>
-                ))}
-                {terminals.terminals.map((terminal, index) => {
-                    const selectedIndex = getSelectedTerminalIndex(activeTerminalPaneId || 'terminal');
-                    const isActive = selectedIndex === index;
-                    return (
-                        <div
-                            key={`toolbar-terminal-${terminal.id}`}
-                            className={`tab tab-terminal ${isActive ? 'active' : ''}`}
-                            onClick={() => handleTerminalTabSelect(index)}
-                        >
-                            <span className="tab-filename">{`term:${terminal.name}`}</span>
-                            <button
-                                className="tab-close-button"
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleTerminalTabClose(index);
-                                }}
-                            >
-                                ×
-                            </button>
-                        </div>
-                    );
-                })}
-                {sessionsArray.map((session) => {
-                    const selectedAgentId = getSelectedAgentIdForPane(activeAgentPaneId || 'agent');
-                    const isActive = selectedAgentId === session.agentId;
-                    return (
-                        <div
-                            key={`toolbar-agent-${session.agentId}`}
-                            className={`tab tab-agent ${isActive ? 'active' : ''}`}
-                            onClick={() => handleAgentToolbarSelect(session.agentId)}
-                        >
-                            <span className="tab-filename">{`${session.agentName || session.agentId}`}</span>
-                            <button
-                                className="tab-close-button"
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    agents.closeAgent(session.agentId);
-                                }}
-                            >
-                                ×
-                            </button>
-                        </div>
-                    );
-                })}
-                <button className="agent-toolbar-btn" onClick={handleAgentToolbarAdd} type="button" title="Add agent">
-                    <AcpIcons.Add />
-                </button>
-            </div>
-        </div>
+        <Toolbar
+            files={editors.files}
+            activeFileId={editors.activeFileId}
+            terminals={terminals.terminals}
+            activeTerminalIndex={getSelectedTerminalIndex(activeTerminalPaneId || 'terminal')}
+            agentSessions={sessionsArray}
+            activeAgentId={getSelectedAgentIdForPane(activeAgentPaneId || 'agent')}
+            onSelectFile={editors.setActiveFileId}
+            onCloseFile={editors.closeFile}
+            onSelectTerminal={handleTerminalTabSelect}
+            onCloseTerminal={handleTerminalTabClose}
+            onSelectAgent={handleAgentToolbarSelect}
+            onCloseAgent={agents.closeAgent}
+            onAddAgent={handleAgentToolbarAdd}
+        />
     );
 
     const dockPanels = useMemo(() => ({
@@ -801,123 +636,95 @@ const App: React.FC = () => {
         toolbar,
     }), [fileTreePanel, searchPanel, changesPanel, toolbar]);
 
-    const dockVisibility = useMemo(() => ({
-        files: leftPanelVisible,
-        search: searchPanelVisible,
-        changes: changesPanelVisible,
-        editor: centerPanelVisible,
-        agent: rightPanelVisible,
-        terminal: bottomPanelVisible,
-        toolbar: true,
-    }), [
-        leftPanelVisible,
-        searchPanelVisible,
-        changesPanelVisible,
-        centerPanelVisible,
-        rightPanelVisible,
-        bottomPanelVisible,
-    ]);
+    const handlePanelAdded = useCallback((panelId: PanelId, panelKey: string) => {
+        if (panelId === 'changes') {
+            git.fetchGitStatus();
+            return;
+        }
+        if (panelId === 'editor') {
+            editors.registerEditorPane(panelKey);
+            editors.setActiveEditorPaneId(panelKey);
+            return;
+        }
+        if (panelId === 'agent') {
+            setActiveAgentPaneId(panelKey);
+            setAgentSelectedByPane((prev) => ({
+                ...prev,
+                [panelKey]: prev[panelKey] ?? null,
+            }));
+            return;
+        }
+        if (panelId === 'terminal') {
+            setActiveTerminalPaneId(panelKey);
+            setTerminalSelectedByPane((prev) => ({
+                ...prev,
+                [panelKey]: prev[panelKey] ?? null,
+            }));
+        }
+    }, [editors, git.fetchGitStatus]);
 
-    const handleDockPanelVisibilityChange = useCallback((id: PanelId, visible: boolean) => {
-        if (id === 'files') setLeftPanelVisible(visible);
-        if (id === 'search') setSearchPanelVisible(visible);
-        if (id === 'changes') setChangesPanelVisible(visible);
-        if (id === 'editor') setCenterPanelVisible(visible);
-        if (id === 'agent') setRightPanelVisible(visible);
-        if (id === 'terminal') setBottomPanelVisible(visible);
-    }, []);
+    const handlePanelRemoved = useCallback((panelId: PanelId, panelKey: string) => {
+        if (panelId === 'editor') {
+            editors.unregisterEditorPane(panelKey);
+            return;
+        }
+        if (panelId === 'agent') {
+            setAgentSelectedByPane((prev) => {
+                const next = { ...prev };
+                delete next[panelKey];
+                return Object.keys(next).length > 0 ? next : { agent: null };
+            });
+            if (activeAgentPaneId === panelKey) {
+                setActiveAgentPaneId('agent');
+            }
+            return;
+        }
+        if (panelId === 'terminal') {
+            setTerminalSelectedByPane((prev) => {
+                const next = { ...prev };
+                delete next[panelKey];
+                return Object.keys(next).length > 0 ? next : { terminal: null };
+            });
+            if (activeTerminalPaneId === panelKey) {
+                setActiveTerminalPaneId('terminal');
+            }
+        }
+    }, [activeAgentPaneId, activeTerminalPaneId, editors]);
+
+    const handlePanelActivated = useCallback((panelId: PanelId, panelKey: string) => {
+        if (panelId === 'editor') {
+            editors.setActiveEditorPaneId(panelKey);
+
+            const paneFileId = editors.getActiveFileIdForPane(panelKey);
+            if (!paneFileId) {
+                return;
+            }
+
+            const editorState = editors.getEditorState(paneFileId);
+            if (editorState) {
+                editorState.restoreScroll();
+                editorState.renderCursorOrSelection();
+            }
+            return;
+        }
+        if (panelId === 'agent') {
+            setActiveAgentPaneId(panelKey);
+            return;
+        }
+        if (panelId === 'terminal') {
+            setActiveTerminalPaneId(panelKey);
+        }
+    }, [editors]);
 
     return (
-        <div className={`app-container ${toolbarHeaderVisible ? 'toolbar-header-visible' : 'toolbar-header-compact'}`}>
+        <div className="app-container toolbar-header-compact">
             <div className="main-content" style={{ flex: 1, display: 'flex' }}>
                 <Layout
                     panels={dockPanels}
-                    visibility={dockVisibility}
-                    toolbarHeaderVisible={toolbarHeaderVisible}
-                    onPanelVisibilityChange={handleDockPanelVisibilityChange}
                     panelContentOverrides={{ editor: renderEditorPanel, terminal: renderTerminalPanel, agent: renderAgentPanel }}
-                    onPanelAdded={(panelId, panelKey) => {
-                        if (panelId === 'editor') {
-                            editors.registerEditorPane(panelKey);
-                            editors.setActiveEditorPaneId(panelKey);
-                            return;
-                        }
-                        if (panelId === 'agent') {
-                            setActiveAgentPaneId(panelKey);
-                            setAgentSelectedByPane((prev) => ({
-                                ...prev,
-                                [panelKey]: prev[panelKey] ?? null,
-                            }));
-                            return;
-                        }
-                        if (panelId === 'terminal') {
-                            setActiveTerminalPaneId(panelKey);
-                            setTerminalSelectedByPane((prev) => ({
-                                ...prev,
-                                [panelKey]: prev[panelKey] ?? null,
-                            }));
-                        }
-                    }}
-                    onPanelRemoved={(panelId, panelKey) => {
-                        if (panelId === 'editor') {
-                            editors.unregisterEditorPane(panelKey);
-                            return;
-                        }
-                        if (panelId === 'agent') {
-                            setAgentSelectedByPane((prev) => {
-                                const next = { ...prev };
-                                delete next[panelKey];
-                                return Object.keys(next).length > 0 ? next : { agent: null };
-                            });
-                            if (activeAgentPaneId === panelKey) {
-                                setActiveAgentPaneId('agent');
-                            }
-                            return;
-                        }
-                        if (panelId === 'terminal') {
-                            setTerminalSelectedByPane((prev) => {
-                                const next = { ...prev };
-                                delete next[panelKey];
-                                return Object.keys(next).length > 0 ? next : { terminal: null };
-                            });
-                            if (activeTerminalPaneId === panelKey) {
-                                setActiveTerminalPaneId('terminal');
-                            }
-                        }
-                    }}
-                    onPanelActivated={(panelId, panelKey) => {
-                        if (panelId === 'editor') {
-                            editors.setActiveEditorPaneId(panelKey);
-
-                            const paneFileId = editors.getActiveFileIdForPane(panelKey);
-                            if (!paneFileId) {
-                                return;
-                            }
-
-                            const editorState = editors.getEditorState(paneFileId);
-                            if (editorState) {
-                                console.log('[dockview] editor panel active -> restoreScroll', {
-                                    panelKey,
-                                    fileId: paneFileId,
-                                });
-                                editorState.restoreScroll();
-                                editorState.renderCursorOrSelection();
-                            } else {
-                                console.log('[dockview] editor panel active -> editorState not ready', {
-                                    panelKey,
-                                    fileId: paneFileId,
-                                });
-                            }
-                            return;
-                        }
-                        if (panelId === 'agent') {
-                            setActiveAgentPaneId(panelKey);
-                            return;
-                        }
-                        if (panelId === 'terminal') {
-                            setActiveTerminalPaneId(panelKey);
-                        }
-                    }}
+                    onPanelAdded={handlePanelAdded}
+                    onPanelRemoved={handlePanelRemoved}
+                    onPanelActivated={handlePanelActivated}
                 />
             </div>
         </div>

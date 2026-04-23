@@ -21,12 +21,15 @@ export function loadItem<T>(key: string): T | null {
     return null;
 }
 
-
-export function loadLeftPanelVisible(): boolean {
-    return loadItem('leftPanelVisible') ?? false;
+export function loadItemWithFallback<T>(key: string, fallbackKey: string): T | null {
+    return loadItem<T>(key) ?? loadItem<T>(fallbackKey);
 }
-export function loadBottomVisible(): boolean {
-    return loadItem('bottomPanelVisible') ?? false;
+
+export function loadFilesPanelVisible(): boolean {
+    return loadItemWithFallback<boolean>('filesPanelVisible', 'leftPanelVisible') ?? false;
+}
+export function loadTerminalPanelVisible(): boolean {
+    return loadItemWithFallback<boolean>('terminalPanelVisible', 'bottomPanelVisible') ?? false;
 }
 export function loadTerminals(): Terminal[] {
     return loadItem('terminals') ?? [];
@@ -34,11 +37,11 @@ export function loadTerminals(): Terminal[] {
 export function loadTerminalSelected(): number {
     return loadItem('terminalSelected') ?? 0;
 }
-export function loadRightPanelVisible(): boolean {
-    return loadItem('rightPanelVisible') ?? true;
+export function loadAgentPanelVisible(): boolean {
+    return loadItemWithFallback<boolean>('agentPanelVisible', 'rightPanelVisible') ?? true;
 }
-export function loadCenterPaneVisible(): boolean {
-    return loadItem('centerPanelVisible') ?? true;
+export function loadEditorPanelVisible(): boolean {
+    return loadItemWithFallback<boolean>('editorPanelVisible', 'centerPanelVisible') ?? true;
 }
 export function loadDiffEnabled(): boolean {
     return loadItem('diffEnabled') ?? false;

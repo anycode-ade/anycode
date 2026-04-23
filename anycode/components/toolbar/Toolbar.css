@@ -1,0 +1,138 @@
+.tab {
+    display: flex;
+    align-items: center;
+    color: #888888;
+    cursor: pointer;
+    position: relative;
+    white-space: nowrap;
+    gap: 4px;
+}
+
+.tab.active > .tab-filename {
+    text-shadow: 0 0 6px rgba(255, 255, 255, 0.8)
+}
+
+.tab.active {
+    color: #fff;
+}
+
+.tab-filename {
+    flex: 1;
+    overflow: hidden;
+    padding-left: 8px;
+    padding-right: 4px;
+}
+
+.tab:hover .tab-close-button {
+    opacity: 1;
+}
+
+.toolbar {
+    display: flex;
+    width: 100%;
+    height: 100%;
+    background: var(--background-color, #242424);
+    padding: 4px 10px;
+    gap: 6px;
+    align-items: center;
+    user-select: none;
+    border-radius: 0;
+    box-shadow: none;
+    border: none;
+    overflow: hidden;
+    box-sizing: border-box;
+}
+
+.toolbar-tabs {
+    display: flex;
+    height: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    flex: 1;
+    min-width: 0;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+}
+
+.toolbar-tabs::-webkit-scrollbar {
+    display: none;
+}
+
+.toggle-mode-btn {
+    background: transparent;
+    border: none;
+    color: #888;
+    cursor: pointer;
+    border-radius: 12px;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 4px;
+}
+
+.toggle-mode-btn:hover {
+    color: #fff;
+}
+
+.toggle-mode-btn.active {
+    color: #fff;
+    text-shadow: 0 0 6px rgba(255, 255, 255, 0.8);
+}
+
+.tab-terminal {
+    color: #7ec8ff;
+}
+
+.tab-terminal.active {
+    color: #d8f0ff;
+}
+
+.tab-agent {
+    color: #9fd5a9;
+}
+
+.tab-agent.active {
+    color: #d9f5de;
+}
+
+.agent-toolbar-btn {
+    border: none;
+    background: transparent;
+    color: #9fd5a9;
+    padding: 0 6px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.agent-toolbar-btn:hover {
+    color: #d9f5de;
+}
+
+.agent-toolbar-btn svg {
+    width: 16px;
+    height: 16px;
+}
+
+.toolbar button:focus {
+    outline: none;
+    border: none;
+    box-shadow: none;
+}
+
+@media (max-width: 768px) and (pointer: coarse) {
+    .toolbar button svg {
+        width: 32px;
+        height: 32px;
+    }
+
+    .toolbar {
+        padding: 4px 8px;
+    }
+
+    .tab-filename {
+        font-size: 16px;
+    }
+}

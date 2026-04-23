@@ -6,12 +6,11 @@ import { loadTerminals } from '../storage';
 type UseTerminalsParams = {
     wsRef: React.RefObject<Socket | null>;
     isConnected: boolean;
-    bottomPanelVisible: boolean;
 };
 
 const TERMINAL_DELAY_MS = 100;
 
-export const useTerminals = ({ wsRef, isConnected, bottomPanelVisible }: UseTerminalsParams) => {
+export const useTerminals = ({ wsRef, isConnected }: UseTerminalsParams) => {
     const [terminals, setTerminals] = useState<Terminal[]>(loadTerminals);
     const terminalCounterRef = useRef<number>(1);
     const newTerminalsRef = useRef<Set<string>>(new Set());
@@ -116,8 +115,6 @@ export const useTerminals = ({ wsRef, isConnected, bottomPanelVisible }: UseTerm
     }, [terminals, wsRef, isConnected]);
 
     const handleTerminalResize = useCallback((name: string, cols: number, rows: number) => {
-        if (!bottomPanelVisible) return;
-
         const terminal = terminals.find((t) => t.name === name);
         if (!terminal || !wsRef.current || !isConnected) return;
         pendingResizeRef.current.set(name, { cols, rows });
@@ -146,7 +143,7 @@ export const useTerminals = ({ wsRef, isConnected, bottomPanelVisible }: UseTerm
         }, resizeThrottleMsRef.current);
 
         resizeTimerRef.current.set(name, timerId);
-    }, [bottomPanelVisible, terminals, wsRef, isConnected]);
+    }, [terminals, wsRef, isConnected]);
 
     const addTerminal = useCallback(() => {
         let nextId = terminalCounterRef.current + 1;
@@ -160,10 +157,10 @@ export const useTerminals = ({ wsRef, isConnected, bottomPanelVisible }: UseTerm
         newTerminalsRef.current.add(id);
         setTerminals((prev) => [...prev, newTerminal]);
 
-        if (bottomPanelVisible && wsRef.current && isConnected) {
+        if (wsRef.current && isConnected) {
             initializeTerminal(newTerminal);
         }
-    }, [terminals, bottomPanelVisible, wsRef, isConnected, initializeTerminal]);
+    }, [terminals, wsRef, isConnected, initializeTerminal]);
 
     const closeTerminal = useCallback((index: number) => {
         const terminalToRemove = terminals[index];
@@ -180,11 +177,6 @@ export const useTerminals = ({ wsRef, isConnected, bottomPanelVisible }: UseTerm
             });
         }
     }, [clearResizeState, terminals, wsRef, isConnected]);
-
-    useEffect(() => {
-        if (bottomPanelVisible) return;
-        clearResizeState();
-    }, [bottomPanelVisible, clearResizeState]);
 
     useEffect(() => {
         return () => {

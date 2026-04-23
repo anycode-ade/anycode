@@ -22,28 +22,6 @@
     min-width: 200px;
 }
 
-.tab {
-    display: flex;
-    align-items: center;
-    /* color: #ccc; */
-    color: #888888;
-    cursor: pointer;
-    position: relative;
-    white-space: nowrap;
-    gap: 4px;
-}
-
-.tab.active > .tab-filename {
-    text-shadow: 0 0 6px rgba(255, 255, 255, 0.8)
-}
-.tab.active {
-    /* background-color: rgba(105, 98, 98, 0.33); */
-    color: #fff;
-    /* text-shadow: 0 0 6px rgba(255, 255, 255, 0.8) */
-    /* border-radius: 12px; */
-    /* border: 1px solid rgb(70, 70, 70); */
-}
-
 .tab-dirty-indicator {
     /* margin-right: 8px; */
     /* margin-left: 8px; */
@@ -52,15 +30,6 @@
 
 .tab-dirty-indicator.dirty {
     color: #ffffff;
-}
-
-.tab-filename {
-    flex: 1;
-    overflow: hidden;
-    /* text-overflow: ellipsis; */
-    /* height: 100%; */
-    padding-left: 8px;
-    padding-right: 4px;
 }
 
 .tab-close-button {
@@ -83,10 +52,6 @@
     box-shadow: none;
 }
 
-.tab:hover .tab-close-button {
-    opacity: 1;
-}
-
 .tab-rename-input {
     background: transparent;
     border: none;
@@ -107,126 +72,6 @@
     font-size: 18px; */
 }
 
-.toolbar {
-    display: flex;
-    width: 100%;
-    height: 100%;
-    background: var(--background-color, #242424);
-    padding: 4px 10px;
-    gap: 6px;
-    align-items: center;
-    user-select: none;
-    border-radius: 0;
-    box-shadow: none;
-    border: none;
-    overflow: hidden;
-    box-sizing: border-box;
-}
-
-.toolbar-title {
-    color: #a6a6a6;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    font-size: 12px;
-    line-height: 1;
-    flex-shrink: 0;
-    padding-right: 2px;
-}
-
-.app-container.toolbar-header-visible .layout-dock-panel--toolbar .toolbar-title {
-    display: none;
-}
-
-.app-container.toolbar-header-compact .layout-dock-panel--toolbar .toolbar-title {
-    display: block;
-}
-
-/* .toolbar::after {
-    content: '';
-    position: absolute;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    height: 1px;
-    background: linear-gradient(to right, transparent, #555, transparent);
-} */
-
-.toolbar-buttons {
-    display: flex;
-    gap: 0px;
-    align-items: center;
-    flex-shrink: 0;
-}
-
-.toolbar-tabs {
-    display: flex;
-    height: 100%;
-    overflow-x: auto;
-    overflow-y: hidden;
-    flex: 1;
-    min-width: 0;
-    scrollbar-width: none;
-    -ms-overflow-style: none;
-}
-
-.toolbar-tabs::-webkit-scrollbar {
-    display: none;
-}
-
-.tab-terminal {
-    color: #7ec8ff;
-}
-
-.tab-terminal.active {
-    color: #d8f0ff;
-}
-
-.tab-agent {
-    color: #9fd5a9;
-}
-
-.tab-agent.active {
-    color: #d9f5de;
-}
-
-.terminal-toolbar-add {
-    border: none;
-    background: transparent;
-    color: #7ec8ff;
-    padding: 0 8px;
-    cursor: pointer;
-    white-space: nowrap;
-}
-
-.terminal-toolbar-add:hover {
-    color: #d8f0ff;
-}
-
-.agent-toolbar-btn {
-    border: none;
-    background: transparent;
-    color: #9fd5a9;
-    padding: 0 6px;
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-}
-
-.agent-toolbar-btn:hover {
-    color: #d9f5de;
-}
-
-.agent-toolbar-btn svg {
-    width: 16px;
-    height: 16px;
-}
-
-.toolbar button:focus {
-    outline: none;
-    border: none;
-    box-shadow: none;
-}
 .save-button {
     background: transparent;
     color: white;
@@ -240,125 +85,6 @@
     background: #007acc;
     cursor: pointer;
     box-shadow: 0 0 8px rgba(0, 122, 204, 0.5);
-}
-
-.terminal-toggle-btn {
-    background: none;
-    border: none;
-    color: #888;
-    cursor: pointer;
-    border-radius: 12px;
-    font-weight: bold;
-    transition: all 0.2s ease;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 4px;
-}
-
-.terminal-toggle-btn:hover {
-    color: #fff;
-    /* text-shadow: 0 0 6px rgba(255, 255, 255, 0.8); */
-}
-
-.terminal-toggle-btn.active {
-    /* background-color: #444; */
-    color: #fff;
-    text-shadow: 0 0 6px rgba(255, 255, 255, 0.8);
-}
-
-.toggle-tree-btn {
-    background: none;
-    border: none;
-    color: #888;
-    cursor: pointer;
-    border-radius: 12px;
-    transition: all 0.2s ease;
-    font-weight: bold;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 4px;
-}
-
-.toggle-tree-btn:hover {
-    color: #fff;
-}
-
-.toggle-tree-btn.active {
-    /* background-color: #444; */
-    color: #fff;
-    text-shadow: 0 0 6px rgba(255, 255, 255, 0.8);
-}
-
-.acp-toggle-btn {
-    background: none;
-    border: none;
-    color: #888;
-    cursor: pointer;
-    border-radius: 12px;
-    font-weight: bold;
-    transition: all 0.2s ease;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 4px;
-}
-
-.acp-toggle-btn:hover {
-    color: #fff;
-    /* text-shadow: 0 0 6px rgba(255, 255, 255, 0.8); */
-}
-
-.acp-toggle-btn.active {
-    /* background-color: #444; */
-    color: #fff;
-    text-shadow: 0 0 6px rgba(255, 255, 255, 0.8);
-}
-
-.toggle-mode-btn {
-    background: transparent;
-    border: none;
-    color: #888;
-    cursor: pointer;
-    border-radius: 12px;
-    transition: all 0.2s ease;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 4px;
-}
-
-.toggle-mode-btn:hover {
-    color: #fff;
-}
-
-.toggle-mode-btn.active {
-    color: #fff;
-    text-shadow: 0 0 6px rgba(255, 255, 255, 0.8);
-}
-
-.editor-toggle-btn {
-    background: none;
-    border: none;
-    color: #888;
-    cursor: pointer;
-    border-radius: 12px;
-    font-weight: bold;
-    transition: all 0.2s ease;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 4px;
-}
-
-.editor-toggle-btn:hover {
-    color: #fff;
-}
-
-.editor-toggle-btn.active {
-    color: #fff;
-    text-shadow: 0 0 6px rgba(255, 255, 255, 0.8);
 }
 
 .language-indicator {
@@ -567,21 +293,4 @@
 .terminal-disconnected p {
     margin: 8px 0;
     font-size: 14px;
-}
-
-@media (max-width: 768px) and (pointer: coarse) {
-    .toolbar button svg {
-        width: 32px;
-        height: 32px;
-    }
-
-    .toolbar {
-        padding: 4px 8px;
-    }
-    .toolbar-buttons button {
-        padding: 0px;
-    }
-    .tab-filename {
-        font-size: 16px;
-    }
 }
