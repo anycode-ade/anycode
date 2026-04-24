@@ -1,6 +1,7 @@
 export let vesper = {
     "string": "#b1fce5",
     "variable": "#fff",
+    "variable.builtin": "#a0a0a0",
     "function": "#f6c99f",
     "type": "#f6c99f",
     "namespace": "#f6c99f",

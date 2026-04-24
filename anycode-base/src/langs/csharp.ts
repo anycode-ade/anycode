@@ -17,10 +17,8 @@ const query = `
 (constructor_declaration name: (identifier) @constructor)
 (destructor_declaration name: (identifier) @constructor)
 
-;[
-;  (implicit_type)
-;  (predefined_type)
-;] @type.builtin
+(implicit_type) @keyword
+(predefined_type) @type
 
 (_ type: (identifier) @type)
 
@@ -162,6 +160,7 @@ const query = `
   "typeof"
   "unchecked"
   "using"
+  "var"
   "while"
   "new"
   "await"

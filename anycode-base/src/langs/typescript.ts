@@ -259,7 +259,7 @@ const query = `
 ((identifier) @type
  (#match? @type "^[A-Z]"))
 (type_identifier) @type
-(predefined_type) @type.builtin
+(predefined_type) @type
 
 ([
   (identifier)
@@ -270,8 +270,8 @@ const query = `
 
 ; Literals
 
-(this) @variable.special
-(super) @variable.special
+(this) @variable.builtin
+(super) @variable.builtin
 
 [
   (null)
