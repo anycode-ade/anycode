@@ -96,26 +96,6 @@
     color: #d9f5de;
 }
 
-.agent-toolbar-btn {
-    border: none;
-    background: transparent;
-    color: #9fd5a9;
-    padding: 0 6px;
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-}
-
-.agent-toolbar-btn:hover {
-    color: #d9f5de;
-}
-
-.agent-toolbar-btn svg {
-    width: 16px;
-    height: 16px;
-}
-
 .toolbar button:focus {
     outline: none;
     border: none;

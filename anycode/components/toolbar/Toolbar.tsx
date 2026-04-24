@@ -1,5 +1,4 @@
 import type { FileState, Terminal, AcpSession } from '../../types';
-import { AcpIcons } from '../agent/AcpIcons';
 import './Toolbar.css';
 
 interface ToolbarProps {
@@ -15,7 +14,6 @@ interface ToolbarProps {
     onCloseTerminal: (index: number) => void;
     onSelectAgent: (agentId: string) => void;
     onCloseAgent: (agentId: string) => void;
-    onAddAgent: () => void;
 }
 
 export const Toolbar = ({
@@ -31,7 +29,6 @@ export const Toolbar = ({
     onCloseTerminal,
     onSelectAgent,
     onCloseAgent,
-    onAddAgent,
 }: ToolbarProps) => (
     <div className="toolbar">
         <div className="toolbar-tabs">
@@ -89,9 +86,6 @@ export const Toolbar = ({
                     </button>
                 </div>
             ))}
-            <button className="agent-toolbar-btn" onClick={onAddAgent} type="button" title="Add agent">
-                <AcpIcons.Add />
-            </button>
         </div>
     </div>
 );

@@ -21,6 +21,7 @@ interface XTerminalProps {
   onData: (name: string, data: string) => void;
   onMessage: (name: string, callback: (data: string) => void) => (() => void);
   onResize: (name: string, cols: number, rows: number) => void;
+  isTerminalClosing: (name: string) => boolean;
   rows: number;
   cols: number;
   isConnected: boolean;
@@ -33,6 +34,7 @@ const Terminal: React.FC<XTerminalProps> = ({
   onData,
   onMessage,
   onResize,
+  isTerminalClosing,
   rows,
   cols,
   isConnected,
@@ -49,14 +51,16 @@ const Terminal: React.FC<XTerminalProps> = ({
   const saveSnapshotTimerRef = useRef<number | null>(null);
   const onDataRef = useRef(onData);
   const onResizeRef = useRef(onResize);
+  const isTerminalClosingRef = useRef(isTerminalClosing);
 
   useEffect(() => {
     onDataRef.current = onData;
     onResizeRef.current = onResize;
-  }, [onData, onResize]);
+    isTerminalClosingRef.current = isTerminalClosing;
+  }, [onData, onResize, isTerminalClosing]);
 
   const saveTerminalState = debounce(() => {
-    if (!serializeAddonRef.current) return;
+    if (isTerminalClosingRef.current(name) || !serializeAddonRef.current) return;
     const snapshot = serializeAddonRef.current.serialize();
     savedSnapshotRef.current = snapshot;
     localStorage.setItem(`terminal:data:${name}`, snapshot);
@@ -220,7 +224,12 @@ const Terminal: React.FC<XTerminalProps> = ({
 
     return () => {
       if (cleanupMessage) cleanupMessage();
-      saveTerminalState();
+      if (isTerminalClosingRef.current(name)) {
+        localStorage.removeItem(`terminal:data:${name}`);
+        localStorage.removeItem(`terminal:mouseMode:${name}`);
+      } else {
+        saveTerminalState();
+      }
       clearFitTimers();
       if (resizeObserverRef.current) {
         resizeObserverRef.current.disconnect();

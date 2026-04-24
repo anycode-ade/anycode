@@ -19,6 +19,7 @@ export const useTerminals = ({ wsRef, isConnected }: UseTerminalsParams) => {
     const resizeTimerRef = useRef<Map<string, number>>(new Map());
     const lastResizeSentRef = useRef<Map<string, { cols: number; rows: number }>>(new Map());
     const resizeThrottleMsRef = useRef<number>(TERMINAL_DELAY_MS);
+    const closingTerminalsRef = useRef<Set<string>>(new Set());
 
     const clearResizeState = useCallback((name?: string) => {
         if (!name) {
@@ -166,8 +167,12 @@ export const useTerminals = ({ wsRef, isConnected }: UseTerminalsParams) => {
         const terminalToRemove = terminals[index];
         if (!terminalToRemove) return;
 
+        closingTerminalsRef.current.add(terminalToRemove.name);
         newTerminalsRef.current.delete(terminalToRemove.id);
         clearResizeState(terminalToRemove.name);
+        window.setTimeout(() => {
+            closingTerminalsRef.current.delete(terminalToRemove.name);
+        }, TERMINAL_DELAY_MS * 2);
         setTerminals((prev) => prev.filter((_, i) => i !== index));
 
         if (wsRef.current && isConnected) {
@@ -177,6 +182,10 @@ export const useTerminals = ({ wsRef, isConnected }: UseTerminalsParams) => {
             });
         }
     }, [clearResizeState, terminals, wsRef, isConnected]);
+
+    const isTerminalClosing = useCallback((name: string) => {
+        return closingTerminalsRef.current.has(name);
+    }, []);
 
     useEffect(() => {
         return () => {
@@ -192,5 +201,6 @@ export const useTerminals = ({ wsRef, isConnected }: UseTerminalsParams) => {
         addTerminal,
         closeTerminal,
         reconnectTerminals,
+        isTerminalClosing,
     };
 };

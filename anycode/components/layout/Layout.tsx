@@ -178,12 +178,10 @@ type PanelPickerParams = {
     onSelectPanel: (panelId: PanelId, pickerPanelId: string) => void;
 };
 
-type Panels = Record<PanelId, React.ReactNode>;
 type PanelVisibility = Record<PanelId, boolean>;
 
 type LayoutProps = {
-    panels: Panels;
-    panelContentOverrides?: Partial<Record<PanelId, (panelKey: string) => React.ReactNode>>;
+    renderPanel: (panelId: PanelId, panelKey: string) => React.ReactNode;
     onPanelAdded?: (id: PanelId, panelKey: string) => void;
     onPanelRemoved?: (id: PanelId, panelKey: string) => void;
     onPanelActivated?: (id: PanelId, panelKey: string) => void;
@@ -192,6 +190,7 @@ type LayoutProps = {
 type SerializedLayout = ReturnType<DockviewApi['toJSON']>;
 
 const PANEL_INSTANCE_SEPARATOR = '__';
+const EMPTY_PANE_PREFIX = 'empty-pane-';
 
 const getPanelBaseId = (panelKey: string): PanelId | null => {
     const directMatch = panelKey as PanelId;
@@ -214,24 +213,29 @@ const createPanelKey = (panelId: PanelId): string => (
     `${panelId}${PANEL_INSTANCE_SEPARATOR}${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 );
 
+const createPickerPanelId = (): string => `${EMPTY_PANE_PREFIX}${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+const isPickerPanel = (panelId: string): boolean => panelId.startsWith(EMPTY_PANE_PREFIX);
+
 const getPanelsByBaseId = (api: DockviewApi, panelId: PanelId): IDockviewPanel[] => (
     api.panels.filter((panel) => getPanelBaseId(panel.id) === panelId)
+);
+
+const getPanelByBaseId = (api: DockviewApi, panelId: PanelId): IDockviewPanel | undefined => (
+    getPanelsByBaseId(api, panelId)[0]
 );
 
 const panelDefinitions = [
     {
         id: 'toolbar',
         title: 'Anycode',
-        pickerVisible: true,
+        pickerVisible: false,
         disableClose: true,
     },
     {
         id: 'files',
         title: 'Files',
         pickerVisible: true,
-        defaultPlacements: [
-            { direction: 'above', referenceIds: ['toolbar'] },
-        ],
     },
     {
         id: 'search',
@@ -286,18 +290,40 @@ const panelTitles: Record<PanelId, string> = Object.fromEntries(
     panelDefinitions.map((definition) => [definition.id, definition.title]),
 ) as Record<PanelId, string>;
 
-const panelSyncOrder: PanelId[] = panelDefinitions.map((definition) => definition.id);
+const panelSyncOrder: PanelId[] = ['files', 'editor', 'agent', 'search', 'changes', 'terminal'];
 const LAYOUT_STORAGE_KEY = 'layout';
+const LAYOUT_VERSION_STORAGE_KEY = 'layoutVersion';
+const CURRENT_LAYOUT_VERSION = 4;
 
 const loadPanelVisibility = (): PanelVisibility => ({
-    files: loadFilesPanelVisible(),
-    search: loadItem<boolean>('searchPanelVisible') ?? false,
-    changes: loadItem<boolean>('changesPanelVisible') ?? false,
-    editor: loadEditorPanelVisible(),
-    agent: loadAgentPanelVisible(),
+    files: (loadItem<number>(LAYOUT_VERSION_STORAGE_KEY) ?? 0) < CURRENT_LAYOUT_VERSION ? true : loadFilesPanelVisible(),
+    search: (loadItem<number>(LAYOUT_VERSION_STORAGE_KEY) ?? 0) < CURRENT_LAYOUT_VERSION ? true : (loadItem<boolean>('searchPanelVisible') ?? false),
+    changes: (loadItem<number>(LAYOUT_VERSION_STORAGE_KEY) ?? 0) < CURRENT_LAYOUT_VERSION ? true : (loadItem<boolean>('changesPanelVisible') ?? false),
+    editor: (loadItem<number>(LAYOUT_VERSION_STORAGE_KEY) ?? 0) < CURRENT_LAYOUT_VERSION ? true : loadEditorPanelVisible(),
+    agent: (loadItem<number>(LAYOUT_VERSION_STORAGE_KEY) ?? 0) < CURRENT_LAYOUT_VERSION ? true : loadAgentPanelVisible(),
     terminal: loadTerminalPanelVisible(),
     toolbar: true,
 });
+
+const hasSavedPanel = (layout: SerializedLayout, panelId: PanelId): boolean => (
+    Object.keys(layout.panels).some((panelKey) => getPanelBaseId(panelKey) === panelId)
+);
+
+const shouldUseSavedLayout = (layout: SerializedLayout): boolean => {
+    const savedLayoutVersion = loadItem<number>(LAYOUT_VERSION_STORAGE_KEY) ?? 0;
+    if (savedLayoutVersion < CURRENT_LAYOUT_VERSION) {
+        return false;
+    }
+
+    if (hasSavedPanel(layout, 'toolbar')) {
+        return false;
+    }
+
+    return Object.keys(layout.panels).some((panelKey) => {
+        const baseId = getPanelBaseId(panelKey);
+        return baseId !== null && baseId !== 'toolbar';
+    });
+};
 
 const LayoutPanel: React.FC<IDockviewPanelProps<PanelParams>> = ({ params }) => (
     <div className={`layout-dock-panel layout-dock-panel--${params.panelId}`}>
@@ -318,7 +344,11 @@ const PanelPicker: React.FC<IDockviewPanelProps<PanelPickerParams>> = ({ params 
                     <button
                         key={panelId}
                         className="layout-panel-picker-item"
-                        onClick={() => params.onSelectPanel(panelId, params.pickerPanelId)}
+                        onClick={() => {
+                            if (typeof params.onSelectPanel === 'function') {
+                                params.onSelectPanel(panelId, params.pickerPanelId);
+                            }
+                        }}
                         type="button"
                     >
                         {panelTitles[panelId]}
@@ -333,10 +363,13 @@ const LayoutHeaderActions: React.FC<IDockviewHeaderActionsProps & {
     onSplitRight: (api: DockviewApi, referencePanelId: string) => void;
     onSplitDown: (api: DockviewApi, referencePanelId: string) => void;
     onAddTab: (api: DockviewApi, referencePanelId: string) => void;
-}> = ({ containerApi, activePanel, onSplitRight, onSplitDown, onAddTab }) => {
+    onClosePanel: (api: DockviewApi, panel: IDockviewPanel) => void;
+}> = ({ containerApi, activePanel, onSplitRight, onSplitDown, onAddTab, onClosePanel }) => {
     if (!activePanel) {
         return null;
     }
+
+    const canClosePanel = activePanel.id !== 'toolbar' && (containerApi.totalPanels > 1 || !isPickerPanel(activePanel.id));
 
     return (
         <div className="layout-header-actions">
@@ -370,10 +403,10 @@ const LayoutHeaderActions: React.FC<IDockviewHeaderActionsProps & {
                 <Icons.LayoutSplitDown />
             </button>
 
-            {activePanel.id !== 'toolbar' ? (
+            {canClosePanel ? (
                 <button
                     className="layout-header-action-btn layout-header-action-btn--close"
-                    onClick={() => activePanel.api.close()}
+                    onClick={() => onClosePanel(containerApi, activePanel)}
                     type="button"
                     title="Close Panel"
                     aria-label="Close Panel"
@@ -393,7 +426,7 @@ const getDefaultPanelPosition = (
 
     for (const placement of definition.defaultPlacements ?? []) {
         for (const referenceId of placement.referenceIds) {
-            const referencePanel = api.getPanel(referenceId);
+            const referencePanel = api.getPanel(referenceId) ?? getPanelByBaseId(api, referenceId);
             if (referencePanel) {
                 return {
                     referencePanel,
@@ -432,9 +465,26 @@ const addPanel = (
     });
 };
 
+const addRootPickerPanel = (
+    api: DockviewApi,
+    onSelectPanel: (panelId: PanelId, pickerPanelId: string) => void,
+): IDockviewPanel => {
+    const pickerPanelId = createPickerPanelId();
+    return api.addPanel<PanelPickerParams>({
+        id: pickerPanelId,
+        component: 'panelPicker',
+        title: 'Empty',
+        minimumWidth: 0,
+        minimumHeight: 0,
+        params: {
+            pickerPanelId,
+            onSelectPanel,
+        },
+    });
+};
+
 export const Layout: React.FC<LayoutProps> = ({
-    panels,
-    panelContentOverrides,
+    renderPanel,
     onPanelAdded,
     onPanelRemoved,
     onPanelActivated,
@@ -443,17 +493,21 @@ export const Layout: React.FC<LayoutProps> = ({
     const [visibility, setVisibility] = useState<PanelVisibility>(loadPanelVisibility);
     const listenersRef = useRef<Array<{ dispose: () => void }>>([]);
     const layoutSaveTimerRef = useRef<number | null>(null);
+    const emptyPaneRestoreTimerRef = useRef<number | null>(null);
     const splitRightRef = useRef<(api: DockviewApi, referencePanelId: string) => void>(() => {});
     const splitDownRef = useRef<(api: DockviewApi, referencePanelId: string) => void>(() => {});
     const addTabRef = useRef<(api: DockviewApi, referencePanelId: string) => void>(() => {});
+    const closePanelRef = useRef<(api: DockviewApi, panel: IDockviewPanel) => void>(() => {});
+    const renderPanelRef = useRef<LayoutProps['renderPanel']>(renderPanel);
+
+    renderPanelRef.current = renderPanel;
 
     const panelEntries = useMemo(() => (
         panelSyncOrder.map((id) => ({
             id,
-            content: panels[id],
             visible: visibility[id],
         }))
-    ), [panels, visibility]);
+    ), [visibility]);
 
     useEffect(() => {
         saveItem('filesPanelVisible', visibility.files);
@@ -464,10 +518,9 @@ export const Layout: React.FC<LayoutProps> = ({
         saveItem('terminalPanelVisible', visibility.terminal);
     }, [visibility]);
 
-    const resolvePanelContent = useCallback((panelId: PanelId, panelKey: string): React.ReactNode => {
-        const override = panelContentOverrides?.[panelId];
-        return override ? override(panelKey) : panels[panelId];
-    }, [panelContentOverrides, panels]);
+    const resolvePanelContent = useCallback((panelId: PanelId, panelKey: string): React.ReactNode => (
+        renderPanelRef.current(panelId, panelKey)
+    ), []);
 
     const disposeListeners = useCallback(() => {
         for (const listener of listenersRef.current) {
@@ -490,6 +543,7 @@ export const Layout: React.FC<LayoutProps> = ({
                 ),
             };
             saveItem(LAYOUT_STORAGE_KEY, sanitized);
+            saveItem(LAYOUT_VERSION_STORAGE_KEY, CURRENT_LAYOUT_VERSION);
         }, 120);
     }, []);
 
@@ -531,7 +585,7 @@ export const Layout: React.FC<LayoutProps> = ({
                 continue;
             }
 
-            addPanel(api, panel.id, panel.id, panel.content);
+            addPanel(api, panel.id, panel.id, resolvePanelContent(panel.id, panel.id));
         }
     }, [panelEntries, resolvePanelContent]);
 
@@ -587,7 +641,7 @@ export const Layout: React.FC<LayoutProps> = ({
             return;
         }
 
-        const pickerPanelId = `empty-pane-${Date.now()}`;
+        const pickerPanelId = createPickerPanelId();
         api.addPanel<PanelPickerParams>({
             id: pickerPanelId,
             component: 'panelPicker',
@@ -605,6 +659,19 @@ export const Layout: React.FC<LayoutProps> = ({
         });
     }, [handleSelectPanelFromPicker]);
 
+    const rebindPickerPanels = useCallback((api: DockviewApi) => {
+        for (const panel of api.panels) {
+            if (!isPickerPanel(panel.id)) {
+                continue;
+            }
+
+            panel.api.updateParameters({
+                pickerPanelId: panel.id,
+                onSelectPanel: handleSelectPanelFromPicker,
+            });
+        }
+    }, [handleSelectPanelFromPicker]);
+
     const handleSplitPanelRight = useCallback((api: DockviewApi, referencePanelId: string) => {
         addPickerPanel(api, referencePanelId, 'right');
     }, [addPickerPanel]);
@@ -617,11 +684,24 @@ export const Layout: React.FC<LayoutProps> = ({
         addPickerPanel(api, referencePanelId, 'within');
     }, [addPickerPanel]);
 
+    const handleClosePanel = useCallback((api: DockviewApi, panel: IDockviewPanel) => {
+        if (api.totalPanels <= 1) {
+            if (isPickerPanel(panel.id)) {
+                return;
+            }
+
+            addPickerPanel(api, panel.id, 'within');
+        }
+
+        panel.api.close();
+    }, [addPickerPanel]);
+
     useEffect(() => {
         splitRightRef.current = handleSplitPanelRight;
         splitDownRef.current = handleSplitPanelDown;
         addTabRef.current = handleAddEmptyTab;
-    }, [handleAddEmptyTab, handleSplitPanelDown, handleSplitPanelRight]);
+        closePanelRef.current = handleClosePanel;
+    }, [handleAddEmptyTab, handleClosePanel, handleSplitPanelDown, handleSplitPanelRight]);
 
     const renderRightHeaderActions = useCallback((props: IDockviewHeaderActionsProps) => (
         <LayoutHeaderActions
@@ -629,12 +709,16 @@ export const Layout: React.FC<LayoutProps> = ({
             onSplitRight={(api, referencePanelId) => splitRightRef.current(api, referencePanelId)}
             onSplitDown={(api, referencePanelId) => splitDownRef.current(api, referencePanelId)}
             onAddTab={(api, referencePanelId) => addTabRef.current(api, referencePanelId)}
+            onClosePanel={(api, panel) => closePanelRef.current(api, panel)}
         />
     ), []);
 
     useEffect(() => () => {
         if (layoutSaveTimerRef.current !== null) {
             clearTimeout(layoutSaveTimerRef.current);
+        }
+        if (emptyPaneRestoreTimerRef.current !== null) {
+            clearTimeout(emptyPaneRestoreTimerRef.current);
         }
         disposeListeners();
         apiRef.current = null;
@@ -648,7 +732,7 @@ export const Layout: React.FC<LayoutProps> = ({
 
         syncPanels(api);
         syncToolbarSize(api);
-    }, [syncPanels, syncToolbarSize]);
+    });
 
     const handleReady = useCallback(({ api }: DockviewReadyEvent) => {
         disposeListeners();
@@ -665,12 +749,20 @@ export const Layout: React.FC<LayoutProps> = ({
             }),
             api.onDidRemovePanel((panel) => {
                 const baseId = getPanelBaseId(panel.id);
-                if (!baseId) {
-                    return;
+                if (baseId) {
+                    onPanelRemoved?.(baseId, panel.id);
+                    const hasRemainingPanels = getPanelsByBaseId(api, baseId).length > 0;
+                    setVisibility((prev) => ({ ...prev, [baseId]: hasRemainingPanels }));
                 }
-                onPanelRemoved?.(baseId, panel.id);
-                const hasRemainingPanels = getPanelsByBaseId(api, baseId).length > 0;
-                setVisibility((prev) => ({ ...prev, [baseId]: hasRemainingPanels }));
+
+                if (api.totalPanels === 0 && emptyPaneRestoreTimerRef.current === null) {
+                    emptyPaneRestoreTimerRef.current = window.setTimeout(() => {
+                        emptyPaneRestoreTimerRef.current = null;
+                        if (api.totalPanels === 0) {
+                            addRootPickerPanel(api, handleSelectPanelFromPicker).api.setActive();
+                        }
+                    }, 0);
+                }
             }),
             api.onDidActivePanelChange((panel) => {
                 if (!panel) return;
@@ -684,7 +776,9 @@ export const Layout: React.FC<LayoutProps> = ({
         ];
 
         const savedLayout = loadItem<SerializedLayout>(LAYOUT_STORAGE_KEY);
-        if (savedLayout?.grid && savedLayout?.panels) {
+        const useSavedLayout = Boolean(savedLayout?.grid && savedLayout?.panels && shouldUseSavedLayout(savedLayout));
+
+        if (savedLayout?.grid && savedLayout?.panels && useSavedLayout) {
             try {
                 api.fromJSON(savedLayout, { reuseExistingPanels: false });
             } catch {
@@ -694,7 +788,12 @@ export const Layout: React.FC<LayoutProps> = ({
             syncPanels(api);
         }
 
+        rebindPickerPanels(api);
         syncPanels(api);
+        if (!useSavedLayout) {
+            api.getPanel('files')?.api.setActive();
+            api.getPanel('editor')?.api.setActive();
+        }
         syncToolbarSize(api);
         queueSaveLayout(api);
     }, [
@@ -702,19 +801,26 @@ export const Layout: React.FC<LayoutProps> = ({
         onPanelAdded,
         onPanelRemoved,
         onPanelActivated,
+        handleSelectPanelFromPicker,
         queueSaveLayout,
+        rebindPickerPanels,
         syncPanels,
         syncToolbarSize,
     ]);
 
     return (
         <div className="layout dockview-theme-dark">
-            <DockviewReact
-                components={{ layoutPanel: LayoutPanel, panelPicker: PanelPicker }}
-                className="layout-root"
-                onReady={handleReady}
-                rightHeaderActionsComponent={renderRightHeaderActions}
-            />
+            <div className="layout-main">
+                <DockviewReact
+                    components={{ layoutPanel: LayoutPanel, panelPicker: PanelPicker }}
+                    className="layout-root"
+                    onReady={handleReady}
+                    rightHeaderActionsComponent={renderRightHeaderActions}
+                />
+            </div>
+            <div className="layout-toolbar">
+                {renderPanelRef.current('toolbar', 'toolbar')}
+            </div>
         </div>
     );
 };

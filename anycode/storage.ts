@@ -26,7 +26,7 @@ export function loadItemWithFallback<T>(key: string, fallbackKey: string): T | n
 }
 
 export function loadFilesPanelVisible(): boolean {
-    return loadItemWithFallback<boolean>('filesPanelVisible', 'leftPanelVisible') ?? false;
+    return loadItemWithFallback<boolean>('filesPanelVisible', 'leftPanelVisible') ?? true;
 }
 export function loadTerminalPanelVisible(): boolean {
     return loadItemWithFallback<boolean>('terminalPanelVisible', 'bottomPanelVisible') ?? false;

@@ -1,21 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AnycodeEditorReact } from 'anycode-react';
 import 'dockview/dist/styles/dockview.css';
-import {
-    TreeNodeComponent,
-    Terminal,
-    ChangesPanel,
-} from './components';
+import { ChangesPanel } from './components';
 import Search from './components/Search';
 import { Layout, type PanelId } from './components/layout/Layout';
-import { AcpSettings } from './components/agent/AcpSettings';
-import { AcpSession } from './components/agent/AcpSession';
-import { AcpEmptyPane } from './components/agent/AcpEmptyPane';
-import { TerminalEmptyPane } from './components/terminal/TerminalEmptyPane';
 import { Toolbar } from './components/toolbar/Toolbar';
 import {
     getAllAgents,
-    getDefaultAgent,
     getDefaultAgentId,
     ensureDefaultAgents,
     updateAgents,
@@ -26,7 +16,6 @@ import {
     loadDiffEnabled,
     // loadFollowEnabled,
     loadAcpPermissionMode,
-    loadItem,
     saveAcpPermissionMode,
     saveItem,
 } from './storage';
@@ -38,17 +27,14 @@ import { useTerminals } from './hooks/useTerminals';
 import { useEditors } from './hooks/useEditors';
 import { useAgents } from './hooks/useAgents';
 import { type AcpPermissionMode } from './types';
+import { useTerminalPanes } from './features/terminal/useTerminalPanes';
+import { useAgentPanes } from './features/agents/useAgentPanes';
+import { FilesPanel } from './features/files/FilesPanel';
+import { EditorPanel } from './features/editor/EditorPanel';
+import { TerminalPanel } from './features/terminal/TerminalPanel';
+import { AgentPanel } from './features/agents/AgentPanel';
 
 const App: React.FC = () => {
-    const [terminalSelectedByPane, setTerminalSelectedByPane] = useState<Record<string, number | null>>(() => (
-        loadItem<Record<string, number | null>>('terminalSelectedByPane') ?? { terminal: null }
-    ));
-    const [agentSelectedByPane, setAgentSelectedByPane] = useState<Record<string, string | null>>(() => (
-        loadItem<Record<string, string | null>>('agentSelectedByPane') ?? { agent: null }
-    ));
-    const [activeTerminalPaneId, setActiveTerminalPaneId] = useState<string>('terminal');
-    const [activeAgentPaneId, setActiveAgentPaneId] = useState<string>('agent');
-
     const [diffEnabled, setDiffEnabled] = useState<boolean>(loadDiffEnabled());
     // const [followEnabled, setFollowEnabled] = useState<boolean>(loadFollowEnabled());
     const [permissionMode, setPermissionMode] = useState<AcpPermissionMode>(loadAcpPermissionMode());
@@ -67,6 +53,11 @@ const App: React.FC = () => {
     });
 
     const terminals = useTerminals({ wsRef, isConnected });
+    const terminalPanes = useTerminalPanes({
+        terminals: terminals.terminals,
+        addTerminal: terminals.addTerminal,
+        closeTerminal: terminals.closeTerminal,
+    });
     const git = useGit({ wsRef, isConnected });
     const search = useSearch({ wsRef, isConnected });
     const wasConnectedRef = useRef<boolean>(false);
@@ -94,26 +85,21 @@ const App: React.FC = () => {
         const ws = wsRef.current;
         if (!ws || !isConnected) return;
 
-        ws.on('lsp:diagnostics', editors.handleDiagnostics);
-        ws.on('watcher:edits', editors.handleWatcherEdits);
-        ws.on('watcher:create', fileTree.handleWatcherCreate);
-        ws.on('watcher:remove', fileTree.handleWatcherRemove);
-        ws.on('git:status-update', git.handleGitStatusUpdate);
-        ws.on('acp:message', agents.handleAcpMessage);
-        ws.on('acp:history', agents.handleAcpHistory);
-        ws.on('search:result', search.handleSearchResult);
-        ws.on('search:end', search.handleSearchEnd);
+        const events = [
+            ['lsp:diagnostics', editors.handleDiagnostics],
+            ['watcher:edits', editors.handleWatcherEdits],
+            ['watcher:create', fileTree.handleWatcherCreate],
+            ['watcher:remove', fileTree.handleWatcherRemove],
+            ['git:status-update', git.handleGitStatusUpdate],
+            ['acp:message', agents.handleAcpMessage],
+            ['acp:history', agents.handleAcpHistory],
+            ['search:result', search.handleSearchResult],
+            ['search:end', search.handleSearchEnd],
+        ] as const;
 
+        events.forEach(([event, handler]) => ws.on(event, handler));
         return () => {
-            ws.off('lsp:diagnostics', editors.handleDiagnostics);
-            ws.off('watcher:edits', editors.handleWatcherEdits);
-            ws.off('watcher:create', fileTree.handleWatcherCreate);
-            ws.off('watcher:remove', fileTree.handleWatcherRemove);
-            ws.off('git:status-update', git.handleGitStatusUpdate);
-            ws.off('acp:message', agents.handleAcpMessage);
-            ws.off('acp:history', agents.handleAcpHistory);
-            ws.off('search:result', search.handleSearchResult);
-            ws.off('search:end', search.handleSearchEnd);
+            events.forEach(([event, handler]) => ws.off(event, handler));
         };
     }, [
         wsRef,
@@ -157,14 +143,6 @@ const App: React.FC = () => {
     }, [editors.activeFileId, editors.files, fileTree.fileTree, fileTree.findNodeByPath, fileTree.selectNode]);
 
     useEffect(() => {
-        saveItem('terminalSelectedByPane', terminalSelectedByPane);
-    }, [terminalSelectedByPane]);
-
-    useEffect(() => {
-        saveItem('agentSelectedByPane', agentSelectedByPane);
-    }, [agentSelectedByPane]);
-
-    useEffect(() => {
         saveItem('diffEnabled', diffEnabled);
     }, [diffEnabled]);
 
@@ -185,22 +163,6 @@ const App: React.FC = () => {
     useEffect(() => {
         saveItem('terminals', terminals.terminals);
     }, [terminals.terminals]);
-
-    useEffect(() => {
-        const lastIndex = terminals.terminals.length - 1;
-        setTerminalSelectedByPane((prev) => {
-            const next: Record<string, number | null> = {};
-            const source = Object.keys(prev).length > 0 ? prev : { terminal: null };
-            Object.entries(source).forEach(([paneKey, selected]) => {
-                if (selected === null || lastIndex < 0) {
-                    next[paneKey] = null;
-                    return;
-                }
-                next[paneKey] = Math.min(Math.max(selected, 0), lastIndex);
-            });
-            return next;
-        });
-    }, [terminals.terminals.length]);
 
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
@@ -244,7 +206,6 @@ const App: React.FC = () => {
 
     const sessionsArray = useMemo(() => Array.from(agents.acpSessions.values()), [agents.acpSessions]);
     const availableAgents = useMemo<AcpAgent[]>(() => getAllAgents(), [agents.agentsVersion]);
-    const defaultAgent = useMemo(() => getDefaultAgent(), [agents.agentsVersion]);
     const settingsAgents = useMemo<AcpAgent[]>(() => (
         agents.isAgentSettingsOpen ? getAllAgents() : []
     ), [agents.isAgentSettingsOpen, agents.agentsVersion]);
@@ -253,26 +214,12 @@ const App: React.FC = () => {
         [agents.isAgentSettingsOpen, agents.agentsVersion],
     );
 
-    useEffect(() => {
-        const validAgentIds = new Set(sessionsArray.map((session) => session.agentId));
-        setAgentSelectedByPane((prev) => {
-            if (Object.keys(prev).length === 0) {
-                return prev;
-            }
+    const agentPanes = useAgentPanes({
+        sessions: sessionsArray,
+        selectedAgentId: agents.selectedAgentId,
+        setSelectedAgentId: agents.setSelectedAgentId,
+    });
 
-            const next: Record<string, string | null> = {};
-            Object.entries(prev).forEach(([paneKey, selectedAgentId]) => {
-                next[paneKey] = selectedAgentId && validAgentIds.has(selectedAgentId)
-                    ? selectedAgentId
-                    : null;
-            });
-            return next;
-        });
-    }, [sessionsArray]);
-    const handleAddAgent = useCallback(() => {
-        if (!defaultAgent) return;
-        return agents.startAgent(defaultAgent);
-    }, [agents.startAgent, defaultAgent]);
     const handleStartSpecificAgent = useCallback((agent: AcpAgent) => {
         return agents.startAgent(agent);
     }, [agents.startAgent]);
@@ -288,353 +235,109 @@ const App: React.FC = () => {
         agents.resumeSession(agent, sessionId);
     }, [agents.resumeSession, agents.setIsAgentSettingsOpen]);
 
-    const handleAgentToolbarSelect = useCallback((agentId: string) => {
-        const paneKey = activeAgentPaneId || 'agent';
-        setAgentSelectedByPane((prev) => ({
-            ...prev,
-            [paneKey]: agentId,
-        }));
-        agents.setSelectedAgentId(agentId);
-    }, [activeAgentPaneId, agents.setSelectedAgentId]);
-
-    const handleAgentToolbarAdd = useCallback(() => {
-        const paneKey = activeAgentPaneId || 'agent';
-        const startedAgentId = handleAddAgent();
-        if (startedAgentId) {
-            setAgentSelectedByPane((prev) => ({
-                ...prev,
-                [paneKey]: startedAgentId,
-            }));
-            agents.setSelectedAgentId(startedAgentId);
-        }
-    }, [activeAgentPaneId, handleAddAgent, agents.setSelectedAgentId]);
-
     const handleSaveAgents = useCallback((agentList: AcpAgent[], defaultAgentId: string | null, nextPermissionMode: AcpPermissionMode) => {
         updateAgents(agentList, defaultAgentId);
         setPermissionMode(nextPermissionMode);
         agents.setAgentsVersion((prev) => prev + 1);
     }, [agents.setAgentsVersion]);
 
-    const fileTreePanel = (
-        <div className="file-system-panel">
-            <div className="file-system-content">
-                {fileTree.fileTree.length === 0 ? (
-                    <p className="file-system-empty"> </p>
-                ) : (
-                    <div className="file-tree">
-                        {fileTree.fileTree.map((node) => (
-                            <TreeNodeComponent
-                                key={node.id}
-                                node={node}
-                                onToggle={fileTree.toggleNode}
-                                onSelect={fileTree.selectNode}
-                                onOpenFile={editors.openFile}
-                                onLoadFolder={openFolder}
-                            />
-                        ))}
-                    </div>
-                )}
-            </div>
-        </div>
-    );
-
-    const searchPanel = (
-        <Search
-            id="search"
-            onEnter={handleSearch}
-            onCancel={search.cancelSearch}
-            results={search.searchResults}
-            searchEnded={search.searchEnded}
-            onMatchClick={handleSearchResultClick}
-        />
-    );
-
-    const changesPanel = (
-        <ChangesPanel
-            files={git.changedFiles}
-            branch={git.gitBranch}
-            onFileClick={editors.openFileDiff}
-            onRefresh={git.fetchGitStatus}
-            onCommit={git.commit}
-            onPush={git.push}
-            onPull={git.pull}
-            onRevert={git.revert}
-        />
-    );
-
-    const renderEditorPanel = useCallback((panelKey: string) => {
-        const paneFileId = editors.getActiveFileIdForPane(panelKey);
-        const paneFile = paneFileId ? editors.files.find((file) => file.id === paneFileId) : null;
-        const editorState = paneFile ? editors.editorStates.get(paneFile.id) : null;
-
-        return (
-            <div
-                className="editor-container"
-                onMouseDown={() => editors.setActiveEditorPaneId(panelKey)}
-            >
-                {paneFile && editorState ? (
-                    <AnycodeEditorReact
-                        key={`${panelKey}:${paneFile.id}`}
-                        id={paneFile.id}
-                        editorState={editorState}
-                    />
-                ) : (
-                    <div className="no-editor"></div>
-                )}
-            </div>
-        );
-    }, [editors]);
-
-    const getSelectedTerminalIndex = useCallback((paneKey: string): number | null => {
-        const selected = Object.hasOwn(terminalSelectedByPane, paneKey) ? terminalSelectedByPane[paneKey] : null;
-        if (selected === null || terminals.terminals.length === 0) {
-            return null;
-        }
-        const lastIndex = terminals.terminals.length - 1;
-        return Math.min(Math.max(selected, 0), lastIndex);
-    }, [terminalSelectedByPane, terminals.terminals.length]);
-
-    const setSelectedTerminalForPane = useCallback((paneKey: string, index: number | null) => {
-        const nextIndex = index === null ? null : Math.max(0, index);
-        setTerminalSelectedByPane((prev) => ({
-            ...prev,
-            [paneKey]: nextIndex,
-        }));
-    }, []);
-
     const handleTerminalTabSelect = useCallback((index: number) => {
-        const paneKey = activeTerminalPaneId || 'terminal';
-        setSelectedTerminalForPane(paneKey, index);
-    }, [activeTerminalPaneId, setSelectedTerminalForPane]);
+        terminalPanes.selectTab(index);
+    }, [terminalPanes]);
 
-    const handleTerminalTabClose = useCallback((index: number) => {
-        terminals.closeTerminal(index);
-        setTerminalSelectedByPane((prev) => {
-            const next: Record<string, number | null> = {};
-            Object.entries(prev).forEach(([paneKey, selected]) => {
-                if (selected === null) {
-                    next[paneKey] = null;
-                    return;
-                }
-                if (selected > index) {
-                    next[paneKey] = selected - 1;
-                    return;
-                }
-                if (selected === index) {
-                    next[paneKey] = null;
-                    return;
-                }
-                next[paneKey] = selected;
-            });
-            return next;
-        });
-    }, [terminals.closeTerminal]);
-
-    const handleAddTerminalFromToolbar = useCallback(() => {
-        terminals.addTerminal();
-        const paneKey = activeTerminalPaneId || 'terminal';
-        setSelectedTerminalForPane(paneKey, terminals.terminals.length);
-    }, [activeTerminalPaneId, terminals, setSelectedTerminalForPane]);
-
-    const renderTerminalPanel = useCallback((panelKey: string) => {
-        const selectedIndex = getSelectedTerminalIndex(panelKey);
-        if (selectedIndex === null) {
-            return (
-                <div className="terminal-panel terminal-panel-empty">
-                    <TerminalEmptyPane
+    const renderPanel = (panelId: PanelId, panelKey: string) => {
+        switch (panelId) {
+            case 'files':
+                return (
+                    <FilesPanel
+                        fileTree={fileTree.fileTree}
+                        onToggle={fileTree.toggleNode}
+                        onSelect={fileTree.selectNode}
+                        onOpenFile={editors.openFile}
+                        onLoadFolder={openFolder}
+                    />
+                );
+            case 'search':
+                return (
+                    <Search
+                        id="search"
+                        onEnter={handleSearch}
+                        onCancel={search.cancelSearch}
+                        results={search.searchResults}
+                        searchEnded={search.searchEnded}
+                        onMatchClick={handleSearchResultClick}
+                    />
+                );
+            case 'changes':
+                return (
+                    <ChangesPanel
+                        files={git.changedFiles}
+                        branch={git.gitBranch}
+                        onFileClick={editors.openFileDiff}
+                        onRefresh={git.fetchGitStatus}
+                        onCommit={git.commit}
+                        onPush={git.push}
+                        onPull={git.pull}
+                        onRevert={git.revert}
+                    />
+                );
+            case 'editor':
+                return <EditorPanel panelKey={panelKey} editors={editors} />;
+            case 'terminal':
+                return (
+                    <TerminalPanel
+                        panelKey={panelKey}
+                        isConnected={isConnected}
                         terminals={terminals.terminals}
-                        onSelectTerminal={(index) => {
-                            setSelectedTerminalForPane(panelKey, index);
-                        }}
-                        onCloseTerminal={handleTerminalTabClose}
-                        onCreateTerminal={handleAddTerminalFromToolbar}
+                        terminalPanes={terminalPanes}
+                        onTerminalData={terminals.handleTerminalData}
+                        onTerminalMessage={terminals.handleTerminalDataCallback}
+                        onTerminalResize={terminals.handleTerminalResize}
+                        onIsTerminalClosing={terminals.isTerminalClosing}
                     />
-                </div>
-            );
-        }
-
-        const selectedTerminal = terminals.terminals[selectedIndex];
-        if (!selectedTerminal) {
-            return null;
-        }
-
-        return (
-            <div className="terminal-panel">
-                <div className="terminal-content">
-                    <div className="terminal-container">
-                        <Terminal
-                            key={`${panelKey}-${selectedTerminal.id}`}
-                            name={selectedTerminal.name}
-                            onData={terminals.handleTerminalData}
-                            onMessage={terminals.handleTerminalDataCallback}
-                            onResize={terminals.handleTerminalResize}
-                            rows={selectedTerminal.rows}
-                            cols={selectedTerminal.cols}
-                            isConnected={isConnected}
-                        />
-                    </div>
-                </div>
-            </div>
-        );
-    }, [
-        getSelectedTerminalIndex,
-        handleAddTerminalFromToolbar,
-        isConnected,
-        setSelectedTerminalForPane,
-        terminals.terminals,
-        terminals.handleTerminalData,
-        terminals.handleTerminalDataCallback,
-        terminals.handleTerminalResize,
-    ]);
-
-    const getSelectedAgentIdForPane = useCallback((paneKey: string): string | null => {
-        if (Object.hasOwn(agentSelectedByPane, paneKey)) {
-            return agentSelectedByPane[paneKey] ?? null;
-        }
-        if (paneKey === 'agent') {
-            return agents.selectedAgentId ?? null;
-        }
-        return null;
-    }, [agentSelectedByPane, agents.selectedAgentId]);
-
-    const renderAgentPanel = useCallback((panelKey: string) => {
-        const selectedAgentId = getSelectedAgentIdForPane(panelKey);
-        const selectedSession = selectedAgentId ? agents.acpSessions.get(selectedAgentId) ?? null : null;
-        const handleSelectAgentForPane = (agentId: string) => {
-            setAgentSelectedByPane((prev) => {
-                if (prev[panelKey] === agentId) {
-                    return prev;
-                }
-                return {
-                    ...prev,
-                    [panelKey]: agentId,
-                };
-            });
-            if (agents.selectedAgentId !== agentId) {
-                agents.setSelectedAgentId(agentId);
-            }
-        };
-
-        if (agents.isAgentSettingsOpen && panelKey === activeAgentPaneId) {
-            return (
-                <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-                    <AcpSettings
-                        agents={settingsAgents}
-                        defaultAgentId={settingsDefaultAgentId}
+                );
+            case 'agent':
+                return (
+                    <AgentPanel
+                        panelKey={panelKey}
+                        isConnected={isConnected}
+                        agentPanes={agentPanes}
+                        agents={agents}
+                        sessions={sessionsArray}
+                        availableAgents={availableAgents}
+                        settingsAgents={settingsAgents}
+                        settingsDefaultAgentId={settingsDefaultAgentId}
                         permissionMode={permissionMode}
-                        onSave={handleSaveAgents}
-                        onClose={handleCloseAgentSettings}
-                        onLoadSessions={agents.fetchAvailableSessions}
-                        onResumeSession={(agent, sessionId) => handleResumeSettingsSession(agent, sessionId)}
-                    />
-                </div>
-            );
-        }
-
-        if (!selectedSession) {
-            return (
-                <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-                    <div style={{ position: 'relative', flex: 1, minHeight: 0, overflow: 'hidden' }}>
-                        <AcpEmptyPane
-                            agents={sessionsArray}
-                            availableAgents={availableAgents}
-                            onSelectAgent={handleSelectAgentForPane}
-                            onCloseAgent={agents.closeAgent}
-                            onStartAgent={handleStartSpecificAgent}
-                            onOpenSettings={handleOpenAgentSettings}
-                        />
-                    </div>
-                </div>
-            );
-        }
-
-        return (
-            <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-                <div style={{ position: 'relative', flex: 1, minHeight: 0, overflow: 'hidden' }}>
-                    <AcpSession
-                        agentId={selectedSession.agentId}
-                        title={selectedSession.agentName || selectedSession.agentId}
-                        isConnected={selectedSession.isActive && isConnected}
-                        isProcessing={selectedSession.isProcessing || false}
-                        messages={selectedSession.messages}
-                        modelSelector={selectedSession.modelSelector}
-                        reasoningSelector={selectedSession.reasoningSelector}
-                        contextUsage={selectedSession.contextUsage}
-                        onFocusPane={() => {
-                            // if (activeAgentPaneId === panelKey && agents.selectedAgentId === selectedSession.agentId) {
-                            //     return;
-                            // }
-                            // handleSelectAgentForPane(selectedSession.agentId);
-                        }}
-                        onSendPrompt={agents.sendPrompt}
-                        onCancelPrompt={agents.cancelPrompt}
-                        onPermissionResponse={agents.sendPermissionResponse}
-                        onUndoPrompt={agents.undoPrompt}
-                        onCloseAgent={agents.closeAgent}
-                        onSelectModel={agents.setSessionModel}
-                        onSelectReasoning={agents.setSessionReasoning}
+                        onSaveAgents={handleSaveAgents}
+                        onCloseSettings={handleCloseAgentSettings}
+                        onResumeSettingsSession={handleResumeSettingsSession}
+                        onStartSpecificAgent={handleStartSpecificAgent}
+                        onOpenSettings={handleOpenAgentSettings}
                         onOpenFile={editors.openFile}
                         onOpenFileDiff={editors.openFileDiff}
                     />
-                </div>
-            </div>
-        );
-    }, [
-        activeAgentPaneId,
-        agents.acpSessions,
-        agents.cancelPrompt,
-        agents.closeAgent,
-        agents.fetchAvailableSessions,
-        agents.isAgentSettingsOpen,
-        agents.sendPermissionResponse,
-        agents.sendPrompt,
-        agents.setSelectedAgentId,
-        agents.setSessionModel,
-        agents.setSessionReasoning,
-        agents.undoPrompt,
-        availableAgents,
-        editors.openFile,
-        editors.openFileDiff,
-        getSelectedAgentIdForPane,
-        handleCloseAgentSettings,
-        handleOpenAgentSettings,
-        handleResumeSettingsSession,
-        handleSaveAgents,
-        handleStartSpecificAgent,
-        isConnected,
-        permissionMode,
-        sessionsArray,
-        settingsAgents,
-        settingsDefaultAgentId,
-    ]);
-
-    const toolbar = (
-        <Toolbar
-            files={editors.files}
-            activeFileId={editors.activeFileId}
-            terminals={terminals.terminals}
-            activeTerminalIndex={getSelectedTerminalIndex(activeTerminalPaneId || 'terminal')}
-            agentSessions={sessionsArray}
-            activeAgentId={getSelectedAgentIdForPane(activeAgentPaneId || 'agent')}
-            onSelectFile={editors.setActiveFileId}
-            onCloseFile={editors.closeFile}
-            onSelectTerminal={handleTerminalTabSelect}
-            onCloseTerminal={handleTerminalTabClose}
-            onSelectAgent={handleAgentToolbarSelect}
-            onCloseAgent={agents.closeAgent}
-            onAddAgent={handleAgentToolbarAdd}
-        />
-    );
-
-    const dockPanels = useMemo(() => ({
-        files: fileTreePanel,
-        search: searchPanel,
-        changes: changesPanel,
-        editor: <div className="editor-container" />,
-        agent: <div className="acp-panel" />,
-        terminal: <div className="terminal-panel" />,
-        toolbar,
-    }), [fileTreePanel, searchPanel, changesPanel, toolbar]);
+                );
+            case 'toolbar':
+                return (
+                    <Toolbar
+                        files={editors.files}
+                        activeFileId={editors.activeFileId}
+                        terminals={terminals.terminals}
+                        activeTerminalIndex={terminalPanes.getSelectedIndex(terminalPanes.activePaneId || 'terminal')}
+                        agentSessions={sessionsArray}
+                        activeAgentId={agentPanes.getSelectedId(agentPanes.activePaneId || 'agent')}
+                        onSelectFile={editors.setActiveFileId}
+                        onCloseFile={editors.closeFile}
+                        onSelectTerminal={handleTerminalTabSelect}
+                        onCloseTerminal={terminalPanes.closeTab}
+                        onSelectAgent={agentPanes.selectFromToolbar}
+                        onCloseAgent={agents.closeAgent}
+                    />
+                );
+            default:
+                return null;
+        }
+    };
 
     const handlePanelAdded = useCallback((panelId: PanelId, panelKey: string) => {
         if (panelId === 'changes') {
@@ -647,21 +350,13 @@ const App: React.FC = () => {
             return;
         }
         if (panelId === 'agent') {
-            setActiveAgentPaneId(panelKey);
-            setAgentSelectedByPane((prev) => ({
-                ...prev,
-                [panelKey]: prev[panelKey] ?? null,
-            }));
+            agentPanes.registerPane(panelKey);
             return;
         }
         if (panelId === 'terminal') {
-            setActiveTerminalPaneId(panelKey);
-            setTerminalSelectedByPane((prev) => ({
-                ...prev,
-                [panelKey]: prev[panelKey] ?? null,
-            }));
+            terminalPanes.registerPane(panelKey);
         }
-    }, [editors, git.fetchGitStatus]);
+    }, [agentPanes, editors, git.fetchGitStatus, terminalPanes]);
 
     const handlePanelRemoved = useCallback((panelId: PanelId, panelKey: string) => {
         if (panelId === 'editor') {
@@ -669,27 +364,13 @@ const App: React.FC = () => {
             return;
         }
         if (panelId === 'agent') {
-            setAgentSelectedByPane((prev) => {
-                const next = { ...prev };
-                delete next[panelKey];
-                return Object.keys(next).length > 0 ? next : { agent: null };
-            });
-            if (activeAgentPaneId === panelKey) {
-                setActiveAgentPaneId('agent');
-            }
+            agentPanes.unregisterPane(panelKey);
             return;
         }
         if (panelId === 'terminal') {
-            setTerminalSelectedByPane((prev) => {
-                const next = { ...prev };
-                delete next[panelKey];
-                return Object.keys(next).length > 0 ? next : { terminal: null };
-            });
-            if (activeTerminalPaneId === panelKey) {
-                setActiveTerminalPaneId('terminal');
-            }
+            terminalPanes.unregisterPane(panelKey);
         }
-    }, [activeAgentPaneId, activeTerminalPaneId, editors]);
+    }, [agentPanes, editors, terminalPanes]);
 
     const handlePanelActivated = useCallback((panelId: PanelId, panelKey: string) => {
         if (panelId === 'editor') {
@@ -708,20 +389,19 @@ const App: React.FC = () => {
             return;
         }
         if (panelId === 'agent') {
-            setActiveAgentPaneId(panelKey);
+            agentPanes.setActivePaneId(panelKey);
             return;
         }
         if (panelId === 'terminal') {
-            setActiveTerminalPaneId(panelKey);
+            terminalPanes.setActivePaneId(panelKey);
         }
-    }, [editors]);
+    }, [agentPanes, editors, terminalPanes]);
 
     return (
         <div className="app-container toolbar-header-compact">
             <div className="main-content" style={{ flex: 1, display: 'flex' }}>
                 <Layout
-                    panels={dockPanels}
-                    panelContentOverrides={{ editor: renderEditorPanel, terminal: renderTerminalPanel, agent: renderAgentPanel }}
+                    renderPanel={renderPanel}
                     onPanelAdded={handlePanelAdded}
                     onPanelRemoved={handlePanelRemoved}
                     onPanelActivated={handlePanelActivated}

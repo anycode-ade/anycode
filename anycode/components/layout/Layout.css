@@ -1,6 +1,18 @@
 .layout {
     width: 100%;
     height: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5px;
+    min-width: 0;
+    min-height: 0;
+}
+
+.layout-main {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
 }
 
 .layout-root {
@@ -301,7 +313,12 @@
     display: flex;
     flex-direction: column;
     gap: 10px;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
     background: var(--background-color, #242424);
+    user-select: none;
+    -webkit-user-select: none;
 }
 
 .layout-panel-picker-title {
@@ -312,20 +329,24 @@
 }
 
 .layout-panel-picker-list {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: center;
     gap: 8px;
+    width: min(720px, 100%);
 }
 
 .layout-panel-picker-item {
-    border: 1px solid #4a4a4a;
     background: #2a2a2a;
-    color: #cfcfcf;
     border-radius: 8px;
     padding: 8px 10px;
     text-align: left;
     cursor: pointer;
     font-size: 12px;
+    flex: 0 0 auto;
+    max-width: 100%;
+    white-space: nowrap;
 }
 
 .layout-panel-picker-item:hover {
@@ -333,23 +354,16 @@
     border-color: #666;
 }
 
-.layout-dock-panel--toolbar {
-    border-top: none;
-    border-radius: 0 0 8px 8px;
-}
-
-.app-container.toolbar-header-visible .layout-dock-panel--toolbar {
-    border-top: none;
-    border-radius: 0 0 8px 8px;
-}
-
-.app-container.toolbar-header-compact .layout-dock-panel--toolbar {
-    border-top: 1px solid #4a4a4a;
+.layout-toolbar {
+    flex: 0 0 44px;
+    min-height: 44px;
+    width: 100%;
+    min-width: 0;
+    overflow: hidden;
+    border: 1px solid #4a4a4a;
     border-radius: 8px;
-}
-
-.app-container.toolbar-header-compact .layout .dv-groupview:has(> .dv-content-container .layout-dock-panel--toolbar) > .dv-tabs-and-actions-container {
-    display: none !important;
+    background: var(--background-color, #242424);
+    box-sizing: border-box;
 }
 
 .dock-split {
