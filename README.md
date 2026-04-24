@@ -2,10 +2,8 @@
 
 **anycode** is a web platform where people and agents build together. Run it locally or remotely and work from any device you want: desktop, laptop, mobile, or even VR. Use any agent, including Codex, Claude Code, OpenCode, as well as local models.
 
-![editor](anycode/imgs/screen.png)
-![agents](anycode/imgs/agents.png)
-![diff](anycode/imgs/diff.png)
-![diff](anycode/imgs/search_terminal.png)
+![editor](anycode/imgs/screen1.png)
+![agents](anycode/imgs/screen2.png)
 
 ## Mobile Previews
 
@@ -38,6 +36,7 @@
 - **LSP integration**: LSP support for intelligent code completion, go-to-definition, hover information and real-time diagnostics.
 - **File system integration**: WebSocket-based backend for browsing and editing files from your local filesystem.
 - **Changes**: Built-in git Changes panel, per-file revert, commit, push, and pull.
+- **Free layout**: Flexible pane layout for arranging the workspace the way you want.
 - **Integrated terminal**: Full-featured terminal emulator with WebSocket-based communication, supporting real-time command execution and output.
 - **Search functionality**: Powerful search capabilities including local search within files and global search across project.
 - **ACP integration**: Agent Client Protocol (ACP) support for seamless integration with AI agents, including tool-call streaming, history-backed undo, session resume, frontend-controlled permission mode, model and reasoning selectors, streamed markdown and code blocks, markdown file links, and improved tool-call diff display.
