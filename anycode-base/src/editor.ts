@@ -3,7 +3,7 @@ import { vesper } from './theme';
 import { Renderer } from './renderer/Renderer';
 import { getPosFromMouse } from './mouse';
 import { Selection, hasDiagnosticSelection } from "./selection";
-import { Completion, CompletionRequest, DefinitionRequest, DefinitionResponse } from "./lsp";
+import { Completion, CompletionRequest, DefinitionRequest, DefinitionResponse, HoverRequest } from "./lsp";
 import {
     Action, ActionContext, ActionResult,
     executeAction, handlePasteText,
@@ -69,8 +69,12 @@ export class AnycodeEditor {
     private selectedCompletionIndex = 0;
     private completions: Completion[] = [];
     private completionProvider: ((request: CompletionRequest) => Promise<Completion[]>) | null = null;
+    private hoverProvider: ((request: HoverRequest) => Promise<string | null>) | null = null;
     private goToDefinitionProvider: ((request: DefinitionRequest) => Promise<DefinitionResponse>) | null = null;
     private onCursorChangeCallback: ((newCursor: Position, oldCursor: Position) => void) | null = null;
+    private hoverDebounceTimer: number | null = null;
+    private hoverRequestToken = 0;
+    private hoverOffset: number | null = null;
 
     private needFocus = false;
 
@@ -139,6 +143,8 @@ export class AnycodeEditor {
 
     public clean() {
         this.removeEventListeners();
+        this.clearPendingHover();
+        this.closeHover();
         this.offset = 0;
         this.selection = null;
 
@@ -290,6 +296,12 @@ export class AnycodeEditor {
         this.completionProvider = completionProvider;
     }
 
+    public setHoverProvider(
+        hoverProvider: (request: HoverRequest) => Promise<string | null>
+    ) {
+        this.hoverProvider = hoverProvider;
+    }
+
     public setGoToDefinitionProvider(
         goToDefinitionProvider: (request: DefinitionRequest) => Promise<DefinitionResponse>
     ) {
@@ -298,6 +310,19 @@ export class AnycodeEditor {
 
     public setOnCursorChange(callback: (newState: Position, oldState: Position) => void) {
         this.onCursorChangeCallback = callback;
+    }
+
+    private clearPendingHover() {
+        if (this.hoverDebounceTimer) {
+            window.clearTimeout(this.hoverDebounceTimer);
+            this.hoverDebounceTimer = null;
+        }
+        this.hoverRequestToken += 1;
+    }
+
+    private closeHover() {
+        this.renderer.closeHover();
+        this.hoverOffset = null;
     }
 
     private setupEventListeners() {
@@ -325,6 +350,9 @@ export class AnycodeEditor {
         this.handleMouseMove = this.handleMouseMove.bind(this);
         this.container.addEventListener('mousemove', this.handleMouseMove);
 
+        this.handleMouseLeave = this.handleMouseLeave.bind(this);
+        this.container.addEventListener('mouseleave', this.handleMouseLeave);
+
         this.handleBlur = this.handleBlur.bind(this);
         this.codeContent.addEventListener('blur', this.handleBlur);
 
@@ -341,10 +369,15 @@ export class AnycodeEditor {
         this.codeContent.removeEventListener('mousedown', this.handleMouseDown);
         this.container.removeEventListener('mouseup', this.handleMouseUp);
         this.container.removeEventListener('mousemove', this.handleMouseMove);
+        this.container.removeEventListener('mouseleave', this.handleMouseLeave);
         this.codeContent.removeEventListener('blur', this.handleBlur);
+        this.codeContent.removeEventListener('focus', this.handleFocus);
     }
 
     private handleScroll(e: Event) {
+        this.clearPendingHover();
+        this.closeHover();
+
         const scrollTop = this.container.scrollTop;
         requestAnimationFrame(() => {
             if (scrollTop !== this.lastScrollTop) {
@@ -398,6 +431,8 @@ export class AnycodeEditor {
 
     private handleClick(e: MouseEvent): void {
         console.log("click", e);
+        this.clearPendingHover();
+        this.closeHover();
 
         const oldCursor = this.code.getPosition(this.offset);
 
@@ -468,6 +503,8 @@ export class AnycodeEditor {
         this.isMouseSelecting = false;
         this.isWordSelection = false;
         this.isLineSelection = false;
+        this.clearPendingHover();
+        this.closeHover();
 
         if (this.autoScrollTimer) {
             cancelAnimationFrame(this.autoScrollTimer);
@@ -480,10 +517,17 @@ export class AnycodeEditor {
         this.search.setNeedsFocus(false);
     }
 
+    private handleMouseLeave(e: MouseEvent) {
+        this.clearPendingHover();
+        this.closeHover();
+    }
+
     private handleMouseDown(e: MouseEvent) {
         if (e.button !== 0) return;
         if (isInsideDiagnostic(e.target as Node)) return;
         e.preventDefault();
+        this.clearPendingHover();
+        this.closeHover();
 
         this.isMouseSelecting = true;
 
@@ -522,7 +566,39 @@ export class AnycodeEditor {
 
     private handleMouseMove(e: MouseEvent) {
         e.preventDefault();
-        if (!this.isMouseSelecting) return;
+        const target = e.target as HTMLElement | null;
+        if (target?.closest('.hover-box')) {
+            return;
+        }
+
+        if (!this.isMouseSelecting) {
+            if (!this.hoverProvider || this.isCompletionOpen || this.search.isActive()) {
+                this.clearPendingHover();
+                this.closeHover();
+                return;
+            }
+
+            const pos = getPosFromMouse(e);
+            if (!pos) {
+                this.clearPendingHover();
+                this.closeHover();
+                return;
+            }
+
+            const hoverOffset = this.code.getOffset(pos.row, pos.col);
+            if (this.renderer.isHoverOpen() && this.hoverOffset === hoverOffset) {
+                this.renderer.moveHover(this.code, hoverOffset);
+                return;
+            }
+
+            this.clearPendingHover();
+            this.hoverDebounceTimer = window.setTimeout(() => {
+                this.requestHover(pos.row, pos.col, hoverOffset).catch(() => {
+                    this.closeHover();
+                });
+            }, 1000);
+            return;
+        }
 
         this.autoScroll(e);
 
@@ -606,6 +682,27 @@ export class AnycodeEditor {
         }
     }
 
+    private async requestHover(row: number, col: number, hoverOffset: number): Promise<void> {
+        if (!this.hoverProvider) return;
+
+        const requestToken = ++this.hoverRequestToken;
+
+        const hoverText = await this.hoverProvider({
+            file: this.code.filename,
+            row,
+            column: col,
+        });
+
+        if (requestToken !== this.hoverRequestToken) return;
+        if (!hoverText || !hoverText.trim()) {
+            this.closeHover();
+            return;
+        }
+
+        this.hoverOffset = hoverOffset;
+        this.renderer.renderHover(hoverText, this.code, hoverOffset);
+    }
+
     private autoScroll(e: MouseEvent) {
         const containerRect = this.container.getBoundingClientRect();
         const mouseY = e.clientY;
@@ -681,6 +778,8 @@ export class AnycodeEditor {
 
     private async handleKeydown(event: KeyboardEvent) {
         console.log('keydown', event);
+        this.clearPendingHover();
+        this.closeHover();
 
         if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'c') {
             if (hasDiagnosticSelection()) {
@@ -720,6 +819,16 @@ export class AnycodeEditor {
             event.preventDefault();
             const { line, column } = this.code.getPosition(this.offset);
             this.goToDefinition(line, column).catch(console.error);
+            return;
+        }
+
+        if (action === Action.HOVER) {
+            event.preventDefault();
+            if (!this.hoverProvider) return;
+            const { line, column } = this.code.getPosition(this.offset);
+            this.requestHover(line, column, this.offset).catch(() => {
+                this.closeHover();
+            });
             return;
         }
 
@@ -795,6 +904,7 @@ export class AnycodeEditor {
             case "Enter": return Action.ENTER;
             case "Tab": return Action.TAB;
             case "Escape": return Action.ESC;
+            case "F10": return Action.HOVER;
             case "F12": return Action.GO_TO_DEFINITION;
         }
 
@@ -845,6 +955,8 @@ export class AnycodeEditor {
 
     private async handleBeforeInput(e: InputEvent) {
         // this one is for mobile devices, support input and deletion
+        this.clearPendingHover();
+        this.closeHover();
         e.preventDefault();
         e.stopPropagation();
 
@@ -877,6 +989,8 @@ export class AnycodeEditor {
     }
 
     private handlePasteEvent(e: ClipboardEvent) {
+        this.clearPendingHover();
+        this.closeHover();
         // In secure contexts, paste is handled via Action.PASTE using navigator.clipboard
         if (navigator.clipboard && window.isSecureContext) {
             return;
@@ -900,6 +1014,8 @@ export class AnycodeEditor {
 
     public async toggleCompletion() {
         console.log('anycode: toggle completion');
+        this.clearPendingHover();
+        this.closeHover();
 
         if (this.isCompletionOpen) {
             this.renderer.closeCompletion();
@@ -912,6 +1028,8 @@ export class AnycodeEditor {
 
     public async showCompletion() {
         if (!this.completionProvider) return;
+        this.clearPendingHover();
+        this.closeHover();
 
         let { line, column } = this.code.getPosition(this.offset);
 

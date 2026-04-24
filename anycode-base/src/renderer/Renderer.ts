@@ -10,6 +10,7 @@ import { LineRenderer } from "./LineRenderer";
 import { SearchRenderer } from "./SearchRenderer";
 import { DiffRenderer } from "./DiffRenderer";
 import { CompletionRenderer } from "./CompletionRenderer";
+import { HoverRenderer } from "./HoverRenderer";
 import { DiagnosticRenderer } from "./DiagnosticRenderer";
 
 /**
@@ -42,6 +43,7 @@ export class Renderer {
     private searchRenderer: SearchRenderer;
     private diffRenderer: DiffRenderer;
     private completionRenderer: CompletionRenderer;
+    private hoverRenderer: HoverRenderer;
     
     private visualRows: VisualRow[] = [];
     
@@ -73,6 +75,10 @@ export class Renderer {
             buttonsColumn
         );
         this.completionRenderer = new CompletionRenderer(
+            container,
+            (lineNumber) => this.getLine(lineNumber)
+        );
+        this.hoverRenderer = new HoverRenderer(
             container,
             (lineNumber) => this.getLine(lineNumber)
         );
@@ -785,6 +791,22 @@ export class Renderer {
 
     public highlightCompletion(index: number) {
         this.completionRenderer.highlight(index);
+    }
+
+    public renderHover(content: string, code: Code, offset: number) {
+        this.hoverRenderer.render(content, code, offset);
+    }
+
+    public moveHover(code: Code, offset: number) {
+        this.hoverRenderer.move(code, offset);
+    }
+
+    public closeHover() {
+        this.hoverRenderer.close();
+    }
+
+    public isHoverOpen() {
+        return this.hoverRenderer.isOpen();
     }
 
     public renderSearch(

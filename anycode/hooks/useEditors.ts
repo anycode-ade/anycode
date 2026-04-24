@@ -17,6 +17,7 @@ import {
     DefinitionResponse,
     Diagnostic,
     DiagnosticResponse,
+    HoverRequest,
 } from '../../anycode-base/src/lsp';
 
 type UseEditorsParams = {
@@ -34,6 +35,52 @@ type PendingExistingOpenRequest = {
 };
 
 const DEFAULT_EDITOR_PANE_ID = 'editor';
+
+const hoverMarkedStringToText = (value: unknown): string => {
+    if (!value) return '';
+    if (typeof value === 'string') return value;
+    if (typeof value === 'object') {
+        const candidate = value as { value?: unknown; language?: unknown };
+        if (typeof candidate.value === 'string') {
+            return candidate.value;
+        }
+        if (typeof candidate.language === 'string') {
+            return candidate.language;
+        }
+    }
+    return '';
+};
+
+const normalizeHoverResponse = (response: any): string | null => {
+    if (!response || response.error) return null;
+
+    // Legacy shape used in parts of the codebase.
+    if (typeof response.value === 'string') {
+        return response.value;
+    }
+
+    const contents = response.contents;
+    if (!contents) return null;
+
+    if (typeof contents === 'string') {
+        return contents;
+    }
+
+    if (Array.isArray(contents)) {
+        const joined = contents
+            .map(hoverMarkedStringToText)
+            .filter(Boolean)
+            .join('\n\n');
+        return joined || null;
+    }
+
+    if (typeof contents === 'object') {
+        const asText = hoverMarkedStringToText(contents);
+        return asText || null;
+    }
+
+    return null;
+};
 
 export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: UseEditorsParams) => {
     const [files, setFiles] = useState<FileState[]>([]);
@@ -261,6 +308,19 @@ export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: Us
         });
     }, [wsRef]);
 
+    const handleHover = useCallback((hoverRequest: HoverRequest): Promise<string | null> => {
+        return new Promise((resolve) => {
+            if (!wsRef.current) {
+                resolve(null);
+                return;
+            }
+
+            wsRef.current.emit('lsp:hover', hoverRequest, (response: any) => {
+                resolve(normalizeHoverResponse(response));
+            });
+        });
+    }, [wsRef]);
+
     const openFile = useCallback((path: string, line?: number, column?: number, paneId?: string) => {
         const existingFile = filesRef.current.find((file) => file.id === path);
         const targetPaneId = resolveTargetPaneId(paneId, existingFile?.id);
@@ -387,11 +447,12 @@ export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: Us
         editor.setOnChange((change: Change) => handleChange(filename, change));
         editor.setOnCursorChange((newState: any, oldState: any) => handleCursorChange(filename, newState, oldState));
         editor.setCompletionProvider(handleCompletion);
+        editor.setHoverProvider(handleHover);
         editor.setGoToDefinitionProvider(handleGoToDefinition);
         editor.setErrors(errors || []);
 
         return editor;
-    }, [diffEnabled, handleChange, handleCursorChange, handleCompletion, handleGoToDefinition]);
+    }, [diffEnabled, handleChange, handleCursorChange, handleCompletion, handleGoToDefinition, handleHover]);
 
     const initializeEditors = useCallback(async () => {
         try {
