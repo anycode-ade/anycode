@@ -38,7 +38,7 @@ export const Toolbar = ({
                     className={`tab ${activeFileId === file.id ? 'active' : ''}`}
                     onClick={() => onSelectFile(file.id)}
                 >
-                    <span className="tab-filename"> {file.name} </span>
+                    <span className="tab-filename" title={file.id}> {file.name} </span>
                     <button
                         className="tab-close-button"
                         onClick={(e) => {

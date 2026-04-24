@@ -116,4 +116,15 @@ export const Icons = {
       <path d="M4 4L12 12M12 4L4 12" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
     </svg>
   ),
+  LayoutDiff: () => (
+    <svg viewBox="0 0 16 16" aria-hidden="true" className="layout-header-action-icon">
+      <g className="layout-diff-plus" stroke="currentColor" strokeWidth="2.7" strokeLinecap="round">
+        <path d="M8 1.4V7.6" />
+        <path d="M4.4 4.5H11.6" />
+      </g>
+      <g className="layout-diff-minus" stroke="currentColor" strokeWidth="2.7" strokeLinecap="round">
+        <path d="M4.4 11.5H11.6" />
+      </g>
+    </svg>
+  ),
 };

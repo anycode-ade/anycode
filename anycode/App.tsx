@@ -36,6 +36,7 @@ import { AgentPanel } from './features/agents/AgentPanel';
 
 const App: React.FC = () => {
     const [diffEnabled, setDiffEnabled] = useState<boolean>(loadDiffEnabled());
+    const [editorDiffEnabledByPane, setEditorDiffEnabledByPane] = useState<Record<string, boolean>>({});
     // const [followEnabled, setFollowEnabled] = useState<boolean>(loadFollowEnabled());
     const [permissionMode, setPermissionMode] = useState<AcpPermissionMode>(loadAcpPermissionMode());
 
@@ -200,6 +201,30 @@ const App: React.FC = () => {
         editors.openFile(filePath, match.line, match.column);
     };
 
+    const isEditorDiffEnabled = useCallback((panelKey: string) => {
+        return editorDiffEnabledByPane[panelKey] ?? diffEnabled;
+    }, [diffEnabled, editorDiffEnabledByPane]);
+
+    const handleToggleEditorDiff = useCallback((panelKey: string) => {
+        const fileId = editors.getActiveFileIdForPane(panelKey);
+        if (!fileId) {
+            return;
+        }
+
+        const editor = editors.getEditorState(fileId) as ({ setDiffEnabled: (enabled: boolean) => void } | null);
+        if (!editor || typeof editor.setDiffEnabled !== 'function') {
+            return;
+        }
+
+        const nextEnabled = !(editorDiffEnabledByPane[panelKey] ?? diffEnabled);
+        editor.setDiffEnabled(nextEnabled);
+        setEditorDiffEnabledByPane((prev) => ({ ...prev, [panelKey]: nextEnabled }));
+
+        if (panelKey === editors.activeEditorPaneId) {
+            setDiffEnabled(nextEnabled);
+        }
+    }, [diffEnabled, editorDiffEnabledByPane, editors]);
+
     // const toggleFollowMode = useCallback(() => {
     //     setFollowEnabled((prev) => !prev);
     // }, []);
@@ -361,6 +386,14 @@ const App: React.FC = () => {
     const handlePanelRemoved = useCallback((panelId: PanelId, panelKey: string) => {
         if (panelId === 'editor') {
             editors.unregisterEditorPane(panelKey);
+            setEditorDiffEnabledByPane((prev) => {
+                if (!Object.hasOwn(prev, panelKey)) {
+                    return prev;
+                }
+                const next = { ...prev };
+                delete next[panelKey];
+                return next;
+            });
             return;
         }
         if (panelId === 'agent') {
@@ -405,6 +438,8 @@ const App: React.FC = () => {
                     onPanelAdded={handlePanelAdded}
                     onPanelRemoved={handlePanelRemoved}
                     onPanelActivated={handlePanelActivated}
+                    onToggleEditorDiff={handleToggleEditorDiff}
+                    isEditorDiffEnabled={isEditorDiffEnabled}
                 />
             </div>
         </div>

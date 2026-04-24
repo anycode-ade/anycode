@@ -185,6 +185,8 @@ type LayoutProps = {
     onPanelAdded?: (id: PanelId, panelKey: string) => void;
     onPanelRemoved?: (id: PanelId, panelKey: string) => void;
     onPanelActivated?: (id: PanelId, panelKey: string) => void;
+    onToggleEditorDiff?: (panelKey: string) => void;
+    isEditorDiffEnabled?: (panelKey: string) => boolean;
 };
 
 type SerializedLayout = ReturnType<DockviewApi['toJSON']>;
@@ -364,11 +366,27 @@ const LayoutHeaderActions: React.FC<IDockviewHeaderActionsProps & {
     onSplitDown: (api: DockviewApi, referencePanelId: string) => void;
     onAddTab: (api: DockviewApi, referencePanelId: string) => void;
     onClosePanel: (api: DockviewApi, panel: IDockviewPanel) => void;
-}> = ({ containerApi, activePanel, onSplitRight, onSplitDown, onAddTab, onClosePanel }) => {
+    onToggleEditorDiff?: (panelKey: string) => void;
+    isEditorDiffEnabled?: (panelKey: string) => boolean;
+}> = ({
+    containerApi,
+    activePanel,
+    onSplitRight,
+    onSplitDown,
+    onAddTab,
+    onClosePanel,
+    onToggleEditorDiff,
+    isEditorDiffEnabled,
+}) => {
+    const [localDiffByPanel, setLocalDiffByPanel] = useState<Record<string, boolean>>({});
+
     if (!activePanel) {
         return null;
     }
 
+    const activePanelBaseId = getPanelBaseId(activePanel.id);
+    const isEditorPanel = activePanelBaseId === 'editor';
+    const diffActive = localDiffByPanel[activePanel.id] ?? isEditorDiffEnabled?.(activePanel.id) ?? false;
     const canClosePanel = activePanel.id !== 'toolbar' && (containerApi.totalPanels > 1 || !isPickerPanel(activePanel.id));
 
     return (
@@ -402,6 +420,22 @@ const LayoutHeaderActions: React.FC<IDockviewHeaderActionsProps & {
             >
                 <Icons.LayoutSplitDown />
             </button>
+
+            {isEditorPanel ? (
+                <button
+                    className={`layout-header-action-btn layout-header-action-btn--diff ${diffActive ? 'layout-header-action-btn--active' : ''}`}
+                    onClick={() => {
+                        const nextEnabled = !diffActive;
+                        setLocalDiffByPanel((prev) => ({ ...prev, [activePanel.id]: nextEnabled }));
+                        onToggleEditorDiff?.(activePanel.id);
+                    }}
+                    type="button"
+                    title="Toggle Diff"
+                    aria-label="Toggle Diff"
+                >
+                    <Icons.LayoutDiff />
+                </button>
+            ) : null}
 
             {canClosePanel ? (
                 <button
@@ -488,6 +522,8 @@ export const Layout: React.FC<LayoutProps> = ({
     onPanelAdded,
     onPanelRemoved,
     onPanelActivated,
+    onToggleEditorDiff,
+    isEditorDiffEnabled,
 }) => {
     const apiRef = useRef<DockviewApi | null>(null);
     const [visibility, setVisibility] = useState<PanelVisibility>(loadPanelVisibility);
@@ -500,8 +536,12 @@ export const Layout: React.FC<LayoutProps> = ({
     const addTabRef = useRef<(api: DockviewApi, referencePanelId: string) => void>(() => {});
     const closePanelRef = useRef<(api: DockviewApi, panel: IDockviewPanel) => void>(() => {});
     const renderPanelRef = useRef<LayoutProps['renderPanel']>(renderPanel);
+    const onToggleEditorDiffRef = useRef<LayoutProps['onToggleEditorDiff']>(onToggleEditorDiff);
+    const isEditorDiffEnabledRef = useRef<LayoutProps['isEditorDiffEnabled']>(isEditorDiffEnabled);
 
     renderPanelRef.current = renderPanel;
+    onToggleEditorDiffRef.current = onToggleEditorDiff;
+    isEditorDiffEnabledRef.current = isEditorDiffEnabled;
 
     const panelEntries = useMemo(() => (
         panelSyncOrder.map((id) => ({
@@ -726,6 +766,8 @@ export const Layout: React.FC<LayoutProps> = ({
             onSplitDown={(api, referencePanelId) => splitDownRef.current(api, referencePanelId)}
             onAddTab={(api, referencePanelId) => addTabRef.current(api, referencePanelId)}
             onClosePanel={(api, panel) => closePanelRef.current(api, panel)}
+            onToggleEditorDiff={(panelKey) => onToggleEditorDiffRef.current?.(panelKey)}
+            isEditorDiffEnabled={(panelKey) => isEditorDiffEnabledRef.current?.(panelKey) ?? false}
         />
     ), []);
 

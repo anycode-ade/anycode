@@ -58,28 +58,6 @@
     display: none;
 }
 
-.toggle-mode-btn {
-    background: transparent;
-    border: none;
-    color: #888;
-    cursor: pointer;
-    border-radius: 12px;
-    transition: all 0.2s ease;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 4px;
-}
-
-.toggle-mode-btn:hover {
-    color: #fff;
-}
-
-.toggle-mode-btn.active {
-    color: #fff;
-    text-shadow: 0 0 6px rgba(255, 255, 255, 0.8);
-}
-
 .tab-terminal {
     color: #7ec8ff;
 }

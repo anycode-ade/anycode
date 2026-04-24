@@ -255,6 +255,14 @@
     -webkit-transform: translate3d(0, 0, 0);
     backface-visibility: hidden;
     -webkit-backface-visibility: hidden;
+    outline: none;
+    box-shadow: none;
+}
+
+.layout-header-action-btn:focus,
+.layout-header-action-btn:focus-visible {
+    outline: none;
+    box-shadow: none;
 }
 
 .layout .dv-tabs-and-actions-container:hover .layout-header-action-btn,
@@ -266,6 +274,23 @@
 .layout-header-action-btn:hover {
     color: #ffffff;
     background: #2a2a2a;
+}
+
+.layout-header-action-btn--active {
+    background: #2a2a2a;
+}
+
+.layout-header-action-btn--diff .layout-diff-plus path,
+.layout-header-action-btn--diff .layout-diff-minus path {
+    stroke: currentColor;
+}
+
+.layout-header-action-btn--diff.layout-header-action-btn--active .layout-diff-plus path {
+    stroke: #49c56f;
+}
+
+.layout-header-action-btn--diff.layout-header-action-btn--active .layout-diff-minus path {
+    stroke: #e05a5a;
 }
 
 .layout-header-action-icon {
