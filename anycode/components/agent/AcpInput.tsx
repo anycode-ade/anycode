@@ -30,7 +30,6 @@ export const AcpInput: React.FC<AcpInputProps> = ({
   onSend,
   onCancel,
   agentLabel,
-  onCloseAgent,
   isConnected,
   isProcessing = false,
   modelSelector,
@@ -39,7 +38,36 @@ export const AcpInput: React.FC<AcpInputProps> = ({
   onSelectModel,
   onSelectReasoning,
 }) => {
+  const inputRef = React.useRef<HTMLTextAreaElement>(null);
   const [isMinimized, setIsMinimized] = React.useState(false);
+  const MIN_ROWS = 3;
+  const MAX_ROWS = 10;
+
+  const resizeInput = React.useCallback(() => {
+    const input = inputRef.current;
+    if (!input) {
+      return;
+    }
+
+    const style = window.getComputedStyle(input);
+    const lineHeight = Number.parseFloat(style.lineHeight) || 20;
+    const paddingTop = Number.parseFloat(style.paddingTop) || 0;
+    const paddingBottom = Number.parseFloat(style.paddingBottom) || 0;
+    const borderTop = Number.parseFloat(style.borderTopWidth) || 0;
+    const borderBottom = Number.parseFloat(style.borderBottomWidth) || 0;
+    const verticalBox = paddingTop + paddingBottom + borderTop + borderBottom;
+    const minHeight = lineHeight * MIN_ROWS + verticalBox;
+    const maxHeight = lineHeight * MAX_ROWS + verticalBox;
+
+    input.style.height = 'auto';
+    const nextHeight = Math.min(Math.max(input.scrollHeight, minHeight), maxHeight);
+    input.style.height = `${nextHeight}px`;
+    input.style.overflowY = input.scrollHeight > maxHeight ? 'auto' : 'hidden';
+  }, []);
+
+  React.useLayoutEffect(() => {
+    resizeInput();
+  }, [value, resizeInput]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -105,32 +133,18 @@ export const AcpInput: React.FC<AcpInputProps> = ({
 
   return (
     <div className={`acp-input ${isMinimized ? 'acp-input-minimized' : ''}`}>
-      <div className="acp-input-preview-container">
-        <div className="acp-input-preview-content">
-          <div className="acp-input-preview-row" onClick={() => setIsMinimized(false)}>
-            <span className="acp-input-preview-text">{value ? value : "Ask anything..."}</span>
-            <button
-              className="acp-input-toggle-btn"
-              onClick={(e) => { e.stopPropagation(); setIsMinimized(false); }}
-              title="Expand"
-            >
-              <AcpIcons.ChevronUp />
-            </button>
-          </div>
-        </div>
-      </div>
-
       <div className="acp-input-full-container">
         <div className="acp-input-full-content">
           <div className="acp-input-main-row">
             <textarea
+              ref={inputRef}
               id="acp-prompt-input"
               name="prompt"
               value={value}
               onChange={(e) => onChange(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder="Ask anything..."
-              rows={3}
+              rows={MIN_ROWS}
               disabled={!isConnected}
             />
             {isProcessing ? (
@@ -155,15 +169,6 @@ export const AcpInput: React.FC<AcpInputProps> = ({
             {agentLabel && (
               <div className="acp-input-agent-chip" title={agentLabel}>
                 <span className="acp-input-agent-chip-label">{agentLabel}</span>
-                {onCloseAgent && (
-                  <button
-                    className="acp-agent-close-btn acp-input-agent-close-btn"
-                    onClick={onCloseAgent}
-                    title="Close agent"
-                  >
-                    <AcpIcons.Close />
-                  </button>
-                )}
               </div>
             )}
             {renderSelect('acp-model-select', 'model', modelSelector, onSelectModel)}
@@ -188,6 +193,17 @@ export const AcpInput: React.FC<AcpInputProps> = ({
           </div>
         </div>
       </div>
+
+      {isMinimized && (
+        <button
+          className="acp-input-toggle-btn acp-input-floating-expand-btn"
+          onClick={() => setIsMinimized(false)}
+          title="Expand"
+          aria-label="Expand prompt input"
+        >
+          <AcpIcons.ChevronUp />
+        </button>
+      )}
     </div>
   );
 };

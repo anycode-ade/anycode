@@ -33,7 +33,7 @@
 .acp-scroll-to-bottom-btn {
     position: absolute;
     right: 16px;
-    bottom: 16px;
+    bottom: 60px;
     width: 36px;
     height: 36px;
     border: none;
@@ -68,6 +68,6 @@
 @media (max-width: 768px) {
     .acp-scroll-to-bottom-btn {
         right: 12px;
-        bottom: 12px;
+        bottom: 56px;
     }
 }

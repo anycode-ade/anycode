@@ -10,6 +10,9 @@ import './AcpSession.css';
 import { AcpInput } from './AcpInput';
 import { AcpMessages } from './AcpMessages';
 import { AcpIcons } from './AcpIcons';
+import { loadItem, saveItem } from '../../storage';
+
+const ACP_INPUT_DRAFTS_STORAGE_KEY = 'acpInputDrafts';
 
 const useAutoScroll = (messages: AcpMessage[], isProcessing: boolean) => {
   const contentRef = useRef<HTMLDivElement>(null);
@@ -143,7 +146,16 @@ export const AcpSession: React.FC<AcpSessionProps> = ({
   onOpenFile,
   onOpenFileDiff,
 }) => {
-  const [inputValues, setInputValues] = useState<Record<string, string>>({});
+  const [inputValues, setInputValues] = useState<Record<string, string>>(() => {
+    const savedDrafts = loadItem<Record<string, unknown>>(ACP_INPUT_DRAFTS_STORAGE_KEY);
+    if (!savedDrafts || typeof savedDrafts !== 'object') {
+      return {};
+    }
+
+    return Object.fromEntries(
+      Object.entries(savedDrafts).filter(([, value]) => typeof value === 'string'),
+    ) as Record<string, string>;
+  });
   const { expanded: expandedToolCalls, toggle: toggleToolCall } = useExpandableItems();
   const { expanded: expandedToolResults, toggle: toggleToolResult } = useExpandableItems();
   const { expanded: expandedThoughts, toggle: toggleThought } = useExpandableItems();
@@ -164,6 +176,13 @@ export const AcpSession: React.FC<AcpSessionProps> = ({
   );
 
   const inputValue = inputValues[agentId] ?? '';
+
+  useEffect(() => {
+    const nonEmptyDrafts = Object.fromEntries(
+      Object.entries(inputValues).filter(([, draft]) => draft.length > 0),
+    );
+    saveItem(ACP_INPUT_DRAFTS_STORAGE_KEY, nonEmptyDrafts);
+  }, [inputValues]);
 
   const handleInputChange = useCallback((value: string) => {
     setInputValues((prev) => {

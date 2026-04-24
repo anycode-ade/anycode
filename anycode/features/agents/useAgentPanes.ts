@@ -105,10 +105,16 @@ export const useAgentPanes = ({
 
     const registerPane = useCallback((paneKey: string) => {
         setActivePaneId(paneKey);
-        setSelectedByPane((prev) => ({
-            ...prev,
-            [paneKey]: prev[paneKey] ?? null,
-        }));
+        setSelectedByPane((prev) => {
+            if (Object.hasOwn(prev, paneKey)) {
+                return prev;
+            }
+
+            return {
+                ...prev,
+                [paneKey]: null,
+            };
+        });
     }, []);
 
     const unregisterPane = useCallback((paneKey: string) => {

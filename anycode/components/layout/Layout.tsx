@@ -494,6 +494,7 @@ export const Layout: React.FC<LayoutProps> = ({
     const listenersRef = useRef<Array<{ dispose: () => void }>>([]);
     const layoutSaveTimerRef = useRef<number | null>(null);
     const emptyPaneRestoreTimerRef = useRef<number | null>(null);
+    const isRestoringLayoutRef = useRef<boolean>(false);
     const splitRightRef = useRef<(api: DockviewApi, referencePanelId: string) => void>(() => {});
     const splitDownRef = useRef<(api: DockviewApi, referencePanelId: string) => void>(() => {});
     const addTabRef = useRef<(api: DockviewApi, referencePanelId: string) => void>(() => {});
@@ -599,6 +600,21 @@ export const Layout: React.FC<LayoutProps> = ({
             height: 44,
         });
     }, []);
+
+    const refreshPanelContents = useCallback((api: DockviewApi) => {
+        for (const panel of api.panels) {
+            const panelId = getPanelBaseId(panel.id);
+            if (!panelId) {
+                continue;
+            }
+
+            panel.api.updateParameters({
+                panelId,
+                panelKey: panel.id,
+                content: resolvePanelContent(panelId, panel.id),
+            });
+        }
+    }, [resolvePanelContent]);
 
     const handleSelectPanelFromPicker = useCallback((panelId: PanelId, pickerPanelId: string) => {
         const api = apiRef.current;
@@ -750,7 +766,9 @@ export const Layout: React.FC<LayoutProps> = ({
             api.onDidRemovePanel((panel) => {
                 const baseId = getPanelBaseId(panel.id);
                 if (baseId) {
-                    onPanelRemoved?.(baseId, panel.id);
+                    if (!isRestoringLayoutRef.current) {
+                        onPanelRemoved?.(baseId, panel.id);
+                    }
                     const hasRemainingPanels = getPanelsByBaseId(api, baseId).length > 0;
                     setVisibility((prev) => ({ ...prev, [baseId]: hasRemainingPanels }));
                 }
@@ -771,26 +789,41 @@ export const Layout: React.FC<LayoutProps> = ({
                 onPanelActivated?.(baseId, panel.id);
             }),
             api.onDidLayoutChange(() => {
+                if (isRestoringLayoutRef.current) {
+                    return;
+                }
                 queueSaveLayout(api);
             }),
         ];
 
         const savedLayout = loadItem<SerializedLayout>(LAYOUT_STORAGE_KEY);
         const useSavedLayout = Boolean(savedLayout?.grid && savedLayout?.panels && shouldUseSavedLayout(savedLayout));
+        let restoredSavedLayout = false;
 
-        if (savedLayout?.grid && savedLayout?.panels && useSavedLayout) {
-            try {
-                api.fromJSON(savedLayout, { reuseExistingPanels: false });
-            } catch {
+        isRestoringLayoutRef.current = true;
+        try {
+            if (savedLayout?.grid && savedLayout?.panels && useSavedLayout) {
+                try {
+                    api.fromJSON(savedLayout, { reuseExistingPanels: false });
+                    restoredSavedLayout = true;
+                } catch {
+                    syncPanels(api);
+                }
+            } else {
                 syncPanels(api);
             }
-        } else {
-            syncPanels(api);
+
+            rebindPickerPanels(api);
+            if (restoredSavedLayout) {
+                refreshPanelContents(api);
+            } else {
+                syncPanels(api);
+            }
+        } finally {
+            isRestoringLayoutRef.current = false;
         }
 
-        rebindPickerPanels(api);
-        syncPanels(api);
-        if (!useSavedLayout) {
+        if (!restoredSavedLayout) {
             api.getPanel('files')?.api.setActive();
             api.getPanel('editor')?.api.setActive();
         }
@@ -803,6 +836,7 @@ export const Layout: React.FC<LayoutProps> = ({
         onPanelActivated,
         handleSelectPanelFromPicker,
         queueSaveLayout,
+        refreshPanelContents,
         rebindPickerPanels,
         syncPanels,
         syncToolbarSize,
