@@ -1,4 +1,6 @@
 import { AnycodeEditorReact } from 'anycode-react';
+import type { ReferencesPeekState } from '../../types';
+import { ReferencesPeek } from './ReferencesPeek';
 
 type EditorPanelProps = {
     panelKey: string;
@@ -7,6 +9,10 @@ type EditorPanelProps = {
         editorStates: ReadonlyMap<string, unknown>;
         getActiveFileIdForPane: (paneId: string) => string | null;
         setActiveEditorPaneId: (paneId: string) => void;
+        getReferencesPeekForPane: (paneId: string) => ReferencesPeekState | null;
+        closeReferencesPeek: (paneId?: string) => void;
+        setSelectedReferenceInPeek: (paneId: string, nextIndex: number) => void;
+        openReferenceFromPeek: (paneId: string, itemIndex?: number) => void;
     };
 };
 
@@ -14,6 +20,7 @@ export const EditorPanel = ({ panelKey, editors }: EditorPanelProps) => {
     const paneFileId = editors.getActiveFileIdForPane(panelKey);
     const paneFile = paneFileId ? editors.files.find((file) => file.id === paneFileId) : null;
     const editorState = paneFile ? editors.editorStates.get(paneFile.id) : null;
+    const referencesPeek = editors.getReferencesPeekForPane(panelKey);
 
     return (
         <div
@@ -29,6 +36,14 @@ export const EditorPanel = ({ panelKey, editors }: EditorPanelProps) => {
             ) : (
                 <div className="no-editor"></div>
             )}
+            {referencesPeek ? (
+                <ReferencesPeek
+                    state={referencesPeek}
+                    onClose={() => editors.closeReferencesPeek(panelKey)}
+                    onSelectItem={(index) => editors.setSelectedReferenceInPeek(panelKey, index)}
+                    onOpenItem={(index) => editors.openReferenceFromPeek(panelKey, index)}
+                />
+            ) : null}
         </div>
     );
 };
