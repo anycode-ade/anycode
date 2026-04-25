@@ -11,6 +11,7 @@ type EditorPanelProps = {
         setActiveEditorPaneId: (paneId: string) => void;
         getReferencesPeekForPane: (paneId: string) => ReferencesPeekState | null;
         closeReferencesPeek: (paneId?: string) => void;
+        focusEditorInPane: (paneId: string) => void;
         setSelectedReferenceInPeek: (paneId: string, nextIndex: number) => void;
         openReferenceFromPeek: (paneId: string, itemIndex?: number) => void;
     };
@@ -39,7 +40,10 @@ export const EditorPanel = ({ panelKey, editors }: EditorPanelProps) => {
             {referencesPeek ? (
                 <ReferencesPeek
                     state={referencesPeek}
-                    onClose={() => editors.closeReferencesPeek(panelKey)}
+                    onClose={() => {
+                        editors.closeReferencesPeek(panelKey);
+                        editors.focusEditorInPane(panelKey);
+                    }}
                     onSelectItem={(index) => editors.setSelectedReferenceInPeek(panelKey, index)}
                     onOpenItem={(index) => editors.openReferenceFromPeek(panelKey, index)}
                 />

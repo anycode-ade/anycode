@@ -901,6 +901,13 @@ export class AnycodeEditor {
             return;
         }
 
+        if (action === Action.REFERENCES) {
+            event.preventDefault();
+            const { line, column } = this.code.getPosition(this.offset);
+            this.openReferencesPeek(line, column).catch(console.error);
+            return;
+        }
+
         if (action === Action.HOVER) {
             event.preventDefault();
             if (!this.hoverProvider) return;
@@ -984,6 +991,7 @@ export class AnycodeEditor {
             case "Tab": return Action.TAB;
             case "Escape": return Action.ESC;
             case "F10": return Action.HOVER;
+            case "F11": return Action.REFERENCES;
             case "F12": return Action.GO_TO_DEFINITION;
         }
 

@@ -172,12 +172,6 @@ const App: React.FC = () => {
                 return;
             }
 
-            if (e.shiftKey && e.key === 'F12') {
-                e.preventDefault();
-                editors.openReferencesPeekForActiveCursor();
-                return;
-            }
-
             if (e.metaKey && e.key === 'f') {
                 e.preventDefault();
             }
@@ -206,7 +200,6 @@ const App: React.FC = () => {
         editors.activeEditorPaneId,
         editors.activeFileId,
         editors.handleReferencesPeekKeyDown,
-        editors.openReferencesPeekForActiveCursor,
         editors.redoCursor,
         editors.saveFile,
         editors.undoCursor,

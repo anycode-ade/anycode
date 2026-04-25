@@ -49,6 +49,51 @@ const getHighlightRange = (preview: ReferencesPeekState['preview']) => {
     return { startLine, startColumn, endLine, endColumn };
 };
 
+type HighlightRange = NonNullable<ReturnType<typeof getHighlightRange>>;
+
+type CreatePreviewEditorParams = {
+    previewText: string;
+    fileName: string;
+    language: string;
+    range: HighlightRange;
+    isCancelled: () => boolean;
+    onReady: (editor: AnycodeEditor) => void;
+    onError: () => void;
+};
+
+const createPreviewEditor = async ({
+    previewText,
+    fileName,
+    language,
+    range,
+    isCancelled,
+    onReady,
+    onError,
+}: CreatePreviewEditorParams): Promise<void> => {
+    let editor: AnycodeEditor | null = null;
+
+    try {
+        editor = new AnycodeEditor(previewText, fileName, language, {
+            readOnly: true,
+            line: range.startLine,
+            column: range.startColumn,
+        });
+        await editor.init();
+
+        if (isCancelled()) {
+            editor.clean();
+            return;
+        }
+
+        onReady(editor);
+    } catch {
+        editor?.clean();
+        if (!isCancelled()) {
+            onError();
+        }
+    }
+};
+
 export const ReferencesPeek = ({
     state,
     onClose,
@@ -106,8 +151,6 @@ export const ReferencesPeek = ({
         }
 
         let cancelled = false;
-        let adopted = false;
-        let nextEditor: AnycodeEditor | null = null;
         const previewText = state.preview.lines.join('\n');
         const fileName = getFileName(state.preview.filePath);
         const language = getLanguageFromFileName(fileName);
@@ -130,31 +173,23 @@ export const ReferencesPeek = ({
             return;
         }
 
-        const init = async () => {
-            try {
-                nextEditor = new AnycodeEditor(previewText, fileName, language, {
-                    readOnly: true,
-                    line: range.startLine,
-                    column: range.startColumn,
-                });
-                await nextEditor.init();
-
-                if (cancelled) {
-                    nextEditor.clean();
-                    return;
-                }
-
+        void createPreviewEditor({
+            previewText,
+            fileName,
+            language,
+            range,
+            isCancelled: () => cancelled,
+            onReady: (editor) => {
                 setPreviewEditor((prev) => {
                     prev?.clean();
-                    return nextEditor;
+                    return editor;
                 });
-                previewEditorRef.current = nextEditor;
+                previewEditorRef.current = editor;
                 previewEditorMetaRef.current = { fileName, language };
-                adopted = true;
 
                 requestAnimationFrame(() => {
-                    if (previewEditorRef.current !== nextEditor) return;
-                    nextEditor.setSelectionRange(
+                    if (previewEditorRef.current !== editor) return;
+                    editor.setSelectionRange(
                         range.startLine,
                         range.startColumn,
                         range.endLine,
@@ -162,27 +197,19 @@ export const ReferencesPeek = ({
                         true,
                     );
                 });
-            } catch {
-                if (nextEditor) {
-                    nextEditor.clean();
-                }
-                if (!cancelled) {
-                    setPreviewEditor((prev) => {
-                        prev?.clean();
-                        return null;
-                    });
-                    previewEditorRef.current = null;
-                }
-            }
-        };
-
-        void init();
+            },
+            onError: () => {
+                setPreviewEditor((prev) => {
+                    prev?.clean();
+                    return null;
+                });
+                previewEditorRef.current = null;
+                previewEditorMetaRef.current = null;
+            },
+        });
 
         return () => {
             cancelled = true;
-            if (nextEditor && !adopted) {
-                nextEditor.clean();
-            }
         };
     }, [state.preview]);
 
@@ -193,6 +220,22 @@ export const ReferencesPeek = ({
             previewEditorMetaRef.current = null;
         };
     }, []);
+
+    const refocusPreviewSelection = () => {
+        const editor = previewEditorRef.current;
+        const range = getHighlightRange(state.preview);
+        if (!editor || !range) {
+            return;
+        }
+
+        editor.setSelectionRange(
+            range.startLine,
+            range.startColumn,
+            range.endLine,
+            range.endColumn,
+            true,
+        );
+    };
 
     return (
         <div className="references-peek" onMouseDown={(event) => event.stopPropagation()}>
@@ -245,7 +288,10 @@ export const ReferencesPeek = ({
                     {grouped.map((group) => (
                         <div key={group.filePath} className="references-peek-group">
                             <div className="references-peek-group-title">
-                                {getFileName(group.filePath)} <span>{group.indexes.length}</span>
+                                <span className="references-peek-group-path" title={group.filePath}>
+                                    {getFileName(group.filePath)}
+                                </span>
+                                <span>{group.indexes.length}</span>
                             </div>
                             {group.indexes.map((index) => {
                                 const item = state.items[index];
@@ -253,24 +299,44 @@ export const ReferencesPeek = ({
                                 const line = item.range.start.line + 1;
                                 const column = item.range.start.character + 1;
                                 return (
-                                    <button
+                                    <div
                                         key={`${group.filePath}:${line}:${column}:${index}`}
                                         className={`references-peek-item ${isSelected ? 'is-selected' : ''}`}
-                                        type="button"
-                                        ref={(el) => {
-                                            if (el) {
-                                                itemRefs.current.set(index, el);
-                                            } else {
-                                                itemRefs.current.delete(index);
-                                            }
-                                        }}
-                                        onClick={() => onSelectItem(index)}
-                                        onDoubleClick={() => onOpenItem(index)}
                                     >
-                                        <span className="references-peek-item-location">
-                                            {line}:{column}
-                                        </span>
-                                    </button>
+                                        <button
+                                            className={`references-peek-item-select ${isSelected ? 'is-selected' : ''}`}
+                                            type="button"
+                                            ref={(el) => {
+                                                if (el) {
+                                                    itemRefs.current.set(index, el);
+                                                } else {
+                                                    itemRefs.current.delete(index);
+                                                }
+                                            }}
+                                            onClick={() => {
+                                                if (isSelected) {
+                                                    refocusPreviewSelection();
+                                                    return;
+                                                }
+                                                onSelectItem(index);
+                                            }}
+                                            onDoubleClick={() => onOpenItem(index)}
+                                        >
+                                            <span className="references-peek-item-location">
+                                                {line}:{column}
+                                            </span>
+                                        </button>
+                                        <button
+                                            className="references-peek-item-open"
+                                            type="button"
+                                            onClick={() => {
+                                                onOpenItem(index);
+                                                onClose();
+                                            }}
+                                        >
+                                            Open
+                                        </button>
+                                    </div>
                                 );
                             })}
                         </div>

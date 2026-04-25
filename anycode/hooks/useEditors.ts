@@ -384,6 +384,22 @@ export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: Us
         updateReferencesPeekForPane(targetPaneId, null);
     }, [updateReferencesPeekForPane]);
 
+    const focusEditorInPane = useCallback((paneId: string) => {
+        const fileId = getActiveFileIdForPane(paneId);
+        if (!fileId) {
+            return;
+        }
+
+        const editor = editorRefs.current.get(fileId);
+        if (!editor) {
+            return;
+        }
+
+        const cursor = editor.getCursor();
+        setActiveEditorPaneId(paneId);
+        editor.requestFocus(cursor.line, cursor.column);
+    }, [getActiveFileIdForPane]);
+
     const getReferencesPeekForPane = useCallback((paneId: string): ReferencesPeekState | null => {
         return referencesPeekByPaneRef.current[paneId] ?? null;
     }, []);
@@ -561,24 +577,25 @@ export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: Us
         }
     }, [resolveTargetPaneId, setActiveFileId, wsRef, isConnected]);
 
-    const openReferenceFromPeek = useCallback((paneId: string, itemIndex?: number) => {
+    const openReferenceFromPeek = useCallback((paneId: string, itemIndex?: number): boolean => {
         const peek = referencesPeekByPaneRef.current[paneId];
         if (!peek || peek.items.length === 0) {
-            return;
+            return false;
         }
 
         const index = itemIndex ?? peek.selectedIndex;
         const item = peek.items[index];
         if (!item) {
-            return;
+            return false;
         }
 
         const filePath = uriToFilePath(item.uri || item.file);
         if (!filePath) {
-            return;
+            return false;
         }
 
         openFile(filePath, item.range.start.line, item.range.start.character, paneId);
+        return true;
     }, [openFile]);
 
     const openReferencesPeekForActiveCursor = useCallback(() => {
@@ -634,11 +651,11 @@ export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: Us
                 return;
             }
 
-            const itemsRaw = Array.isArray(response.items) ? response.items : [];
+            const itemsRaw: unknown[] = Array.isArray(response.items) ? response.items : [];
             const items = itemsRaw
-                .map((item) => item as ReferencesPeekItem)
-                .filter((item) => item?.range?.start && item?.range?.end)
-                .sort((a, b) => {
+                .map((item): ReferencesPeekItem => item as ReferencesPeekItem)
+                .filter((item: ReferencesPeekItem) => item?.range?.start && item?.range?.end)
+                .sort((a: ReferencesPeekItem, b: ReferencesPeekItem) => {
                     const leftPath = uriToFilePath(a.uri || a.file);
                     const rightPath = uriToFilePath(b.uri || b.file);
 
@@ -651,7 +668,7 @@ export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: Us
                     return a.range.start.character - b.range.start.character;
                 });
 
-            const dedupedItems = items.filter((item, index, arr) => {
+            const dedupedItems = items.filter((item: ReferencesPeekItem, index: number, arr: ReferencesPeekItem[]) => {
                 if (index === 0) return true;
                 const prev = arr[index - 1];
                 return !(
@@ -692,12 +709,16 @@ export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: Us
         if (event.key === 'Escape') {
             event.preventDefault();
             closeReferencesPeek(paneId);
+            focusEditorInPane(paneId);
             return true;
         }
 
         if (event.key === 'Enter') {
             event.preventDefault();
-            openReferenceFromPeek(paneId);
+            const opened = openReferenceFromPeek(paneId);
+            if (opened) {
+                closeReferencesPeek(paneId);
+            }
             return true;
         }
 
@@ -714,7 +735,7 @@ export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: Us
         }
 
         return false;
-    }, [closeReferencesPeek, openReferenceFromPeek, setSelectedReferenceInPeek]);
+    }, [closeReferencesPeek, focusEditorInPane, openReferenceFromPeek, setSelectedReferenceInPeek]);
 
     const handleGoToDefinition = useCallback((definitionRequest: DefinitionRequest): Promise<DefinitionResponse> => {
         return new Promise((resolve, reject) => {
@@ -1035,6 +1056,7 @@ export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: Us
         openReferencesPeekForActiveCursor,
         openReferencesPeek,
         closeReferencesPeek,
+        focusEditorInPane,
         setSelectedReferenceInPeek,
         openReferenceFromPeek,
         handleReferencesPeekKeyDown,

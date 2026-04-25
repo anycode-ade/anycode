@@ -106,6 +106,8 @@
 .references-peek-preview-editor .anyeditor .buttons,
 .references-peek-preview-editor .anyeditor .gutter {
     opacity: 0.72;
+    position: relative;
+    left: auto;
 }
 
 .references-peek-preview-editor .anyeditor.readonly .buttons {
@@ -144,35 +146,81 @@
     color: #aaa;
 }
 
+.references-peek-group-path {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .references-peek-item {
     width: 100%;
-    text-align: left;
-    border: 1px solid transparent;
-    border-radius: 9px;
     background: transparent;
     color: #fff;
-    padding: 7px 9px;
+    padding: 0;
     margin-top: 4px;
-    display: flex;
-    align-items: center;
+    position: relative;
     outline: none;
 }
 
-.references-peek-item:hover {
+.references-peek-item-select {
+    width: 100%;
+    min-width: 0;
+    text-align: left;
+    border: none;
     background: transparent;
+    color: inherit;
+    padding: 7px 72px 7px 9px;
+    border-radius: 9px;
+    margin: 0;
+    outline: none;
 }
 
-.references-peek-item:focus,
-.references-peek-item:focus-visible,
-.references-peek-item:active {
+.references-peek-item-select:focus,
+.references-peek-item-select:focus-visible,
+.references-peek-item-select:active {
     outline: none;
     box-shadow: none;
-    border-color: transparent;
 }
 
 .references-peek-item.is-selected {
+    background: transparent;
+}
+
+.references-peek-item-select.is-selected {
     background: rgba(130, 130, 130, 0.33);
-    border-color: transparent;
+}
+
+.references-peek-item-open {
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%) translateX(2px);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: 7px;
+    padding: 4px 8px;
+    font-size: 11px;
+    color: #ddd;
+    background: rgba(255, 255, 255, 0.06);
+    flex-shrink: 0;
+    min-width: 52px;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity 0.12s ease, visibility 0.12s ease, transform 0.12s ease, background-color 0.12s ease, color 0.12s ease;
+}
+
+.references-peek-item:hover .references-peek-item-open,
+.references-peek-item:focus-within .references-peek-item-open {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+    transform: translateY(-50%) translateX(0);
+}
+
+.references-peek-item-open:hover {
+    background: rgba(255, 255, 255, 0.11);
+    color: #fff;
 }
 
 .references-peek-item-location {

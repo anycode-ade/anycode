@@ -7,8 +7,8 @@
   "scripts": {
     "postinstall": "cpy \"node_modules/anycode-base/wasm/*.wasm\" public",
     "dev": "vite --host 0.0.0.0",
-    "build:dev": "vite build --mode development && cpy dist ../anycode-backend --parents",
-    "build": "vite build && cpy dist ../anycode-backend --parents",
+    "build:dev": "rimraf ../anycode-backend/dist && vite build --mode development && cpy dist ../anycode-backend --parents",
+    "build": "rimraf ../anycode-backend/dist && vite build && cpy dist ../anycode-backend --parents",
     "preview": "vite preview",
     "electron": "electron ."
   },
