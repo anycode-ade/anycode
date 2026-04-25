@@ -1,0 +1,211 @@
+.references-peek {
+    position: absolute;
+    top: 50%;
+    left: 24px;
+    right: 24px;
+    height: min(340px, calc(100% - 48px));
+    transform: translateY(-50%);
+    z-index: 20;
+    display: flex;
+    flex-direction: column;
+    background-color: rgba(28, 28, 28, 0.52);
+    background-image: linear-gradient(
+        160deg,
+        rgba(255, 255, 255, 0.05),
+        rgba(255, 255, 255, 0.015)
+    );
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 14px;
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.34);
+    backdrop-filter: blur(10px) saturate(130%);
+    -webkit-backdrop-filter: blur(10px) saturate(130%);
+    overflow: hidden;
+}
+
+.references-peek-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 10px 14px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(255, 255, 255, 0.015);
+}
+
+.references-peek-header-main {
+    min-width: 0;
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+}
+
+.references-peek-title {
+    font-size: 13px;
+    color: #fff;
+}
+
+.references-peek-header-path {
+    min-width: 0;
+    max-width: min(68vw, 980px);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    overflow: hidden;
+    color: #aaa;
+    font-size: 12px;
+}
+
+.references-peek-close {
+    border: none;
+    background: transparent;
+    color: rgba(255, 255, 255, 0.75);
+    font-size: 20px;
+    line-height: 1;
+    padding: 0 6px;
+    border-radius: 8px;
+}
+
+.references-peek-close:hover {
+    color: #ffffff;
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.references-peek-body {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 320px;
+}
+
+.references-peek-preview {
+    min-width: 0;
+    border-right: 1px solid rgba(255, 255, 255, 0.1);
+    overflow: hidden;
+    background: transparent;
+}
+
+.references-peek-preview-code {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+}
+
+.references-peek-preview-editor {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    padding: 8px 0 0 0;
+}
+
+.references-peek-preview-editor .anyeditor {
+    height: 100% !important;
+    border-radius: 0;
+    background: transparent;
+}
+
+.references-peek-preview-editor .anyeditor .buttons,
+.references-peek-preview-editor .anyeditor .gutter {
+    opacity: 0.72;
+}
+
+.references-peek-preview-editor .anyeditor.readonly .buttons {
+    display: flex;
+}
+
+.references-peek-preview-editor .anyeditor.readonly .gutter {
+    display: block;
+}
+
+.references-peek-list {
+    overflow: auto;
+    background: transparent;
+    padding: 10px;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+.references-peek-group + .references-peek-group {
+    margin-top: 10px;
+}
+
+.references-peek-group-title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    color: #ddd;
+    padding: 7px 10px;
+    font-size: 12px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 10px;
+}
+
+.references-peek-group-title span {
+    color: #aaa;
+}
+
+.references-peek-item {
+    width: 100%;
+    text-align: left;
+    border: 1px solid transparent;
+    border-radius: 9px;
+    background: transparent;
+    color: #fff;
+    padding: 7px 9px;
+    margin-top: 4px;
+    display: flex;
+    align-items: center;
+    outline: none;
+}
+
+.references-peek-item:hover {
+    background: transparent;
+}
+
+.references-peek-item:focus,
+.references-peek-item:focus-visible,
+.references-peek-item:active {
+    outline: none;
+    box-shadow: none;
+    border-color: transparent;
+}
+
+.references-peek-item.is-selected {
+    background: rgba(130, 130, 130, 0.33);
+    border-color: transparent;
+}
+
+.references-peek-item-location {
+    font-size: 12px;
+}
+
+.references-peek-empty {
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #aaa;
+    padding: 16px;
+    text-align: center;
+}
+
+@media (max-width: 960px) {
+    .references-peek {
+        top: 50%;
+        left: 8px;
+        right: 8px;
+        height: min(320px, calc(100% - 16px));
+        transform: translateY(-50%);
+        border-radius: 12px;
+    }
+
+    .references-peek-body {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: minmax(0, 1fr) 40%;
+    }
+
+    .references-peek-preview {
+        border-right: none;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    }
+}

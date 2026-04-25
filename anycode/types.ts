@@ -327,3 +327,38 @@ export interface SearchEnd {
     elapsed: number;
     matches: number;
 }
+
+export interface ReferencesPeekItemRangePosition {
+    line: number;
+    character: number;
+}
+
+export interface ReferencesPeekItemRange {
+    start: ReferencesPeekItemRangePosition;
+    end: ReferencesPeekItemRangePosition;
+}
+
+export interface ReferencesPeekItem {
+    uri: string;
+    file: string;
+    range: ReferencesPeekItemRange;
+}
+
+export interface ReferencesPeekPreview {
+    filePath: string;
+    lineStart: number;
+    focusLine: number;
+    focusColumn: number;
+    focusEndLine: number;
+    focusEndColumn: number;
+    lines: string[];
+}
+
+export interface ReferencesPeekState {
+    paneId: string;
+    loading: boolean;
+    error: string | null;
+    items: ReferencesPeekItem[];
+    selectedIndex: number;
+    preview: ReferencesPeekPreview | null;
+}

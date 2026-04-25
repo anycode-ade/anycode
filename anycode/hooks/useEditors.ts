@@ -6,6 +6,9 @@ import {
     type CursorHistory,
     type FileState,
     type PendingBatch,
+    type ReferencesPeekItem,
+    type ReferencesPeekPreview,
+    type ReferencesPeekState,
     type WatcherEdits,
 } from '../types';
 import { BATCH_DELAY_MS } from '../constants';
@@ -18,6 +21,7 @@ import {
     Diagnostic,
     DiagnosticResponse,
     HoverRequest,
+    type ReferencesRequest,
 } from '../../anycode-base/src/lsp';
 
 type UseEditorsParams = {
@@ -82,6 +86,41 @@ const normalizeHoverResponse = (response: any): string | null => {
     return null;
 };
 
+const uriToFilePath = (uriOrPath: string): string => {
+    if (!uriOrPath) return '';
+    if (!uriOrPath.startsWith('file://')) {
+        return uriOrPath;
+    }
+
+    const rawPath = uriOrPath.slice('file://'.length);
+    try {
+        return decodeURIComponent(rawPath);
+    } catch {
+        return rawPath;
+    }
+};
+
+const createPreviewFromContent = (
+    content: string,
+    filePath: string,
+    startLine: number,
+    startColumn: number,
+    endLine: number,
+    endColumn: number,
+): ReferencesPeekPreview => {
+    const allLines = content.split('\n');
+
+    return {
+        filePath,
+        lineStart: 0,
+        focusLine: startLine,
+        focusColumn: startColumn,
+        focusEndLine: endLine,
+        focusEndColumn: endColumn,
+        lines: allLines,
+    };
+};
+
 export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: UseEditorsParams) => {
     const [files, setFiles] = useState<FileState[]>([]);
     const filesRef = useRef<FileState[]>([]);
@@ -97,6 +136,7 @@ export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: Us
     const editorRefs = useRef<Map<string, AnycodeEditor>>(new Map());
 
     const savedFileContentsRef = useRef<Map<string, string>>(new Map());
+    const previewFileContentsRef = useRef<Map<string, string>>(new Map());
     const diagnosticsRef = useRef<Map<string, Diagnostic[]>>(new Map());
     const pendingPositions = useRef<Map<string, { line: number; column: number }>>(new Map());
     const cursorHistory = useRef<CursorHistory>({ undoStack: [], redoStack: [] });
@@ -104,6 +144,9 @@ export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: Us
     const pendingOriginalContentRef = useRef<Map<string, string>>(new Map());
     const pendingChangesRef = useRef<Map<string, PendingBatch>>(new Map());
     const ignoreChangeFilesRef = useRef<Set<string>>(new Set());
+    const [referencesPeekByPane, setReferencesPeekByPane] = useState<Record<string, ReferencesPeekState | null>>({});
+    const referencesPeekByPaneRef = useRef<Record<string, ReferencesPeekState | null>>({});
+    const referencesPeekRequestTokenRef = useRef<number>(0);
     const [pendingExistingOpenRequest, setPendingExistingOpenRequest] = useState<PendingExistingOpenRequest | null>(null);
     const lastFocusedEditorPaneIdRef = useRef<string>(DEFAULT_EDITOR_PANE_ID);
 
@@ -156,6 +199,7 @@ export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: Us
     useEffect(() => { paneActiveFileIdsRef.current = paneActiveFileIds; }, [paneActiveFileIds]);
     useEffect(() => { activeFileIdRef.current = activeFileId; }, [activeFileId]);
     useEffect(() => { editorStatesRef.current = editorStates; }, [editorStates]);
+    useEffect(() => { referencesPeekByPaneRef.current = referencesPeekByPane; }, [referencesPeekByPane]);
 
     const getActiveFileIdForPane = useCallback((paneId: string): string | null => {
         return paneActiveFileIdsRef.current[paneId] ?? null;
@@ -214,6 +258,13 @@ export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: Us
     }, [pendingExistingOpenRequest, setActiveFileId]);
 
     const unregisterEditorPane = useCallback((paneId: string) => {
+        setReferencesPeekByPane((prev) => {
+            if (!Object.hasOwn(prev, paneId)) return prev;
+            const next = { ...prev };
+            delete next[paneId];
+            return next;
+        });
+
         setPaneActiveFileIds((prev) => {
             if (!Object.hasOwn(prev, paneId)) return prev;
 
@@ -321,6 +372,147 @@ export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: Us
         });
     }, [wsRef]);
 
+    const updateReferencesPeekForPane = useCallback((paneId: string, next: ReferencesPeekState | null) => {
+        setReferencesPeekByPane((prev) => ({ ...prev, [paneId]: next }));
+    }, []);
+
+    const closeReferencesPeek = useCallback((paneId?: string) => {
+        const targetPaneId = paneId ?? activeEditorPaneIdRef.current;
+        if (!targetPaneId) return;
+        referencesPeekRequestTokenRef.current += 1;
+        previewFileContentsRef.current.clear();
+        updateReferencesPeekForPane(targetPaneId, null);
+    }, [updateReferencesPeekForPane]);
+
+    const getReferencesPeekForPane = useCallback((paneId: string): ReferencesPeekState | null => {
+        return referencesPeekByPaneRef.current[paneId] ?? null;
+    }, []);
+
+    const resolveFileContentForPreview = useCallback(async (filePath: string): Promise<string | null> => {
+        const editor = editorRefs.current.get(filePath);
+        if (editor) {
+            const content = editor.getText();
+            previewFileContentsRef.current.set(filePath, content);
+            return content;
+        }
+
+        const previewCachedContent = previewFileContentsRef.current.get(filePath);
+        if (previewCachedContent !== undefined) {
+            return previewCachedContent;
+        }
+
+        const savedContent = savedFileContentsRef.current.get(filePath);
+        if (savedContent !== undefined) {
+            previewFileContentsRef.current.set(filePath, savedContent);
+            return savedContent;
+        }
+
+        if (!wsRef.current || !isConnected) {
+            return null;
+        }
+
+        return new Promise((resolve) => {
+            wsRef.current?.emit('file:open', { path: filePath }, (response: any) => {
+                if (!response?.success || typeof response.content !== 'string') {
+                    resolve(null);
+                    return;
+                }
+
+                const content = response.content as string;
+                previewFileContentsRef.current.set(filePath, content);
+                const isOpenInEditor = filesRef.current.some((file) => file.id === filePath);
+
+                if (!isOpenInEditor) {
+                    wsRef.current?.emit('file:close', { file: filePath });
+                }
+
+                resolve(content);
+            });
+        });
+    }, [wsRef, isConnected]);
+
+    const loadReferencesPeekPreview = useCallback(async (
+        paneId: string,
+        itemIndex: number,
+        requestToken: number,
+        itemsOverride?: ReferencesPeekItem[],
+    ) => {
+        const sourceItems = itemsOverride ?? referencesPeekByPaneRef.current[paneId]?.items;
+        if (!sourceItems || itemIndex < 0 || itemIndex >= sourceItems.length) {
+            return;
+        }
+
+        const item = sourceItems[itemIndex];
+        const filePath = uriToFilePath(item.uri || item.file);
+        if (!filePath) {
+            return;
+        }
+
+        const content = await resolveFileContentForPreview(filePath);
+        if (!content) {
+            return;
+        }
+
+        if (referencesPeekRequestTokenRef.current !== requestToken) {
+            return;
+        }
+
+        const preview = createPreviewFromContent(
+            content,
+            filePath,
+            item.range.start.line,
+            item.range.start.character,
+            item.range.end.line,
+            item.range.end.character,
+        );
+
+        setReferencesPeekByPane((prev) => {
+            const current = prev[paneId];
+            if (!current) {
+                return prev;
+            }
+
+            return {
+                ...prev,
+                [paneId]: {
+                    ...current,
+                    preview,
+                },
+            };
+        });
+    }, [resolveFileContentForPreview]);
+
+    const setSelectedReferenceInPeek = useCallback((paneId: string, nextIndex: number) => {
+        const current = referencesPeekByPaneRef.current[paneId];
+        if (!current || current.items.length === 0) {
+            return;
+        }
+
+        const boundedIndex = Math.max(0, Math.min(current.items.length - 1, nextIndex));
+        if (boundedIndex === current.selectedIndex) {
+            return;
+        }
+
+        const requestToken = ++referencesPeekRequestTokenRef.current;
+        setReferencesPeekByPane((prev) => {
+            const target = prev[paneId];
+            if (!target) {
+                return prev;
+            }
+            return {
+                ...prev,
+                [paneId]: {
+                    ...target,
+                    selectedIndex: boundedIndex,
+                },
+            };
+        });
+
+        loadReferencesPeekPreview(paneId, boundedIndex, requestToken).catch(() => {
+            // Swallow preview load errors in lite mode.
+        });
+    }, [loadReferencesPeekPreview]);
+
     const openFile = useCallback((path: string, line?: number, column?: number, paneId?: string) => {
         const existingFile = filesRef.current.find((file) => file.id === path);
         const targetPaneId = resolveTargetPaneId(paneId, existingFile?.id);
@@ -368,6 +560,161 @@ export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: Us
             });
         }
     }, [resolveTargetPaneId, setActiveFileId, wsRef, isConnected]);
+
+    const openReferenceFromPeek = useCallback((paneId: string, itemIndex?: number) => {
+        const peek = referencesPeekByPaneRef.current[paneId];
+        if (!peek || peek.items.length === 0) {
+            return;
+        }
+
+        const index = itemIndex ?? peek.selectedIndex;
+        const item = peek.items[index];
+        if (!item) {
+            return;
+        }
+
+        const filePath = uriToFilePath(item.uri || item.file);
+        if (!filePath) {
+            return;
+        }
+
+        openFile(filePath, item.range.start.line, item.range.start.character, paneId);
+    }, [openFile]);
+
+    const openReferencesPeekForActiveCursor = useCallback(() => {
+        const paneId = activeEditorPaneIdRef.current || DEFAULT_EDITOR_PANE_ID;
+        const fileId = getActiveFileIdForPane(paneId);
+        if (!fileId) {
+            return;
+        }
+
+        const editor = editorRefs.current.get(fileId);
+        if (!editor) {
+            return;
+        }
+
+        const cursor = editor.getCursor();
+        void openReferencesPeek({
+            file: fileId,
+            row: cursor.line,
+            column: cursor.column,
+        }, paneId);
+    }, [getActiveFileIdForPane]);
+
+    const openReferencesPeek = useCallback(async (request: ReferencesRequest, paneId?: string): Promise<void> => {
+        const targetPaneId = paneId ?? activeEditorPaneIdRef.current ?? DEFAULT_EDITOR_PANE_ID;
+        if (!wsRef.current || !isConnected) {
+            return;
+        }
+
+        const requestToken = ++referencesPeekRequestTokenRef.current;
+        updateReferencesPeekForPane(targetPaneId, {
+            paneId: targetPaneId,
+            loading: true,
+            error: null,
+            items: [],
+            selectedIndex: 0,
+            preview: null,
+        });
+
+        wsRef.current.emit('lsp:references', request, (response: any) => {
+            if (referencesPeekRequestTokenRef.current !== requestToken) {
+                return;
+            }
+
+            if (!response || response.error) {
+                updateReferencesPeekForPane(targetPaneId, {
+                    paneId: targetPaneId,
+                    loading: false,
+                    error: typeof response?.error === 'string' ? response.error : 'Failed to load references',
+                    items: [],
+                    selectedIndex: 0,
+                    preview: null,
+                });
+                return;
+            }
+
+            const itemsRaw = Array.isArray(response.items) ? response.items : [];
+            const items = itemsRaw
+                .map((item) => item as ReferencesPeekItem)
+                .filter((item) => item?.range?.start && item?.range?.end)
+                .sort((a, b) => {
+                    const leftPath = uriToFilePath(a.uri || a.file);
+                    const rightPath = uriToFilePath(b.uri || b.file);
+
+                    if (leftPath !== rightPath) {
+                        return leftPath.localeCompare(rightPath);
+                    }
+                    if (a.range.start.line !== b.range.start.line) {
+                        return a.range.start.line - b.range.start.line;
+                    }
+                    return a.range.start.character - b.range.start.character;
+                });
+
+            const dedupedItems = items.filter((item, index, arr) => {
+                if (index === 0) return true;
+                const prev = arr[index - 1];
+                return !(
+                    uriToFilePath(prev.uri || prev.file) === uriToFilePath(item.uri || item.file)
+                    && prev.range.start.line === item.range.start.line
+                    && prev.range.start.character === item.range.start.character
+                    && prev.range.end.line === item.range.end.line
+                    && prev.range.end.character === item.range.end.character
+                );
+            });
+
+            updateReferencesPeekForPane(targetPaneId, {
+                paneId: targetPaneId,
+                loading: false,
+                error: null,
+                items: dedupedItems,
+                selectedIndex: 0,
+                preview: null,
+            });
+
+            if (dedupedItems.length > 0) {
+                loadReferencesPeekPreview(targetPaneId, 0, requestToken, dedupedItems).catch(() => {
+                    // Swallow preview load errors in lite mode.
+                });
+            }
+        });
+    }, [
+        isConnected,
+        loadReferencesPeekPreview,
+        updateReferencesPeekForPane,
+        wsRef,
+    ]);
+
+    const handleReferencesPeekKeyDown = useCallback((paneId: string, event: KeyboardEvent) => {
+        const peek = referencesPeekByPaneRef.current[paneId];
+        if (!peek) return false;
+
+        if (event.key === 'Escape') {
+            event.preventDefault();
+            closeReferencesPeek(paneId);
+            return true;
+        }
+
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            openReferenceFromPeek(paneId);
+            return true;
+        }
+
+        if (event.key === 'ArrowDown') {
+            event.preventDefault();
+            setSelectedReferenceInPeek(paneId, peek.selectedIndex + 1);
+            return true;
+        }
+
+        if (event.key === 'ArrowUp') {
+            event.preventDefault();
+            setSelectedReferenceInPeek(paneId, peek.selectedIndex - 1);
+            return true;
+        }
+
+        return false;
+    }, [closeReferencesPeek, openReferenceFromPeek, setSelectedReferenceInPeek]);
 
     const handleGoToDefinition = useCallback((definitionRequest: DefinitionRequest): Promise<DefinitionResponse> => {
         return new Promise((resolve, reject) => {
@@ -449,10 +796,11 @@ export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: Us
         editor.setCompletionProvider(handleCompletion);
         editor.setHoverProvider(handleHover);
         editor.setGoToDefinitionProvider(handleGoToDefinition);
+        editor.setReferencesPeekProvider(openReferencesPeek);
         editor.setErrors(errors || []);
 
         return editor;
-    }, [diffEnabled, handleChange, handleCursorChange, handleCompletion, handleGoToDefinition, handleHover]);
+    }, [diffEnabled, handleChange, handleCursorChange, handleCompletion, handleGoToDefinition, handleHover, openReferencesPeek]);
 
     const initializeEditors = useCallback(async () => {
         try {
@@ -682,6 +1030,14 @@ export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: Us
         saveFile,
         openFile,
         openFileDiff,
+        referencesPeekByPane,
+        getReferencesPeekForPane,
+        openReferencesPeekForActiveCursor,
+        openReferencesPeek,
+        closeReferencesPeek,
+        setSelectedReferenceInPeek,
+        openReferenceFromPeek,
+        handleReferencesPeekKeyDown,
         handleDiagnostics,
         handleWatcherEdits,
         undoCursor,

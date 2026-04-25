@@ -3,7 +3,14 @@ import { vesper } from './theme';
 import { Renderer } from './renderer/Renderer';
 import { getPosFromMouse } from './mouse';
 import { Selection, hasDiagnosticSelection } from "./selection";
-import { Completion, CompletionRequest, DefinitionRequest, DefinitionResponse, HoverRequest } from "./lsp";
+import {
+    Completion,
+    CompletionRequest,
+    DefinitionRequest,
+    DefinitionResponse,
+    HoverRequest,
+    ReferencesRequest,
+} from "./lsp";
 import {
     Action, ActionContext, ActionResult,
     executeAction, handlePasteText,
@@ -71,6 +78,7 @@ export class AnycodeEditor {
     private completionProvider: ((request: CompletionRequest) => Promise<Completion[]>) | null = null;
     private hoverProvider: ((request: HoverRequest) => Promise<string | null>) | null = null;
     private goToDefinitionProvider: ((request: DefinitionRequest) => Promise<DefinitionResponse>) | null = null;
+    private referencesPeekProvider: ((request: ReferencesRequest) => Promise<void>) | null = null;
     private onCursorChangeCallback: ((newCursor: Position, oldCursor: Position) => void) | null = null;
     private hoverDebounceTimer: number | null = null;
     private hoverRequestToken = 0;
@@ -238,9 +246,16 @@ export class AnycodeEditor {
 
     public async init() {
         await this.code.init();
-        if (!this.readOnly) {
-            this.setupEventListeners();
+        if (this.readOnly) {
+            this.setupReadOnlyEventListeners();
+            return;
         }
+        this.setupEventListeners();
+    }
+
+    private setupReadOnlyEventListeners() {
+        this.handleScroll = this.handleScroll.bind(this);
+        this.container.addEventListener("scroll", this.handleScroll);
     }
 
     public getContainer(): HTMLDivElement {
@@ -257,12 +272,46 @@ export class AnycodeEditor {
         this.renderer.renderCursor(line, column);
     }
 
+    public setSelectionRange(
+        startLine: number,
+        startColumn: number,
+        endLine: number,
+        endColumn: number,
+        center: boolean = false,
+    ): void {
+        const startOffset = this.code.getOffset(startLine, startColumn);
+        const endOffset = this.code.getOffset(endLine, endColumn);
+        this.selection = new Selection(startOffset, endOffset);
+        this.offset = endOffset;
+
+        if (center) {
+            this.renderer.focusCenter(this.getEditorState());
+        } else {
+            this.renderer.focus(this.getEditorState());
+        }
+
+        const applySelection = () => {
+            if (!this.selection || this.selection.isEmpty()) return;
+            this.renderer.renderSelection(this.code, this.selection);
+        };
+
+        // First pass immediately, then reinforce after possible virtualized re-render.
+        applySelection();
+        requestAnimationFrame(() => {
+            applySelection();
+            requestAnimationFrame(() => {
+                applySelection();
+            });
+        });
+    }
+
     public requestFocus(line: number, column: number, center: boolean = false): void {
-        if (this.readOnly) return;
         this.needFocus = true;
         const offset = this.code.getOffset(line, column);
         this.offset = offset;
-        this.codeContent.focus();
+        if (!this.readOnly) {
+            this.codeContent.focus();
+        }
 
         if (center) this.renderer.focusCenter(this.getEditorState());
         else this.renderer.focus(this.getEditorState());
@@ -306,6 +355,12 @@ export class AnycodeEditor {
         goToDefinitionProvider: (request: DefinitionRequest) => Promise<DefinitionResponse>
     ) {
         this.goToDefinitionProvider = goToDefinitionProvider;
+    }
+
+    public setReferencesPeekProvider(
+        referencesPeekProvider: (request: ReferencesRequest) => Promise<void>
+    ) {
+        this.referencesPeekProvider = referencesPeekProvider;
     }
 
     public setOnCursorChange(callback: (newState: Position, oldState: Position) => void) {
@@ -462,6 +517,11 @@ export class AnycodeEditor {
             this.isCompletionOpen = false;
         }
 
+        if (e.altKey) {
+            this.openReferencesPeek(pos.row, pos.col).catch(console.error);
+            return;
+        }
+
         if (e.metaKey || e.ctrlKey) {
             this.goToDefinition(pos.row, pos.col).catch(console.error);
         }
@@ -483,6 +543,25 @@ export class AnycodeEditor {
             await this.goToDefinitionProvider(definitionRequest);
         } catch (error) {
             console.error('Failed to get definition:', error);
+        }
+    }
+
+    private async openReferencesPeek(row: number, col: number): Promise<void> {
+        if (!this.referencesPeekProvider) {
+            console.warn('References peek provider not set');
+            return;
+        }
+
+        try {
+            const referencesRequest: ReferencesRequest = {
+                file: this.code.filename,
+                row: row,
+                column: col
+            };
+
+            await this.referencesPeekProvider(referencesRequest);
+        } catch (error) {
+            console.error('Failed to get references:', error);
         }
     }
 
@@ -1349,5 +1428,4 @@ export class AnycodeEditor {
 
         this.renderer.verifyDiffs(this.diffs);
     }
-
 }

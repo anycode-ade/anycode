@@ -167,6 +167,17 @@ const App: React.FC = () => {
 
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
+            const activePaneId = editors.activeEditorPaneId;
+            if (activePaneId && editors.handleReferencesPeekKeyDown(activePaneId, e)) {
+                return;
+            }
+
+            if (e.shiftKey && e.key === 'F12') {
+                e.preventDefault();
+                editors.openReferencesPeekForActiveCursor();
+                return;
+            }
+
             if (e.metaKey && e.key === 'f') {
                 e.preventDefault();
             }
@@ -191,7 +202,15 @@ const App: React.FC = () => {
         return () => {
             document.removeEventListener('keydown', handleKeyDown);
         };
-    }, [editors.activeFileId, editors.saveFile, editors.undoCursor, editors.redoCursor]);
+    }, [
+        editors.activeEditorPaneId,
+        editors.activeFileId,
+        editors.handleReferencesPeekKeyDown,
+        editors.openReferencesPeekForActiveCursor,
+        editors.redoCursor,
+        editors.saveFile,
+        editors.undoCursor,
+    ]);
 
     const handleSearch = ({ pattern }: { id: string; pattern: string }) => {
         search.startSearch(pattern);
