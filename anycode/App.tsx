@@ -37,6 +37,7 @@ import { AgentPanel } from './features/agents/AgentPanel';
 const App: React.FC = () => {
     const [diffEnabled, setDiffEnabled] = useState<boolean>(loadDiffEnabled());
     const [editorDiffEnabledByPane, setEditorDiffEnabledByPane] = useState<Record<string, boolean>>({});
+    const [filesPanelFocusRequestToken, setFilesPanelFocusRequestToken] = useState(0);
     // const [followEnabled, setFollowEnabled] = useState<boolean>(loadFollowEnabled());
     const [permissionMode, setPermissionMode] = useState<AcpPermissionMode>(loadAcpPermissionMode());
 
@@ -133,15 +134,25 @@ const App: React.FC = () => {
     }, [editors.flushAllPendingChanges]);
 
     useEffect(() => {
-        if (!editors.activeFileId) return;
-        const file = editors.files.find((f) => f.id === editors.activeFileId);
-        if (!file) return;
-
-        const node = fileTree.findNodeByPath(fileTree.fileTree, file.id);
-        if (node && !node.isSelected) {
-            fileTree.selectNode(node.id);
+        if (!editors.activeFileId) {
+            return;
         }
-    }, [editors.activeFileId, editors.files, fileTree.fileTree, fileTree.findNodeByPath, fileTree.selectNode]);
+
+        fileTree.setActiveNode(editors.activeFileId);
+    }, [editors.activeFileId, fileTree.setActiveNode]);
+
+    useEffect(() => {
+        if (!editors.activeFileId) {
+            return;
+        }
+
+        const node = fileTree.findNodeByPath(fileTree.fileTree, editors.activeFileId);
+        if (!node || node.isSelected) {
+            return;
+        }
+
+        fileTree.selectNode(node.id);
+    }, [editors.activeFileId, fileTree.fileTree, fileTree.findNodeByPath, fileTree.selectNode]);
 
     useEffect(() => {
         saveItem('diffEnabled', diffEnabled);
@@ -181,6 +192,12 @@ const App: React.FC = () => {
                 if (editors.activeFileId) {
                     editors.saveFile(editors.activeFileId);
                 }
+            }
+
+            if (e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && e.key === '1') {
+                e.preventDefault();
+                setFilesPanelFocusRequestToken((prev) => prev + 1);
+                return;
             }
 
             if (e.ctrlKey && e.key === '-') {
@@ -288,10 +305,15 @@ const App: React.FC = () => {
                 return (
                     <FilesPanel
                         fileTree={fileTree.fileTree}
+                        activeNodeId={fileTree.activeNodeId}
+                        focusRequestToken={filesPanelFocusRequestToken}
+                        onActivateNode={fileTree.setActiveNode}
                         onToggle={fileTree.toggleNode}
                         onSelect={fileTree.selectNode}
                         onOpenFile={editors.openFile}
                         onLoadFolder={openFolder}
+                        onFocusEditor={() => editors.focusEditorInPane(editors.activeEditorPaneId)}
+                        onNavigateByKey={fileTree.navigateByKey}
                     />
                 );
             case 'search':

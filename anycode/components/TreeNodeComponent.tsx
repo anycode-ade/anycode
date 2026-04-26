@@ -5,74 +5,103 @@ import './TreeNodeComponent.css';
 interface TreeNodeComponentProps {
     node: TreeNode;
     level?: number;
+    activeNodeId: string | null;
+    onNodeRef: (nodeId: string, element: HTMLDivElement | null) => void;
+    onActivate: (nodeId: string) => void;
     onToggle: (nodeId: string) => void;
     onSelect: (nodeId: string) => void;
     onOpenFile: (path: string) => void;
-    onLoadFolder: (nodeId: string, path: string) => void;
+    onLoadFolder: (path: string) => void;
 }
 
-const getFileExtension = (fileName: string): string => {
-    return fileName.split('.').pop()?.toLowerCase() || '';
-};
-
-export const TreeNodeComponent: React.FC<TreeNodeComponentProps> = ({ 
-    node, 
-    level = 0, 
-    onToggle, 
-    onSelect, 
-    onOpenFile, 
-    onLoadFolder 
+export const TreeNodeComponent: React.FC<TreeNodeComponentProps> = ({
+    node,
+    level = 0,
+    activeNodeId,
+    onNodeRef,
+    onActivate,
+    onToggle,
+    onSelect,
+    onOpenFile,
+    onLoadFolder,
 }) => {
     const hasChildren = node.type === 'directory';
-    const isExpanded = node.isExpanded;
-    const isSelected = node.isSelected;
-    const fileExt = getFileExtension(node.name);
+    const isExpanded = Boolean(node.isExpanded);
+    const isSelected = Boolean(node.isSelected);
+    const isActive = activeNodeId === node.id;
 
     const handleToggle = (e: React.MouseEvent) => {
         e.stopPropagation();
-        if (hasChildren) {
+        onActivate(node.id);
+
+        if (!hasChildren) {
+            return;
+        }
+
+        if (!isExpanded) {
+            onLoadFolder(node.path);
+        } else {
             onToggle(node.id);
         }
     };
 
-    const handleSelect = () => {
+    const handleNameClick = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        onActivate(node.id);
+
         if (node.type === 'file') {
             onSelect(node.id);
             onOpenFile(node.path);
-        } else if (node.type === 'directory') {
-            if (!node.isExpanded) {
-                onLoadFolder(node.id, node.path);
-            } else {
-                onToggle(node.id);
-            }
+            return;
         }
+
+        if (!isExpanded) {
+            onLoadFolder(node.path);
+            return;
+        }
+
+        onToggle(node.id);
+    };
+
+    const title = typeof node.size === 'number' ? `${node.path} ${node.size} B` : node.path;
+    const handleActivateOnly = (e: React.MouseEvent<HTMLDivElement>) => {
+        if (e.button !== 0) {
+            return;
+        }
+        onActivate(node.id);
     };
 
     return (
         <div className="tree-item">
-            <div 
-                className={`tree-item-content ${node.type} ${isSelected ? 'selected' : ''}`}
-                onClick={handleSelect}
+            <div
+                className={`tree-item-content ${node.type} ${isSelected ? 'selected' : ''} ${isActive ? 'active' : ''}`}
+                ref={(element) => onNodeRef(node.id, element)}
+                onMouseDown={handleActivateOnly}
             >
                 <div className="tree-indent" style={{ width: level * 20 }}></div>
-                
-                <div 
+
+                <div
                     className={`tree-toggle ${hasChildren ? (isExpanded ? 'expanded' : 'collapsed') : 'leaf'}`}
-                    // onClick={handleToggle}
+                    onClick={handleToggle}
                 >
                     {hasChildren ? '▶' : ''}
                 </div>
-                
-                <span className="tree-name" title={node.path + " " + node.size + " B"}>{node.name}</span>
+
+                <span className="tree-name" title={title} onClick={handleNameClick}>
+                    {node.name}
+                </span>
             </div>
-            
+
             {hasChildren && isExpanded && node.children && node.children.length > 0 && (
                 <div className="tree-children">
-                    {node.children.map(child => (
-                        <TreeNodeComponent 
-                            key={child.id} 
-                            node={child} 
+                    {node.children.map((child) => (
+                        <TreeNodeComponent
+                            key={child.id}
+                            node={child}
                             level={level + 1}
+                            activeNodeId={activeNodeId}
+                            onNodeRef={onNodeRef}
+                            onActivate={onActivate}
                             onToggle={onToggle}
                             onSelect={onSelect}
                             onOpenFile={onOpenFile}
