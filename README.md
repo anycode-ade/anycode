@@ -85,4 +85,4 @@ We welcome contributions! Please fork the repository and submit a pull request w
 
 ## License
 
-anycode is licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) for details.
+**anycode** is licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) for details.
