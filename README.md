@@ -1,3 +1,5 @@
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+
 # anycode
 
 **anycode** is a web platform where people and agents build together. Run it locally or remotely and work from any device you want: desktop, laptop, mobile, or even VR. Use any agent, including Codex, Claude Code, OpenCode, as well as local models.
@@ -80,3 +82,7 @@ curl -fsSL https://raw.githubusercontent.com/anycode-ade/anycode/main/install.sh
 ## Contributing
 
 We welcome contributions! Please fork the repository and submit a pull request with your changes. Make sure to follow the existing code style and include relevant tests.
+
+## License
+
+**anycode** is licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) for details.
