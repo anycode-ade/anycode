@@ -14,7 +14,7 @@
   },
   "keywords": [],
   "author": "",
-  "license": "ISC",
+  "license": "Apache-2.0",
   "packageManager": "pnpm@10.13.1",
   "dependencies": {
     "@xterm/addon-fit": "^0.10.0",
