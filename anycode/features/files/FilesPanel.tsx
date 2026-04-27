@@ -5,7 +5,7 @@ import type { TreeNode } from '../../types';
 type FilesPanelProps = {
     fileTree: TreeNode[];
     activeNodeId: string | null;
-    focusRequestToken: number;
+    focusRequestToken: number | null;
     onActivateNode: (nodeId: string) => void;
     onToggle: (nodeId: string) => void;
     onSelect: (nodeId: string) => void;
@@ -101,7 +101,7 @@ export const FilesPanel = ({
     }, [navigate]);
 
     useEffect(() => {
-        if (!focusRequestToken) {
+        if (focusRequestToken === null) {
             return;
         }
 

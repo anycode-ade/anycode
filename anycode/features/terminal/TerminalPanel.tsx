@@ -4,6 +4,7 @@ import type { Terminal as TerminalState } from '../../types';
 
 type TerminalPanelProps = {
     panelKey: string;
+    focusRequestToken: number | null;
     isConnected: boolean;
     terminals: TerminalState[];
     terminalPanes: {
@@ -20,6 +21,7 @@ type TerminalPanelProps = {
 
 export const TerminalPanel = ({
     panelKey,
+    focusRequestToken,
     isConnected,
     terminals,
     terminalPanes,
@@ -54,6 +56,7 @@ export const TerminalPanel = ({
                     <Terminal
                         key={`${panelKey}-${selectedTerminal.id}`}
                         name={selectedTerminal.name}
+                        focusRequestToken={focusRequestToken}
                         onData={onTerminalData}
                         onMessage={onTerminalMessage}
                         onResize={onTerminalResize}

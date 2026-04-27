@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import { AcpSettings } from '../../components/agent/AcpSettings';
 import { AcpSession } from '../../components/agent/AcpSession';
 import { AcpEmptyPane } from '../../components/agent/AcpEmptyPane';
@@ -10,6 +11,7 @@ import type {
 
 type AgentPanelProps = {
     panelKey: string;
+    focusRequestToken: number | null;
     isConnected: boolean;
     agentPanes: {
         activePaneId: string;
@@ -44,6 +46,7 @@ type AgentPanelProps = {
 
 export const AgentPanel = ({
     panelKey,
+    focusRequestToken,
     isConnected,
     agentPanes,
     agents,
@@ -60,15 +63,35 @@ export const AgentPanel = ({
     onOpenFile,
     onOpenFileDiff,
 }: AgentPanelProps) => {
+    const panelRef = useRef<HTMLDivElement | null>(null);
     const selectedAgentId = agentPanes.getSelectedId(panelKey);
     const selectedSession = selectedAgentId ? agents.acpSessions.get(selectedAgentId) ?? null : null;
     const handleSelectAgentForPane = (agentId: string) => {
         agentPanes.selectForPane(panelKey, agentId);
     };
 
+    useEffect(() => {
+        if (focusRequestToken === null) {
+            return;
+        }
+
+        const root = panelRef.current;
+        if (!root) {
+            return;
+        }
+
+        const promptInput = root.querySelector<HTMLTextAreaElement>('textarea[name="prompt"]');
+        if (promptInput) {
+            promptInput.focus();
+            return;
+        }
+
+        root.focus();
+    }, [focusRequestToken]);
+
     if (agents.isAgentSettingsOpen && panelKey === agentPanes.activePaneId) {
         return (
-            <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+            <div ref={panelRef} tabIndex={-1} style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
                 <AcpSettings
                     agents={settingsAgents}
                     defaultAgentId={settingsDefaultAgentId}
@@ -84,7 +107,7 @@ export const AgentPanel = ({
 
     if (!selectedSession) {
         return (
-            <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+            <div ref={panelRef} tabIndex={-1} style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
                 <div style={{ position: 'relative', flex: 1, minHeight: 0, overflow: 'hidden' }}>
                     <AcpEmptyPane
                         agents={sessions}
@@ -100,7 +123,7 @@ export const AgentPanel = ({
     }
 
     return (
-        <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+        <div ref={panelRef} tabIndex={-1} style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
             <div style={{ position: 'relative', flex: 1, minHeight: 0, overflow: 'hidden' }}>
                 <AcpSession
                     agentId={selectedSession.agentId}

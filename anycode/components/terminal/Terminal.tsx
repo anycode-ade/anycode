@@ -18,6 +18,7 @@ function debounce<T extends (...args: any[]) => any>(
 
 interface XTerminalProps {
   name: string;
+  focusRequestToken: number | null;
   onData: (name: string, data: string) => void;
   onMessage: (name: string, callback: (data: string) => void) => (() => void);
   onResize: (name: string, cols: number, rows: number) => void;
@@ -31,6 +32,7 @@ const TERMINAL_DELAY_MS = 100;
 
 const Terminal: React.FC<XTerminalProps> = ({
   name,
+  focusRequestToken,
   onData,
   onMessage,
   onResize,
@@ -247,6 +249,14 @@ const Terminal: React.FC<XTerminalProps> = ({
     if (xtermRef.current.cols === cols && xtermRef.current.rows === rows) return;
     xtermRef.current.resize(cols, rows);
   }, [isConnected, cols, rows]);
+
+  useEffect(() => {
+    if (focusRequestToken === null || !xtermRef.current) {
+      return;
+    }
+
+    xtermRef.current.focus();
+  }, [focusRequestToken]);
 
   return (
     <div
