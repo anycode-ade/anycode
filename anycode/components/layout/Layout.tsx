@@ -20,6 +20,16 @@ import {
     saveItem,
 } from '../../storage';
 import { Icons } from '../Icons';
+import {
+    CURRENT_LAYOUT_VERSION,
+    LAYOUT_VERSION_STORAGE_KEY,
+    createLayoutState,
+    getDockviewLayout,
+    isLayoutState,
+    loadLayoutState,
+    storeLayoutState,
+    type DockviewLayout,
+} from './layoutState';
 import './Layout.css';
 
 export type SplitPaneConfig = {
@@ -189,8 +199,6 @@ type LayoutProps = {
     isEditorDiffEnabled?: (panelKey: string) => boolean;
 };
 
-type SerializedLayout = ReturnType<DockviewApi['toJSON']>;
-
 const PANEL_INSTANCE_SEPARATOR = '__';
 const EMPTY_PANE_PREFIX = 'empty-pane-';
 
@@ -293,10 +301,6 @@ const panelTitles: Record<PanelId, string> = Object.fromEntries(
 ) as Record<PanelId, string>;
 
 const panelSyncOrder: PanelId[] = ['files', 'editor', 'agent', 'search', 'changes', 'terminal'];
-const LAYOUT_STORAGE_KEY = 'layout';
-const LAYOUT_VERSION_STORAGE_KEY = 'layoutVersion';
-const CURRENT_LAYOUT_VERSION = 4;
-
 const loadPanelVisibility = (): PanelVisibility => ({
     files: (loadItem<number>(LAYOUT_VERSION_STORAGE_KEY) ?? 0) < CURRENT_LAYOUT_VERSION ? true : loadFilesPanelVisible(),
     search: (loadItem<number>(LAYOUT_VERSION_STORAGE_KEY) ?? 0) < CURRENT_LAYOUT_VERSION ? true : (loadItem<boolean>('searchPanelVisible') ?? false),
@@ -307,16 +311,25 @@ const loadPanelVisibility = (): PanelVisibility => ({
     toolbar: true,
 });
 
-const hasSavedPanel = (layout: SerializedLayout, panelId: PanelId): boolean => (
+const hasSavedPanel = (layout: DockviewLayout, panelId: PanelId): boolean => (
     Object.keys(layout.panels).some((panelKey) => getPanelBaseId(panelKey) === panelId)
 );
 
-const shouldUseSavedLayout = (layout: SerializedLayout): boolean => {
-    const savedLayoutVersion = loadItem<number>(LAYOUT_VERSION_STORAGE_KEY) ?? 0;
-    if (savedLayoutVersion < CURRENT_LAYOUT_VERSION) {
+const shouldUseSavedLayout = (layoutState: ReturnType<typeof loadLayoutState>): boolean => {
+    if (!layoutState) {
         return false;
     }
 
+    const savedLayoutVersion = loadItem<number>(LAYOUT_VERSION_STORAGE_KEY) ?? 0;
+    if (isLayoutState(layoutState) && layoutState.version !== CURRENT_LAYOUT_VERSION) {
+        return false;
+    }
+
+    if (!isLayoutState(layoutState) && savedLayoutVersion < 4) {
+        return false;
+    }
+
+    const layout = getDockviewLayout(layoutState, (panelId) => panelTitles[panelId]);
     if (hasSavedPanel(layout, 'toolbar')) {
         return false;
     }
@@ -583,8 +596,7 @@ export const Layout: React.FC<LayoutProps> = ({
                     Object.entries(raw.panels).map(([id, state]) => [id, { ...state, params: {} }]),
                 ),
             };
-            saveItem(LAYOUT_STORAGE_KEY, sanitized);
-            saveItem(LAYOUT_VERSION_STORAGE_KEY, CURRENT_LAYOUT_VERSION);
+            storeLayoutState(createLayoutState(sanitized, getPanelBaseId));
         }, 120);
     }, []);
 
@@ -838,8 +850,11 @@ export const Layout: React.FC<LayoutProps> = ({
             }),
         ];
 
-        const savedLayout = loadItem<SerializedLayout>(LAYOUT_STORAGE_KEY);
-        const useSavedLayout = Boolean(savedLayout?.grid && savedLayout?.panels && shouldUseSavedLayout(savedLayout));
+        const savedLayoutState = loadLayoutState();
+        const savedLayout = savedLayoutState
+            ? getDockviewLayout(savedLayoutState, (panelId) => panelTitles[panelId])
+            : null;
+        const useSavedLayout = Boolean(savedLayout?.grid && savedLayout?.panels && shouldUseSavedLayout(savedLayoutState));
         let restoredSavedLayout = false;
 
         isRestoringLayoutRef.current = true;

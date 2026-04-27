@@ -26,6 +26,7 @@ import { useFileTree } from './hooks/useFileTree';
 import { useTerminals } from './hooks/useTerminals';
 import { useEditors } from './hooks/useEditors';
 import { useAgents } from './hooks/useAgents';
+import { useLayout } from './hooks/useLayout';
 import { type AcpPermissionMode } from './types';
 import { useTerminalPanes } from './features/terminal/useTerminalPanes';
 import { useAgentPanes } from './features/agents/useAgentPanes';
@@ -37,11 +38,6 @@ import { AgentPanel } from './features/agents/AgentPanel';
 const App: React.FC = () => {
     const [diffEnabled, setDiffEnabled] = useState<boolean>(loadDiffEnabled());
     const [editorDiffEnabledByPane, setEditorDiffEnabledByPane] = useState<Record<string, boolean>>({});
-    const [focusRequest, setFocusRequest] = useState<{
-        target: PanelId;
-        panelKey?: string;
-        nonce: number;
-    } | null>(null);
     // const [followEnabled, setFollowEnabled] = useState<boolean>(loadFollowEnabled());
     const [permissionMode, setPermissionMode] = useState<AcpPermissionMode>(loadAcpPermissionMode());
 
@@ -67,13 +63,6 @@ const App: React.FC = () => {
     const git = useGit({ wsRef, isConnected });
     const search = useSearch({ wsRef, isConnected });
     const wasConnectedRef = useRef<boolean>(false);
-    const activePanelRef = useRef<{ panelId: PanelId; panelKey: string } | null>(null);
-    const activeAgentPaneIdRef = useRef<string>('agent');
-    const panelKeysByIdRef = useRef<Record<PanelId, string[]>>({
-        toolbar: ['toolbar'], files: ['files'],
-        search: ['search'], changes: ['changes'],
-        editor: [], terminal: [], agent: [],
-    });
     const agents = useAgents({
         wsRef,
         isConnected,
@@ -187,97 +176,6 @@ const App: React.FC = () => {
         saveItem('terminals', terminals.terminals);
     }, [terminals.terminals]);
 
-    const handleCtrlFocusShortcut = useCallback((e: KeyboardEvent): boolean => {
-        if (!e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) {
-            return false;
-        }
-
-        const focusTarget: PanelId | null =
-            e.code === 'Digit1' ? 'files'
-                : e.code === 'Digit2' ? 'editor'
-                    : e.code === 'Digit3' ? 'terminal'
-                        : e.code === 'Digit4' ? 'agent'
-                            : null;
-
-        if (!focusTarget) {
-            return false;
-        }
-
-        let targetPanelKey: string | undefined;
-
-        if (focusTarget === 'editor' || focusTarget === 'terminal' || focusTarget === 'agent') {
-            const panelKeys = panelKeysByIdRef.current[focusTarget] ?? [];
-            if (panelKeys.length > 0) {
-                const activePanel = activePanelRef.current;
-                const isTargetFocused = activePanel?.panelId === focusTarget
-                    && panelKeys.includes(activePanel.panelKey);
-
-                if (isTargetFocused && activePanel) {
-                    const currentIndex = panelKeys.indexOf(activePanel.panelKey);
-                    targetPanelKey = panelKeys[(currentIndex + 1) % panelKeys.length];
-                } else {
-                    const preferredPanelKey = focusTarget === 'editor'
-                        ? editors.activeEditorPaneId
-                        : focusTarget === 'terminal'
-                            ? terminalPanes.activePaneId
-                            : activeAgentPaneIdRef.current;
-                    targetPanelKey = preferredPanelKey && panelKeys.includes(preferredPanelKey)
-                        ? preferredPanelKey
-                        : panelKeys[0];
-                }
-            }
-        }
-
-        e.preventDefault();
-        setFocusRequest({ target: focusTarget, panelKey: targetPanelKey, nonce: Date.now() });
-        return true;
-    }, [editors.activeEditorPaneId, terminalPanes.activePaneId]);
-
-    useEffect(() => {
-        const handleKeyDown = (e: KeyboardEvent) => {
-            const activePaneId = editors.activeEditorPaneId;
-            if (activePaneId && editors.handleReferencesPeekKeyDown(activePaneId, e)) {
-                return;
-            }
-
-            if (e.metaKey && e.key === 'f') {
-                e.preventDefault();
-            }
-
-            if ((e.ctrlKey || e.metaKey) && e.key === 's') {
-                e.preventDefault();
-                if (editors.activeFileId) {
-                    editors.saveFile(editors.activeFileId);
-                }
-            }
-
-            if (handleCtrlFocusShortcut(e)) {
-                return;
-            }
-
-            if (e.ctrlKey && e.key === '-') {
-                e.preventDefault();
-                editors.undoCursor();
-            } else if (e.ctrlKey && e.key === '_') {
-                e.preventDefault();
-                editors.redoCursor();
-            }
-        };
-
-        document.addEventListener('keydown', handleKeyDown, true);
-        return () => {
-            document.removeEventListener('keydown', handleKeyDown, true);
-        };
-    }, [
-        editors.activeEditorPaneId,
-        editors.activeFileId,
-        editors.handleReferencesPeekKeyDown,
-        handleCtrlFocusShortcut,
-        editors.redoCursor,
-        editors.saveFile,
-        editors.undoCursor,
-    ]);
-
     const handleSearch = ({ pattern }: { id: string; pattern: string }) => {
         search.startSearch(pattern);
     };
@@ -330,42 +228,58 @@ const App: React.FC = () => {
         setSelectedAgentId: agents.setSelectedAgentId,
     });
 
+    const layout = useLayout({
+        activeEditorPaneId: editors.activeEditorPaneId,
+        activeTerminalPaneId: terminalPanes.activePaneId,
+        activeAgentPaneId: agentPanes.activePaneId,
+        onFocusEditorPane: editors.focusEditorInPane,
+        onActivateTerminalPane: terminalPanes.setActivePaneId,
+        onActivateAgentPane: agentPanes.setActivePaneId,
+    });
+
     useEffect(() => {
-        if (!focusRequest) {
-            return;
-        }
+        const handleKeyDown = (e: KeyboardEvent) => {
+            const activePaneId = editors.activeEditorPaneId;
+            if (activePaneId && editors.handleReferencesPeekKeyDown(activePaneId, e)) {
+                return;
+            }
 
-        if (focusRequest.target === 'editor' && editors.activeEditorPaneId) {
-            editors.focusEditorInPane(focusRequest.panelKey ?? editors.activeEditorPaneId);
-            return;
-        }
+            if (e.metaKey && e.key === 'f') {
+                e.preventDefault();
+            }
 
-        if (focusRequest.target === 'terminal') {
-            const knownTerminalPanels = panelKeysByIdRef.current.terminal;
-            const requestedKey = focusRequest.panelKey;
-            const resolvedKey = requestedKey && knownTerminalPanels.includes(requestedKey)
-                ? requestedKey
-                : terminalPanes.activePaneId;
-            terminalPanes.setActivePaneId(resolvedKey || 'terminal');
-            return;
-        }
+            if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+                e.preventDefault();
+                if (editors.activeFileId) {
+                    editors.saveFile(editors.activeFileId);
+                }
+            }
 
-        if (focusRequest.target === 'agent') {
-            const knownAgentPanels = panelKeysByIdRef.current.agent;
-            const requestedKey = focusRequest.panelKey;
-            const resolvedKey = requestedKey && knownAgentPanels.includes(requestedKey)
-                ? requestedKey
-                : agentPanes.activePaneId;
-            agentPanes.setActivePaneId(resolvedKey || 'agent');
-        }
+            if (layout.handleCtrlFocusShortcut(e)) {
+                return;
+            }
+
+            if (e.ctrlKey && e.key === '-') {
+                e.preventDefault();
+                editors.undoCursor();
+            } else if (e.ctrlKey && e.key === '_') {
+                e.preventDefault();
+                editors.redoCursor();
+            }
+        };
+
+        document.addEventListener('keydown', handleKeyDown, true);
+        return () => {
+            document.removeEventListener('keydown', handleKeyDown, true);
+        };
     }, [
-        agentPanes.activePaneId,
-        agentPanes.setActivePaneId,
         editors.activeEditorPaneId,
-        editors.focusEditorInPane,
-        focusRequest,
-        terminalPanes.activePaneId,
-        terminalPanes.setActivePaneId,
+        editors.activeFileId,
+        editors.handleReferencesPeekKeyDown,
+        editors.redoCursor,
+        editors.saveFile,
+        editors.undoCursor,
+        layout,
     ]);
 
     const handleStartSpecificAgent = useCallback((agent: AcpAgent) => {
@@ -400,7 +314,7 @@ const App: React.FC = () => {
                     <FilesPanel
                         fileTree={fileTree.fileTree}
                         activeNodeId={fileTree.activeNodeId}
-                        focusRequestToken={focusRequest?.target === 'files' ? focusRequest.nonce : null}
+                        focusRequestToken={layout.getFocusRequestToken('files')}
                         onActivateNode={fileTree.setActiveNode}
                         onToggle={fileTree.toggleNode}
                         onSelect={fileTree.selectNode}
@@ -440,9 +354,7 @@ const App: React.FC = () => {
                 return (
                     <TerminalPanel
                         panelKey={panelKey}
-                        focusRequestToken={focusRequest?.target === 'terminal' && (!focusRequest.panelKey || focusRequest.panelKey === panelKey)
-                            ? focusRequest.nonce
-                            : null}
+                        focusRequestToken={layout.getFocusRequestToken('terminal', panelKey)}
                         isConnected={isConnected}
                         terminals={terminals.terminals}
                         terminalPanes={terminalPanes}
@@ -456,9 +368,7 @@ const App: React.FC = () => {
                 return (
                     <AgentPanel
                         panelKey={panelKey}
-                        focusRequestToken={focusRequest?.target === 'agent' && (!focusRequest.panelKey || focusRequest.panelKey === panelKey)
-                            ? focusRequest.nonce
-                            : null}
+                        focusRequestToken={layout.getFocusRequestToken('agent', panelKey)}
                         isConnected={isConnected}
                         agentPanes={agentPanes}
                         agents={agents}
@@ -499,10 +409,7 @@ const App: React.FC = () => {
     };
 
     const handlePanelAdded = useCallback((panelId: PanelId, panelKey: string) => {
-        const current = panelKeysByIdRef.current[panelId] ?? [];
-        if (!current.includes(panelKey)) {
-            panelKeysByIdRef.current[panelId] = [...current, panelKey];
-        }
+        layout.handlePanelAdded(panelId, panelKey);
 
         if (panelId === 'changes') {
             git.fetchGitStatus();
@@ -520,13 +427,10 @@ const App: React.FC = () => {
         if (panelId === 'terminal') {
             terminalPanes.registerPane(panelKey);
         }
-    }, [agentPanes, editors, git.fetchGitStatus, terminalPanes]);
+    }, [agentPanes, editors, git.fetchGitStatus, layout, terminalPanes]);
 
     const handlePanelRemoved = useCallback((panelId: PanelId, panelKey: string) => {
-        const current = panelKeysByIdRef.current[panelId] ?? [];
-        if (current.includes(panelKey)) {
-            panelKeysByIdRef.current[panelId] = current.filter((key) => key !== panelKey);
-        }
+        layout.handlePanelRemoved(panelId, panelKey);
 
         if (panelId === 'editor') {
             editors.unregisterEditorPane(panelKey);
@@ -547,10 +451,10 @@ const App: React.FC = () => {
         if (panelId === 'terminal') {
             terminalPanes.unregisterPane(panelKey);
         }
-    }, [agentPanes, editors, terminalPanes]);
+    }, [agentPanes, editors, layout, terminalPanes]);
 
     const handlePanelActivated = useCallback((panelId: PanelId, panelKey: string) => {
-        activePanelRef.current = { panelId, panelKey };
+        layout.handlePanelActivated(panelId, panelKey);
 
         if (panelId === 'editor') {
             editors.setActiveEditorPaneId(panelKey);
@@ -568,14 +472,13 @@ const App: React.FC = () => {
             return;
         }
         if (panelId === 'agent') {
-            activeAgentPaneIdRef.current = panelKey;
             agentPanes.setActivePaneId(panelKey);
             return;
         }
         if (panelId === 'terminal') {
             terminalPanes.setActivePaneId(panelKey);
         }
-    }, [agentPanes, editors, terminalPanes]);
+    }, [agentPanes, editors, layout, terminalPanes]);
 
     return (
         <div className="app-container toolbar-header-compact">
