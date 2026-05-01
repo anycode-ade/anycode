@@ -151,11 +151,14 @@ export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: Us
     const lastFocusedEditorPaneIdRef = useRef<string>(DEFAULT_EDITOR_PANE_ID);
 
     const activeFile = files.find((f) => f.id === activeFileId);
+    const hasVisibleEditorPane = useCallback(() => (
+        Object.keys(paneActiveFileIdsRef.current).some((id) => id !== DEFAULT_EDITOR_PANE_ID)
+    ), []);
 
     // Choose the editor pane we should target for an open/select action.
     // The order is intentionally explicit so the UX stays predictable:
     // 1) an explicit paneId from the caller
-    // 2) the pane that already owns the file, if the file is already open
+    // 2) the visible pane that already owns the file, if the file is already open
     // 3) the last editor pane the user focused
     // 4) the only visible editor pane
     // 5) the default editor pane as a safe fallback
@@ -165,13 +168,16 @@ export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: Us
         const visiblePaneIds = paneIds.filter((id) => id !== DEFAULT_EDITOR_PANE_ID);
         const isKnownPane = (id: string) => Object.hasOwn(paneActiveFileIdsRef.current, id);
 
-        if (paneId && isKnownPane(paneId)) {
+        if (paneId) {
             return paneId;
         }
 
         if (fileId) {
             for (const [candidatePaneId, activeFileIdForPane] of paneEntries) {
-                if (activeFileIdForPane === fileId) {
+                if (
+                    activeFileIdForPane === fileId
+                    && (candidatePaneId !== DEFAULT_EDITOR_PANE_ID || visiblePaneIds.length === 0)
+                ) {
                     return candidatePaneId;
                 }
             }
@@ -210,7 +216,12 @@ export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: Us
     }, []);
 
     const setActiveFileId = useCallback((fileId: string | null, paneId?: string) => {
+        if (fileId && !paneId && !hasVisibleEditorPane()) {
+            return;
+        }
+
         const targetPaneId = resolveTargetPaneId(paneId, fileId ?? undefined);
+        setActiveEditorPaneId(targetPaneId);
         setPaneActiveFileIds((prev) => {
             const next = { ...prev };
 
@@ -225,7 +236,7 @@ export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: Us
             next[targetPaneId] = fileId;
             return next;
         });
-    }, [resolveTargetPaneId]);
+    }, [hasVisibleEditorPane, resolveTargetPaneId]);
 
     const registerEditorPane = useCallback((paneId: string) => {
         setPaneActiveFileIds((prev) => {
@@ -530,6 +541,10 @@ export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: Us
     }, [loadReferencesPeekPreview]);
 
     const openFile = useCallback((path: string, line?: number, column?: number, paneId?: string) => {
+        if (!paneId && !hasVisibleEditorPane()) {
+            return;
+        }
+
         const existingFile = filesRef.current.find((file) => file.id === path);
         const targetPaneId = resolveTargetPaneId(paneId, existingFile?.id);
         console.log('[openFile]', {
@@ -575,7 +590,7 @@ export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: Us
                 }
             });
         }
-    }, [resolveTargetPaneId, setActiveFileId, wsRef, isConnected]);
+    }, [hasVisibleEditorPane, resolveTargetPaneId, setActiveFileId, wsRef, isConnected]);
 
     const openReferenceFromPeek = useCallback((paneId: string, itemIndex?: number): boolean => {
         const peek = referencesPeekByPaneRef.current[paneId];
@@ -965,8 +980,8 @@ export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: Us
         }
     }, []);
 
-    const openFileDiff = useCallback((path: string, line?: number, column?: number) => {
-        openFile(path, line, column);
+    const openFileDiff = useCallback((path: string, line?: number, column?: number, paneId?: string) => {
+        openFile(path, line, column, paneId);
 
         if (wsRef.current && isConnected) {
             wsRef.current.emit('git:file-original', { path }, (response: any) => {

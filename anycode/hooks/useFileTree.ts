@@ -8,6 +8,14 @@ type TreeNavigationHandlers = {
     onFocusEditor?: () => void;
 };
 
+type VisibleTreeWalkContext = {
+    firstVisible: TreeNode | null;
+    prevVisible: TreeNode | null;
+    currentNode: TreeNode | null;
+    nextVisible: TreeNode | null;
+    parentNode: TreeNode | null;
+};
+
 const findSelectedNodeId = (nodes: TreeNode[]): string | null => {
     for (const node of nodes) {
         if (node.isSelected) {
@@ -55,8 +63,8 @@ const mergeChildrenWithPreviousState = (
     });
 };
 
-const walkVisibleForNode = (nodes: TreeNode[], targetNodeId: string | null) => {
-    const context = {
+const walkVisibleForNode = (nodes: TreeNode[], targetNodeId: string | null): VisibleTreeWalkContext => {
+    const context: VisibleTreeWalkContext = {
         firstVisible: null,
         prevVisible: null,
         currentNode: null,

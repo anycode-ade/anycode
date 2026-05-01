@@ -38,12 +38,12 @@
     background: rgba(255, 255, 255, 0.03);
     color: var(--text-color, #cfd3d8);
     cursor: pointer;
-    font-size: 12px;
-    font-weight: 450;
+    font-size: inherit;
+    font-weight: inherit;
     padding: 7px 12px;
     border-radius: 8px;
     transition: background-color 0.2s, color 0.2s, border-color 0.2s;
-    line-height: 1.1;
+    line-height: inherit;
     max-width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -57,9 +57,7 @@
 }
 
 .terminal-pane-opened-action {
-    /*border-color: rgba(121, 206, 255, 0.38);*/
-    /*background: rgba(121, 206, 255, 0.1);*/
-    /*color: #c2eaff;*/
+    color: #7ec8ff;
 }
 
 .terminal-pane-opened-item {
@@ -107,7 +105,7 @@
     }
 
     .terminal-pane-action {
-        font-size: 11px;
+        font-size: 16px;
         padding: 6px 10px;
         border-radius: 10px;
     }

@@ -25,6 +25,7 @@ import {
     LAYOUT_VERSION_STORAGE_KEY,
     createLayoutState,
     getDockviewLayout,
+    hasLayoutPanels,
     isLayoutState,
     loadLayoutState,
     storeLayoutState,
@@ -197,10 +198,19 @@ type LayoutProps = {
     onPanelActivated?: (id: PanelId, panelKey: string) => void;
     onToggleEditorDiff?: (panelKey: string) => void;
     isEditorDiffEnabled?: (panelKey: string) => boolean;
+    onActionsReady?: (actions: LayoutActions | null) => void;
+};
+
+export type LayoutActions = {
+    ensureEditorPanel: () => string | null;
 };
 
 const PANEL_INSTANCE_SEPARATOR = '__';
 const EMPTY_PANE_PREFIX = 'empty-pane-';
+const PANEL_CONSTRAINTS = {
+    minimumWidth: 0,
+    minimumHeight: 0,
+};
 
 const getPanelBaseId = (panelKey: string): PanelId | null => {
     const directMatch = panelKey as PanelId;
@@ -322,6 +332,10 @@ const shouldUseSavedLayout = (layoutState: ReturnType<typeof loadLayoutState>): 
 
     const savedLayoutVersion = loadItem<number>(LAYOUT_VERSION_STORAGE_KEY) ?? 0;
     if (isLayoutState(layoutState) && layoutState.version !== CURRENT_LAYOUT_VERSION) {
+        return false;
+    }
+
+    if (isLayoutState(layoutState) && !hasLayoutPanels(layoutState.root)) {
         return false;
     }
 
@@ -499,7 +513,7 @@ const addPanel = (
         return existing;
     }
 
-    return api.addPanel({
+    const panel = api.addPanel({
         id: panelKey,
         component: 'layoutPanel',
         title: definition.title,
@@ -510,6 +524,8 @@ const addPanel = (
         //@ts-ignore
         disableClose: definition.disableClose,
     });
+    panel.group.api.setConstraints(PANEL_CONSTRAINTS);
+    return panel;
 };
 
 const addRootPickerPanel = (
@@ -517,7 +533,7 @@ const addRootPickerPanel = (
     onSelectPanel: (panelId: PanelId, pickerPanelId: string) => void,
 ): IDockviewPanel => {
     const pickerPanelId = createPickerPanelId();
-    return api.addPanel<PanelPickerParams>({
+    const panel = api.addPanel<PanelPickerParams>({
         id: pickerPanelId,
         component: 'panelPicker',
         title: 'Empty',
@@ -528,6 +544,8 @@ const addRootPickerPanel = (
             onSelectPanel,
         },
     });
+    panel.group.api.setConstraints(PANEL_CONSTRAINTS);
+    return panel;
 };
 
 export const Layout: React.FC<LayoutProps> = ({
@@ -537,6 +555,7 @@ export const Layout: React.FC<LayoutProps> = ({
     onPanelActivated,
     onToggleEditorDiff,
     isEditorDiffEnabled,
+    onActionsReady,
 }) => {
     const apiRef = useRef<DockviewApi | null>(null);
     const [visibility, setVisibility] = useState<PanelVisibility>(loadPanelVisibility);
@@ -575,6 +594,55 @@ export const Layout: React.FC<LayoutProps> = ({
     const resolvePanelContent = useCallback((panelId: PanelId, panelKey: string): React.ReactNode => (
         renderPanelRef.current(panelId, panelKey)
     ), []);
+
+    const ensureEditorPanel = useCallback((): string | null => {
+        const api = apiRef.current;
+        if (!api) {
+            return null;
+        }
+
+        const existingPanel = getPanelsByBaseId(api, 'editor')[0];
+        if (existingPanel) {
+            existingPanel.api.setActive();
+            return existingPanel.id;
+        }
+
+        const panelKey = createPanelKey('editor');
+        const filesPanel = api.getPanel('files');
+        const editorPanel = api.addPanel({
+            id: panelKey,
+            component: 'layoutPanel',
+            title: panelTitles.editor,
+            params: {
+                panelId: 'editor',
+                panelKey,
+                content: resolvePanelContent('editor', panelKey),
+            },
+            minimumWidth: 0,
+            minimumHeight: 0,
+            position: filesPanel
+                ? {
+                    referencePanel: filesPanel,
+                    direction: 'right',
+                }
+                : getDefaultPanelPosition(api, 'editor'),
+        });
+
+        setVisibility((prev) => ({ ...prev, editor: true }));
+        editorPanel.group.api.setConstraints(PANEL_CONSTRAINTS);
+        editorPanel.api.setActive();
+        return editorPanel.id;
+    }, [resolvePanelContent]);
+
+    useEffect(() => {
+        onActionsReady?.({
+            ensureEditorPanel,
+        });
+
+        return () => {
+            onActionsReady?.(null);
+        };
+    }, [ensureEditorPanel, onActionsReady]);
 
     const disposeListeners = useCallback(() => {
         for (const listener of listenersRef.current) {
@@ -660,6 +728,7 @@ export const Layout: React.FC<LayoutProps> = ({
                 continue;
             }
 
+            panel.group.api.setConstraints(PANEL_CONSTRAINTS);
             panel.api.updateParameters({
                 panelId,
                 panelKey: panel.id,
@@ -710,7 +779,7 @@ export const Layout: React.FC<LayoutProps> = ({
         }
 
         const pickerPanelId = createPickerPanelId();
-        api.addPanel<PanelPickerParams>({
+        const pickerPanel = api.addPanel<PanelPickerParams>({
             id: pickerPanelId,
             component: 'panelPicker',
             title: 'Empty',
@@ -725,6 +794,7 @@ export const Layout: React.FC<LayoutProps> = ({
                 onSelectPanel: handleSelectPanelFromPicker,
             },
         });
+        pickerPanel.group.api.setConstraints(PANEL_CONSTRAINTS);
     }, [handleSelectPanelFromPicker]);
 
     const rebindPickerPanels = useCallback((api: DockviewApi) => {

@@ -103,6 +103,42 @@ const createLayoutNode = (
     };
 };
 
+const normalizeLayoutNode = (node: LayoutNode): LayoutNode | null => {
+    if (node.type === 'group') {
+        return node.panels.length > 0 ? node : null;
+    }
+
+    const entries = node.children
+        .map((child, index) => ({
+            child: normalizeLayoutNode(child),
+            size: node.sizes?.[index],
+        }))
+        .filter((entry): entry is { child: LayoutNode; size: number | undefined } => entry.child !== null);
+    const children = entries.map((entry) => entry.child);
+
+    if (children.length === 0) {
+        return null;
+    }
+
+    if (children.length === 1) {
+        return children[0];
+    }
+
+    return {
+        ...node,
+        children,
+        sizes: entries.map((entry) => entry.size ?? 0),
+    };
+};
+
+export const hasLayoutPanels = (node: LayoutNode): boolean => {
+    if (node.type === 'group') {
+        return node.panels.length > 0;
+    }
+
+    return node.children.some(hasLayoutPanels);
+};
+
 const createDockviewNode = (
     node: LayoutNode,
     panels: DockviewLayout['panels'],
@@ -147,15 +183,19 @@ const createDockviewNode = (
 export const createLayoutState = (
     dockview: DockviewLayout,
     getPanelId: (panelKey: string) => PanelId | null,
-): LayoutState => ({
-    version: CURRENT_LAYOUT_VERSION,
-    root: createLayoutNode(
+): LayoutState => {
+    const root = normalizeLayoutNode(createLayoutNode(
         dockview.grid.root,
         dockview.panels,
         getSplitDirection(dockview.grid.orientation),
         getPanelId,
-    ),
-});
+    ));
+
+    return {
+        version: CURRENT_LAYOUT_VERSION,
+        root: root ?? { type: 'group', panels: [] },
+    };
+};
 
 export const createDockviewLayout = (
     layout: LayoutState,
@@ -164,7 +204,8 @@ export const createDockviewLayout = (
     let groupIndex = 0;
     const panels: DockviewLayout['panels'] = {};
     const nextGroupId = () => `group-${groupIndex++}`;
-    const root = createDockviewNode(layout.root, panels, nextGroupId);
+    const normalizedRoot = normalizeLayoutNode(layout.root) ?? { type: 'group' as const, panels: [] };
+    const root = createDockviewNode(normalizedRoot, panels, nextGroupId);
 
     Object.values(panels).forEach((panel) => {
         const panelId = panel.title as PanelId;
@@ -176,7 +217,7 @@ export const createDockviewLayout = (
             root,
             width: 0,
             height: 0,
-            orientation: layout.root.type === 'container' ? getOrientation(layout.root.direction) : Orientation.HORIZONTAL,
+            orientation: normalizedRoot.type === 'container' ? getOrientation(normalizedRoot.direction) : Orientation.HORIZONTAL,
         },
         panels,
     };

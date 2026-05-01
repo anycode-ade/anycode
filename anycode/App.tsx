@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import 'dockview/dist/styles/dockview.css';
 import { ChangesPanel } from './components';
 import Search from './components/Search';
-import { Layout, type PanelId } from './components/layout/Layout';
+import { Layout, type LayoutActions, type PanelId } from './components/layout/Layout';
 import { Toolbar } from './components/toolbar/Toolbar';
 import {
     getAllAgents,
@@ -38,6 +38,7 @@ import { AgentPanel } from './features/agents/AgentPanel';
 const App: React.FC = () => {
     const [diffEnabled, setDiffEnabled] = useState<boolean>(loadDiffEnabled());
     const [editorDiffEnabledByPane, setEditorDiffEnabledByPane] = useState<Record<string, boolean>>({});
+    const layoutActionsRef = useRef<LayoutActions | null>(null);
     // const [followEnabled, setFollowEnabled] = useState<boolean>(loadFollowEnabled());
     const [permissionMode, setPermissionMode] = useState<AcpPermissionMode>(loadAcpPermissionMode());
 
@@ -180,8 +181,26 @@ const App: React.FC = () => {
         search.startSearch(pattern);
     };
 
+    const handleOpenFile = useCallback((path: string, line?: number, column?: number) => {
+        const paneId = layoutActionsRef.current?.ensureEditorPanel();
+        if (!paneId) return;
+        editors.openFile(path, line, column, paneId);
+    }, [editors]);
+
+    const handleOpenFileDiff = useCallback((path: string, line?: number, column?: number) => {
+        const paneId = layoutActionsRef.current?.ensureEditorPanel();
+        if (!paneId) return;
+        editors.openFileDiff(path, line, column, paneId);
+    }, [editors]);
+
+    const handleSelectFile = useCallback((fileId: string) => {
+        const paneId = layoutActionsRef.current?.ensureEditorPanel();
+        if (!paneId) return;
+        editors.setActiveFileId(fileId, paneId);
+    }, [editors]);
+
     const handleSearchResultClick = (filePath: string, match: SearchMatch) => {
-        editors.openFile(filePath, match.line, match.column);
+        handleOpenFile(filePath, match.line, match.column);
     };
 
     const isEditorDiffEnabled = useCallback((panelKey: string) => {
@@ -318,7 +337,7 @@ const App: React.FC = () => {
                         onActivateNode={fileTree.setActiveNode}
                         onToggle={fileTree.toggleNode}
                         onSelect={fileTree.selectNode}
-                        onOpenFile={editors.openFile}
+                        onOpenFile={handleOpenFile}
                         onLoadFolder={openFolder}
                         onFocusEditor={() => editors.focusEditorInPane(editors.activeEditorPaneId)}
                         onNavigateByKey={fileTree.navigateByKey}
@@ -340,7 +359,7 @@ const App: React.FC = () => {
                     <ChangesPanel
                         files={git.changedFiles}
                         branch={git.gitBranch}
-                        onFileClick={editors.openFileDiff}
+                        onFileClick={handleOpenFileDiff}
                         onRefresh={git.fetchGitStatus}
                         onCommit={git.commit}
                         onPush={git.push}
@@ -382,8 +401,8 @@ const App: React.FC = () => {
                         onResumeSettingsSession={handleResumeSettingsSession}
                         onStartSpecificAgent={handleStartSpecificAgent}
                         onOpenSettings={handleOpenAgentSettings}
-                        onOpenFile={editors.openFile}
-                        onOpenFileDiff={editors.openFileDiff}
+                        onOpenFile={handleOpenFile}
+                        onOpenFileDiff={handleOpenFileDiff}
                     />
                 );
             case 'toolbar':
@@ -395,7 +414,7 @@ const App: React.FC = () => {
                         activeTerminalIndex={terminalPanes.getSelectedIndex(terminalPanes.activePaneId || 'terminal')}
                         agentSessions={sessionsArray}
                         activeAgentId={agentPanes.getSelectedId(agentPanes.activePaneId || 'agent')}
-                        onSelectFile={editors.setActiveFileId}
+                        onSelectFile={handleSelectFile}
                         onCloseFile={editors.closeFile}
                         onSelectTerminal={handleTerminalTabSelect}
                         onCloseTerminal={terminalPanes.closeTab}
@@ -490,6 +509,9 @@ const App: React.FC = () => {
                     onPanelActivated={handlePanelActivated}
                     onToggleEditorDiff={handleToggleEditorDiff}
                     isEditorDiffEnabled={isEditorDiffEnabled}
+                    onActionsReady={(actions) => {
+                        layoutActionsRef.current = actions;
+                    }}
                 />
             </div>
         </div>

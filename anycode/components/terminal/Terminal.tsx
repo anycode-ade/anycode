@@ -51,6 +51,7 @@ const Terminal: React.FC<XTerminalProps> = ({
   const resizeRafRef = useRef<number | null>(null);
   const fitDebounceTimerRef = useRef<number | null>(null);
   const saveSnapshotTimerRef = useRef<number | null>(null);
+  const didAutoFocusRef = useRef<boolean>(false);
   const onDataRef = useRef(onData);
   const onResizeRef = useRef(onResize);
   const isTerminalClosingRef = useRef(isTerminalClosing);
@@ -166,6 +167,10 @@ const Terminal: React.FC<XTerminalProps> = ({
 
       requestAnimationFrame(() => {
         fitAddon.fit();
+        if (!didAutoFocusRef.current) {
+          didAutoFocusRef.current = true;
+          terminal.focus();
+        }
       });
 
       const resizeObserver = new ResizeObserver(() => {
