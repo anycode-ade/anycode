@@ -130,6 +130,17 @@ pub async fn handle_terminal_start(
                 }
             }
         }
+        let exit_message = "\r\nterminal process exited\r\n".to_string();
+        {
+            let mut buffer_guard = buffer_clone.lock().await;
+            buffer_guard.push_back(exit_message.clone());
+        }
+
+        let data_channel = format!("terminal:data:{}", tname);
+        let sockets_guard = sockets_clone.lock().await;
+        for socket in sockets_guard.iter() {
+            let _ = socket.emit(&data_channel, &exit_message);
+        }
         info!("Terminal output handler finished for {}", tname);
     });
 
