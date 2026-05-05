@@ -30,9 +30,10 @@ export type LayoutContainer = {
 
 export type LayoutPanel = {
     key: string;
-    id: PanelId;
+    id: LayoutPanelId;
 };
 
+export type LayoutPanelId = PanelId | 'picker';
 type LayoutStorageValue = LayoutState | DockviewLayout;
 type DockviewGridNode = DockviewLayout['grid']['root'];
 type DockviewLeafNode = {
@@ -76,7 +77,7 @@ const createLayoutNode = (
     node: DockviewGridNode,
     panels: DockviewLayout['panels'],
     direction: 'horizontal' | 'vertical',
-    getPanelId: (panelKey: string) => PanelId | null,
+    getPanelId: (panelKey: string) => LayoutPanelId | null,
 ): LayoutNode => {
     if (node.type === 'leaf') {
         const group = (node as unknown as DockviewLeafNode).data;
@@ -151,7 +152,7 @@ const createDockviewNode = (
         node.panels.forEach((panel) => {
             panels[panel.key] = {
                 id: panel.key,
-                contentComponent: 'layoutPanel',
+                contentComponent: panel.id === 'picker' ? 'panelPicker' : 'layoutPanel',
                 params: {},
                 title: panel.id,
             };
@@ -182,7 +183,7 @@ const createDockviewNode = (
 
 export const createLayoutState = (
     dockview: DockviewLayout,
-    getPanelId: (panelKey: string) => PanelId | null,
+    getPanelId: (panelKey: string) => LayoutPanelId | null,
 ): LayoutState => {
     const root = normalizeLayoutNode(createLayoutNode(
         dockview.grid.root,
@@ -199,7 +200,7 @@ export const createLayoutState = (
 
 export const createDockviewLayout = (
     layout: LayoutState,
-    getPanelTitle: (panelId: PanelId) => string,
+    getPanelTitle: (panelId: LayoutPanelId) => string,
 ): DockviewLayout => {
     let groupIndex = 0;
     const panels: DockviewLayout['panels'] = {};
@@ -208,7 +209,7 @@ export const createDockviewLayout = (
     const root = createDockviewNode(normalizedRoot, panels, nextGroupId);
 
     Object.values(panels).forEach((panel) => {
-        const panelId = panel.title as PanelId;
+        const panelId = panel.title as LayoutPanelId;
         panel.title = getPanelTitle(panelId);
     });
 
@@ -225,7 +226,7 @@ export const createDockviewLayout = (
 
 export const getDockviewLayout = (
     layout: LayoutStorageValue,
-    getPanelTitle: (panelId: PanelId) => string,
+    getPanelTitle: (panelId: LayoutPanelId) => string,
 ): DockviewLayout => (
     isLayoutState(layout) ? createDockviewLayout(layout, getPanelTitle) : layout
 );

@@ -255,7 +255,7 @@ async fn main() -> Result<()> {
     let acp_fs_lsp = state.lsp_manager.clone();
     let acp_fs_config = state.config.clone();
 
-    let (layer, io) = SocketIo::builder().with_state(state).build_layer();
+    let (layer, io) = SocketIo::builder().with_state(state.clone()).build_layer();
     let cors = ServiceBuilder::new()
         .layer(CorsLayer::permissive())
         .layer(layer);
@@ -342,6 +342,8 @@ async fn main() -> Result<()> {
             let _ = tokio::signal::ctrl_c().await;
         })
         .await?;
+
+    state.shutdown().await;
 
     Ok(())
 }

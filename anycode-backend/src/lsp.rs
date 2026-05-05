@@ -162,7 +162,10 @@ impl Lsp {
                     debug!("lsp process wait done");
                 }
                 _ = kill_recv.recv() => {
-                    child.kill().await.expect("kill failed");
+                    if let Err(err) = child.kill().await {
+                        debug!("lsp process kill failed: {}", err);
+                    }
+                    let _ = child.wait().await;
                     debug!("lsp process killed manually");
                 }
             }
@@ -829,6 +832,13 @@ impl LspManager {
         if let Some(mut lsp) = self.lang2lsp.remove(lang) {
             let _ = lsp.stop().await;
             info!("stopped lsp: {}", lang);
+        }
+    }
+
+    pub async fn stop_all(&mut self) {
+        let langs: Vec<String> = self.lang2lsp.keys().cloned().collect();
+        for lang in langs {
+            self.stop(&lang).await;
         }
     }
 }

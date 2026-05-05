@@ -1139,6 +1139,7 @@ pub struct AcpAgent {
     prompt_sender: Option<mpsc::Sender<String>>,
     config_sender: Option<mpsc::Sender<PendingConfigUpdate>>,
     cancel_sender: Arc<tokio::sync::Mutex<Option<mpsc::Sender<()>>>>,
+    shutdown_sender: Option<mpsc::Sender<()>>,
     process_handle: Option<tokio::task::JoinHandle<()>>,
     io_handle: Option<tokio::task::JoinHandle<()>>,
     history: Arc<tokio::sync::Mutex<Vec<AcpMessage>>>,
@@ -1174,6 +1175,7 @@ impl AcpAgent {
             prompt_sender: None,
             config_sender: None,
             cancel_sender: Arc::new(tokio::sync::Mutex::new(None)),
+            shutdown_sender: None,
             process_handle: None,
             io_handle: None,
             history: Arc::new(tokio::sync::Mutex::new(Vec::new())),
@@ -1203,6 +1205,8 @@ impl AcpAgent {
             let mut cancel_sender_guard = self.cancel_sender.lock().await;
             *cancel_sender_guard = Some(cancel_tx.clone());
         }
+        let (shutdown_tx, mut shutdown_rx) = mpsc::channel::<()>(1);
+        self.shutdown_sender = Some(shutdown_tx);
 
         let (bootstrap_tx, bootstrap_rx) = oneshot::channel::<Result<SessionBootstrap>>();
 
@@ -1250,8 +1254,21 @@ impl AcpAgent {
         self.connection = None;
 
         let process_handle = tokio::spawn(async move {
-            let _ = child.wait().await;
-            debug!("ACP agent process ended");
+            tokio::select! {
+                result = child.wait() => {
+                    if let Err(err) = result {
+                        debug!("ACP agent process wait failed: {}", err);
+                    }
+                    debug!("ACP agent process ended");
+                }
+                _ = shutdown_rx.recv() => {
+                    if let Err(err) = child.kill().await {
+                        debug!("ACP agent process kill failed: {}", err);
+                    }
+                    let _ = child.wait().await;
+                    debug!("ACP agent process stopped manually");
+                }
+            }
         });
         self.process_handle = Some(process_handle);
 
@@ -1967,8 +1984,11 @@ impl AcpAgent {
 
     pub async fn stop(&mut self) {
         self.ready.store(false, Ordering::SeqCst);
+        if let Some(shutdown_tx) = self.shutdown_sender.take() {
+            let _ = shutdown_tx.send(()).await;
+        }
         if let Some(handle) = self.process_handle.take() {
-            handle.abort();
+            let _ = handle.await;
         }
         if let Some(handle) = self.io_handle.take() {
             handle.abort();
@@ -2179,6 +2199,13 @@ impl AcpManager {
     pub async fn stop_agent(&mut self, agent_id: &str) {
         if let Some(mut agent) = self.agents.remove(agent_id) {
             agent.stop().await;
+        }
+    }
+
+    pub async fn stop_all(&mut self) {
+        let agent_ids: Vec<String> = self.agents.keys().cloned().collect();
+        for agent_id in agent_ids {
+            self.stop_agent(&agent_id).await;
         }
     }
 

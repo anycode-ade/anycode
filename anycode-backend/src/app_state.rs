@@ -37,6 +37,25 @@ pub struct TerminalData {
     pub buffer: Arc<Mutex<VecDeque<String>>>,
 }
 
+impl AppState {
+    pub async fn shutdown(&self) {
+        self.lsp_manager.lock().await.stop_all().await;
+        self.acp_manager.lock().await.stop_all().await;
+
+        let terminal_handles = self
+            .terminals
+            .lock()
+            .await
+            .values()
+            .cloned()
+            .collect::<Vec<_>>();
+
+        for terminal in terminal_handles {
+            let _ = terminal.terminal.kill().await;
+        }
+    }
+}
+
 #[macro_export]
 macro_rules! error_ack {
     ($ack:expr, $path:expr, $msg:expr $(, $args:expr)*) => {{

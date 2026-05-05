@@ -137,6 +137,7 @@ impl Terminal {
                     }
                     Some(_) = kill_rx.recv() => {
                         let _ = child.kill();
+                        let _ = child.wait();
                         break;
                     }
                     else => break,

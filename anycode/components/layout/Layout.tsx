@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
     DockviewApi,
     DockviewReact,
@@ -30,6 +30,7 @@ import {
     loadLayoutState,
     storeLayoutState,
     type DockviewLayout,
+    type LayoutPanelId,
 } from './layoutState';
 import './Layout.css';
 
@@ -190,6 +191,20 @@ type PanelPickerParams = {
 };
 
 type PanelVisibility = Record<PanelId, boolean>;
+type PanelViewStateHandlers = {
+    captureViewState: () => unknown;
+    restoreViewState: (state: unknown) => void;
+};
+
+type ScrollSnapshot = {
+    path: number[];
+    scrollLeft: number;
+    scrollTop: number;
+};
+
+type LayoutViewStateRegistry = {
+    registerPanelViewState: (panelKey: string, handlers: PanelViewStateHandlers) => () => void;
+};
 
 type LayoutProps = {
     renderPanel: (panelId: PanelId, panelKey: string) => React.ReactNode;
@@ -202,7 +217,91 @@ type LayoutProps = {
 };
 
 export type LayoutActions = {
-    ensureEditorPanel: () => string | null;
+    ensureEditorPanel: (preferredPanelId?: string | null) => string | null;
+};
+
+const LayoutViewStateContext = React.createContext<LayoutViewStateRegistry | null>(null);
+
+export const useLayoutPanelViewState = (
+    panelKey: string,
+    handlers: PanelViewStateHandlers,
+) => {
+    const registry = useContext(LayoutViewStateContext);
+    const handlersRef = useRef(handlers);
+
+    useLayoutEffect(() => {
+        handlersRef.current = handlers;
+    }, [handlers]);
+
+    useLayoutEffect(() => {
+        if (!registry) {
+            return undefined;
+        }
+
+        return registry.registerPanelViewState(panelKey, {
+            captureViewState: () => handlersRef.current.captureViewState(),
+            restoreViewState: (state) => handlersRef.current.restoreViewState(state),
+        });
+    }, [panelKey, registry]);
+};
+
+const getElementPath = (root: HTMLElement, element: HTMLElement): number[] => {
+    const path: number[] = [];
+    let current: HTMLElement | null = element;
+
+    while (current && current !== root) {
+        const parent = current.parentElement;
+        if (!parent) {
+            break;
+        }
+
+        path.unshift(Array.prototype.indexOf.call(parent.children, current));
+        current = parent;
+    }
+
+    return path;
+};
+
+const getElementByPath = (root: HTMLElement, path: number[]): HTMLElement | null => {
+    let current: Element = root;
+
+    for (const index of path) {
+        const next = current.children[index];
+        if (!(next instanceof HTMLElement)) {
+            return null;
+        }
+        current = next;
+    }
+
+    return current instanceof HTMLElement ? current : null;
+};
+
+const getPanelScrollSnapshots = (panelRoot: HTMLElement): ScrollSnapshot[] => {
+    const elements = [panelRoot, ...Array.from(panelRoot.querySelectorAll<HTMLElement>('*'))];
+
+    return elements
+        .map((element) => ({
+            path: getElementPath(panelRoot, element),
+            scrollLeft: element.scrollLeft,
+            scrollTop: element.scrollTop,
+        }))
+        .filter((snapshot) => snapshot.scrollTop > 0 || snapshot.scrollLeft > 0);
+};
+
+const restorePanelScrollSnapshots = (panelRoot: HTMLElement, snapshots: ScrollSnapshot[]) => {
+    snapshots.forEach((snapshot) => {
+        const element = getElementByPath(panelRoot, snapshot.path);
+        if (!element) {
+            return;
+        }
+
+        if (snapshot.scrollTop > 0) {
+            element.scrollTop = snapshot.scrollTop;
+        }
+        if (snapshot.scrollLeft > 0) {
+            element.scrollLeft = snapshot.scrollLeft;
+        }
+    });
 };
 
 const PANEL_INSTANCE_SEPARATOR = '__';
@@ -236,6 +335,10 @@ const createPanelKey = (panelId: PanelId): string => (
 const createPickerPanelId = (): string => `${EMPTY_PANE_PREFIX}${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
 const isPickerPanel = (panelId: string): boolean => panelId.startsWith(EMPTY_PANE_PREFIX);
+
+const getLayoutPanelId = (panelKey: string): LayoutPanelId | null => (
+    isPickerPanel(panelKey) ? 'picker' : getPanelBaseId(panelKey)
+);
 
 const getPanelsByBaseId = (api: DockviewApi, panelId: PanelId): IDockviewPanel[] => (
     api.panels.filter((panel) => getPanelBaseId(panel.id) === panelId)
@@ -310,6 +413,10 @@ const panelTitles: Record<PanelId, string> = Object.fromEntries(
     panelDefinitions.map((definition) => [definition.id, definition.title]),
 ) as Record<PanelId, string>;
 
+const getLayoutPanelTitle = (panelId: LayoutPanelId): string => (
+    panelId === 'picker' ? 'Empty' : panelTitles[panelId]
+);
+
 const panelSyncOrder: PanelId[] = ['files', 'editor', 'agent', 'search', 'changes', 'terminal'];
 const loadPanelVisibility = (): PanelVisibility => ({
     files: (loadItem<number>(LAYOUT_VERSION_STORAGE_KEY) ?? 0) < CURRENT_LAYOUT_VERSION ? true : loadFilesPanelVisible(),
@@ -343,22 +450,62 @@ const shouldUseSavedLayout = (layoutState: ReturnType<typeof loadLayoutState>): 
         return false;
     }
 
-    const layout = getDockviewLayout(layoutState, (panelId) => panelTitles[panelId]);
+    const layout = getDockviewLayout(layoutState, getLayoutPanelTitle);
     if (hasSavedPanel(layout, 'toolbar')) {
         return false;
     }
 
     return Object.keys(layout.panels).some((panelKey) => {
-        const baseId = getPanelBaseId(panelKey);
-        return baseId !== null && baseId !== 'toolbar';
+        const layoutPanelId = getLayoutPanelId(panelKey);
+        return layoutPanelId !== null && layoutPanelId !== 'toolbar';
     });
 };
 
-const LayoutPanel: React.FC<IDockviewPanelProps<PanelParams>> = ({ params }) => (
-    <div className={`layout-dock-panel layout-dock-panel--${params.panelId}`}>
-        {params.content}
-    </div>
-);
+const getSplitPanelSizes = (
+    referencePanel: IDockviewPanel,
+    direction: 'right' | 'below' | 'within',
+): { width?: number; height?: number } => {
+    if (direction === 'right') {
+        const width = referencePanel.group.api.width;
+        return width > 1 ? { width: width / 2 } : {};
+    }
+
+    if (direction === 'below') {
+        const height = referencePanel.group.api.height;
+        return height > 1 ? { height: height / 2 } : {};
+    }
+
+    return {};
+};
+
+const LayoutPanel: React.FC<IDockviewPanelProps<PanelParams>> = ({ params }) => {
+    const rootRef = useRef<HTMLDivElement | null>(null);
+
+    const captureViewState = useCallback((): ScrollSnapshot[] => {
+        const root = rootRef.current;
+        return root ? getPanelScrollSnapshots(root) : [];
+    }, []);
+
+    const restoreViewState = useCallback((state: unknown) => {
+        const root = rootRef.current;
+        if (!root || !Array.isArray(state)) {
+            return;
+        }
+
+        restorePanelScrollSnapshots(root, state as ScrollSnapshot[]);
+    }, []);
+
+    useLayoutPanelViewState(params.panelKey, {
+        captureViewState,
+        restoreViewState,
+    });
+
+    return (
+        <div ref={rootRef} className={`layout-dock-panel layout-dock-panel--${params.panelId}`}>
+            {params.content}
+        </div>
+    );
+};
 
 const panelPickerOrder: PanelId[] = panelDefinitions
     .filter((definition) => definition.pickerVisible)
@@ -563,6 +710,9 @@ export const Layout: React.FC<LayoutProps> = ({
     const layoutSaveTimerRef = useRef<number | null>(null);
     const emptyPaneRestoreTimerRef = useRef<number | null>(null);
     const isRestoringLayoutRef = useRef<boolean>(false);
+    const panelViewStateHandlersRef = useRef(new Map<string, PanelViewStateHandlers>());
+    const panelViewStatesRef = useRef<Record<string, unknown>>({});
+    const restoreViewStatesFrameRef = useRef<number | null>(null);
     const splitRightRef = useRef<(api: DockviewApi, referencePanelId: string) => void>(() => {});
     const splitDownRef = useRef<(api: DockviewApi, referencePanelId: string) => void>(() => {});
     const addTabRef = useRef<(api: DockviewApi, referencePanelId: string) => void>(() => {});
@@ -595,13 +745,18 @@ export const Layout: React.FC<LayoutProps> = ({
         renderPanelRef.current(panelId, panelKey)
     ), []);
 
-    const ensureEditorPanel = useCallback((): string | null => {
+    const ensureEditorPanel = useCallback((preferredPanelId?: string | null): string | null => {
         const api = apiRef.current;
         if (!api) {
             return null;
         }
 
-        const existingPanel = getPanelsByBaseId(api, 'editor')[0];
+        const preferredPanel = preferredPanelId ? api.getPanel(preferredPanelId) : undefined;
+        const activePanel = api.activePanel;
+        const activeEditorPanel = activePanel && getPanelBaseId(activePanel.id) === 'editor'
+            ? activePanel
+            : null;
+        const existingPanel = preferredPanel ?? activeEditorPanel ?? getPanelsByBaseId(api, 'editor')[0];
         if (existingPanel) {
             existingPanel.api.setActive();
             return existingPanel.id;
@@ -651,10 +806,54 @@ export const Layout: React.FC<LayoutProps> = ({
         listenersRef.current = [];
     }, []);
 
+    const registerPanelViewState = useCallback((panelKey: string, handlers: PanelViewStateHandlers) => {
+        panelViewStateHandlersRef.current.set(panelKey, handlers);
+
+        return () => {
+            if (panelViewStateHandlersRef.current.get(panelKey) === handlers) {
+                panelViewStateHandlersRef.current.delete(panelKey);
+            }
+        };
+    }, []);
+
+    const viewStateRegistry = useMemo<LayoutViewStateRegistry>(() => ({
+        registerPanelViewState,
+    }), [registerPanelViewState]);
+
+    const capturePanelViewStates = useCallback(() => {
+        const nextStates: Record<string, unknown> = {};
+
+        panelViewStateHandlersRef.current.forEach((handlers, panelKey) => {
+            nextStates[panelKey] = handlers.captureViewState();
+        });
+
+        panelViewStatesRef.current = {
+            ...panelViewStatesRef.current,
+            ...nextStates,
+        };
+    }, []);
+
+    const restorePanelViewStates = useCallback(() => {
+        if (restoreViewStatesFrameRef.current !== null) {
+            cancelAnimationFrame(restoreViewStatesFrameRef.current);
+        }
+
+        restoreViewStatesFrameRef.current = requestAnimationFrame(() => {
+            restoreViewStatesFrameRef.current = requestAnimationFrame(() => {
+                restoreViewStatesFrameRef.current = null;
+
+                Object.entries(panelViewStatesRef.current).forEach(([panelKey, state]) => {
+                    panelViewStateHandlersRef.current.get(panelKey)?.restoreViewState(state);
+                });
+            });
+        });
+    }, []);
+
     const queueSaveLayout = useCallback((api: DockviewApi) => {
         if (layoutSaveTimerRef.current !== null) {
             clearTimeout(layoutSaveTimerRef.current);
         }
+        restorePanelViewStates();
         layoutSaveTimerRef.current = window.setTimeout(() => {
             layoutSaveTimerRef.current = null;
             const raw = api.toJSON();
@@ -664,9 +863,9 @@ export const Layout: React.FC<LayoutProps> = ({
                     Object.entries(raw.panels).map(([id, state]) => [id, { ...state, params: {} }]),
                 ),
             };
-            storeLayoutState(createLayoutState(sanitized, getPanelBaseId));
+            storeLayoutState(createLayoutState(sanitized, getLayoutPanelId));
         }, 120);
-    }, []);
+    }, [restorePanelViewStates]);
 
     const syncPanels = useCallback((api: DockviewApi) => {
         for (const panel of panelEntries) {
@@ -752,14 +951,33 @@ export const Layout: React.FC<LayoutProps> = ({
 
         const definition = panelDefinitionById[panelId];
         const targetPanelKey = definition.allowMultiple ? createPanelKey(panelId) : panelId;
-        const targetPanel = definition.allowMultiple
-            ? addPanel(api, targetPanelKey, panelId, resolvePanelContent(panelId, targetPanelKey))
-            : (api.getPanel(panelId) ?? addPanel(api, panelId, panelId, resolvePanelContent(panelId, panelId)));
-
-        targetPanel.api.moveTo({
-            group: pickerPanel.group,
-            position: 'center',
+        const existingPanel = definition.allowMultiple ? undefined : api.getPanel(panelId);
+        const targetPanel = existingPanel ?? api.addPanel({
+            id: targetPanelKey,
+            component: 'layoutPanel',
+            title: definition.title,
+            params: {
+                panelId,
+                panelKey: targetPanelKey,
+                content: resolvePanelContent(panelId, targetPanelKey),
+            },
+            minimumWidth: 0,
+            minimumHeight: 0,
+            position: {
+                referenceGroup: pickerPanel.group,
+                direction: 'within',
+            },
+            //@ts-ignore
+            disableClose: definition.disableClose,
         });
+        targetPanel.group.api.setConstraints(PANEL_CONSTRAINTS);
+
+        if (existingPanel) {
+            targetPanel.api.moveTo({
+                group: pickerPanel.group,
+                position: 'center',
+            });
+        }
         targetPanel.api.setActive();
 
         const stalePickerPanel = api.getPanel(pickerPanelId);
@@ -777,7 +995,9 @@ export const Layout: React.FC<LayoutProps> = ({
         if (!referencePanel) {
             return;
         }
+        capturePanelViewStates();
 
+        const splitSize = getSplitPanelSizes(referencePanel, direction);
         const pickerPanelId = createPickerPanelId();
         const pickerPanel = api.addPanel<PanelPickerParams>({
             id: pickerPanelId,
@@ -789,13 +1009,23 @@ export const Layout: React.FC<LayoutProps> = ({
             },
             minimumWidth: 0,
             minimumHeight: 0,
+            initialWidth: splitSize.width,
+            initialHeight: splitSize.height,
             params: {
                 pickerPanelId,
                 onSelectPanel: handleSelectPanelFromPicker,
             },
         });
         pickerPanel.group.api.setConstraints(PANEL_CONSTRAINTS);
-    }, [handleSelectPanelFromPicker]);
+  
+        if (splitSize.width !== undefined || splitSize.height !== undefined) {
+            window.requestAnimationFrame(() => {
+                referencePanel.group.api.setSize(splitSize);
+                pickerPanel.group.api.setSize(splitSize);
+            });
+        }
+        restorePanelViewStates();
+    }, [capturePanelViewStates, handleSelectPanelFromPicker, restorePanelViewStates]);
 
     const rebindPickerPanels = useCallback((api: DockviewApi) => {
         for (const panel of api.panels) {
@@ -860,6 +1090,9 @@ export const Layout: React.FC<LayoutProps> = ({
         if (emptyPaneRestoreTimerRef.current !== null) {
             clearTimeout(emptyPaneRestoreTimerRef.current);
         }
+        if (restoreViewStatesFrameRef.current !== null) {
+            cancelAnimationFrame(restoreViewStatesFrameRef.current);
+        }
         disposeListeners();
         apiRef.current = null;
     }, [disposeListeners]);
@@ -918,11 +1151,20 @@ export const Layout: React.FC<LayoutProps> = ({
                 }
                 queueSaveLayout(api);
             }),
+            api.onWillDragPanel(() => {
+                capturePanelViewStates();
+            }),
+            api.onWillDrop(() => {
+                capturePanelViewStates();
+            }),
+            api.onDidMovePanel(() => {
+                restorePanelViewStates();
+            }),
         ];
 
         const savedLayoutState = loadLayoutState();
         const savedLayout = savedLayoutState
-            ? getDockviewLayout(savedLayoutState, (panelId) => panelTitles[panelId])
+            ? getDockviewLayout(savedLayoutState, getLayoutPanelTitle)
             : null;
         const useSavedLayout = Boolean(savedLayout?.grid && savedLayout?.panels && shouldUseSavedLayout(savedLayoutState));
         let restoredSavedLayout = false;
@@ -963,6 +1205,8 @@ export const Layout: React.FC<LayoutProps> = ({
         onPanelActivated,
         handleSelectPanelFromPicker,
         queueSaveLayout,
+        capturePanelViewStates,
+        restorePanelViewStates,
         refreshPanelContents,
         rebindPickerPanels,
         syncPanels,
@@ -972,12 +1216,14 @@ export const Layout: React.FC<LayoutProps> = ({
     return (
         <div className="layout dockview-theme-dark">
             <div className="layout-main">
-                <DockviewReact
-                    components={{ layoutPanel: LayoutPanel, panelPicker: PanelPicker }}
-                    className="layout-root"
-                    onReady={handleReady}
-                    rightHeaderActionsComponent={renderRightHeaderActions}
-                />
+                <LayoutViewStateContext.Provider value={viewStateRegistry}>
+                    <DockviewReact
+                        components={{ layoutPanel: LayoutPanel, panelPicker: PanelPicker }}
+                        className="layout-root"
+                        onReady={handleReady}
+                        rightHeaderActionsComponent={renderRightHeaderActions}
+                    />
+                </LayoutViewStateContext.Provider>
             </div>
             <div className="layout-toolbar">
                 {renderPanelRef.current('toolbar', 'toolbar')}

@@ -1,5 +1,12 @@
 
-import { type Terminal, type AcpSession, type AcpAgent, type AcpPermissionMode } from './types';
+import { type Terminal, type AcpSession, type AcpAgent, type AcpPermissionMode, type FileState } from './types';
+
+export type PersistedEditorState = {
+    files: FileState[];
+    activeFileId: string | null;
+    paneActiveFileIds: Record<string, string | null>;
+    cursorByFileId: Record<string, { line: number; column: number }>;
+};
 
 export function saveItem<T>(key: string, value: T): void {
     try {
@@ -45,6 +52,32 @@ export function loadEditorPanelVisible(): boolean {
 }
 export function loadDiffEnabled(): boolean {
     return loadItem('diffEnabled') ?? false;
+}
+export function loadOpenFiles(): PersistedEditorState {
+    const stored = loadItem<PersistedEditorState>('openFiles');
+    if (!stored || !Array.isArray(stored.files)) {
+        return { files: [], activeFileId: null, paneActiveFileIds: {}, cursorByFileId: {} };
+    }
+
+    const files = stored.files.filter((file) => (
+        typeof file?.id === 'string'
+        && typeof file?.name === 'string'
+        && typeof file?.language === 'string'
+    ));
+    const activeFileId = stored.activeFileId && files.some((file) => file.id === stored.activeFileId)
+        ? stored.activeFileId
+        : files[0]?.id ?? null;
+    const paneActiveFileIds = typeof stored.paneActiveFileIds === 'object' && stored.paneActiveFileIds
+        ? stored.paneActiveFileIds
+        : { editor: activeFileId };
+    const cursorByFileId = typeof stored.cursorByFileId === 'object' && stored.cursorByFileId
+        ? stored.cursorByFileId
+        : {};
+
+    return { files, activeFileId, paneActiveFileIds, cursorByFileId };
+}
+export function saveOpenFiles(state: PersistedEditorState): void {
+    saveItem('openFiles', state);
 }
 export function loadFollowEnabled(): boolean {
     return loadItem('followEnabled') ?? false;

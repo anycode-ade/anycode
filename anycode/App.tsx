@@ -49,10 +49,6 @@ const App: React.FC = () => {
         wsRef,
         isConnected,
         diffEnabled,
-        onFileClosed: (fileId: string) => {
-            const node = fileTree.findNodeByPath(fileTree.fileTree, fileId);
-            if (node) fileTree.clearFileSelection();
-        },
     });
 
     const terminals = useTerminals({ wsRef, isConnected });
@@ -181,23 +177,27 @@ const App: React.FC = () => {
         search.startSearch(pattern);
     };
 
+    const resolveEditorPaneId = useCallback(() => {
+        return layoutActionsRef.current?.ensureEditorPanel(editors.activeEditorPaneId);
+    }, [editors]);
+
     const handleOpenFile = useCallback((path: string, line?: number, column?: number) => {
-        const paneId = layoutActionsRef.current?.ensureEditorPanel();
+        const paneId = resolveEditorPaneId();
         if (!paneId) return;
         editors.openFile(path, line, column, paneId);
-    }, [editors]);
+    }, [editors, resolveEditorPaneId]);
 
     const handleOpenFileDiff = useCallback((path: string, line?: number, column?: number) => {
-        const paneId = layoutActionsRef.current?.ensureEditorPanel();
+        const paneId = resolveEditorPaneId();
         if (!paneId) return;
         editors.openFileDiff(path, line, column, paneId);
-    }, [editors]);
+    }, [editors, resolveEditorPaneId]);
 
     const handleSelectFile = useCallback((fileId: string) => {
-        const paneId = layoutActionsRef.current?.ensureEditorPanel();
+        const paneId = resolveEditorPaneId();
         if (!paneId) return;
         editors.setActiveFileId(fileId, paneId);
-    }, [editors]);
+    }, [editors, resolveEditorPaneId]);
 
     const handleSearchResultClick = (filePath: string, match: SearchMatch) => {
         handleOpenFile(filePath, match.line, match.column);
