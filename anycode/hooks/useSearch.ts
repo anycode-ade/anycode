@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { Socket } from 'socket.io-client';
 import type { SearchEnd, SearchResult } from '../types';
 
@@ -8,8 +8,22 @@ type UseSearchParams = {
 };
 
 export const useSearch = ({ wsRef, isConnected }: UseSearchParams) => {
+    const SEARCH_INPUT_STORAGE_KEY = 'searchInput';
     const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
     const [searchEnded, setSearchEnded] = useState<boolean>(true);
+    const [searchInput, setSearchInput] = useState<string>(() => {
+        if (typeof window === 'undefined') return '';
+        return localStorage.getItem(SEARCH_INPUT_STORAGE_KEY) ?? '';
+    });
+
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+        if (searchInput) {
+            localStorage.setItem(SEARCH_INPUT_STORAGE_KEY, searchInput);
+        } else {
+            localStorage.removeItem(SEARCH_INPUT_STORAGE_KEY);
+        }
+    }, [searchInput]);
 
     const startSearch = useCallback((pattern: string) => {
         if (!pattern) return;
@@ -62,6 +76,8 @@ export const useSearch = ({ wsRef, isConnected }: UseSearchParams) => {
     }, []);
 
     return {
+        searchInput,
+        setSearchInput,
         searchResults,
         searchEnded,
         startSearch,

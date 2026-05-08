@@ -237,6 +237,21 @@ export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: Us
         return editorRefs.current.get(fileId) ?? editorStatesRef.current.get(fileId) ?? null;
     }, []);
 
+    const getActiveEditorSelectedText = useCallback((): string => {
+        const paneId = activeEditorPaneIdRef.current;
+        const fileId = getActiveFileIdForPane(paneId);
+        if (!fileId) {
+            return '';
+        }
+
+        const editor = getEditorState(fileId);
+        if (!editor) {
+            return '';
+        }
+
+        return editor.getSelectedText();
+    }, [getActiveFileIdForPane, getEditorState]);
+
     const setActiveFileId = useCallback((fileId: string | null, paneId?: string) => {
         if (fileId && !paneId && !hasVisibleEditorPane()) {
             return;
@@ -1104,6 +1119,7 @@ export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: Us
         activeFileId,
         activeEditorPaneId,
         getActiveFileIdForPane,
+        getActiveEditorSelectedText,
         getEditorState,
         setActiveFileId,
         setActiveEditorPaneId,

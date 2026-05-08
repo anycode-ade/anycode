@@ -1,11 +1,11 @@
 [package]
 name = "anycode"
-version = "0.0.13"
+version = "0.0.14"
 edition = "2024"
 
 [profile.release]
-# opt-level = 3
-# strip = true
+opt-level = 3
+strip = true
 lto = true
 codegen-units = 1
 panic = 'abort'

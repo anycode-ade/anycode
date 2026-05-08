@@ -116,6 +116,14 @@ export const useLayout = ({
         return true;
     }, [getFocusablePanelKey]);
 
+    const requestPanelFocus = useCallback((panelId: PanelId, panelKey?: string) => {
+        setFocusRequest({
+            target: panelId,
+            panelKey,
+            nonce: Date.now(),
+        });
+    }, []);
+
     const handlePanelAdded = useCallback((panelId: PanelId, panelKey: string) => {
         const current = panelKeysByIdRef.current[panelId] ?? [];
         if (!current.includes(panelKey)) {
@@ -193,12 +201,14 @@ export const useLayout = ({
     return useMemo(() => ({
         getFocusRequestToken,
         handleCtrlFocusShortcut,
+        requestPanelFocus,
         handlePanelAdded,
         handlePanelRemoved,
         handlePanelActivated,
     }), [
         getFocusRequestToken,
         handleCtrlFocusShortcut,
+        requestPanelFocus,
         handlePanelAdded,
         handlePanelRemoved,
         handlePanelActivated,

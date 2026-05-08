@@ -218,6 +218,7 @@ type LayoutProps = {
 
 export type LayoutActions = {
     ensureEditorPanel: (preferredPanelId?: string | null) => string | null;
+    ensurePanel: (panelId: PanelId) => string | null;
 };
 
 const LayoutViewStateContext = React.createContext<LayoutViewStateRegistry | null>(null);
@@ -789,15 +790,50 @@ export const Layout: React.FC<LayoutProps> = ({
         return editorPanel.id;
     }, [resolvePanelContent]);
 
+    const ensurePanel = useCallback((panelId: PanelId): string | null => {
+        const api = apiRef.current;
+        if (!api) {
+            return null;
+        }
+
+        const definition = panelDefinitionById[panelId];
+        if (definition.allowMultiple) {
+            const existing = getPanelsByBaseId(api, panelId)[0];
+            if (existing) {
+                existing.api.setActive();
+                return existing.id;
+            }
+
+            const panelKey = createPanelKey(panelId);
+            const panel = addPanel(api, panelKey, panelId, resolvePanelContent(panelId, panelKey));
+            panel.api.setActive();
+            setVisibility((prev) => ({ ...prev, [panelId]: true }));
+            return panel.id;
+        }
+
+        const existing = api.getPanel(panelId);
+        if (existing) {
+            existing.api.setActive();
+            setVisibility((prev) => ({ ...prev, [panelId]: true }));
+            return existing.id;
+        }
+
+        const panel = addPanel(api, panelId, panelId, resolvePanelContent(panelId, panelId));
+        panel.api.setActive();
+        setVisibility((prev) => ({ ...prev, [panelId]: true }));
+        return panel.id;
+    }, [resolvePanelContent]);
+
     useEffect(() => {
         onActionsReady?.({
             ensureEditorPanel,
+            ensurePanel,
         });
 
         return () => {
             onActionsReady?.(null);
         };
-    }, [ensureEditorPanel, onActionsReady]);
+    }, [ensureEditorPanel, ensurePanel, onActionsReady]);
 
     const disposeListeners = useCallback(() => {
         for (const listener of listenersRef.current) {

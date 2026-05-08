@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Icons } from './Icons';
 import './ChangesPanel.css';
 
@@ -57,6 +57,18 @@ export const ChangesPanel: React.FC<ChangesPanelProps> = ({
         return localStorage.getItem(COMMIT_MESSAGE_STORAGE_KEY) ?? '';
     });
     const [excludedFiles, setExcludedFiles] = useState<Set<string>>(new Set());
+    const [activeFilePath, setActiveFilePath] = useState<string | null>(null);
+    const listRef = useRef<HTMLDivElement | null>(null);
+    const itemRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+    const shouldAutoScrollRef = useRef(false);
+
+    const setItemRef = useCallback((path: string, element: HTMLDivElement | null) => {
+        if (element) {
+            itemRefs.current.set(path, element);
+            return;
+        }
+        itemRefs.current.delete(path);
+    }, []);
 
     useEffect(() => {
         if (typeof window === 'undefined') return;
@@ -83,6 +95,27 @@ export const ChangesPanel: React.FC<ChangesPanelProps> = ({
         });
     }, [files]);
 
+    useEffect(() => {
+        if (files.length === 0) {
+            setActiveFilePath(null);
+            return;
+        }
+
+        if (!activeFilePath || !files.some((file) => file.path === activeFilePath)) {
+            setActiveFilePath(files[0].path);
+        }
+    }, [files, activeFilePath]);
+
+    useEffect(() => {
+        if (!activeFilePath || !shouldAutoScrollRef.current) {
+            return;
+        }
+
+        const item = itemRefs.current.get(activeFilePath);
+        item?.scrollIntoView({ block: 'nearest' });
+        shouldAutoScrollRef.current = false;
+    }, [activeFilePath]);
+
     const toggleExcludedFile = (path: string, e: React.MouseEvent) => {
         e.stopPropagation();
         setExcludedFiles(prev => {
@@ -95,6 +128,55 @@ export const ChangesPanel: React.FC<ChangesPanelProps> = ({
             return next;
         });
     };
+
+    const navigateByKey = useCallback((key: string): boolean => {
+        if (!['ArrowDown', 'ArrowUp', 'Enter'].includes(key)) {
+            return false;
+        }
+
+        if (files.length === 0) {
+            return true;
+        }
+
+        const currentIndex = Math.max(0, files.findIndex((file) => file.path === activeFilePath));
+
+        if (key === 'ArrowDown') {
+            const nextIndex = Math.min(files.length - 1, currentIndex + 1);
+            setActiveFilePath(files[nextIndex].path);
+            shouldAutoScrollRef.current = true;
+            return true;
+        }
+
+        if (key === 'ArrowUp') {
+            const prevIndex = Math.max(0, currentIndex - 1);
+            setActiveFilePath(files[prevIndex].path);
+            shouldAutoScrollRef.current = true;
+            return true;
+        }
+
+        if (key === 'Enter' && activeFilePath) {
+            onFileClick(activeFilePath);
+            listRef.current?.blur();
+            return true;
+        }
+
+        return false;
+    }, [activeFilePath, files, onFileClick]);
+
+    const handleListKeyDown = useCallback((event: React.KeyboardEvent<HTMLDivElement>) => {
+        const handled = navigateByKey(event.key);
+        if (handled) {
+            event.preventDefault();
+            event.stopPropagation();
+        }
+    }, [navigateByKey]);
+
+    const handleListMouseDown = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+        if (event.button !== 0) {
+            return;
+        }
+        listRef.current?.focus();
+    }, []);
 
     const filesToCommit = files
         .map((file) => file.path)
@@ -263,7 +345,15 @@ export const ChangesPanel: React.FC<ChangesPanelProps> = ({
                 </div>
             </div>
 
-            <div className="changes-list">
+            <div
+                ref={listRef}
+                className="changes-list"
+                role="listbox"
+                tabIndex={0}
+                aria-label="Changed files"
+                onKeyDown={handleListKeyDown}
+                onMouseDown={handleListMouseDown}
+            >
                 {files.length === 0 ? (
                     <div className="changes-empty">
                         No changes
@@ -271,9 +361,15 @@ export const ChangesPanel: React.FC<ChangesPanelProps> = ({
                 ) : (
                     files.map((file) => (
                         <div 
+                            ref={(element) => setItemRef(file.path, element)}
                             key={file.path}
-                            className={`changes-item ${excludedFiles.has(file.path) ? 'excluded' : ''}`}
-                            onClick={() => onFileClick(file.path)}
+                            className={`changes-item ${activeFilePath === file.path ? 'active' : ''} ${excludedFiles.has(file.path) ? 'excluded' : ''}`}
+                            onClick={() => {
+                                setActiveFilePath(file.path);
+                                onFileClick(file.path);
+                            }}
+                            role="option"
+                            aria-selected={activeFilePath === file.path}
                         >
                             <div className="changes-file-info">
                                 <div className="changes-file-main">

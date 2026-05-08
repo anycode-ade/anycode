@@ -1,9 +1,7 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { Icons } from "./Icons";
 import "./Search.css";
 import type { SearchResult, SearchMatch } from "../types";
-
-const SEARCH_INPUT_STORAGE_KEY = "searchInput";
 
 const StopIcon = () => (
     <svg width="16" height="16" viewBox="0 0 20 20" fill="none">
@@ -67,6 +65,9 @@ const SearchPreview = ({ match, pattern, maxLength = 100 }: SearchPreviewProps) 
 
 interface SearchProps {
     id: string;
+    focusRequestToken?: number | null;
+    inputValue: string;
+    onInputValueChange: (value: string) => void;
     onEnter: (data: { id: string; pattern: string }) => void;
     onInputChange?: () => void;
     onCancel: () => void;
@@ -76,17 +77,21 @@ interface SearchProps {
     searchEnded: boolean;
 }
 
-const Search = ({ id, onEnter, onInputChange, onCancel, onClear, onMatchClick, results, searchEnded }: SearchProps) => {
-    const [input, setInput] = useState(() => {
-        if (typeof window === "undefined") return "";
-        return localStorage.getItem(SEARCH_INPUT_STORAGE_KEY) ?? "";
-    });
+type SearchNavItem =
+    | { key: string; type: "file"; filePath: string }
+    | { key: string; type: "match"; filePath: string; match: SearchMatch };
+
+const Search = ({ id, focusRequestToken, inputValue, onInputValueChange, onEnter, onInputChange, onCancel, onClear, onMatchClick, results, searchEnded }: SearchProps) => {
     const searchPatternRef = useRef("");
     const [visibleMatches, setVisibleMatches] = useState<Record<string, Set<string> | undefined>>({});
+    const [activeItemKey, setActiveItemKey] = useState<string | null>(null);
     const [elapsedTime, setElapsedTime] = useState<number>(0);
     const inputRef = useRef<HTMLTextAreaElement>(null);
     const startTimeRef = useRef<number | null>(null);
     const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+    const resultsRef = useRef<HTMLDivElement | null>(null);
+    const itemRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+    const shouldAutoScrollRef = useRef(false);
     
     // Clear visible matches when search starts (when searchEnded becomes false)
     useEffect(() => {
@@ -125,31 +130,35 @@ const Search = ({ id, onEnter, onInputChange, onCancel, onClear, onMatchClick, r
             inputRef.current.style.height = "auto";
             inputRef.current.style.height = `${inputRef.current.scrollHeight}px`;
         }
-    }, [input]);
+    }, [inputValue]);
 
     useEffect(() => {
         const el = inputRef.current;
-        if (!el || !input) return;
+        if (!el || !inputValue) return;
         // Place caret at the end for restored value after mount/autofocus.
-        const end = input.length;
+        const end = inputValue.length;
         el.setSelectionRange(end, end);
-    }, []);
+    }, [inputValue]);
 
     useEffect(() => {
-        if (typeof window === "undefined") return;
-        if (input) {
-            localStorage.setItem(SEARCH_INPUT_STORAGE_KEY, input);
-        } else {
-            localStorage.removeItem(SEARCH_INPUT_STORAGE_KEY);
+        if (focusRequestToken == null) {
+            return;
         }
-    }, [input]);
+        inputRef.current?.focus();
+    }, [focusRequestToken]);
 
     const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-        setInput(e.target.value);
+        onInputValueChange(e.target.value);
         onInputChange?.();
     };
 
     const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+        if (e.key === "ArrowDown") {
+            e.preventDefault();
+            resultsRef.current?.focus();
+            return;
+        }
+
         // ESC cancels the search
         if (e.key === "Escape" && !searchEnded) {
             e.preventDefault();
@@ -159,9 +168,9 @@ const Search = ({ id, onEnter, onInputChange, onCancel, onClear, onMatchClick, r
         // Enter submits the search, Shift+Enter inserts newline
         if (e.key === "Enter" && !e.shiftKey) {
             e.preventDefault();
-            searchPatternRef.current = input; // Save the pattern used for search
+            searchPatternRef.current = inputValue; // Save the pattern used for search
             if (onEnter) {
-                onEnter({ id: id, pattern: input });
+                onEnter({ id: id, pattern: inputValue });
             }
         }
         // Shift+Enter allows default behavior (inserts \n)
@@ -173,7 +182,63 @@ const Search = ({ id, onEnter, onInputChange, onCancel, onClear, onMatchClick, r
     );
     const totalFiles = results.length;
     const elapsedMs = Math.max(0, Math.round(elapsedTime * 1000));
-    const hasQuery = input.trim().length > 0 || results.length > 0;
+    const hasQuery = inputValue.trim().length > 0 || results.length > 0;
+
+    const navItems = useMemo<SearchNavItem[]>(() => {
+        const items: SearchNavItem[] = [];
+
+        for (const fileResult of results) {
+            const fileKey = `file:${fileResult.file_path}`;
+            items.push({ key: fileKey, type: "file", filePath: fileResult.file_path });
+
+            const isExpanded = !!visibleMatches[fileResult.file_path];
+            if (!isExpanded) continue;
+
+            for (let matchIndex = 0; matchIndex < fileResult.matches.length; matchIndex += 1) {
+                const match = fileResult.matches[matchIndex];
+                const key = `match:${fileResult.file_path}:${match.line}:${match.column}:${matchIndex}`;
+                items.push({
+                    key,
+                    type: "match",
+                    filePath: fileResult.file_path,
+                    match,
+                });
+            }
+        }
+
+        return items;
+    }, [results, visibleMatches]);
+
+    const firstMatchByFile = useMemo(() => {
+        const map = new Map<string, SearchNavItem>();
+        for (const item of navItems) {
+            if (item.type === "match" && !map.has(item.filePath)) {
+                map.set(item.filePath, item);
+            }
+        }
+        return map;
+    }, [navItems]);
+
+    useEffect(() => {
+        if (navItems.length === 0) {
+            setActiveItemKey(null);
+            return;
+        }
+
+        if (!activeItemKey || !navItems.some((item) => item.key === activeItemKey)) {
+            setActiveItemKey(navItems[0].key);
+        }
+    }, [activeItemKey, navItems]);
+
+    useEffect(() => {
+        if (!activeItemKey || !shouldAutoScrollRef.current) {
+            return;
+        }
+
+        const activeEl = itemRefs.current.get(activeItemKey);
+        activeEl?.scrollIntoView({ block: 'nearest' });
+        shouldAutoScrollRef.current = false;
+    }, [activeItemKey]);
 
     const handleFileClick = (filePath: string) => {
         // Toggle the visibility of matches for the clicked file
@@ -187,13 +252,103 @@ const Search = ({ id, onEnter, onInputChange, onCancel, onClear, onMatchClick, r
         onMatchClick(filePath, match);
     };
 
+    const navigateResultsByKey = useCallback((key: string): boolean => {
+        if (!['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight', 'Enter'].includes(key)) {
+            return false;
+        }
+
+        if (navItems.length === 0) {
+            return true;
+        }
+
+        const currentIndex = Math.max(0, navItems.findIndex((item) => item.key === activeItemKey));
+        const current = navItems[currentIndex];
+
+        if (key === 'ArrowDown') {
+            const nextIndex = Math.min(navItems.length - 1, currentIndex + 1);
+            const next = navItems[nextIndex];
+            setActiveItemKey(next.key);
+            shouldAutoScrollRef.current = true;
+            return true;
+        }
+
+        if (key === 'ArrowUp') {
+            const prevIndex = Math.max(0, currentIndex - 1);
+            const prevItem = navItems[prevIndex];
+            setActiveItemKey(prevItem.key);
+            shouldAutoScrollRef.current = true;
+            return true;
+        }
+
+        if (key === 'ArrowLeft') {
+            if (!current) return true;
+            if (current.type === 'match') {
+                setActiveItemKey(`file:${current.filePath}`);
+                shouldAutoScrollRef.current = true;
+                return true;
+            }
+            setVisibleMatches((prev) => ({ ...prev, [current.filePath]: undefined }));
+            return true;
+        }
+
+        if (key === 'ArrowRight') {
+            if (!current) return true;
+            if (current.type === 'file') {
+                setVisibleMatches((prev) => ({ ...prev, [current.filePath]: new Set() }));
+                const firstMatch = firstMatchByFile.get(current.filePath);
+                if (firstMatch) {
+                    setActiveItemKey(firstMatch.key);
+                    shouldAutoScrollRef.current = true;
+                }
+            }
+            return true;
+        }
+
+        if (key === 'Enter') {
+            const selected = navItems[currentIndex];
+            if (!selected) return true;
+            if (selected.type === 'file') {
+                handleFileClick(selected.filePath);
+            } else {
+                setVisibleMatches((prev) => ({ ...prev, [selected.filePath]: new Set() }));
+                onMatchClick(selected.filePath, selected.match);
+                resultsRef.current?.blur();
+            }
+            return true;
+        }
+
+        return false;
+    }, [activeItemKey, firstMatchByFile, handleFileClick, navItems, onMatchClick]);
+
+    const handleResultsKeyDown = useCallback((event: React.KeyboardEvent<HTMLDivElement>) => {
+        if (event.key === 'Escape') {
+            event.preventDefault();
+            event.stopPropagation();
+            inputRef.current?.focus();
+            return;
+        }
+
+        const handled = navigateResultsByKey(event.key);
+        if (handled) {
+            event.preventDefault();
+            event.stopPropagation();
+        }
+    }, [navigateResultsByKey]);
+
+    const handleResultsMouseDown = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+        if (event.button !== 0) {
+            return;
+        }
+        resultsRef.current?.focus();
+    }, []);
+
     return (
         <div className="search-container">
             
             <div className="search-input-wrapper">
                 <textarea
                     className="search-input"
-                    value={input}
+                    value={inputValue}
                     onChange={handleInputChange}
                     onKeyDown={handleKeyDown}
                     ref={inputRef}
@@ -213,19 +368,19 @@ const Search = ({ id, onEnter, onInputChange, onCancel, onClear, onMatchClick, r
                 <div className="search-actions-group">
                 {searchEnded ? (
                     <>
-                        {input.trim() && (
+                        {inputValue.trim() && (
                             <button 
                                 className="search-button replay"
                                 onClick={() => {
-                                    searchPatternRef.current = input; // Save the pattern used for search
-                                    onEnter({ id: id, pattern: input });
+                                    searchPatternRef.current = inputValue; // Save the pattern used for search
+                                    onEnter({ id: id, pattern: inputValue });
                                 }}
                                 title="Replay search"
                             >
                                 <Icons.Refresh />
                             </button>
                         )}
-                        {(input.trim() || results.length > 0) && (
+                        {(inputValue.trim() || results.length > 0) && (
                             <button
                                 className="search-button"
                                 onClick={() => {
@@ -252,13 +407,38 @@ const Search = ({ id, onEnter, onInputChange, onCancel, onClear, onMatchClick, r
                 </div>
             </div>
 
-            <div className="search-results">
+            <div
+                ref={resultsRef}
+                className="search-results"
+                role="listbox"
+                tabIndex={0}
+                aria-label="Search results"
+                onKeyDown={handleResultsKeyDown}
+                onMouseDown={handleResultsMouseDown}
+            >
                 {results.length > 0 ? (
                     results.map((fileResult, index) => {
                         const isExpanded = !!visibleMatches[fileResult.file_path];
+                        const fileKey = `file:${fileResult.file_path}`;
                         return (
                         <div key={index} className="file-result">
-                            <p className="file-path active" onClick={() => handleFileClick(fileResult.file_path)}>
+                            <p
+                                ref={(el) => {
+                                    if (el) {
+                                        itemRefs.current.set(fileKey, el);
+                                    } else {
+                                        itemRefs.current.delete(fileKey);
+                                    }
+                                }}
+                                className="file-path"
+                                onClick={() => {
+                                    setActiveItemKey(fileKey);
+                                    handleFileClick(fileResult.file_path);
+                                }}
+                                role="option"
+                                aria-selected={activeItemKey === fileKey}
+                                data-active={activeItemKey === fileKey ? 'true' : 'false'}
+                            >
                                 <span className={`file-arrow ${isExpanded ? 'expanded' : ''}`}>▶</span>
                                 <span className="file-path-label" title={fileResult.display_path}>{fileResult.display_path}</span>
                                 <span className="file-match-badge">{fileResult.matches.length}</span>
@@ -266,13 +446,26 @@ const Search = ({ id, onEnter, onInputChange, onCancel, onClear, onMatchClick, r
                             {isExpanded && ( 
                                 <div className="matches">
                                     {fileResult.matches.map((match, matchIndex) => {
-                                        const matchKey = `${fileResult.file_path}:${match.line}:${match.column}:${matchIndex}`;
+                                        const matchKey = `match:${fileResult.file_path}:${match.line}:${match.column}:${matchIndex}`;
 
                                         return (
                                             <div key={matchKey} className="search-item"
-                                                onClick={() => handleMatchClick(fileResult.file_path, match)}
+                                                ref={(el) => {
+                                                    if (el) {
+                                                        itemRefs.current.set(matchKey, el);
+                                                    } else {
+                                                        itemRefs.current.delete(matchKey);
+                                                    }
+                                                }}
+                                                onClick={() => {
+                                                    setActiveItemKey(matchKey);
+                                                    handleMatchClick(fileResult.file_path, match);
+                                                }}
+                                                role="option"
+                                                aria-selected={activeItemKey === matchKey}
+                                                data-active={activeItemKey === matchKey ? 'true' : 'false'}
                                             >
-                                                <strong>{match.line + 1}</strong>
+                                                <strong>{match.line + 1} </strong>
                                                 <SearchPreview match={match} pattern={searchPatternRef.current} />
                                             </div>
                                         );

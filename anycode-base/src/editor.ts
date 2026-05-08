@@ -240,6 +240,15 @@ export class AnycodeEditor {
         return this.code.getContent();
     }
 
+    public getSelectedText(): string {
+        if (!this.selection || this.selection.isEmpty()) {
+            return '';
+        }
+
+        const [start, end] = this.selection.sorted();
+        return this.code.getIntervalContent2(start, end);
+    }
+
     public getTextLength(): number {
         return this.code.getContentLength();
     }

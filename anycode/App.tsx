@@ -269,6 +269,18 @@ const App: React.FC = () => {
                 e.preventDefault();
             }
 
+            if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'f') {
+                e.preventDefault();
+                const selectedText = editors.getActiveEditorSelectedText().trim();
+                layoutActionsRef.current?.ensurePanel('search');
+                if (selectedText) {
+                    search.setSearchInput(selectedText);
+                    search.startSearch(selectedText);
+                }
+                layout.requestPanelFocus('search');
+                return;
+            }
+
             if ((e.ctrlKey || e.metaKey) && e.key === 's') {
                 e.preventDefault();
                 if (editors.activeFileId) {
@@ -297,10 +309,12 @@ const App: React.FC = () => {
         editors.activeEditorPaneId,
         editors.activeFileId,
         editors.handleReferencesPeekKeyDown,
+        editors.getActiveEditorSelectedText,
         editors.redoCursor,
         editors.saveFile,
         editors.undoCursor,
         layout,
+        search,
     ]);
 
     const handleStartSpecificAgent = useCallback((agent: AcpAgent) => {
@@ -349,6 +363,9 @@ const App: React.FC = () => {
                 return (
                     <Search
                         id="search"
+                        focusRequestToken={layout.getFocusRequestToken('search')}
+                        inputValue={search.searchInput}
+                        onInputValueChange={search.setSearchInput}
                         onEnter={handleSearch}
                         onInputChange={search.cancelSearch}
                         onCancel={search.cancelSearch}
