@@ -258,6 +258,12 @@ impl GitManager {
         }
     }
 
+    pub fn refresh_status_cache(&mut self) -> Result<GitStatus> {
+        let status = self.status()?;
+        self.status_cache = status.clone();
+        Ok(status)
+    }
+
     pub fn check_status_changed_for_paths(&mut self, paths: &[PathBuf]) -> Option<GitStatusUpdate> {
         let repo = self.repo().ok()?;
         let repo_root = repo.workdir().unwrap_or(Path::new("."));
@@ -487,11 +493,20 @@ impl GitManager {
             .name()
             .context("Invalid branch reference name")?
             .to_string();
+        let target_commit = reference
+            .peel_to_commit()
+            .with_context(|| format!("Failed to resolve branch '{}' commit", branch))?;
+        let target_tree = target_commit
+            .tree()
+            .with_context(|| format!("Failed to resolve branch '{}' tree", branch))?;
 
+        repo.checkout_tree(
+            target_tree.as_object(),
+            Some(git2::build::CheckoutBuilder::new().safe()),
+        )
+        .with_context(|| format!("Failed to change branch to '{}'", branch))?;
         repo.set_head(&reference_name)
             .with_context(|| format!("Failed to set HEAD to '{}'", branch))?;
-        repo.checkout_head(Some(git2::build::CheckoutBuilder::new().safe()))
-            .with_context(|| format!("Failed to change branch to '{}'", branch))?;
 
         info!("Checked out branch {}", branch);
         Ok(())

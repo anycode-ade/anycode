@@ -100,8 +100,9 @@ pub async fn handle_git_checkout(
 ) {
     info!("Received git:checkout: {}", request.branch);
     let result = {
-        let git = state.git_manager.lock().await;
-        git.checkout_branch(&request.branch).map(|_| json!({}))
+        let mut git = state.git_manager.lock().await;
+        git.checkout_branch(&request.branch)
+            .and_then(|_| git.refresh_status_cache().map(|_| json!({})))
     };
     send_response(ack, result);
 }
