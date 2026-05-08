@@ -120,9 +120,10 @@ const App: React.FC = () => {
             terminals.reconnectTerminals();
             agents.reconnectToAcpAgents();
             git.fetchGitStatus();
+            git.fetchBranches();
         }
         wasConnectedRef.current = isConnected;
-    }, [isConnected, openFolder, terminals.reconnectTerminals, agents.reconnectToAcpAgents, git.fetchGitStatus]);
+    }, [isConnected, openFolder, terminals.reconnectTerminals, agents.reconnectToAcpAgents, git.fetchGitStatus, git.fetchBranches]);
 
     useEffect(() => {
         return () => {
@@ -362,8 +363,11 @@ const App: React.FC = () => {
                     <ChangesPanel
                         files={git.changedFiles}
                         branch={git.gitBranch}
+                        branches={git.branches}
+                        isSwitchingBranch={git.isSwitchingBranch}
                         onFileClick={handleOpenFileDiff}
                         onRefresh={git.fetchGitStatus}
+                        onBranchChange={git.checkoutBranch}
                         onCommit={git.commit}
                         onPush={git.push}
                         onPull={git.pull}
@@ -435,6 +439,7 @@ const App: React.FC = () => {
 
         if (panelId === 'changes') {
             git.fetchGitStatus();
+            git.fetchBranches();
             return;
         }
         if (panelId === 'editor') {
@@ -449,7 +454,7 @@ const App: React.FC = () => {
         if (panelId === 'terminal') {
             terminalPanes.registerPane(panelKey);
         }
-    }, [agentPanes, editors, git.fetchGitStatus, layout, terminalPanes]);
+    }, [agentPanes, editors, git.fetchGitStatus, git.fetchBranches, layout, terminalPanes]);
 
     const handlePanelRemoved = useCallback((panelId: PanelId, panelKey: string) => {
         layout.handlePanelRemoved(panelId, panelKey);

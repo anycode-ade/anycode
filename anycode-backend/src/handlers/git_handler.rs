@@ -20,6 +20,11 @@ pub struct GitRevertRequest {
     pub path: String,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct GitCheckoutRequest {
+    pub branch: String,
+}
+
 pub async fn handle_git_status(ack: AckSender, state: State<AppState>) {
     info!("Received git:status");
     let result = {
@@ -75,6 +80,28 @@ pub async fn handle_git_pull(ack: AckSender, state: State<AppState>) {
     let result = {
         let git = state.git_manager.lock().await;
         git.pull().map(|r| r.to_json())
+    };
+    send_response(ack, result);
+}
+
+pub async fn handle_git_branches(ack: AckSender, state: State<AppState>) {
+    info!("Received git:branches");
+    let result = {
+        let git = state.git_manager.lock().await;
+        git.list_branches().map(|branches| json!({ "branches": branches }))
+    };
+    send_response(ack, result);
+}
+
+pub async fn handle_git_checkout(
+    Data(request): Data<GitCheckoutRequest>,
+    ack: AckSender,
+    state: State<AppState>,
+) {
+    info!("Received git:checkout: {}", request.branch);
+    let result = {
+        let git = state.git_manager.lock().await;
+        git.checkout_branch(&request.branch).map(|_| json!({}))
     };
     send_response(ack, result);
 }

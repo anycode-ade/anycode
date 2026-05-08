@@ -96,6 +96,12 @@ impl PullResult {
     }
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+pub struct GitBranchInfo {
+    pub name: String,
+    pub is_current: bool,
+}
+
 pub struct GitManager {
     workdir: PathBuf,
     status_cache: GitStatus,
@@ -437,6 +443,57 @@ impl GitManager {
         remote.push(&[&refspec], Some(&mut push_opts))?;
 
         info!("Pushed to origin/{}", branch_name);
+        Ok(())
+    }
+
+    pub fn list_branches(&self) -> Result<Vec<GitBranchInfo>> {
+        let repo = self.repo()?;
+        let current_branch = Self::branch_name(&repo);
+        let mut branches = Vec::new();
+
+        for branch_result in repo.branches(Some(git2::BranchType::Local))? {
+            let (branch, _) = branch_result?;
+            if let Some(name) = branch.name()? {
+                branches.push(GitBranchInfo {
+                    name: name.to_string(),
+                    is_current: name == current_branch,
+                });
+            }
+        }
+
+        branches.sort_by(|a, b| a.name.cmp(&b.name));
+        Ok(branches)
+    }
+
+    pub fn checkout_branch(&self, branch: &str) -> Result<()> {
+        let repo = self.repo()?;
+        let mut status_opts = StatusOptions::new();
+        status_opts
+            .include_untracked(true)
+            .recurse_untracked_dirs(true)
+            .include_ignored(false);
+        let statuses = repo.statuses(Some(&mut status_opts))?;
+        if !statuses.is_empty() {
+            anyhow::bail!(
+                "Failed to change branch\nGit command failed:\nYou have local changes. Please commit your changes or stash them before you switch branches."
+            );
+        }
+
+        let local_branch = repo
+            .find_branch(branch, git2::BranchType::Local)
+            .with_context(|| format!("Local branch '{}' not found", branch))?;
+        let reference = local_branch.into_reference();
+        let reference_name = reference
+            .name()
+            .context("Invalid branch reference name")?
+            .to_string();
+
+        repo.set_head(&reference_name)
+            .with_context(|| format!("Failed to set HEAD to '{}'", branch))?;
+        repo.checkout_head(Some(git2::build::CheckoutBuilder::new().safe()))
+            .with_context(|| format!("Failed to change branch to '{}'", branch))?;
+
+        info!("Checked out branch {}", branch);
         Ok(())
     }
 

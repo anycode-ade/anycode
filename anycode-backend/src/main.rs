@@ -88,6 +88,8 @@ async fn on_connect(socket: SocketRef, _state: State<AppState>) {
     socket.on("git:commit", handle_git_commit);
     socket.on("git:push", handle_git_push);
     socket.on("git:pull", handle_git_pull);
+    socket.on("git:branches", handle_git_branches);
+    socket.on("git:checkout", handle_git_checkout);
     socket.on("git:revert", handle_git_revert);
 
     socket.on_disconnect(on_disconnect)

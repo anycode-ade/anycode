@@ -14,8 +14,11 @@ export interface ChangedFile {
 interface ChangesPanelProps {
     files: ChangedFile[];
     branch: string;
+    branches: { name: string; is_current: boolean }[];
+    isSwitchingBranch: boolean;
     onFileClick: (path: string) => void;
     onRefresh: () => void;
+    onBranchChange: (branch: string) => Promise<boolean>;
     onCommit: (files: string[], message: string) => Promise<boolean>;
     onPush: () => void;
     onPull: () => void;
@@ -39,8 +42,11 @@ const getDisplayName = (path: string): string => {
 export const ChangesPanel: React.FC<ChangesPanelProps> = ({ 
     files, 
     branch,
+    branches,
+    isSwitchingBranch,
     onFileClick,
     onRefresh,
+    onBranchChange,
     onCommit,
     onPush,
     onPull,
@@ -134,6 +140,15 @@ export const ChangesPanel: React.FC<ChangesPanelProps> = ({
         }
     };
 
+    const handleBranchChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
+        const nextBranch = e.target.value;
+        if (!nextBranch || nextBranch === branch) {
+            return;
+        }
+        await onBranchChange(nextBranch);
+    };
+    const isCurrentBranchInList = branches.some((item) => item.name === branch);
+
     return (
         <div className="changes-panel">
             {/*<div className="changes-panel-title">Changes</div>*/}
@@ -152,8 +167,26 @@ export const ChangesPanel: React.FC<ChangesPanelProps> = ({
 
             <div className="changes-header">
                 <div className="changes-title">
-                    <span className="changes-branch-icon"></span>
-                    <span className="changes-branch">{branch || 'HEAD'}</span>
+                    <span className="changes-branch-icon"><Icons.Git /></span>
+                    <select
+                        className="changes-branch-select"
+                        value={isCurrentBranchInList ? branch : ''}
+                        onChange={handleBranchChange}
+                        disabled={isSwitchingBranch || branches.length === 0}
+                        title={isSwitchingBranch ? 'Switching branch...' : 'Select branch'}
+                        aria-label="Select branch"
+                    >
+                        {branches.length === 0 || !isCurrentBranchInList ? (
+                            <option value="">{branch || 'HEAD'}</option>
+                        ) : null}
+                        {branches.length > 0 ? (
+                            branches.map((item) => (
+                                <option key={item.name} value={item.name}>
+                                    {item.name}
+                                </option>
+                            ))
+                        ) : null}
+                    </select>
                 </div>
                 <div className="changes-actions-right">
                     <button 

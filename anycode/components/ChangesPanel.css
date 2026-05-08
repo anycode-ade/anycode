@@ -20,7 +20,7 @@
     overflow: scroll;
     align-items: center;
     justify-content: space-between;
-    padding: 6px 6px;
+    padding: 10px;
 }
 
 .changes-actions-right {
@@ -35,12 +35,54 @@
 }
 
 .changes-branch-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    height: 14px;
     color: #888;
-    font-size: 14px;
+}
+
+.changes-branch-icon svg {
+    width: 14px;
+    height: 14px;
+    display: block;
 }
 
 .changes-branch {
     font-weight: 500;
+}
+
+.changes-branch-select {
+    display: inline-block;
+    width: fit-content;
+    max-width: 180px;
+    min-width: 0;
+    flex: 0 0 auto;
+    field-sizing: content;
+    appearance: none;
+    -webkit-appearance: none;
+    border: none;
+    background-color: transparent;
+    color: #e0e0e0;
+    font-size: 12px;
+    border-radius: 0;
+    padding: 2px 18px 2px 0;
+    min-height: 24px;
+    outline: none;
+    cursor: pointer;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    overflow: hidden;
+}
+
+.changes-branch-select:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
+}
+
+.changes-branch-select:hover:not(:disabled) {
+    background-color: transparent;
 }
 
 .changes-action-btn {
@@ -81,6 +123,7 @@
 }
 
 .changes-refresh-btn {
+    font-size: 16px;
     font-size: 16px;
 }
 

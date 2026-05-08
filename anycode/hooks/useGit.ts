@@ -28,9 +28,16 @@ type GitStatusPatchUpdate = {
 
 type GitStatusUpdate = GitStatusFullUpdate | GitStatusPatchUpdate;
 
+type GitBranch = {
+    name: string;
+    is_current: boolean;
+};
+
 export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
     const [changedFiles, setChangedFiles] = useState<ChangedFile[]>([]);
     const [gitBranch, setGitBranch] = useState<string>('');
+    const [branches, setBranches] = useState<GitBranch[]>([]);
+    const [isSwitchingBranch, setIsSwitchingBranch] = useState(false);
 
     const fetchGitStatus = useCallback(() => {
         if (!wsRef.current || !isConnected) return;
@@ -42,6 +49,18 @@ export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
             } else {
                 setChangedFiles([]);
                 setGitBranch('');
+            }
+        });
+    }, [wsRef, isConnected]);
+
+    const fetchBranches = useCallback(() => {
+        if (!wsRef.current || !isConnected) return;
+
+        wsRef.current.emit('git:branches', {}, (response: any) => {
+            if (response.success) {
+                setBranches(response.branches || []);
+            } else {
+                setBranches([]);
             }
         });
     }, [wsRef, isConnected]);
@@ -140,14 +159,40 @@ export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
         });
     }, [wsRef, isConnected, fetchGitStatus]);
 
+    const checkoutBranch = useCallback((branch: string): Promise<boolean> => {
+        return new Promise((resolve) => {
+            if (!wsRef.current || !isConnected || !branch) {
+                resolve(false);
+                return;
+            }
+
+            setIsSwitchingBranch(true);
+            wsRef.current.emit('git:checkout', { branch }, (response: any) => {
+                setIsSwitchingBranch(false);
+                if (response.success) {
+                    fetchGitStatus();
+                    fetchBranches();
+                    resolve(true);
+                } else {
+                    alert(response.error || 'Failed to change branch');
+                    resolve(false);
+                }
+            });
+        });
+    }, [wsRef, isConnected, fetchGitStatus, fetchBranches]);
+
     return {
         changedFiles,
         gitBranch,
+        branches,
+        isSwitchingBranch,
         fetchGitStatus,
+        fetchBranches,
         handleGitStatusUpdate,
         commit,
         push,
         pull,
         revert,
+        checkoutBranch,
     };
 };
