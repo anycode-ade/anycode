@@ -28,6 +28,7 @@ pub struct SocketData {
     pub opened_files: HashSet<String>,
     pub opened_dirs: HashSet<String>,
     pub search_cancel: Option<CancellationToken>,
+    pub search_pattern: Option<String>,
 }
 
 #[derive(Clone)]

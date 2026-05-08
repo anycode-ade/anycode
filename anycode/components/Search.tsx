@@ -1,12 +1,9 @@
 import { useState, useRef, useEffect } from "react";
+import { Icons } from "./Icons";
 import "./Search.css";
 import type { SearchResult, SearchMatch } from "../types";
 
-const ReplayIcon = () => (
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z" fill="currentColor"/>
-    </svg>
-);
+const SEARCH_INPUT_STORAGE_KEY = "searchInput";
 
 const StopIcon = () => (
     <svg width="16" height="16" viewBox="0 0 20 20" fill="none">
@@ -71,14 +68,19 @@ const SearchPreview = ({ match, pattern, maxLength = 100 }: SearchPreviewProps) 
 interface SearchProps {
     id: string;
     onEnter: (data: { id: string; pattern: string }) => void;
+    onInputChange?: () => void;
     onCancel: () => void;
+    onClear?: () => void;
     onMatchClick: (filePath: string, match: SearchMatch) => void;
     results: SearchResult[];
     searchEnded: boolean;
 }
 
-const Search = ({ id, onEnter, onCancel, onMatchClick, results, searchEnded }: SearchProps) => {
-    const [input, setInput] = useState("");
+const Search = ({ id, onEnter, onInputChange, onCancel, onClear, onMatchClick, results, searchEnded }: SearchProps) => {
+    const [input, setInput] = useState(() => {
+        if (typeof window === "undefined") return "";
+        return localStorage.getItem(SEARCH_INPUT_STORAGE_KEY) ?? "";
+    });
     const searchPatternRef = useRef("");
     const [visibleMatches, setVisibleMatches] = useState<Record<string, Set<string> | undefined>>({});
     const [elapsedTime, setElapsedTime] = useState<number>(0);
@@ -125,8 +127,26 @@ const Search = ({ id, onEnter, onCancel, onMatchClick, results, searchEnded }: S
         }
     }, [input]);
 
+    useEffect(() => {
+        const el = inputRef.current;
+        if (!el || !input) return;
+        // Place caret at the end for restored value after mount/autofocus.
+        const end = input.length;
+        el.setSelectionRange(end, end);
+    }, []);
+
+    useEffect(() => {
+        if (typeof window === "undefined") return;
+        if (input) {
+            localStorage.setItem(SEARCH_INPUT_STORAGE_KEY, input);
+        } else {
+            localStorage.removeItem(SEARCH_INPUT_STORAGE_KEY);
+        }
+    }, [input]);
+
     const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
         setInput(e.target.value);
+        onInputChange?.();
     };
 
     const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -151,6 +171,9 @@ const Search = ({ id, onEnter, onCancel, onMatchClick, results, searchEnded }: S
         (sum, fileResult) => sum + fileResult.matches.length,
         0
     );
+    const totalFiles = results.length;
+    const elapsedMs = Math.max(0, Math.round(elapsedTime * 1000));
+    const hasQuery = input.trim().length > 0 || results.length > 0;
 
     const handleFileClick = (filePath: string) => {
         // Toggle the visibility of matches for the clicked file
@@ -162,13 +185,6 @@ const Search = ({ id, onEnter, onCancel, onMatchClick, results, searchEnded }: S
 
     const handleMatchClick = (filePath: string, match: SearchMatch) => {
         onMatchClick(filePath, match);
-    };
-
-    const formatElapsedTime = (seconds: number): string => {
-        if (seconds < 1) {
-            return `${(seconds * 1000).toFixed(0)}ms`;
-        }
-        return `${seconds.toFixed(2)}s`;
     };
 
     return (
@@ -189,23 +205,38 @@ const Search = ({ id, onEnter, onCancel, onMatchClick, results, searchEnded }: S
             </div>
 
             <div className="search-summary">
-                <span>{totalMatches} matches</span>
-                {elapsedTime > 0 && (
-                    <span className="search-elapsed">{formatElapsedTime(elapsedTime)}</span>
+                {hasQuery ? (
+                    <span className="search-summary-text">{`${totalMatches} matches · ${totalFiles} files · ${elapsedMs} ms`}</span>
+                ) : (
+                    <span className="search-summary-text search-summary-text-empty"></span>
                 )}
+                <div className="search-actions-group">
                 {searchEnded ? (
-                    input.trim() && (
-                        <button 
-                            className="search-button replay"
-                            onClick={() => {
-                                searchPatternRef.current = input; // Save the pattern used for search
-                                onEnter({ id: id, pattern: input });
-                            }}
-                            title="Replay search"
-                        >
-                            <ReplayIcon />
-                        </button>
-                    )
+                    <>
+                        {input.trim() && (
+                            <button 
+                                className="search-button replay"
+                                onClick={() => {
+                                    searchPatternRef.current = input; // Save the pattern used for search
+                                    onEnter({ id: id, pattern: input });
+                                }}
+                                title="Replay search"
+                            >
+                                <Icons.Refresh />
+                            </button>
+                        )}
+                        {(input.trim() || results.length > 0) && (
+                            <button
+                                className="search-button"
+                                onClick={() => {
+                                    onClear?.();
+                                }}
+                                title="Clear results"
+                            >
+                                ✕
+                            </button>
+                        )}
+                    </>
                 ) : (
                     <>
                         <button 
@@ -218,6 +249,7 @@ const Search = ({ id, onEnter, onCancel, onMatchClick, results, searchEnded }: S
                         <span className="search-loading"><span>.</span><span>.</span><span>.</span></span>
                     </>
                 )}
+                </div>
             </div>
 
             <div className="search-results">
@@ -228,7 +260,8 @@ const Search = ({ id, onEnter, onCancel, onMatchClick, results, searchEnded }: S
                         <div key={index} className="file-result">
                             <p className="file-path active" onClick={() => handleFileClick(fileResult.file_path)}>
                                 <span className={`file-arrow ${isExpanded ? 'expanded' : ''}`}>▶</span>
-                                {fileResult.matches.length}: {fileResult.display_path}
+                                <span className="file-path-label" title={fileResult.display_path}>{fileResult.display_path}</span>
+                                <span className="file-match-badge">{fileResult.matches.length}</span>
                             </p>
                             {isExpanded && ( 
                                 <div className="matches">
@@ -239,7 +272,7 @@ const Search = ({ id, onEnter, onCancel, onMatchClick, results, searchEnded }: S
                                             <div key={matchKey} className="search-item"
                                                 onClick={() => handleMatchClick(fileResult.file_path, match)}
                                             >
-                                                <strong>{match.line + 1}:{match.column + 1} </strong>
+                                                <strong>{match.line + 1}</strong>
                                                 <SearchPreview match={match} pattern={searchPatternRef.current} />
                                             </div>
                                         );

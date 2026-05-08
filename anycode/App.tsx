@@ -89,7 +89,7 @@ const App: React.FC = () => {
             ['watcher:edits', editors.handleWatcherEdits],
             ['watcher:create', fileTree.handleWatcherCreate],
             ['watcher:remove', fileTree.handleWatcherRemove],
-            ['git:status-update', git.handleGitStatusUpdate],
+            ['changes:update', git.handleGitStatusUpdate],
             ['acp:message', agents.handleAcpMessage],
             ['acp:history', agents.handleAcpHistory],
             ['search:result', search.handleSearchResult],
@@ -174,6 +174,7 @@ const App: React.FC = () => {
     }, [terminals.terminals]);
 
     const handleSearch = ({ pattern }: { id: string; pattern: string }) => {
+        if (!isConnected) return;
         search.startSearch(pattern);
     };
 
@@ -348,7 +349,9 @@ const App: React.FC = () => {
                     <Search
                         id="search"
                         onEnter={handleSearch}
+                        onInputChange={search.cancelSearch}
                         onCancel={search.cancelSearch}
+                        onClear={search.clearResults}
                         results={search.searchResults}
                         searchEnded={search.searchEnded}
                         onMatchClick={handleSearchResultClick}

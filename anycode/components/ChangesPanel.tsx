@@ -7,6 +7,8 @@ const COMMIT_MESSAGE_STORAGE_KEY = 'commitMessage';
 export interface ChangedFile {
     path: string;
     status: 'modified' | 'added' | 'deleted' | 'renamed' | 'conflict';
+    added?: number;
+    removed?: number;
 }
 
 interface ChangesPanelProps {
@@ -48,7 +50,7 @@ export const ChangesPanel: React.FC<ChangesPanelProps> = ({
         if (typeof window === 'undefined') return '';
         return localStorage.getItem(COMMIT_MESSAGE_STORAGE_KEY) ?? '';
     });
-    const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
+    const [excludedFiles, setExcludedFiles] = useState<Set<string>>(new Set());
 
     useEffect(() => {
         if (typeof window === 'undefined') return;
@@ -59,42 +61,25 @@ export const ChangesPanel: React.FC<ChangesPanelProps> = ({
         }
     }, [message]);
 
-    // Initialize selection behavior
+    // Sync exclude set with current files (remove deleted files)
     useEffect(() => {
-        // If we have files but no selection, select all (initial load scenario)
-        // We only do this if the selection is empty to avoid overwriting user choice
-        // But we need to handle the case where user deliberately deselected all.
-        // Let's just add any *new* files to selection by default?
-        // Simpler approach: On mount/files change, ensure we track all files.
-        // For now: Just default select all on first load of files.
-    }, []);
-
-    // Sync selection with current files (remove deleted files from selection)
-    useEffect(() => {
-        setSelectedFiles(prev => {
-            const newSelection = new Set(prev);
+        setExcludedFiles(prev => {
+            const newExcluded = new Set(prev);
             const currentPaths = new Set(files.map(f => f.path));
             
-            // Remove files that are no longer present
-            for (const path of newSelection) {
+            for (const path of newExcluded) {
                 if (!currentPaths.has(path)) {
-                    newSelection.delete(path);
+                    newExcluded.delete(path);
                 }
             }
-            
-            // If previous selection was empty (or we want to default to all), select all
-            // This is a bit aggressive, maybe only if size was 0?
-            if (prev.size === 0 && files.length > 0) {
-                return new Set(files.map(f => f.path));
-            }
-            
-            return newSelection;
+
+            return newExcluded;
         });
     }, [files]);
 
-    const toggleFile = (path: string, e: React.MouseEvent) => {
+    const toggleExcludedFile = (path: string, e: React.MouseEvent) => {
         e.stopPropagation();
-        setSelectedFiles(prev => {
+        setExcludedFiles(prev => {
             const next = new Set(prev);
             if (next.has(path)) {
                 next.delete(path);
@@ -105,28 +90,66 @@ export const ChangesPanel: React.FC<ChangesPanelProps> = ({
         });
     };
 
+    const filesToCommit = files
+        .map((file) => file.path)
+        .filter((path) => !excludedFiles.has(path));
+    const totalAdded = files.reduce((acc, file) => acc + (file.added ?? 0), 0);
+    const totalRemoved = files.reduce((acc, file) => acc + (file.removed ?? 0), 0);
+
     const handleCommit = async () => {
-        if (message.trim() && selectedFiles.size > 0) {
-            const success = await onCommit(Array.from(selectedFiles), message);
+        if (message.trim() && filesToCommit.length > 0) {
+            const success = await onCommit(filesToCommit, message);
             if (success) {
                 setMessage('');
             }
         }
     };
 
-    const isAllSelected = files.length > 0 && selectedFiles.size === files.length;
-    
-    const toggleAll = () => {
-        if (isAllSelected) {
-            setSelectedFiles(new Set());
-        } else {
-            setSelectedFiles(new Set(files.map(f => f.path)));
+    const isAllExcluded = files.length > 0 && excludedFiles.size === files.length;
+
+    const toggleAllExcluded = () => {
+        if (isAllExcluded) {
+            setExcludedFiles(new Set());
+            return;
+        }
+
+        setExcludedFiles(new Set(files.map((file) => file.path)));
+    };
+
+    const handleRevertAll = () => {
+        if (files.length === 0) {
+            return;
+        }
+
+        const confirmed = window.confirm(
+            `Revert all changes for ${files.length} file(s)? This cannot be undone.`
+        );
+
+        if (!confirmed) {
+            return;
+        }
+
+        for (const file of files) {
+            onRevert(file.path);
         }
     };
 
     return (
         <div className="changes-panel">
             {/*<div className="changes-panel-title">Changes</div>*/}
+            <div className="changes-message-container">
+                <div className="changes-message-mirror" aria-hidden="true">
+                    {message + '\u200b'}
+                </div>
+                <textarea 
+                    className="changes-message-input"
+                    placeholder="Message..."
+                    value={message}
+                    onChange={(e) => setMessage(e.target.value)}
+                    rows={1}
+                />
+            </div>
+
             <div className="changes-header">
                 <div className="changes-title">
                     <span className="changes-branch-icon"></span>
@@ -136,7 +159,7 @@ export const ChangesPanel: React.FC<ChangesPanelProps> = ({
                     <button 
                         className="changes-action-btn changes-action-btn-icon"
                         onClick={handleCommit}
-                        disabled={!message.trim() || selectedFiles.size === 0}
+                        disabled={!message.trim() || filesToCommit.length === 0}
                         title="Commit"
                         aria-label="Commit"
                     >
@@ -168,32 +191,42 @@ export const ChangesPanel: React.FC<ChangesPanelProps> = ({
                     </button>
                 </div>
             </div>
-
-            <div className="changes-message-container">
-                <div className="changes-message-mirror" aria-hidden="true">
-                    {message + '\u200b'}
-                </div>
-                <textarea 
-                    className="changes-message-input"
-                    placeholder="Message..."
-                    value={message}
-                    onChange={(e) => setMessage(e.target.value)}
-                    rows={1}
-                />
-            </div>
             
             <div className="changes-list-header">
                 <div className="changes-list-title">
-                     <span className="changes-count">
+                    <span className="changes-count">
                         {files.length} changed
                     </span>
                 </div>
-                <div 
-                    className={`changes-checkbox ${isAllSelected ? 'checked' : ''}`} 
-                    onClick={toggleAll}
-                    title={isAllSelected ? 'Unselect All' : 'Select All'}
-                >
-                    {isAllSelected && '✓'}
+                <div className="changes-list-header-right">
+                    {(totalAdded > 0 || totalRemoved > 0) && (
+                        <span className="changes-list-stats">
+                            {totalAdded > 0 && (
+                                <span className="changes-stat-added">+{totalAdded}</span>
+                            )}
+                            {totalRemoved > 0 && (
+                                <span className="changes-stat-removed">-{totalRemoved}</span>
+                            )}
+                        </span>
+                    )}
+                    <div className="changes-list-header-actions">
+                        <button
+                            className="changes-revert-btn changes-revert-all-btn"
+                            onClick={handleRevertAll}
+                            title="Revert All Changes"
+                            aria-label="Revert All Changes"
+                        >
+                            ↩
+                        </button>
+                        <button
+                            className={`changes-exclude-btn changes-exclude-all-btn ${isAllExcluded ? 'excluded' : ''}`}
+                            onClick={toggleAllExcluded}
+                            title={isAllExcluded ? 'Include all in commit' : 'Exclude all from commit'}
+                            aria-label={isAllExcluded ? 'Include all in commit' : 'Exclude all from commit'}
+                        >
+                            {isAllExcluded ? '+' : '−'}
+                        </button>
+                    </div>
                 </div>
             </div>
 
@@ -206,37 +239,55 @@ export const ChangesPanel: React.FC<ChangesPanelProps> = ({
                     files.map((file) => (
                         <div 
                             key={file.path}
-                            className={`changes-item ${selectedFiles.has(file.path) ? 'selected' : ''}`}
+                            className={`changes-item ${excludedFiles.has(file.path) ? 'excluded' : ''}`}
                             onClick={() => onFileClick(file.path)}
                         >
                             <div className="changes-file-info">
-                                <span
-                                    className={`changes-filename ${statusTextColors[file.status]}`}
-                                    title={file.path}
-                                >
-                                    {getDisplayName(file.path)}
-                                </span>
+                                <div className="changes-file-main">
+                                    <span
+                                        className={`changes-filename ${statusTextColors[file.status]}`}
+                                        title={file.path}
+                                    >
+                                        {getDisplayName(file.path)}
+                                    </span>
+                                </div>
                             </div>
-                            <button
-                                className="changes-revert-btn"
-                                onClick={(e) => {
+                            <div className="changes-file-meta">
+                                <div className="changes-item-actions">
+                                    <button
+                                        className="changes-revert-btn"
+                                        onClick={(e) => {
                                     e.stopPropagation();
                                     const confirmed = window.confirm(
-                                        `Discard changes for "${file.path}"? This cannot be undone.`
+                                        `Revert changes for "${file.path}"? This cannot be undone.`
                                     );
                                     if (confirmed) {
                                         onRevert(file.path);
                                     }
                                 }}
-                                title="Discard Changes"
+                                title="Revert Changes"
                             >
                                 ↩
                             </button>
-                            <div 
-                                className={`changes-checkbox ${selectedFiles.has(file.path) ? 'checked' : ''}`}
-                                onClick={(e) => toggleFile(file.path, e)}
-                            >
-                                {selectedFiles.has(file.path) && '✓'}
+                                    <button
+                                        className={`changes-exclude-btn ${excludedFiles.has(file.path) ? 'excluded' : ''}`}
+                                        onClick={(e) => toggleExcludedFile(file.path, e)}
+                                        title={excludedFiles.has(file.path) ? 'Include in commit' : 'Exclude from commit'}
+                                        aria-label={excludedFiles.has(file.path) ? 'Include in commit' : 'Exclude from commit'}
+                                    >
+                                        {excludedFiles.has(file.path) ? '+' : '−'}
+                                    </button>
+                                </div>
+                                {(file.added ?? 0) > 0 || (file.removed ?? 0) > 0 ? (
+                                    <span className="changes-file-stats">
+                                        {(file.added ?? 0) > 0 && (
+                                            <span className="changes-stat-added">+{file.added}</span>
+                                        )}
+                                        {(file.removed ?? 0) > 0 && (
+                                            <span className="changes-stat-removed">-{file.removed}</span>
+                                        )}
+                                    </span>
+                                ) : null}
                             </div>
                         </div>
                     ))

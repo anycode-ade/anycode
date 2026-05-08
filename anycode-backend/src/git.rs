@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use git2::{Repository, Status, StatusOptions};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use tracing::info;
 
@@ -15,10 +16,13 @@ pub enum FileStatus {
     Conflict,
 }
 
+
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct GitFileStatus {
     pub path: String,
     pub status: FileStatus,
+    pub added: usize,
+    pub removed: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -30,9 +34,40 @@ pub struct GitStatus {
 impl GitStatus {
     pub fn to_json(&self) -> Value {
         json!({
+            "kind": "full",
             "files": self.files,
             "branch": self.branch
         })
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+pub struct GitStatusPatchFile {
+    pub path: String,
+    pub status: String,
+    pub added: usize,
+    pub removed: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GitStatusUpdate {
+    Full(GitStatus),
+    Patch {
+        branch: String,
+        files: Vec<GitStatusPatchFile>,
+    },
+}
+
+impl GitStatusUpdate {
+    pub fn to_json(&self) -> Value {
+        match self {
+            Self::Full(status) => status.to_json(),
+            Self::Patch { branch, files } => json!({
+                "kind": "patch",
+                "branch": branch,
+                "files": files,
+            }),
+        }
     }
 }
 
@@ -79,7 +114,10 @@ impl GitManager {
     }
 
     /// Check if a path should be ignored (in .git or gitignored)
-    pub fn should_ignore(&self, path_str: &str) -> bool {
+    pub fn should_ignore(&self, path: &Path) -> bool {
+        let path_str = path.to_string_lossy();
+        let path_str = path_str.as_ref();
+
         // Skip .git directory
         if path_str.contains("/.git/") || path_str.ends_with("/.git") {
             return true;
@@ -107,15 +145,55 @@ impl GitManager {
         false
     }
 
+    fn collect_numstat(repo: &Repository) -> Result<HashMap<String, (usize, usize)>> {
+        let mut opts = git2::DiffOptions::new();
+        opts.include_untracked(true)
+            .recurse_untracked_dirs(true)
+            .include_typechange(true);
+
+        let head_tree = repo
+            .head()
+            .ok()
+            .and_then(|head| head.peel_to_tree().ok());
+
+        let diff = repo.diff_tree_to_workdir_with_index(head_tree.as_ref(), Some(&mut opts))?;
+
+        let mut numstat_by_path: HashMap<String, (usize, usize)> = HashMap::new();
+
+        diff.foreach(
+            &mut |_delta, _progress| true,
+            None,
+            None,
+            Some(&mut |delta, _hunk, line| {
+                let Some(path) = delta
+                    .new_file()
+                    .path()
+                    .or_else(|| delta.old_file().path())
+                    .map(|p| p.to_string_lossy().to_string())
+                else {
+                    return true;
+                };
+
+                let entry = numstat_by_path.entry(path).or_insert((0, 0));
+                match line.origin() {
+                    '+' => entry.0 += 1,
+                    '-' => entry.1 += 1,
+                    _ => {}
+                }
+                true
+            }),
+        )?;
+
+        Ok(numstat_by_path)
+    }
+
     /// Get current git status
     pub fn status(&self) -> Result<GitStatus> {
         let repo = self.repo()?;
         let repo_root = repo.workdir().unwrap_or(Path::new("."));
+        let numstat_by_path = Self::collect_numstat(&repo)?;
 
-        let branch = repo
-            .head()
-            .map(|h| h.shorthand().unwrap_or("HEAD").to_string())
-            .unwrap_or_else(|_| "HEAD".to_string());
+        let branch = Self::branch_name(&repo);
 
         let mut opts = StatusOptions::new();
         opts.include_untracked(true)
@@ -128,30 +206,21 @@ impl GitManager {
 
         for entry in statuses.iter() {
             let relative_path = entry.path().unwrap_or("");
-            let status = entry.status();
-
-            let file_status = if status.contains(Status::WT_NEW)
-                || status.contains(Status::INDEX_NEW)
-            {
-                FileStatus::Added
-            } else if status.contains(Status::WT_DELETED) || status.contains(Status::INDEX_DELETED)
-            {
-                FileStatus::Deleted
-            } else if status.contains(Status::WT_MODIFIED)
-                || status.contains(Status::INDEX_MODIFIED)
-            {
-                FileStatus::Modified
-            } else if status.contains(Status::WT_RENAMED) || status.contains(Status::INDEX_RENAMED)
-            {
-                FileStatus::Renamed
-            } else {
-                continue;
-            };
-
-            files.push(GitFileStatus {
-                path: repo_root.join(relative_path).to_string_lossy().to_string(),
-                status: file_status,
-            });
+            if let Some(file_status) = Self::status_from_entry(
+                repo_root,
+                relative_path,
+                entry.status(),
+                numstat_by_path
+                    .get(relative_path)
+                    .map(|(added, _)| *added)
+                    .unwrap_or(0),
+                numstat_by_path
+                    .get(relative_path)
+                    .map(|(_, removed)| *removed)
+                    .unwrap_or(0),
+            ) {
+                files.push(file_status);
+            }
         }
 
         info!(
@@ -181,6 +250,78 @@ impl GitManager {
         } else {
             None
         }
+    }
+
+    pub fn check_status_changed_for_paths(&mut self, paths: &[PathBuf]) -> Option<GitStatusUpdate> {
+        let repo = self.repo().ok()?;
+        let repo_root = repo.workdir().unwrap_or(Path::new("."));
+        let branch = Self::branch_name(&repo);
+
+        if self.status_cache.branch != branch {
+            let full = self.status().ok()?;
+            if self.status_cache != full {
+                self.status_cache = full.clone();
+                return Some(GitStatusUpdate::Full(full));
+            }
+            return None;
+        }
+
+        let mut patch_files: Vec<GitStatusPatchFile> = Vec::new();
+
+        for path in paths {
+            let Some(relative_path) = self.to_repo_relative_path(path, repo_root) else {
+                let full = self.status().ok()?;
+                if self.status_cache != full {
+                    self.status_cache = full.clone();
+                    return Some(GitStatusUpdate::Full(full));
+                }
+                return None;
+            };
+            if relative_path.is_empty() {
+                continue;
+            }
+
+            let abs_path = repo_root.join(&relative_path).to_string_lossy().to_string();
+            let next_file = self.status_for_relative_path(&repo, &relative_path).ok()?;
+            let prev_index = self.status_cache.files.iter().position(|f| f.path == abs_path);
+            let prev_file = prev_index.and_then(|idx| self.status_cache.files.get(idx).cloned());
+
+            if prev_file == next_file {
+                continue;
+            }
+
+            if let Some(idx) = prev_index {
+                self.status_cache.files.remove(idx);
+            }
+            if let Some(file) = next_file.clone() {
+                self.status_cache.files.push(file);
+            }
+
+            match next_file {
+                Some(file) => patch_files.push(GitStatusPatchFile {
+                    path: file.path,
+                    status: Self::status_to_str(file.status).to_string(),
+                    added: file.added,
+                    removed: file.removed,
+                }),
+                None => patch_files.push(GitStatusPatchFile {
+                    path: abs_path,
+                    status: "removed".to_string(),
+                    added: 0,
+                    removed: 0,
+                }),
+            }
+        }
+
+        if patch_files.is_empty() {
+            return None;
+        }
+
+        self.status_cache.branch = branch.clone();
+        Some(GitStatusUpdate::Patch {
+            branch,
+            files: patch_files,
+        })
     }
 
     /// Get original file content from HEAD
@@ -438,5 +579,113 @@ impl GitManager {
         }
 
         Ok(())
+    }
+    fn branch_name(repo: &Repository) -> String {
+        repo.head()
+            .map(|h| h.shorthand().unwrap_or("HEAD").to_string())
+            .unwrap_or_else(|_| "HEAD".to_string())
+    }
+
+    fn status_from_entry(
+        repo_root: &Path,
+        relative_path: &str,
+        status: Status,
+        added: usize,
+        removed: usize,
+    ) -> Option<GitFileStatus> {
+        let file_status = if status.contains(Status::WT_NEW) || status.contains(Status::INDEX_NEW) {
+            FileStatus::Added
+        } else if status.contains(Status::WT_DELETED) || status.contains(Status::INDEX_DELETED) {
+            FileStatus::Deleted
+        } else if status.contains(Status::WT_MODIFIED) || status.contains(Status::INDEX_MODIFIED) {
+            FileStatus::Modified
+        } else if status.contains(Status::WT_RENAMED) || status.contains(Status::INDEX_RENAMED) {
+            FileStatus::Renamed
+        } else if status.contains(Status::CONFLICTED) {
+            FileStatus::Conflict
+        } else {
+            return None;
+        };
+
+        Some(GitFileStatus {
+            path: repo_root.join(relative_path).to_string_lossy().to_string(),
+            status: file_status,
+            added,
+            removed,
+        })
+    }
+
+    fn status_to_str(status: FileStatus) -> &'static str {
+        match status {
+            FileStatus::Modified => "modified",
+            FileStatus::Added => "added",
+            FileStatus::Deleted => "deleted",
+            FileStatus::Renamed => "renamed",
+            FileStatus::Conflict => "conflict",
+        }
+    }
+
+    fn to_repo_relative_path(&self, path: &Path, repo_root: &Path) -> Option<String> {
+        let abs = if path.is_absolute() {
+            path.to_path_buf()
+        } else {
+            self.workdir.join(path)
+        };
+        abs.strip_prefix(repo_root)
+            .ok()
+            .map(|p| p.to_string_lossy().replace('\\', "/"))
+    }
+
+    fn numstat_for_path(repo: &Repository, relative_path: &str) -> Result<(usize, usize)> {
+        let mut opts = git2::DiffOptions::new();
+        opts.include_untracked(true)
+            .recurse_untracked_dirs(true)
+            .include_typechange(true)
+            .pathspec(relative_path);
+
+        let head_tree = repo.head().ok().and_then(|head| head.peel_to_tree().ok());
+        let diff = repo.diff_tree_to_workdir_with_index(head_tree.as_ref(), Some(&mut opts))?;
+
+        let mut added = 0usize;
+        let mut removed = 0usize;
+        diff.foreach(
+            &mut |_delta, _progress| true,
+            None,
+            None,
+            Some(&mut |_delta, _hunk, line| {
+                match line.origin() {
+                    '+' => added += 1,
+                    '-' => removed += 1,
+                    _ => {}
+                }
+                true
+            }),
+        )?;
+        Ok((added, removed))
+    }
+
+    fn status_for_relative_path(&self, repo: &Repository, relative_path: &str) -> Result<Option<GitFileStatus>> {
+        let repo_root = repo.workdir().unwrap_or(Path::new("."));
+        let mut opts = StatusOptions::new();
+        opts.include_untracked(true)
+            .recurse_untracked_dirs(true)
+            .include_ignored(false)
+            .pathspec(relative_path);
+
+        let statuses = repo.statuses(Some(&mut opts))?;
+        let (added, removed) = Self::numstat_for_path(repo, relative_path).unwrap_or((0, 0));
+
+        for entry in statuses.iter() {
+            let Some(entry_path) = entry.path() else {
+                continue;
+            };
+            if entry_path != relative_path {
+                continue;
+            }
+            if let Some(file) = Self::status_from_entry(repo_root, entry_path, entry.status(), added, removed) {
+                return Ok(Some(file));
+            }
+        }
+        Ok(None)
     }
 }

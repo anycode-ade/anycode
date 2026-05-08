@@ -30,12 +30,34 @@ export const useSearch = ({ wsRef, isConnected }: UseSearchParams) => {
     const handleSearchResult = useCallback((message: SearchResult) => {
         setSearchResults((prevResults) => {
             const resultsMap = new Map(prevResults.map((result) => [result.file_path, result]));
-            resultsMap.set(message.file_path, message);
-            return Array.from(resultsMap.values());
+            const sortedMatches = [...message.matches].sort((a, b) => {
+                if (a.line !== b.line) return a.line - b.line;
+                return a.column - b.column;
+            });
+            if (message.matches.length === 0) {
+                resultsMap.delete(message.file_path);
+            } else {
+                resultsMap.set(message.file_path, { ...message, matches: sortedMatches });
+            }
+            return Array.from(resultsMap.values()).sort((a, b) => {
+                const countDelta = b.matches.length - a.matches.length;
+                if (countDelta !== 0) return countDelta;
+
+                const depthA = a.display_path.split('/').length;
+                const depthB = b.display_path.split('/').length;
+                if (depthA !== depthB) return depthA - depthB;
+
+                return a.display_path.localeCompare(b.display_path);
+            });
         });
     }, []);
 
     const handleSearchEnd = useCallback((_result: SearchEnd) => {
+        setSearchEnded(true);
+    }, []);
+
+    const clearResults = useCallback(() => {
+        setSearchResults([]);
         setSearchEnded(true);
     }, []);
 
@@ -44,6 +66,7 @@ export const useSearch = ({ wsRef, isConnected }: UseSearchParams) => {
         searchEnded,
         startSearch,
         cancelSearch,
+        clearResults,
         handleSearchResult,
         handleSearchEnd,
     };

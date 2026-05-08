@@ -1,20 +1,23 @@
 use anyhow::Result;
 use serde_json::json;
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{Mutex, watch};
+use tokio_util::sync::CancellationToken;
 use tracing::info;
-
-const DEBOUNCE: Duration = Duration::from_millis(100);
 
 use crate::app_state::SocketData;
 use crate::code::Code;
 use crate::diff::compute_text_edits;
 use crate::handlers::io_handler::apply_edits_to_code;
 use crate::lsp::LspManager;
+use crate::search::search_file_result;
 use crate::utils::normalize_watch_path;
+use crate::git::GitManager;
+
+const DEBOUNCE: Duration = Duration::from_millis(100);
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 enum FileState {
@@ -83,69 +86,14 @@ fn classify_watch_transition(
     }
 }
 
-async fn handle_create_remove_event(
-    path: &PathBuf,
-    path_str: &str,
-    event_kind: &notify::EventKind,
-    socket: &Arc<socketioxide::SocketIo>,
-    socket2data: &Arc<Mutex<HashMap<String, SocketData>>>,
-) {
-    if !is_parent_dir_opened(path, socket2data).await {
-        return;
-    }
-
-    info!("watch event: {:?} for path: {:?}", event_kind, path);
-
-    let event_name = match event_kind {
-        notify::EventKind::Create(_) => "watcher:create",
-        notify::EventKind::Remove(_) => "watcher:remove",
-        _ => return,
-    };
-
-    // For create events, path.is_file() works because the file exists.
-    // For remove events, path.is_file() always returns false (file is gone),
-    // so we use a heuristic: if the path has a file extension, it's a file.
-    let is_file = match event_kind {
-        notify::EventKind::Create(_) => path.is_file(),
-        notify::EventKind::Remove(_) => path.extension().is_some(),
-        _ => false,
-    };
-
-    let _ = socket
-        .emit(
-            event_name,
-            &json!({
-                "path": path_str,
-                "isFile": is_file
-            }),
-        )
-        .await;
-}
-
-async fn handle_modify_event(
-    path: &PathBuf,
-    path_str: &str,
-    socket: &Arc<socketioxide::SocketIo>,
-    file2code: &Arc<Mutex<HashMap<String, Code>>>,
-    socket2data: &Arc<Mutex<HashMap<String, SocketData>>>,
-    lsp_manager: &Arc<Mutex<crate::lsp::LspManager>>,
-) {
-    if !is_file_opened(path_str, socket2data).await {
-        return;
-    }
-
-    info!("watch event: {:?} for path: {:?}", "Modify", path);
-    let _ = handle_file_modification(path, socket, file2code, lsp_manager).await;
-}
-
 pub async fn handle_watch_event(
     path: &PathBuf,
-    _event: &notify::Event,
+    event: &notify::Event,
     socket: &Arc<socketioxide::SocketIo>,
     file2code: &Arc<Mutex<HashMap<String, Code>>>,
     socket2data: &Arc<Mutex<HashMap<String, SocketData>>>,
     file_states: &Arc<Mutex<HashMap<String, FileWatchState>>>,
-    git_manager: &Arc<Mutex<crate::git::GitManager>>,
+    git_manager: &Arc<Mutex<GitManager>>,
     lsp_manager: &Arc<Mutex<LspManager>>,
 ) {
     let normalized_path = normalize_watch_path(path);
@@ -155,10 +103,8 @@ pub async fn handle_watch_event(
         let mut states = file_states.lock().await;
         let entry = states.entry(path_str.clone()).or_insert_with(|| {
             let (tx, _) = watch::channel(());
-            FileWatchState {
-                state: FileState::DoesNotExist,
-                sender: tx,
-                pending: false,
+            FileWatchState { 
+                state: FileState::DoesNotExist, sender: tx, pending: false,
             }
         });
 
@@ -173,13 +119,10 @@ pub async fn handle_watch_event(
         }
     };
 
-    if !should_spawn {
-        return;
-    }
-
-    let mut rx = rx.unwrap();
+    if !should_spawn { return; }
 
     // Spawn a single debounce task for this file
+    let mut rx = rx.unwrap();
     let path = normalized_path.clone();
     let socket = socket.clone();
     let file2code = file2code.clone();
@@ -188,6 +131,7 @@ pub async fn handle_watch_event(
     let git_manager = git_manager.clone();
     let lsp_manager = lsp_manager.clone();
     let path_str_key = path_str.clone();
+    let event_kind = event.kind.clone();
 
     tokio::spawn(async move {
         // Wait until events stop arriving (trailing-edge debounce)
@@ -195,24 +139,24 @@ pub async fn handle_watch_event(
             // Mark as seen so we wait for *new* changes
             let _ = rx.borrow_and_update();
             match tokio::time::timeout(DEBOUNCE, rx.changed()).await {
-                Ok(_) => continue, // new event arrived — reset timer
-                Err(_) => break,   // timeout — silence, time to process
+                Ok(_) => continue, Err(_) => break,
             }
         }
 
         process_watch_event(
             &path,
             &path_str_key,
+            &event_kind,
             &socket,
             &file2code,
             &socket2data,
             &file_states,
-            &git_manager,
             &lsp_manager,
         )
         .await;
 
-        // Mark as not pending so future events spawn a new task
+        handle_search_update(&path, &socket, &socket2data).await;
+        handle_changes_update(&path, &socket, &git_manager).await;
 
         let mut states = file_states.lock().await;
         if let Some(state) = states.get_mut(&path_str_key) {
@@ -224,11 +168,11 @@ pub async fn handle_watch_event(
 async fn process_watch_event(
     path: &PathBuf,
     path_str: &str,
+    event_kind: &notify::EventKind,
     socket: &Arc<socketioxide::SocketIo>,
     file2code: &Arc<Mutex<HashMap<String, Code>>>,
     socket2data: &Arc<Mutex<HashMap<String, SocketData>>>,
     file_states: &Arc<Mutex<HashMap<String, FileWatchState>>>,
-    git_manager: &Arc<Mutex<crate::git::GitManager>>,
     lsp_manager: &Arc<Mutex<LspManager>>,
 ) {
     let current_state = if path.exists() {
@@ -242,72 +186,107 @@ async fn process_watch_event(
         states
             .get(path_str)
             .map(|s| s.state.clone())
-            .unwrap_or(FileState::DoesNotExist) // never seen = didn't exist for us
+            .unwrap_or(FileState::DoesNotExist) 
     };
     let is_opened_file = is_file_opened(path_str, socket2data).await;
+    let is_parent_opened = is_parent_dir_opened(path, socket2data).await;
 
-    info!(
-        "File state transition: {:?} -> {:?} for path: {:?}",
-        last_state, current_state, path
-    );
+    let watch_action = classify_watch_transition(last_state, current_state, is_opened_file);
+    info!("watch action: {:?} for path: {:?} ", watch_action, path);
 
-    match classify_watch_transition(last_state, current_state, is_opened_file) {
+    match watch_action {
         WatchAction::Create => {
-            handle_create_remove_event(
-                path,
-                path_str,
-                &notify::EventKind::Create(notify::event::CreateKind::File),
-                socket,
-                socket2data,
-            )
-            .await;
+            if is_parent_opened {
+                let is_file = match event_kind {
+                    notify::EventKind::Create(notify::event::CreateKind::File) => true,
+                    notify::EventKind::Create(notify::event::CreateKind::Folder) => false,
+                    _ => path.is_file(),
+                };
+                let data = &json!({"path": path_str, "isFile": is_file});
+                let _ = socket.emit("watcher:create", data).await;
+            }
         }
         WatchAction::Remove => {
-            handle_create_remove_event(
-                path,
-                path_str,
-                &notify::EventKind::Remove(notify::event::RemoveKind::File),
-                socket,
-                socket2data,
-            )
-            .await;
+            if is_parent_opened {
+                let is_file = match event_kind {
+                    notify::EventKind::Remove(notify::event::RemoveKind::File) => true,
+                    notify::EventKind::Remove(notify::event::RemoveKind::Folder) => false,
+                    _ => path.extension().is_some(),
+                };
+                let data = &json!({"path": path_str, "isFile": is_file});
+                let _ = socket.emit("watcher:remove", data).await;
+            }
         }
         WatchAction::Modify => {
-            handle_modify_event(path, path_str, socket, file2code, socket2data, lsp_manager).await;
+            if is_opened_file {
+                let _ = handle_file_modification(path, socket, file2code, lsp_manager).await;
+            }
         }
-        WatchAction::Ignore => {
-            info!(
-                "Ignoring state transition: {:?} -> {:?}",
-                last_state, current_state
-            );
-        }
+        WatchAction::Ignore => {}
     }
 
     // Update state (or remove if file was deleted to prevent memory leak)
-    {
-        let mut states = file_states.lock().await;
-        if current_state == FileState::DoesNotExist {
-            states.remove(path_str);
-        } else if let Some(watch_state) = states.get_mut(path_str) {
-            watch_state.state = current_state;
-        }
+    let mut states = file_states.lock().await;
+    if current_state == FileState::DoesNotExist {
+        states.remove(path_str);
+    } else if let Some(watch_state) = states.get_mut(path_str) {
+        watch_state.state = current_state;
+    }
+}
+
+async fn handle_search_update(
+    path: &Path,
+    socket: &Arc<socketioxide::SocketIo>,
+    socket2data: &Arc<Mutex<HashMap<String, SocketData>>>
+) {
+    if path.exists() && !path.is_file() {
+        return;
+    }
+    if !path.exists() && path.extension().is_none() {
+        return;
     }
 
-    // Check git status
-    let should_ignore = {
-        let git = git_manager.lock().await;
-        git.should_ignore(path_str)
+    let searches = {
+        let sockets_data = socket2data.lock().await;
+        sockets_data
+            .iter()
+            .filter_map(|(sid, data)| {
+                let pattern = data.search_pattern.as_ref()?;
+                if pattern.trim().is_empty() {
+                    return None;
+                }
+                Some((sid.clone(), pattern.clone()))
+            })
+            .collect::<Vec<_>>()
     };
 
-    if !should_ignore {
-        let new_status = {
-            let mut git = git_manager.lock().await;
-            git.check_status_changed()
-        };
+    if searches.is_empty() {
+        return;
+    }
 
-        if let Some(status) = new_status {
-            let _ = socket.emit("git:status-update", &status.to_json()).await;
+    for (sid, pattern) in searches {
+        let cancel = CancellationToken::new();
+        if let Some(file_result) = search_file_result(path, &pattern, cancel).await {
+            let _ = socket.to(sid).emit("search:result", &file_result).await;
         }
+    }
+}
+
+async fn handle_changes_update(
+    path: &Path,
+    socket: &Arc<socketioxide::SocketIo>,
+    git_manager: &Arc<Mutex<crate::git::GitManager>>
+) {
+    let update = {
+        let mut git = git_manager.lock().await;
+        if git.should_ignore(path) {
+            return;
+        }
+        git.check_status_changed_for_paths(&[path.to_path_buf()])
+    };
+
+    if let Some(update) = update {
+        let _ = socket.emit("changes:update", &update.to_json()).await;
     }
 }
 

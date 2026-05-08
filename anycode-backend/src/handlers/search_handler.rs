@@ -36,6 +36,7 @@ pub async fn handle_search(
     let cancel = CancellationToken::new();
     // Save the cancel in the socket data
     data.search_cancel = Some(cancel.clone());
+    data.search_pattern = Some(search_request.pattern.clone());
 
     // Prepare search, get the current directory and create channel to collect results
     let current_dir = std::env::current_dir().unwrap();
@@ -93,5 +94,6 @@ pub async fn handle_search_cancel(socket: SocketRef, state: State<AppState>) {
         }
         // Clear the cancel token
         data.search_cancel = None;
+        data.search_pattern = None;
     }
 }

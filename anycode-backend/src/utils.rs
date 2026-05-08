@@ -68,6 +68,7 @@ pub const SEARCH_IGNORE_DIRS: &[&str] = &[
     "obj",
     // Version control
     ".git",
+    ".anycode",
     // Python
     ".venv",
     "venv",

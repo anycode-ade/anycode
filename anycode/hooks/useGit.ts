@@ -7,6 +7,27 @@ type UseGitParams = {
     isConnected: boolean;
 };
 
+type GitPatchItem = {
+    path: string;
+    status: ChangedFile['status'] | 'removed';
+    added?: number;
+    removed?: number;
+};
+
+type GitStatusFullUpdate = {
+    kind?: 'full';
+    files: ChangedFile[];
+    branch: string;
+};
+
+type GitStatusPatchUpdate = {
+    kind: 'patch';
+    branch: string;
+    files: GitPatchItem[];
+};
+
+type GitStatusUpdate = GitStatusFullUpdate | GitStatusPatchUpdate;
+
 export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
     const [changedFiles, setChangedFiles] = useState<ChangedFile[]>([]);
     const [gitBranch, setGitBranch] = useState<string>('');
@@ -25,7 +46,28 @@ export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
         });
     }, [wsRef, isConnected]);
 
-    const handleGitStatusUpdate = useCallback((data: { files: ChangedFile[]; branch: string }) => {
+    const handleGitStatusUpdate = useCallback((data: GitStatusUpdate) => {
+        if (data.kind === 'patch') {
+            setGitBranch(data.branch || '');
+            setChangedFiles((prev) => {
+                const next = new Map(prev.map((file) => [file.path, file]));
+                for (const item of data.files || []) {
+                    if (item.status === 'removed') {
+                        next.delete(item.path);
+                    } else {
+                        next.set(item.path, {
+                            path: item.path,
+                            status: item.status,
+                            added: item.added,
+                            removed: item.removed,
+                        });
+                    }
+                }
+                return Array.from(next.values());
+            });
+            return;
+        }
+
         setChangedFiles(data.files || []);
         setGitBranch(data.branch || '');
     }, []);

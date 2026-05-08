@@ -196,6 +196,40 @@ pub struct FileSearchResult {
     pub matches: Vec<SearchResult>,
 }
 
+pub async fn search_file_result(
+    path: &Path,
+    pattern: &str,
+    cancel: CancellationToken,
+) -> Option<FileSearchResult> {
+    if is_ignored_path(path) {
+        return None;
+    }
+
+    let file_path_str = path.to_string_lossy().to_string();
+    let display_path = relative_to_current_dir(path)
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|| file_path_str.clone());
+
+    if !path.exists() {
+        return Some(FileSearchResult {
+            file_path: file_path_str,
+            display_path,
+            matches: Vec::new(),
+        });
+    }
+
+    let matches = match file_search(&file_path_str, pattern, cancel).await {
+        Ok(m) => m,
+        Err(_) => return None,
+    };
+
+    Some(FileSearchResult {
+        file_path: file_path_str,
+        display_path,
+        matches,
+    })
+}
+
 pub async fn global_search(
     dir_path: &Path,
     pattern: &str,
