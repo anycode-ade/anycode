@@ -1,6 +1,7 @@
 use crate::acp_fs::AcpFsCommand;
 use crate::acp_history::AcpHistoryManager;
-use agent_client_protocol::{self as acp, Agent as _, Client};
+use agent_client_protocol::{ByteStreams, Client, ConnectionTo};
+use agent_client_protocol::schema as acp;
 use agent_client_protocol_schema::{ProtocolVersion, SessionId};
 use anyhow::{Context, Result, anyhow};
 use serde::{Deserialize, Serialize};
@@ -234,8 +235,7 @@ struct AcpClientImpl {
     fs_sender: Option<mpsc::Sender<AcpFsCommand>>,
 }
 
-#[async_trait::async_trait(?Send)]
-impl Client for AcpClientImpl {
+impl AcpClientImpl {
     async fn request_permission(
         &self,
         args: acp::RequestPermissionRequest,
@@ -570,8 +570,8 @@ impl Client for AcpClientImpl {
 
     async fn kill_terminal_command(
         &self,
-        _args: acp::KillTerminalCommandRequest,
-    ) -> acp::Result<acp::KillTerminalCommandResponse> {
+        _args: acp::KillTerminalRequest,
+    ) -> acp::Result<acp::KillTerminalResponse> {
         info!(
             "kill_terminal_command called for agent {}: {:?}",
             self.agent_id, _args
@@ -630,21 +630,6 @@ impl Client for AcpClientImpl {
         Ok(())
     }
 
-    async fn ext_method(&self, _args: acp::ExtRequest) -> acp::Result<acp::ExtResponse> {
-        info!("ext_method called for agent {}: {:?}", self.agent_id, _args);
-        Err(acp::Error::method_not_found())
-    }
-
-    async fn ext_notification(&self, _args: acp::ExtNotification) -> acp::Result<()> {
-        info!(
-            "ext_notification called for agent {}: {:?}",
-            self.agent_id, _args
-        );
-        Err(acp::Error::method_not_found())
-    }
-}
-
-impl AcpClientImpl {
     async fn handle_user_message_chunk(&self, chunk: acp::ContentChunk) -> acp::Result<()> {
         let text = Self::extract_text_from_content(&chunk.content);
         info!(
@@ -1132,7 +1117,7 @@ pub struct AcpAgent {
     agent_id: String,
     agent_name: String,
     permission_mode: Arc<AtomicU8>,
-    connection: Option<acp::ClientSideConnection>,
+    connection: Option<ConnectionTo<agent_client_protocol::Agent>>,
     session_id: Option<acp::SessionId>,
     ready: Arc<AtomicBool>,
     message_sender: Option<broadcast::Sender<AcpMessage>>,
@@ -1342,73 +1327,130 @@ impl AcpAgent {
         let history_for_prompt = history.clone();
 
         // Create client implementation
-        let client_impl = AcpClientImpl {
+        let client_impl = Arc::new(AcpClientImpl {
             agent_id: agent_id.clone(),
             permission_mode,
             message_sender: message_sender.clone(),
             history,
             pending_permissions,
             fs_sender: Some(fs_sender),
-        };
-
-        // Create connection inside LocalSet
-        let (conn, handle_io) = acp::ClientSideConnection::new(
-            client_impl,
-            stdin.compat_write(),
-            stdout.compat(),
-            |fut| {
-                tokio::task::spawn_local(fut);
-            },
-        );
-
-        // Wrap connection in Rc to allow sharing for cancellation
-        let conn = std::rc::Rc::new(conn);
-
-        // Handle I/O in the background
-        tokio::task::spawn_local(handle_io);
+        });
 
         // Read stderr for debugging
         Self::spawn_stderr_reader(stderr, message_sender.clone(), history_for_stderr);
 
-        // Initialize connection and create session
-        let bootstrap = match Self::initialize_connection(&conn, &agent_id, resume_session_id).await
-        {
-            Ok(bootstrap) => {
+        let transport = ByteStreams::new(stdin.compat_write(), stdout.compat());
+        let client_impl_for_permission = client_impl.clone();
+        let client_impl_for_write = client_impl.clone();
+        let client_impl_for_read = client_impl.clone();
+        let client_impl_for_create_terminal = client_impl.clone();
+        let client_impl_for_terminal_output = client_impl.clone();
+        let client_impl_for_release_terminal = client_impl.clone();
+        let client_impl_for_wait_terminal = client_impl.clone();
+        let client_impl_for_kill_terminal = client_impl.clone();
+        let client_impl_for_session_notification = client_impl.clone();
+
+        let agent_id_for_conn = agent_id.clone();
+        let agent_id_for_error = agent_id.clone();
+        let run_result = Client
+            .builder()
+            .name(format!("anycode-{}", agent_id))
+            .on_receive_request(
+                async move |req: acp::RequestPermissionRequest, responder, _cx| {
+                    responder.respond(client_impl_for_permission.request_permission(req).await?)
+                },
+                agent_client_protocol::on_receive_request!(),
+            )
+            .on_receive_request(
+                async move |req: acp::WriteTextFileRequest, responder, _cx| {
+                    responder.respond(client_impl_for_write.write_text_file(req).await?)
+                },
+                agent_client_protocol::on_receive_request!(),
+            )
+            .on_receive_request(
+                async move |req: acp::ReadTextFileRequest, responder, _cx| {
+                    responder.respond(client_impl_for_read.read_text_file(req).await?)
+                },
+                agent_client_protocol::on_receive_request!(),
+            )
+            .on_receive_request(
+                async move |req: acp::CreateTerminalRequest, responder, _cx| {
+                    responder.respond(client_impl_for_create_terminal.create_terminal(req).await?)
+                },
+                agent_client_protocol::on_receive_request!(),
+            )
+            .on_receive_request(
+                async move |req: acp::TerminalOutputRequest, responder, _cx| {
+                    responder.respond(client_impl_for_terminal_output.terminal_output(req).await?)
+                },
+                agent_client_protocol::on_receive_request!(),
+            )
+            .on_receive_request(
+                async move |req: acp::ReleaseTerminalRequest, responder, _cx| {
+                    responder.respond(client_impl_for_release_terminal.release_terminal(req).await?)
+                },
+                agent_client_protocol::on_receive_request!(),
+            )
+            .on_receive_request(
+                async move |req: acp::WaitForTerminalExitRequest, responder, _cx| {
+                    responder.respond(client_impl_for_wait_terminal.wait_for_terminal_exit(req).await?)
+                },
+                agent_client_protocol::on_receive_request!(),
+            )
+            .on_receive_request(
+                async move |req: acp::KillTerminalRequest, responder, _cx| {
+                    responder.respond(client_impl_for_kill_terminal.kill_terminal_command(req).await?)
+                },
+                agent_client_protocol::on_receive_request!(),
+            )
+            .on_receive_notification(
+                async move |notif: acp::SessionNotification, _cx| {
+                    client_impl_for_session_notification.session_notification(notif).await
+                },
+                agent_client_protocol::on_receive_notification!(),
+            )
+            .connect_with(transport, async move |conn| {
+                let bootstrap = match Self::initialize_connection(&conn, &agent_id_for_conn, resume_session_id).await {
+                    Ok(value) => value,
+                    Err(e) => {
+                        let err = anyhow!("Failed to initialize ACP agent {}: {}", agent_id_for_conn, e);
+                        let _ = bootstrap_tx.send(Err(err));
+                        return Err(acp::Error::internal_error().data(format!("{e:#}")));
+                    }
+                };
+
                 ready.store(true, Ordering::SeqCst);
                 let _ = bootstrap_tx.send(Ok(bootstrap.clone()));
-                Some(bootstrap)
-            }
-            Err(e) => {
-                let err = anyhow!("Failed to initialize ACP agent {}: {}", agent_id, e);
-                error!("{}", err);
-                let _ = bootstrap_tx.send(Err(err));
-                None
-            }
-        };
 
-        let Some(bootstrap) = bootstrap else {
-            return;
-        };
+                Self::emit_session_config_messages(
+                    &message_sender,
+                    &history_for_prompt,
+                    bootstrap.model_selector.clone(),
+                    bootstrap.reasoning_selector.clone(),
+                )
+                .await;
 
-        Self::emit_session_config_messages(
-            &message_sender,
-            &history_for_prompt,
-            bootstrap.model_selector.clone(),
-            bootstrap.reasoning_selector.clone(),
-        )
-        .await;
+                Self::run_prompt_loop(
+                    &conn,
+                    &agent_id,
+                    &message_sender,
+                    history_for_prompt,
+                    bootstrap.session_id,
+                    &mut prompt_rx,
+                    &mut config_rx,
+                    &mut cancel_rx,
+                )
+                .await;
+                Ok(())
+            })
+            .await;
 
-        Self::run_prompt_loop(
-            &conn,
-            &agent_id,
-            &message_sender,
-            history_for_prompt,
-            bootstrap.session_id,
-            &mut prompt_rx,
-            &mut config_rx,
-            &mut cancel_rx,
-        )
-        .await;
+        if let Err(e) = run_result {
+            error!(
+                "ACP agent {} connection ended with error: {}",
+                agent_id_for_error, e
+            );
+        }
     }
 
     fn spawn_stderr_reader(
@@ -1442,13 +1484,13 @@ impl AcpAgent {
     }
 
     async fn initialize_agent_connection(
-        conn: &std::rc::Rc<acp::ClientSideConnection>,
+        conn: &ConnectionTo<agent_client_protocol::Agent>,
         agent_id: &str,
     ) -> Result<()> {
         let client_info = acp::Implementation::new("anycode", "1.0.0").title("Anycode Editor");
 
         // Define client capabilities
-        let fs_capabilities = acp::FileSystemCapability::new()
+        let fs_capabilities = acp::FileSystemCapabilities::new()
             .read_text_file(true)
             .write_text_file(true);
 
@@ -1464,7 +1506,8 @@ impl AcpAgent {
         );
 
         let init_response = conn
-            .initialize(init_message)
+            .send_request(init_message)
+            .block_task()
             .await
             .map_err(|e| anyhow!("Failed to initialize: {}", e))?;
 
@@ -1476,7 +1519,7 @@ impl AcpAgent {
     }
 
     async fn initialize_connection(
-        conn: &std::rc::Rc<acp::ClientSideConnection>,
+        conn: &ConnectionTo<agent_client_protocol::Agent>,
         agent_id: &str,
         resume_session_id: Option<String>,
     ) -> Result<SessionBootstrap> {
@@ -1493,7 +1536,7 @@ impl AcpAgent {
     }
 
     async fn create_or_resume_session(
-        conn: &std::rc::Rc<acp::ClientSideConnection>,
+        conn: &ConnectionTo<agent_client_protocol::Agent>,
         resume_session_id: Option<String>,
         cwd: PathBuf,
     ) -> Result<SessionBootstrap> {
@@ -1513,7 +1556,8 @@ impl AcpAgent {
         }
 
         let response = conn
-            .new_session(acp::NewSessionRequest::new(cwd))
+            .send_request(acp::NewSessionRequest::new(cwd))
+            .block_task()
             .await
             .map_err(|e| anyhow!("Failed to create session: {}", e))?;
 
@@ -1521,16 +1565,17 @@ impl AcpAgent {
     }
 
     async fn restore_session(
-        conn: &std::rc::Rc<acp::ClientSideConnection>,
+        conn: &ConnectionTo<agent_client_protocol::Agent>,
         resume_session_id: &str,
         cwd: &PathBuf,
     ) -> Result<RestoreSessionOutcome> {
         let requested_session_id = SessionId::new(resume_session_id.to_string());
         let load_result = conn
-            .load_session(acp::LoadSessionRequest::new(
+            .send_request(acp::LoadSessionRequest::new(
                 requested_session_id.clone(),
                 cwd.clone(),
             ))
+            .block_task()
             .await;
 
         if let Ok(response) = load_result {
@@ -1548,10 +1593,11 @@ impl AcpAgent {
         };
 
         let resume_result = conn
-            .resume_session(acp::ResumeSessionRequest::new(
+            .send_request(acp::ResumeSessionRequest::new(
                 requested_session_id.clone(),
                 cwd.clone(),
             ))
+            .block_task()
             .await;
 
         if let Ok(response) = resume_result {
@@ -1679,16 +1725,17 @@ impl AcpAgent {
     }
 
     async fn apply_session_config_option(
-        conn: &std::rc::Rc<acp::ClientSideConnection>,
+        conn: &ConnectionTo<agent_client_protocol::Agent>,
         session_id: &acp::SessionId,
         option: &AcpSelectOption,
     ) -> Result<SessionConfigSelectors> {
         let response = conn
-            .set_session_config_option(acp::SetSessionConfigOptionRequest::new(
+            .send_request(acp::SetSessionConfigOptionRequest::new(
                 session_id.clone(),
                 option.config_id.clone(),
                 option.value.clone(),
             ))
+            .block_task()
             .await
             .context("set session config option")?;
 
@@ -1735,7 +1782,7 @@ impl AcpAgent {
     }
 
     async fn run_prompt_loop(
-        conn: &std::rc::Rc<acp::ClientSideConnection>,
+        conn: &ConnectionTo<agent_client_protocol::Agent>,
         agent_id: &str,
         message_sender: &broadcast::Sender<AcpMessage>,
         history: Arc<tokio::sync::Mutex<Vec<AcpMessage>>>,
@@ -1812,7 +1859,7 @@ impl AcpAgent {
     }
 
     async fn handle_prompt_with_cancellation(
-        conn: &std::rc::Rc<acp::ClientSideConnection>,
+        conn: &ConnectionTo<agent_client_protocol::Agent>,
         agent_id: &str,
         message_sender: &broadcast::Sender<AcpMessage>,
         history: &Arc<tokio::sync::Mutex<Vec<AcpMessage>>>,
@@ -1824,12 +1871,16 @@ impl AcpAgent {
         let prompt_request = acp::PromptRequest::new(session_id.clone(), vec![prompt.into()]);
 
         // Clone connection for cancellation
-        let conn_for_prompt = std::rc::Rc::clone(conn);
-        let conn_for_cancel = std::rc::Rc::clone(conn);
+        let conn_for_prompt = conn.clone();
+        let conn_for_cancel = conn.clone();
 
         // Pin the prompt future
-        let mut prompt_fut =
-            std::pin::pin!(async move { conn_for_prompt.prompt(prompt_request).await });
+        let mut prompt_fut = std::pin::pin!(async move {
+            conn_for_prompt
+                .send_request(prompt_request)
+                .block_task()
+                .await
+        });
 
         // Track if we've sent cancel notification
         let mut cancel_sent = false;
@@ -1867,8 +1918,7 @@ impl AcpAgent {
                         info!("Cancelling current prompt for agent {}", agent_id);
                         // Send cancel notification to agent via ACP protocol
                         if let Err(e) = conn_for_cancel
-                            .cancel(acp::CancelNotification::new(session_id.clone()))
-                            .await
+                            .send_notification(acp::CancelNotification::new(session_id.clone()))
                         {
                             error!("Failed to send cancel notification for agent {}: {}", agent_id, e);
                         }
@@ -1914,59 +1964,47 @@ impl AcpAgent {
                             }
                         });
 
-                        let (message_sender, _) = broadcast::channel::<AcpMessage>(1);
-                        let client_impl = AcpClientImpl {
-                            agent_id: "session-list".to_string(),
-                            permission_mode: Arc::new(AtomicU8::new(
-                                AcpPermissionMode::FullAccess.as_atomic(),
-                            )),
-                            message_sender,
-                            history: Arc::new(tokio::sync::Mutex::new(Vec::new())),
-                            pending_permissions: Arc::new(Mutex::new(HashMap::new())),
-                            fs_sender: None,
-                        };
+                        let transport = ByteStreams::new(stdin.compat_write(), stdout.compat());
+                        let mut all_sessions = Client
+                            .builder()
+                            .name("session-list")
+                            .connect_with(transport, async move |conn| {
+                                Self::initialize_agent_connection(&conn, "session-list")
+                                    .await
+                                    .map_err(|e| acp::Error::internal_error().data(format!("{e:#}")))?;
 
-                        let (conn, handle_io) = acp::ClientSideConnection::new(
-                            client_impl,
-                            stdin.compat_write(),
-                            stdout.compat(),
-                            |fut| {
-                                tokio::task::spawn_local(fut);
-                            },
-                        );
-                        let conn = std::rc::Rc::new(conn);
+                                let mut all_sessions = Vec::new();
+                                let mut cursor = None;
 
-                        tokio::task::spawn_local(handle_io);
+                                loop {
+                                    let response = conn
+                                        .send_request(
+                                            acp::ListSessionsRequest::new()
+                                                .cwd(cwd.clone())
+                                                .cursor(cursor.clone()),
+                                        )
+                                        .block_task()
+                                        .await?;
 
-                        Self::initialize_agent_connection(&conn, "session-list").await?;
+                                    all_sessions.extend(response.sessions.into_iter().map(|session| {
+                                        AcpSessionSummary {
+                                            session_id: session.session_id.to_string(),
+                                            cwd: session.cwd.to_string_lossy().to_string(),
+                                            title: session.title,
+                                            updated_at: session.updated_at,
+                                        }
+                                    }));
 
-                        let mut all_sessions = Vec::new();
-                        let mut cursor = None;
-
-                        loop {
-                            let response = conn
-                                .list_sessions(
-                                    acp::ListSessionsRequest::new()
-                                        .cwd(cwd.clone())
-                                        .cursor(cursor.clone()),
-                                )
-                                .await
-                                .map_err(|e| anyhow!("Failed to list sessions: {}", e))?;
-
-                            all_sessions.extend(response.sessions.into_iter().map(|session| {
-                                AcpSessionSummary {
-                                    session_id: session.session_id.to_string(),
-                                    cwd: session.cwd.to_string_lossy().to_string(),
-                                    title: session.title,
-                                    updated_at: session.updated_at,
+                                    if response.next_cursor.is_none() {
+                                        break;
+                                    }
+                                    cursor = response.next_cursor;
                                 }
-                            }));
 
-                            if response.next_cursor.is_none() {
-                                break;
-                            }
-                            cursor = response.next_cursor;
-                        }
+                                Ok(all_sessions)
+                            })
+                            .await
+                            .map_err(|e| anyhow!("Failed to list sessions: {}", e))?;
 
                         all_sessions.sort_by(|left, right| right.updated_at.cmp(&left.updated_at));
 

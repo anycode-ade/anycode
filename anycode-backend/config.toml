@@ -27,7 +27,6 @@ types = ["py"]
 comment = "#"
 # lsp = ["pyright-langserver", "--stdio"]
 lsp = ["uvx", "ty", "server"]
-# lsp = ["/Users/max/.cursor/extensions/astral-sh.ty-2025.57.13300119-darwin-arm64/bundled/libs/bin/ty server"]
 indent = { width = 4, unit = " " }
 executable = true
 exec = "python -u {file}"
