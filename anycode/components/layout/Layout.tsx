@@ -880,21 +880,26 @@ export const Layout: React.FC<LayoutProps> = ({
         };
     }, []);
 
+    const applyPanelViewStates = useCallback(() => {
+        Object.entries(panelViewStatesRef.current).forEach(([panelKey, state]) => {
+            panelViewStateHandlersRef.current.get(panelKey)?.restoreViewState(state);
+        });
+    }, []);
+
     const restorePanelViewStates = useCallback(() => {
         if (restoreViewStatesFrameRef.current !== null) {
             cancelAnimationFrame(restoreViewStatesFrameRef.current);
         }
 
-        restoreViewStatesFrameRef.current = requestAnimationFrame(() => {
-            restoreViewStatesFrameRef.current = requestAnimationFrame(() => {
-                restoreViewStatesFrameRef.current = null;
+        // Apply immediately to avoid a visible one-frame jump to scrollTop=0.
+        applyPanelViewStates();
 
-                Object.entries(panelViewStatesRef.current).forEach(([panelKey, state]) => {
-                    panelViewStateHandlersRef.current.get(panelKey)?.restoreViewState(state);
-                });
-            });
+        // Run one follow-up pass in the next frame for content that mounts asynchronously.
+        restoreViewStatesFrameRef.current = requestAnimationFrame(() => {
+            restoreViewStatesFrameRef.current = null;
+            applyPanelViewStates();
         });
-    }, []);
+    }, [applyPanelViewStates]);
 
     const queueSaveLayout = useCallback((api: DockviewApi) => {
         if (layoutSaveTimerRef.current !== null) {
@@ -1144,7 +1149,7 @@ export const Layout: React.FC<LayoutProps> = ({
         apiRef.current = null;
     }, [disposeListeners]);
 
-    useEffect(() => {
+    useLayoutEffect(() => {
         const api = apiRef.current;
         if (!api) {
             return;

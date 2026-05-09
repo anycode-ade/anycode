@@ -1,4 +1,5 @@
-import { AnycodeEditorReact } from 'anycode-react';
+import { useEffect, useState } from 'react';
+import { AnycodeEditor, AnycodeEditorReact } from 'anycode-react';
 import type { ReferencesPeekState } from '../../types';
 import { ReferencesPeek } from './ReferencesPeek';
 
@@ -6,7 +7,7 @@ type EditorPanelProps = {
     panelKey: string;
     editors: {
         files: Array<{ id: string }>;
-        editorStates: ReadonlyMap<string, unknown>;
+        editorStates: ReadonlyMap<string, AnycodeEditor>;
         getActiveFileIdForPane: (paneId: string) => string | null;
         setActiveEditorPaneId: (paneId: string) => void;
         getReferencesPeekForPane: (paneId: string) => ReferencesPeekState | null;
@@ -22,17 +23,28 @@ export const EditorPanel = ({ panelKey, editors }: EditorPanelProps) => {
     const paneFile = paneFileId ? editors.files.find((file) => file.id === paneFileId) : null;
     const editorState = paneFile ? editors.editorStates.get(paneFile.id) : null;
     const referencesPeek = editors.getReferencesPeekForPane(panelKey);
+    const [lastReadyEditor, setLastReadyEditor] = useState<{ id: string; state: AnycodeEditor } | null>(null);
+
+    useEffect(() => {
+        if (paneFile && editorState) {
+            setLastReadyEditor({ id: paneFile.id, state: editorState });
+        }
+    }, [paneFile, editorState]);
+
+    const displayedEditor = paneFile && editorState
+        ? { id: paneFile.id, state: editorState }
+        : lastReadyEditor;
 
     return (
         <div
             className="editor-container"
             onMouseDown={() => editors.setActiveEditorPaneId(panelKey)}
         >
-            {paneFile && editorState ? (
+            {displayedEditor ? (
                 <AnycodeEditorReact
-                    key={`${panelKey}:${paneFile.id}`}
-                    id={paneFile.id}
-                    editorState={editorState as never}
+                    key={`${panelKey}:${displayedEditor.id}`}
+                    id={displayedEditor.id}
+                    editorState={displayedEditor.state}
                 />
             ) : (
                 <div className="no-editor"></div>
