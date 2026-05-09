@@ -156,7 +156,7 @@ fn print_help() {
     println!();
     println!("OPTIONS:");
     println!("    -h, --help         Print help information");
-    println!("    --version          Print version information");
+    println!("    -v, -V, --version  Print version information");
     println!("    -p, --port <PORT>  Port to listen on");
     println!();
     println!("ENVIRONMENT:");
@@ -165,6 +165,28 @@ fn print_help() {
     println!("    ANYCODE_ACP_PERMISSION_MODE   ACP permission mode: full_access (default) or ask");
     println!();
     println!("Start the anycode server. The server will be available at http://localhost:<port>");
+}
+
+pub fn handle_early_cli_flags() {
+    let mut args = std::env::args().skip(1);
+
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--help" | "-h" => {
+                print_help();
+                std::process::exit(0);
+            }
+            "--version" | "-V" | "-v" => {
+                println!("anycode {}", env!("CARGO_PKG_VERSION"));
+                std::process::exit(0);
+            }
+            "--port" | "-p" => {
+                // Skip value for port flag in early pass.
+                let _ = args.next();
+            }
+            _ => {}
+        }
+    }
 }
 
 fn parse_port(value: &str, source: &str) -> Result<u16> {
@@ -183,7 +205,7 @@ pub fn resolve_server_port() -> Result<u16> {
                 print_help();
                 std::process::exit(0);
             }
-            "--version" | "-V" => {
+            "--version" | "-V" | "-v" => {
                 println!("anycode {}", env!("CARGO_PKG_VERSION"));
                 std::process::exit(0);
             }

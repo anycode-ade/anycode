@@ -242,6 +242,8 @@ async fn not_found() -> Response {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    crate::config::handle_early_cli_flags();
+
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::new("info"))
         .init();
