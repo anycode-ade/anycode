@@ -1,0 +1,83 @@
+.browser-panel {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+    background: var(--background-color, #242424);
+    overflow: hidden;
+}
+
+.browser-panel-controls {
+    display: flex;
+    gap: 8px;
+    padding: 10px;
+    border-bottom: 1px solid #3a3a3a;
+    background: #1f1f1f;
+}
+
+.browser-panel-input {
+    flex: 1;
+    min-width: 0;
+    height: 32px;
+    border: 1px solid #4a4a4a;
+    border-radius: 6px;
+    padding: 0 10px;
+    font-size: 13px;
+    color: #f0f0f0;
+    background: transparent;
+    outline: none;
+}
+
+.browser-panel-input:focus {
+    border-color: #5a5a5a;
+}
+
+.browser-panel-go {
+    height: 32px;
+    min-width: 32px;
+    padding: 0 12px;
+    border: 1px solid #4a4a4a;
+    border-radius: 6px;
+    background: transparent;
+    color: #f0f0f0;
+    font-size: 13px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+}
+
+.browser-panel-go:hover {
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.browser-panel-go svg {
+    display: block;
+    width: 14px;
+    height: 14px;
+}
+
+.browser-panel-frame-wrap {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    background: #1f1f1f;
+}
+
+.browser-panel-frame {
+    display: block;
+    width: 100%;
+    height: 100%;
+    border: none;
+    background: #1f1f1f;
+}
+
+.browser-panel-placeholder {
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #a5a5a5;
+    font-size: 13px;
+}

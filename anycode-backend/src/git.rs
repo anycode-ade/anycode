@@ -679,6 +679,16 @@ impl GitManager {
             return None;
         };
 
+        let added = if matches!(file_status, FileStatus::Added) && added == 0 {
+            let abs_path = repo_root.join(relative_path);
+            match std::fs::read_to_string(&abs_path) {
+                Ok(content) if !content.is_empty() => content.lines().count().max(1),
+                _ => 0,
+            }
+        } else {
+            added
+        };
+
         Some(GitFileStatus {
             path: repo_root.join(relative_path).to_string_lossy().to_string(),
             status: file_status,

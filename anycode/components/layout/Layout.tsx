@@ -161,7 +161,7 @@ export const Split: React.FC<SplitProps> = ({ direction, panes, className }) => 
     );
 };
 
-export type PanelId = 'files' | 'search' | 'changes' | 'editor' | 'agent' | 'terminal' | 'toolbar';
+export type PanelId = 'files' | 'search' | 'changes' | 'editor' | 'agent' | 'terminal' | 'browser' | 'toolbar';
 
 type PanelParams = {
     panelKey: string;
@@ -404,6 +404,15 @@ const panelDefinitions = [
             { direction: 'below', referenceIds: ['editor'] },
         ],
     },
+    {
+        id: 'browser',
+        title: 'Browser',
+        pickerVisible: true,
+        allowMultiple: true,
+        defaultPlacements: [
+            { direction: 'right', referenceIds: ['editor', 'terminal'] },
+        ],
+    },
 ] as const satisfies readonly PanelDefinition[];
 
 const panelDefinitionById = Object.fromEntries(
@@ -418,7 +427,7 @@ const getLayoutPanelTitle = (panelId: LayoutPanelId): string => (
     panelId === 'picker' ? 'Empty' : panelTitles[panelId]
 );
 
-const panelSyncOrder: PanelId[] = ['files', 'editor', 'agent', 'search', 'changes', 'terminal'];
+const panelSyncOrder: PanelId[] = ['files', 'editor', 'agent', 'search', 'changes', 'terminal', 'browser'];
 const loadPanelVisibility = (): PanelVisibility => ({
     files: (loadItem<number>(LAYOUT_VERSION_STORAGE_KEY) ?? 0) < CURRENT_LAYOUT_VERSION ? true : loadFilesPanelVisible(),
     search: (loadItem<number>(LAYOUT_VERSION_STORAGE_KEY) ?? 0) < CURRENT_LAYOUT_VERSION ? true : (loadItem<boolean>('searchPanelVisible') ?? false),
@@ -426,6 +435,7 @@ const loadPanelVisibility = (): PanelVisibility => ({
     editor: (loadItem<number>(LAYOUT_VERSION_STORAGE_KEY) ?? 0) < CURRENT_LAYOUT_VERSION ? true : loadEditorPanelVisible(),
     agent: (loadItem<number>(LAYOUT_VERSION_STORAGE_KEY) ?? 0) < CURRENT_LAYOUT_VERSION ? true : loadAgentPanelVisible(),
     terminal: loadTerminalPanelVisible(),
+    browser: (loadItem<boolean>('browserPanelVisible') ?? false),
     toolbar: true,
 });
 
@@ -740,6 +750,7 @@ export const Layout: React.FC<LayoutProps> = ({
         saveItem('editorPanelVisible', visibility.editor);
         saveItem('agentPanelVisible', visibility.agent);
         saveItem('terminalPanelVisible', visibility.terminal);
+        saveItem('browserPanelVisible', visibility.browser);
     }, [visibility]);
 
     const resolvePanelContent = useCallback((panelId: PanelId, panelKey: string): React.ReactNode => (

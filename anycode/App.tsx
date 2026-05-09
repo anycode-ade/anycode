@@ -34,6 +34,7 @@ import { FilesPanel } from './features/files/FilesPanel';
 import { EditorPanel } from './features/editor/EditorPanel';
 import { TerminalPanel } from './features/terminal/TerminalPanel';
 import { AgentPanel } from './features/agents/AgentPanel';
+import { BrowserPanel } from './features/browser/BrowserPanel';
 
 const App: React.FC = () => {
     const [diffEnabled, setDiffEnabled] = useState<boolean>(loadDiffEnabled());
@@ -429,6 +430,8 @@ const App: React.FC = () => {
                         onOpenFileDiff={handleOpenFileDiff}
                     />
                 );
+            case 'browser':
+                return <BrowserPanel panelKey={panelKey} />;
             case 'toolbar':
                 return (
                     <Toolbar
