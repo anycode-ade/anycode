@@ -97,6 +97,16 @@ export const Icons = {
       <path d="M10 16L7.5 13.5M10 16L12.5 13.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
     </svg>
   ),
+  ChevronDown: () => (
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+      <path d="M6.5 8L10 11.5L13.5 8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  ),
+  ChevronUp: () => (
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+      <path d="M6.5 12L10 8.5L13.5 12" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  ),
   LayoutSplitRight: () => (
     <svg viewBox="0 0 16 16" aria-hidden="true" className="layout-header-action-icon">
       <rect x="2" y="3" width="4" height="10" rx="1" />

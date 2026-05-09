@@ -594,6 +594,21 @@ export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: Us
         const targetPaneId = resolveTargetPaneId(paneId, existingFile?.id);
         console.log('[openFile]', { path, line, column });
 
+        if (existingFile) {
+            const editor = editorRefs.current.get(existingFile.id);
+            if (editor && savedFileContentsRef.current.has(existingFile.id)) {
+                setActiveEditorPaneId(targetPaneId);
+                setActiveFileId(existingFile.id, targetPaneId);
+                if (line !== undefined && column !== undefined) {
+                    editor.requestFocus(line, column, true);
+                } else {
+                    const cursor = editor.getCursor();
+                    editor.requestFocus(cursor.line, cursor.column, true);
+                }
+                return;
+            }
+        }
+
         if (line !== undefined && column !== undefined) {
             pendingPositions.current.set(path, { line, column });
         }

@@ -9,6 +9,18 @@ const StopIcon = () => (
     </svg>
 );
 
+const UpIcon = () => (
+    <svg width="16" height="16" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+        <path d="M10 5L4.5 10.5H8.5V15H11.5V10.5H15.5L10 5Z" fill="currentColor" />
+    </svg>
+);
+
+const DownIcon = () => (
+    <svg width="16" height="16" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+        <path d="M10 15L15.5 9.5H11.5V5H8.5V9.5H4.5L10 15Z" fill="currentColor" />
+    </svg>
+);
+
 interface SearchPreviewProps {
     match: SearchMatch;
     pattern: string;
@@ -219,6 +231,11 @@ const Search = ({ id, focusRequestToken, inputValue, onInputValueChange, onEnter
         return map;
     }, [navItems]);
 
+    const matchItems = useMemo(
+        () => navItems.filter((item): item is Extract<SearchNavItem, { type: "match" }> => item.type === "match"),
+        [navItems]
+    );
+
     useEffect(() => {
         if (navItems.length === 0) {
             setActiveItemKey(null);
@@ -342,6 +359,39 @@ const Search = ({ id, focusRequestToken, inputValue, onInputValueChange, onEnter
         resultsRef.current?.focus();
     }, []);
 
+    const navigateMatches = useCallback((direction: "prev" | "next") => {
+        if (matchItems.length === 0) return;
+
+        let currentMatchIndex = matchItems.findIndex((item) => item.key === activeItemKey);
+        if (currentMatchIndex === -1) {
+            currentMatchIndex = direction === "next" ? -1 : 0;
+        }
+
+        const nextIndex = direction === "next"
+            ? (currentMatchIndex + 1 + matchItems.length) % matchItems.length
+            : (currentMatchIndex - 1 + matchItems.length) % matchItems.length;
+
+        const nextMatch = matchItems[nextIndex];
+        setVisibleMatches((prev) => ({ ...prev, [nextMatch.filePath]: new Set() }));
+        setActiveItemKey(nextMatch.key);
+        shouldAutoScrollRef.current = true;
+        onMatchClick(nextMatch.filePath, nextMatch.match);
+    }, [activeItemKey, matchItems, onMatchClick]);
+
+    const handleExpandAll = useCallback(() => {
+        setVisibleMatches(() => {
+            const next: Record<string, Set<string> | undefined> = {};
+            for (const fileResult of results) {
+                next[fileResult.file_path] = new Set();
+            }
+            return next;
+        });
+    }, [results]);
+
+    const handleCollapseAll = useCallback(() => {
+        setVisibleMatches({});
+    }, []);
+
     return (
         <div className="search-container">
             
@@ -365,7 +415,28 @@ const Search = ({ id, focusRequestToken, inputValue, onInputValueChange, onEnter
                 ) : (
                     <span className="search-summary-text search-summary-text-empty"></span>
                 )}
+            </div>
+
+            <div className="search-actions-row">
                 <div className="search-actions-group">
+                {searchEnded && matchItems.length > 0 && (
+                    <>
+                        <button
+                            className="search-button"
+                            onClick={() => navigateMatches("prev")}
+                            title="Previous match"
+                        >
+                            <UpIcon />
+                        </button>
+                        <button
+                            className="search-button"
+                            onClick={() => navigateMatches("next")}
+                            title="Next match"
+                        >
+                            <DownIcon />
+                        </button>
+                    </>
+                )}
                 {searchEnded ? (
                     <>
                         {inputValue.trim() && (
@@ -402,6 +473,24 @@ const Search = ({ id, focusRequestToken, inputValue, onInputValueChange, onEnter
                             <StopIcon />
                         </button>
                         <span className="search-loading"><span>.</span><span>.</span><span>.</span></span>
+                    </>
+                )}
+                {results.length > 0 && (
+                    <>
+                        <button
+                            className="search-button"
+                            onClick={handleExpandAll}
+                            title="Expand all files"
+                        >
+                            <Icons.ChevronDown />
+                        </button>
+                        <button
+                            className="search-button"
+                            onClick={handleCollapseAll}
+                            title="Collapse all files"
+                        >
+                            <Icons.ChevronUp />
+                        </button>
                     </>
                 )}
                 </div>
