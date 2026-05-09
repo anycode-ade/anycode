@@ -110,16 +110,20 @@
     align-items: center;
     position: absolute;
     top: 50%;
-    right: 4px;
+    right: 0px;
     transform: translateY(-50%);
     z-index: 4;
-    padding-right: 2px;
     box-sizing: border-box;
-    pointer-events: none;
+    pointer-events: auto;
 }
 
-.layout .dv-tabs-and-actions-container:hover .dv-right-actions-container {
-    pointer-events: auto;
+.layout .dv-tabs-and-actions-container .dv-right-actions-container::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 14px;
 }
 
 .layout .dv-groupview > .dv-content-container {
@@ -250,7 +254,6 @@
     justify-content: center;
     opacity: 0;
     pointer-events: none;
-    transition: color 0.12s ease, background-color 0.12s ease, opacity 0.12s ease;
     transform: translate3d(0, 0, 0);
     -webkit-transform: translate3d(0, 0, 0);
     backface-visibility: hidden;
@@ -265,7 +268,8 @@
     box-shadow: none;
 }
 
-.layout .dv-tabs-and-actions-container:hover .layout-header-action-btn,
+.layout .dv-tabs-and-actions-container .dv-right-actions-container:hover .layout-header-action-btn,
+.layout .dv-tabs-and-actions-container .dv-right-actions-container:focus-within .layout-header-action-btn,
 .layout-header-action-btn:focus-visible {
     opacity: 1;
     pointer-events: auto;
