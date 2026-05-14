@@ -32,6 +32,22 @@ export const useAgents = ({
     openFileDiff,
     onAgentStarted,
 }: UseAgentsParams) => {
+    const mergeConsecutiveErrors = (messages: AcpMessage[]): AcpMessage[] => {
+        const merged: AcpMessage[] = [];
+        for (const message of messages) {
+            const last = merged[merged.length - 1];
+            if (message.role === 'error' && last?.role === 'error') {
+                merged[merged.length - 1] = {
+                    ...last,
+                    message: `${last.message}\n${message.message}`,
+                };
+                continue;
+            }
+            merged.push(message);
+        }
+        return merged;
+    };
+
     const [acpSessions, setAcpSessions] = useState<Map<string, AcpSession>>(new Map());
     const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
     const [isAgentSettingsOpen, setIsAgentSettingsOpen] = useState<boolean>(false);
@@ -197,7 +213,7 @@ export const useAgents = ({
             updateSession(data.agent_id, (existing) => ({
                 agentId: data.agent_id,
                 agentName: existing?.agentName ?? '',
-                messages: [...(existing?.messages ?? []), data.item],
+                messages: mergeConsecutiveErrors([...(existing?.messages ?? []), data.item]),
                 isActive: true,
                 isProcessing: existing?.isProcessing,
                 sessionId: existing?.sessionId,
@@ -295,11 +311,12 @@ export const useAgents = ({
             && item.role !== 'session_reasoning_selector'
             && item.role !== 'context_usage',
         );
+        const mergedVisibleMessages = mergeConsecutiveErrors(visibleMessages);
 
         updateSession(data.agent_id, (existing) => ({
             agentId: data.agent_id,
             agentName: existing?.agentName ?? '',
-            messages: visibleMessages,
+            messages: mergedVisibleMessages,
             isActive: true,
             isProcessing: existing?.isProcessing,
             sessionId: existing?.sessionId,

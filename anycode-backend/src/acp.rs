@@ -1,7 +1,7 @@
 use crate::acp_fs::AcpFsCommand;
 use crate::acp_history::AcpHistoryManager;
-use agent_client_protocol::{ByteStreams, Client, ConnectionTo};
 use agent_client_protocol::schema as acp;
+use agent_client_protocol::{ByteStreams, Client, ConnectionTo};
 use agent_client_protocol_schema::{ProtocolVersion, SessionId};
 use anyhow::{Context, Result, anyhow};
 use serde::{Deserialize, Serialize};
@@ -1042,6 +1042,27 @@ impl AcpClientImpl {
         }
     }
 
+    fn append_or_push_error_message(history: &mut Vec<AcpMessage>, text: &str) -> AcpMessage {
+        if let Some(last_idx) = history.len().checked_sub(1) {
+            if let AcpMessage::Error(AcpError { message }) = &history[last_idx] {
+                let mut merged = message.clone();
+                if !merged.is_empty() {
+                    merged.push('\n');
+                }
+                merged.push_str(text);
+                let merged_error = AcpMessage::Error(AcpError { message: merged });
+                history[last_idx] = merged_error.clone();
+                return merged_error;
+            }
+        }
+
+        let error = AcpMessage::Error(AcpError {
+            message: text.to_string(),
+        });
+        history.push(error.clone());
+        error
+    }
+
     async fn send_message(&self, message: AcpMessage) {
         match self.message_sender.send(message) {
             Ok(receiver_count) => {
@@ -1387,37 +1408,58 @@ impl AcpAgent {
             )
             .on_receive_request(
                 async move |req: acp::ReleaseTerminalRequest, responder, _cx| {
-                    responder.respond(client_impl_for_release_terminal.release_terminal(req).await?)
+                    responder.respond(
+                        client_impl_for_release_terminal
+                            .release_terminal(req)
+                            .await?,
+                    )
                 },
                 agent_client_protocol::on_receive_request!(),
             )
             .on_receive_request(
                 async move |req: acp::WaitForTerminalExitRequest, responder, _cx| {
-                    responder.respond(client_impl_for_wait_terminal.wait_for_terminal_exit(req).await?)
+                    responder.respond(
+                        client_impl_for_wait_terminal
+                            .wait_for_terminal_exit(req)
+                            .await?,
+                    )
                 },
                 agent_client_protocol::on_receive_request!(),
             )
             .on_receive_request(
                 async move |req: acp::KillTerminalRequest, responder, _cx| {
-                    responder.respond(client_impl_for_kill_terminal.kill_terminal_command(req).await?)
+                    responder.respond(
+                        client_impl_for_kill_terminal
+                            .kill_terminal_command(req)
+                            .await?,
+                    )
                 },
                 agent_client_protocol::on_receive_request!(),
             )
             .on_receive_notification(
                 async move |notif: acp::SessionNotification, _cx| {
-                    client_impl_for_session_notification.session_notification(notif).await
+                    client_impl_for_session_notification
+                        .session_notification(notif)
+                        .await
                 },
                 agent_client_protocol::on_receive_notification!(),
             )
             .connect_with(transport, async move |conn| {
-                let bootstrap = match Self::initialize_connection(&conn, &agent_id_for_conn, resume_session_id).await {
-                    Ok(value) => value,
-                    Err(e) => {
-                        let err = anyhow!("Failed to initialize ACP agent {}: {}", agent_id_for_conn, e);
-                        let _ = bootstrap_tx.send(Err(err));
-                        return Err(acp::Error::internal_error().data(format!("{e:#}")));
-                    }
-                };
+                let bootstrap =
+                    match Self::initialize_connection(&conn, &agent_id_for_conn, resume_session_id)
+                        .await
+                    {
+                        Ok(value) => value,
+                        Err(e) => {
+                            let err = anyhow!(
+                                "Failed to initialize ACP agent {}: {}",
+                                agent_id_for_conn,
+                                e
+                            );
+                            let _ = bootstrap_tx.send(Err(err));
+                            return Err(acp::Error::internal_error().data(format!("{e:#}")));
+                        }
+                    };
 
                 ready.store(true, Ordering::SeqCst);
                 let _ = bootstrap_tx.send(Ok(bootstrap.clone()));
@@ -1466,17 +1508,14 @@ impl AcpAgent {
                 let error_msg = buf.trim().to_string();
                 error!("ACP stderr: {}", error_msg);
 
-                // Create error message
-                let error_message = AcpMessage::Error(AcpError { message: error_msg });
-
                 // Save to history
-                {
+                let message_for_ui = {
                     let mut history = history.lock().await;
-                    history.push(error_message.clone());
-                }
+                    AcpClientImpl::append_or_push_error_message(&mut history, &error_msg)
+                };
 
                 // Send error message to UI
-                let _ = message_sender.send(error_message);
+                let _ = message_sender.send(message_for_ui);
 
                 buf.clear();
             }
@@ -1895,19 +1934,15 @@ impl AcpAgent {
                         }
                         Err(e) => {
                             error!("Failed to end prompt for agent {}, error: {}", agent_id, e);
-                            // Create error message
-                            let error_message = AcpMessage::Error(AcpError {
-                                message: e.to_string(),
-                            });
 
                             // Save to history
-                            {
+                            let message_for_ui = {
                                 let mut hist = history.lock().await;
-                                hist.push(error_message.clone());
-                            }
+                                AcpClientImpl::append_or_push_error_message(&mut hist, &e.to_string())
+                            };
 
                             // Send error message to UI
-                            let _ = message_sender.send(error_message);
+                            let _ = message_sender.send(message_for_ui);
                         }
                     }
                     break;
@@ -1971,7 +2006,9 @@ impl AcpAgent {
                             .connect_with(transport, async move |conn| {
                                 Self::initialize_agent_connection(&conn, "session-list")
                                     .await
-                                    .map_err(|e| acp::Error::internal_error().data(format!("{e:#}")))?;
+                                    .map_err(|e| {
+                                        acp::Error::internal_error().data(format!("{e:#}"))
+                                    })?;
 
                                 let mut all_sessions = Vec::new();
                                 let mut cursor = None;
@@ -1986,14 +2023,14 @@ impl AcpAgent {
                                         .block_task()
                                         .await?;
 
-                                    all_sessions.extend(response.sessions.into_iter().map(|session| {
-                                        AcpSessionSummary {
+                                    all_sessions.extend(response.sessions.into_iter().map(
+                                        |session| AcpSessionSummary {
                                             session_id: session.session_id.to_string(),
                                             cwd: session.cwd.to_string_lossy().to_string(),
                                             title: session.title,
                                             updated_at: session.updated_at,
-                                        }
-                                    }));
+                                        },
+                                    ));
 
                                     if response.next_cursor.is_none() {
                                         break;
