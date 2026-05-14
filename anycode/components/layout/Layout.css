@@ -189,7 +189,7 @@
 
 .layout .dv-tab.dv-active-tab .dv-default-tab .dv-default-tab-content {
     color: #f0f0f0;
-    text-shadow: 0 0 6px rgba(255, 255, 255, 0.8);
+    /*text-shadow: 0 0 6px rgba(255, 255, 255, 0.8);*/
 }
 
 .layout.dockview-theme-dark .dv-pane-container .dv-pane .dv-pane-header:focus:before,

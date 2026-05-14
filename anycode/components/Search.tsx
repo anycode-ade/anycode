@@ -475,24 +475,20 @@ const Search = ({ id, focusRequestToken, inputValue, onInputValueChange, onEnter
                         <span className="search-loading"><span>.</span><span>.</span><span>.</span></span>
                     </>
                 )}
-                {results.length > 0 && (
-                    <>
-                        <button
-                            className="search-button"
-                            onClick={handleExpandAll}
-                            title="Expand all files"
-                        >
-                            <Icons.ChevronDown />
-                        </button>
-                        <button
-                            className="search-button"
-                            onClick={handleCollapseAll}
-                            title="Collapse all files"
-                        >
-                            <Icons.ChevronUp />
-                        </button>
-                    </>
-                )}
+                <button
+                    className="search-button"
+                    onClick={handleExpandAll}
+                    title="Expand all files"
+                >
+                    <Icons.ChevronDown />
+                </button>
+                <button
+                    className="search-button"
+                    onClick={handleCollapseAll}
+                    title="Collapse all files"
+                >
+                    <Icons.ChevronUp />
+                </button>
                 </div>
             </div>
 

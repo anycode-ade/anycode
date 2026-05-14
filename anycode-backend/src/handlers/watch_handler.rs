@@ -264,10 +264,10 @@ async fn handle_search_update(
         return;
     }
 
-    for (sid, pattern) in searches {
+    for (_, pattern) in searches {
         let cancel = CancellationToken::new();
         if let Some(file_result) = search_file_result(path, &pattern, cancel).await {
-            let _ = socket.to(sid).emit("search:result", &file_result).await;
+            let _ = socket.emit("search:result", &file_result).await;
         }
     }
 }

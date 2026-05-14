@@ -141,6 +141,7 @@ export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: Us
     const activeEditorPaneIdRef = useRef<string>(DEFAULT_EDITOR_PANE_ID);
     const [paneActiveFileIds, setPaneActiveFileIds] = useState<Record<string, string | null>>(() => persistedPaneActiveFileIds);
     const paneActiveFileIdsRef = useRef<Record<string, string | null>>(persistedPaneActiveFileIds);
+    const registeredPaneIdsRef = useRef<Set<string>>(new Set([DEFAULT_EDITOR_PANE_ID]));
     const activeFileId = paneActiveFileIds[activeEditorPaneId] ?? null;
     const activeFileIdRef = useRef<string | null>(persistedEditorState.activeFileId);
 
@@ -166,7 +167,7 @@ export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: Us
 
     const activeFile = files.find((f) => f.id === activeFileId);
     const hasVisibleEditorPane = useCallback(() => (
-        Object.keys(paneActiveFileIdsRef.current).some((id) => id !== DEFAULT_EDITOR_PANE_ID)
+        Array.from(registeredPaneIdsRef.current).some((id) => id !== DEFAULT_EDITOR_PANE_ID)
     ), []);
 
     // Choose the editor pane we should target for an open/select action.
@@ -177,10 +178,12 @@ export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: Us
     // 4) the only visible editor pane
     // 5) the default editor pane as a safe fallback
     const resolveTargetPaneId = useCallback((paneId?: string, fileId?: string) => {
-        const paneEntries = Object.entries(paneActiveFileIdsRef.current);
+        const registeredPaneIds = registeredPaneIdsRef.current;
+        const paneEntries = Object.entries(paneActiveFileIdsRef.current)
+            .filter(([id]) => registeredPaneIds.has(id));
         const paneIds = paneEntries.map(([id]) => id);
         const visiblePaneIds = paneIds.filter((id) => id !== DEFAULT_EDITOR_PANE_ID);
-        const isKnownPane = (id: string) => Object.hasOwn(paneActiveFileIdsRef.current, id);
+        const isKnownPane = (id: string) => registeredPaneIds.has(id);
 
         if (paneId) {
             return paneId;
@@ -276,6 +279,7 @@ export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: Us
     }, [hasVisibleEditorPane, resolveTargetPaneId]);
 
     const registerEditorPane = useCallback((paneId: string) => {
+        registeredPaneIdsRef.current.add(paneId);
         setPaneActiveFileIds((prev) => {
             if (Object.hasOwn(prev, paneId)) return prev;
             return {
@@ -306,6 +310,7 @@ export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: Us
     }, [pendingExistingOpenRequest, setActiveFileId]);
 
     const unregisterEditorPane = useCallback((paneId: string) => {
+        registeredPaneIdsRef.current.delete(paneId);
         setReferencesPeekByPane((prev) => {
             if (!Object.hasOwn(prev, paneId)) return prev;
             const next = { ...prev };
@@ -592,7 +597,6 @@ export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: Us
 
         const existingFile = filesRef.current.find((file) => file.id === path);
         const targetPaneId = resolveTargetPaneId(paneId, existingFile?.id);
-        console.log('[openFile]', { path, line, column });
 
         if (existingFile) {
             const editor = editorRefs.current.get(existingFile.id);
@@ -903,14 +907,15 @@ export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: Us
             for (const file of filesRef.current) {
                 if (!editorStatesRef.current.has(file.id)) {
                     const content = savedFileContentsRef.current.get(file.id);
-                    if (content === undefined) continue;
+                    if (content === undefined) {
+                        continue;
+                    }
 
                     const pendingPosition = pendingPositions.current.get(file.id);
                     const pendingDiagnostics = diagnosticsRef.current.get(file.id);
                     const errors = pendingDiagnostics
                         ? pendingDiagnostics.map((d) => ({ line: d.range.start.line, message: d.message }))
                         : undefined;
-
                     const editor = await createEditor(content, file.language, file.id, pendingPosition, errors, file.history);
                     newEditorStates.set(file.id, editor);
                     savedFileContentsRef.current.set(file.id, content);

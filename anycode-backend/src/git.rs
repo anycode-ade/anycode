@@ -16,7 +16,6 @@ pub enum FileStatus {
     Conflict,
 }
 
-
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct GitFileStatus {
     pub path: String,
@@ -157,10 +156,7 @@ impl GitManager {
             .recurse_untracked_dirs(true)
             .include_typechange(true);
 
-        let head_tree = repo
-            .head()
-            .ok()
-            .and_then(|head| head.peel_to_tree().ok());
+        let head_tree = repo.head().ok().and_then(|head| head.peel_to_tree().ok());
 
         let diff = repo.diff_tree_to_workdir_with_index(head_tree.as_ref(), Some(&mut opts))?;
 
@@ -295,7 +291,12 @@ impl GitManager {
 
             let abs_path = repo_root.join(&relative_path).to_string_lossy().to_string();
             let next_file = self.status_for_relative_path(&repo, &relative_path).ok()?;
-            let prev_index = self.status_cache.files.iter().position(|f| f.path == abs_path);
+            let prev_index = self
+                .status_cache
+                .files
+                .iter()
+                .position(|f| f.path == abs_path);
+
             let prev_file = prev_index.and_then(|idx| self.status_cache.files.get(idx).cloned());
 
             if prev_file == next_file {
@@ -746,7 +747,11 @@ impl GitManager {
         Ok((added, removed))
     }
 
-    fn status_for_relative_path(&self, repo: &Repository, relative_path: &str) -> Result<Option<GitFileStatus>> {
+    fn status_for_relative_path(
+        &self,
+        repo: &Repository,
+        relative_path: &str,
+    ) -> Result<Option<GitFileStatus>> {
         let repo_root = repo.workdir().unwrap_or(Path::new("."));
         let mut opts = StatusOptions::new();
         opts.include_untracked(true)
@@ -764,7 +769,9 @@ impl GitManager {
             if entry_path != relative_path {
                 continue;
             }
-            if let Some(file) = Self::status_from_entry(repo_root, entry_path, entry.status(), added, removed) {
+            if let Some(file) =
+                Self::status_from_entry(repo_root, entry_path, entry.status(), added, removed)
+            {
                 return Ok(Some(file));
             }
         }

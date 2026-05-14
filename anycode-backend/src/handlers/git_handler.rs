@@ -88,7 +88,8 @@ pub async fn handle_git_branches(ack: AckSender, state: State<AppState>) {
     info!("Received git:branches");
     let result = {
         let git = state.git_manager.lock().await;
-        git.list_branches().map(|branches| json!({ "branches": branches }))
+        git.list_branches()
+            .map(|branches| json!({ "branches": branches }))
     };
     send_response(ack, result);
 }
