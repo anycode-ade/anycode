@@ -297,6 +297,11 @@
     stroke: #e05a5a;
 }
 
+.layout-header-action-btn--diff {
+    font-size: 12px;
+    font-weight: 600;
+}
+
 .layout-header-action-icon {
     width: 12px;
     height: 12px;

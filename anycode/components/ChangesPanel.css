@@ -456,7 +456,7 @@
 }
 
 .changes-stat-removed {
-    color: #d88a8a;
+    color: rgba(248, 65, 61, 1);
     min-width: 0;
     text-align: left;
     padding: 0;

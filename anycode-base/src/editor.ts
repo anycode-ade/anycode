@@ -25,6 +25,7 @@ import {
 import './styles.css';
 import { Search } from "./search";
 import { computeGitChanges, DiffInfo } from "./diff";
+import { getGapElementData } from "./renderer/DiffRenderer";
 
 export interface EditorSettings {
     lineHeight: number;
@@ -36,6 +37,8 @@ export interface EditorOptions {
     column?: number;
     theme?: any;
     readOnly?: boolean;
+    focusedDiffEnabled?: boolean;
+    focusedDiffContextLines?: number;
 }
 
 export interface EditorState {
@@ -89,6 +92,8 @@ export class AnycodeEditor {
     private search: Search = new Search();
 
     private diffEnabled: boolean = false;
+    private focusedDiffEnabled: boolean;
+    private focusedDiffContextLines: number;
     private originalCode?: string;
     private diffs?: Map<number, DiffInfo>;
     private readonly readOnly: boolean;
@@ -101,6 +106,8 @@ export class AnycodeEditor {
     ) {
         this.code = new Code(initialText, filename, language);
         this.readOnly = options.readOnly ?? false;
+        this.focusedDiffEnabled = options.focusedDiffEnabled ?? false;
+        this.focusedDiffContextLines = Math.max(0, options.focusedDiffContextLines ?? 3);
         // Set initial cursor position
         if (options.line !== undefined && options.column !== undefined) {
             this.offset = this.code.getOffset(options.line, options.column);
@@ -122,6 +129,7 @@ export class AnycodeEditor {
         addCssToDocument(css, 'anyeditor-theme');
         this.createDomElements();
         this.renderer = new Renderer(this.container, this.buttonsColumn, this.gutter, this.codeContent);
+        this.renderer.setFocusedDiffMode(this.focusedDiffEnabled, this.focusedDiffContextLines);
     }
 
     private createDomElements() {
@@ -173,11 +181,7 @@ export class AnycodeEditor {
 
     public setText(newText: string) {
         this.code.setContent(newText);
-        if (this.diffEnabled && this.originalCode !== undefined) {
-            this.diffs = computeGitChanges(this.originalCode, newText);
-        } else {
-            this.diffs = undefined;
-        }
+        this.recomputeDiffs();
     }
 
     public updateTextIncremental(newText: string) {
@@ -220,12 +224,7 @@ export class AnycodeEditor {
         this.selection = null;
         this.offset = Math.min(this.offset, this.code.getContentLength());
 
-        if (this.diffEnabled && this.originalCode !== undefined) {
-            const updatedText = this.code.getContent();
-            this.diffs = computeGitChanges(this.originalCode, updatedText);
-        } else {
-            this.diffs = undefined;
-        }
+        this.recomputeDiffs();
 
         if (this.search.isActive()) {
             const matches = this.code.search(this.search.getPattern());
@@ -395,6 +394,7 @@ export class AnycodeEditor {
 
         this.handleClick = this.handleClick.bind(this);
         this.codeContent.addEventListener('click', this.handleClick);
+        this.gutter.addEventListener('click', this.handleClick);
 
         this.handleKeydown = this.handleKeydown.bind(this);
         this.codeContent.addEventListener('keydown', this.handleKeydown);
@@ -427,6 +427,7 @@ export class AnycodeEditor {
     private removeEventListeners() {
         this.container.removeEventListener("scroll", this.handleScroll);
         this.codeContent.removeEventListener('click', this.handleClick);
+        this.gutter.removeEventListener('click', this.handleClick);
         this.codeContent.removeEventListener('keydown', this.handleKeydown);
         this.codeContent.removeEventListener('paste', this.handlePasteEvent);
         this.container.removeEventListener('beforeinput', this.handleBeforeInput);
@@ -493,10 +494,52 @@ export class AnycodeEditor {
         this.renderer.renderCursorOrSelection(this.getEditorState());
     }
 
+    private getDiffGapTarget(target: EventTarget | null): HTMLElement | null {
+        if (!(target instanceof Element)) {
+            return null;
+        }
+        const match = target.closest('.diff-gap, .diff-gap-expand-btn');
+        return match instanceof HTMLElement ? match : null;
+    }
+
+    private handleDiffGapExpandClick(e: MouseEvent): boolean {
+        const gapTarget = this.getDiffGapTarget(e.target);
+        if (!gapTarget) return false;
+
+        e.preventDefault();
+        e.stopPropagation();
+
+        const gapData = getGapElementData(gapTarget);
+        if (!gapData || gapData.hiddenStart < 0 || gapData.hiddenEnd < gapData.hiddenStart) {
+            return true;
+        }
+
+        const prevScrollTop = this.container.scrollTop;
+        const expanded = this.renderer.expandFocusedHiddenRange(
+            gapData.hiddenStart,
+            gapData.hiddenEnd,
+            gapData.expandStep,
+            gapData.expandDirection,
+        );
+        if (expanded) {
+            this.renderer.render(this.getEditorState(), this.search);
+            this.container.scrollTop = prevScrollTop;
+            if (!this.readOnly) {
+                this.codeContent.focus({ preventScroll: true });
+            }
+        }
+
+        return true;
+    }
+
     private handleClick(e: MouseEvent): void {
         console.log("click", e);
         this.clearPendingHover();
         this.closeHover();
+
+        if (this.handleDiffGapExpandClick(e)) {
+            return;
+        }
 
         const oldCursor = this.code.getPosition(this.offset);
 
@@ -612,6 +655,11 @@ export class AnycodeEditor {
 
     private handleMouseDown(e: MouseEvent) {
         if (e.button !== 0) return;
+        if (this.getDiffGapTarget(e.target)) {
+            e.preventDefault();
+            e.stopPropagation();
+            return;
+        }
         if (isInsideDiagnostic(e.target as Node)) return;
         e.preventDefault();
         this.clearPendingHover();
@@ -937,6 +985,7 @@ export class AnycodeEditor {
         };
 
         const result = await executeAction(action, ctx);
+        this.adjustFocusedDiffNavigationOffset(result, action);
         this.applyEditResult(result);
 
         if (this.isCompletionOpen) {
@@ -947,6 +996,60 @@ export class AnycodeEditor {
             this.renderer.removeAllHighlights(this.search);
             this.renderer.removeSearch();
             this.search.clear();
+        }
+    }
+
+    private adjustFocusedDiffNavigationOffset(result: ActionResult, action: Action): void {
+        if (!this.focusedDiffEnabled) return;
+        if (
+            action !== Action.ARROW_LEFT
+            && action !== Action.ARROW_RIGHT
+            && action !== Action.ARROW_LEFT_ALT
+            && action !== Action.ARROW_RIGHT_ALT
+            && action !== Action.ARROW_UP
+            && action !== Action.ARROW_DOWN
+        ) {
+            return;
+        }
+
+        const visibleLines = this.renderer.getVisibleRealLineIndices();
+        if (visibleLines.size === 0) return;
+        const visibleLineList = Array.from(visibleLines);
+
+        const pos = result.ctx.code.getPosition(result.ctx.offset);
+        if (visibleLines.has(pos.line)) return;
+
+        const preferNext =
+            action === Action.ARROW_RIGHT
+            || action === Action.ARROW_RIGHT_ALT
+            || action === Action.ARROW_DOWN;
+
+        let targetLine: number | null = null;
+        if (preferNext) {
+            targetLine = visibleLineList.find((line) => line > pos.line) ?? null;
+            if (targetLine === null) {
+                targetLine = visibleLineList[visibleLineList.length - 1] ?? null;
+            }
+        } else {
+            for (let i = visibleLineList.length - 1; i >= 0; i--) {
+                if (visibleLineList[i] < pos.line) {
+                    targetLine = visibleLineList[i];
+                    break;
+                }
+            }
+            if (targetLine === null) {
+                targetLine = visibleLineList[0] ?? null;
+            }
+        }
+
+        if (targetLine === null) return;
+
+        const targetColumn = Math.min(pos.column, result.ctx.code.lineLength(targetLine));
+        const targetOffset = result.ctx.code.getOffset(targetLine, targetColumn);
+        result.ctx.offset = targetOffset;
+
+        if (result.ctx.selection && result.ctx.event?.shiftKey) {
+            result.ctx.selection = result.ctx.selection.fromCursor(targetOffset);
         }
     }
 
@@ -1021,13 +1124,7 @@ export class AnycodeEditor {
 
         if (textChanged) {
             this.code = result.ctx.code;
-            // calculate diff when text changes
-            if (this.diffEnabled && this.originalCode !== undefined) {
-                const currentText = this.code.getContent();
-                this.diffs = computeGitChanges(this.originalCode, currentText);
-            } else {
-                this.diffs = undefined;
-            }
+            this.recomputeDiffs();
         }
         if (offsetChanged) this.offset = result.ctx.offset;
         if (selectionChanged) this.selection = result.ctx.selection || null;
@@ -1392,12 +1489,7 @@ export class AnycodeEditor {
         this.code.setStateAfter(this.offset, this.selection || undefined);
         this.code.commit();
 
-        if (this.diffEnabled && this.originalCode !== undefined) {
-            const currentText = this.code.getContent();
-            this.diffs = computeGitChanges(this.originalCode, currentText);
-        } else {
-            this.diffs = undefined;
-        }
+        this.recomputeDiffs();
 
         this.renderer.renderChanges(this.getEditorState(), this.search);
         this.verifyDiffRendering();
@@ -1411,15 +1503,23 @@ export class AnycodeEditor {
             this.originalCode = this.code.getContent();
         }
 
-        if (enabled && this.originalCode !== undefined) {
-            const currentText = this.code.getContent();
-            this.diffs = computeGitChanges(this.originalCode, currentText);
-        }
+        this.recomputeDiffs();
 
         if (!enabled) {
             this.renderer.clearAllDiffs();
+            this.renderer.render(this.getEditorState(), this.search);
         } else {
             this.renderer.render(this.getEditorState(), this.search);
+            this.verifyDiffRendering();
+        }
+    }
+
+    public setFocusedDiffMode(enabled: boolean, contextLines: number = 3): void {
+        this.focusedDiffEnabled = enabled;
+        this.focusedDiffContextLines = Math.max(0, contextLines);
+        this.renderer.setFocusedDiffMode(this.focusedDiffEnabled, this.focusedDiffContextLines);
+        this.renderer.render(this.getEditorState(), this.search);
+        if (this.diffEnabled) {
             this.verifyDiffRendering();
         }
     }
@@ -1427,10 +1527,17 @@ export class AnycodeEditor {
     public setOriginalCode(content: string): void {
         this.originalCode = content;
         if (this.diffEnabled) {
-            const currentText = this.code.getContent();
-            this.diffs = computeGitChanges(this.originalCode, currentText);
+            this.recomputeDiffs();
             this.renderer.render(this.getEditorState(), this.search);
             this.verifyDiffRendering();
+        }
+    }
+
+    private recomputeDiffs(): void {
+        if (this.diffEnabled && this.originalCode !== undefined) {
+            this.diffs = computeGitChanges(this.originalCode, this.code.getContent());
+        } else {
+            this.diffs = undefined;
         }
     }
 

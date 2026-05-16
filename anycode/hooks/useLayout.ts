@@ -24,6 +24,7 @@ const defaultPanelKeysById: Record<PanelId, string[]> = {
     editor: [],
     terminal: [],
     agent: [],
+    browser: ['browser'],
 };
 
 export const useLayout = ({

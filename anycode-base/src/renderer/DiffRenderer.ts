@@ -1,7 +1,26 @@
 import { AnycodeLine } from "../utils";
 import { EditorSettings } from "../editor";
 import { DiffInfo, ChangeType } from "../diff";
-import { GhostRow } from "./Renderer";
+import type { GhostRow, SeparatorRow, VisualRow } from "./Renderer";
+
+export type ExpandDirection = 'up' | 'down' | 'both' | 'all';
+
+export interface GapElementData {
+    hiddenStart: number;
+    hiddenEnd: number;
+    expandStep: number;
+    expandDirection: ExpandDirection;
+}
+
+const gapElementDataMap = new WeakMap<HTMLElement, GapElementData>();
+
+const setGapElementData = (el: HTMLElement, data: GapElementData): void => {
+    gapElementDataMap.set(el, data);
+};
+
+export const getGapElementData = (el: HTMLElement): GapElementData | undefined => {
+    return gapElementDataMap.get(el);
+};
 
 export interface GhostLine {
     code: HTMLElement;
@@ -10,13 +29,19 @@ export interface GhostLine {
 }
 
 /**
- * DiffRenderer handles diff visualization and ghost lines.
- * Manages diff highlighting, ghost lines for deleted content, and hunk synchronization.
+ * DiffRenderer handles diff visualization, ghost lines, and focused diff model.
+ * Manages diff highlighting, ghost lines for deleted content, hunk synchronization,
+ * and focused diff visibility/separator computation.
  */
 export class DiffRenderer {
     private codeContent: HTMLDivElement;
     private gutter: HTMLDivElement;
     private buttonsColumn: HTMLDivElement;
+
+    // Focused diff model state
+    private focusedDiffEnabled: boolean = false;
+    private focusedDiffContextLines: number = 3;
+    private focusedDiffExpandedRanges: Array<{ start: number; end: number }> = [];
 
     constructor(
         codeContent: HTMLDivElement,
@@ -45,201 +70,7 @@ export class DiffRenderer {
         return null;
     }
 
-    // ========== Ghost Lines Rendering ==========
-
-    private hasGhostContent(diffInfo: DiffInfo): boolean {
-        return (
-            (diffInfo.changeType === 'modified' || diffInfo.changeType === 'deleted') &&
-            !!diffInfo.oldLines &&
-            diffInfo.oldLines.length > 0
-        );
-    }
-
-    private getGhostAnchorLine(lineNumber: number, diffInfo: DiffInfo): number {
-        return diffInfo.ghostAnchorLine ?? lineNumber;
-    }
-
-    /**
-     * @deprecated Use buildVisualRows + createGhostRowElements instead.
-     * This method was used for dynamic ghost line insertion during render.
-     */
-    public renderGhostsForLine(
-        lineIndex: number,
-        diffResult: Map<number, DiffInfo>,
-        renderedHunks: Set<number>,
-        settings: EditorSettings
-    ): GhostLine[] | null {
-        const anchorLine = lineIndex + 1;
-        const lines: GhostLine[] = [];
-
-        for (const [lineNumber, diffInfo] of diffResult) {
-            if (!this.hasGhostContent(diffInfo)) {
-                continue;
-            }
-            if (this.getGhostAnchorLine(lineNumber, diffInfo) !== anchorLine) {
-                continue;
-            }
-
-            const hunkId = diffInfo.hunkId;
-            if (renderedHunks.has(hunkId)) {
-                continue;
-            }
-            renderedHunks.add(hunkId);
-
-            for (const oldLine of diffInfo.oldLines!) {
-                const ghostLine = this.createDeletedGhostLine(oldLine, settings, hunkId);
-
-                // Add empty gutter and button elements to keep alignment
-                const emptyGutter = document.createElement('div');
-                emptyGutter.className = 'ln';
-                emptyGutter.style.height = `${settings.lineHeight}px`;
-                emptyGutter.setAttribute('data-ghost', 'true');
-                emptyGutter.setAttribute('data-hunk-id', hunkId.toString());
-
-                const emptyButton = document.createElement('div');
-                emptyButton.className = 'bt';
-                emptyButton.style.height = `${settings.lineHeight}px`;
-                emptyButton.setAttribute('data-ghost', 'true');
-                emptyButton.setAttribute('data-hunk-id', hunkId.toString());
-
-                lines.push({ code: ghostLine, gutter: emptyGutter, btn: emptyButton });
-            }
-        }
-
-        return lines.length > 0 ? lines : null;
-    }
-
-    /**
-     * @deprecated No longer needed with visual rows model.
-     * Ghost lines are now part of the unified visual rows and rendered with stable indices.
-     */
-    public syncVisibleGhosts(
-        startLine: number,
-        endLine: number,
-        diffResult: Map<number, DiffInfo>,
-        settings: EditorSettings,
-        lines: AnycodeLine[],
-        totalLines: number
-    ): void {
-        if (!diffResult || diffResult.size === 0) return;
-
-        const visibleHunks = new Set<number>();
-        const includeEofAnchor = endLine === totalLines;
-
-        // Collect all hunks whose ghost anchor is visible.
-        for (const [lineNumber, diffInfo] of diffResult) {
-            if (!this.hasGhostContent(diffInfo)) {
-                continue;
-            }
-            const anchorLine = this.getGhostAnchorLine(lineNumber, diffInfo);
-            const inVisibleRange = anchorLine >= startLine + 1 && anchorLine <= endLine;
-            const atVisibleEof = includeEofAnchor && anchorLine === totalLines + 1;
-
-            if (inVisibleRange || atVisibleEof) {
-                visibleHunks.add(diffInfo.hunkId);
-            }
-        }
-
-        // Update ghost lines for each visible hunk
-        for (const hunkId of visibleHunks) {
-            let oldLinesForHunk: string[] | undefined;
-            for (const [_, info] of diffResult) {
-                if (info.hunkId === hunkId && info.oldLines && info.oldLines.length > 0) {
-                    oldLinesForHunk = info.oldLines;
-                    break;
-                }
-            }
-            if (oldLinesForHunk) {
-                this.updateGhostLinesForHunk(hunkId, oldLinesForHunk, settings, diffResult, lines);
-            }
-        }
-
-        // Remove ghost lines for hunks that are no longer visible
-        const allGhostLines = this.codeContent.querySelectorAll('[data-ghost="true"]');
-        const ghostHunks = new Set<number>();
-        allGhostLines.forEach((ghost) => {
-            const hunkId = parseInt(ghost.getAttribute('data-hunk-id') || '-1', 10);
-            if (hunkId >= 0) {
-                ghostHunks.add(hunkId);
-            }
-        });
-
-        for (const hunkId of ghostHunks) {
-            if (!visibleHunks.has(hunkId)) {
-                this.removeGhostLinesForHunk(hunkId);
-            }
-        }
-    }
-
-    private updateGhostLinesForHunk(
-        hunkId: number, oldLines: string[],
-        settings: EditorSettings,
-        diffResult: Map<number, DiffInfo>,
-        lines: AnycodeLine[]
-    ): void {
-        // Find existing ghost lines for this hunk
-        const existingGhosts = this.findGhostLinesForHunk(hunkId);
-
-        // If content matches, no update needed
-        if (existingGhosts.length === oldLines.length) {
-            let match = true;
-            for (let i = 0; i < oldLines.length; i++) {
-                const expectedText = oldLines[i] === '' ? '\u00A0' : oldLines[i];
-                if (existingGhosts[i].textContent !== expectedText) {
-                    match = false;
-                    break;
-                }
-            }
-            if (match) return; // No changes needed
-        }
-
-        // Remove old ghost lines and corresponding gutter/button elements
-        this.removeGhostLinesForHunk(hunkId);
-
-        // Find ghost anchor for this hunk.
-        const anchorLineNum = this.getGhostAnchorLineInHunk(hunkId, diffResult);
-        if (anchorLineNum === null) return;
-
-        // Find anchor line from lines array (can be absent for EOF anchors).
-        const anchorLine = lines.find(line => line.lineNumber === anchorLineNum - 1);
-
-        // Insert new ghost lines before the first line
-        const codeFrag = document.createDocumentFragment();
-        const gutterFrag = document.createDocumentFragment();
-        const btnFrag = document.createDocumentFragment();
-
-        for (const oldLine of oldLines) {
-            const ghostLine = this.createDeletedGhostLine(oldLine, settings, hunkId);
-            codeFrag.appendChild(ghostLine);
-
-            const emptyGutter = document.createElement('div');
-            emptyGutter.className = 'ln';
-            emptyGutter.style.height = `${settings.lineHeight}px`;
-            emptyGutter.setAttribute('data-ghost', 'true');
-            emptyGutter.setAttribute('data-hunk-id', hunkId.toString());
-            gutterFrag.appendChild(emptyGutter);
-
-            const emptyButton = document.createElement('div');
-            emptyButton.className = 'bt';
-            emptyButton.style.height = `${settings.lineHeight}px`;
-            emptyButton.setAttribute('data-ghost', 'true');
-            emptyButton.setAttribute('data-hunk-id', hunkId.toString());
-            btnFrag.appendChild(emptyButton);
-        }
-
-        // Find corresponding gutter and button elements by data-line attribute.
-        const anchorGutterEl = this.gutter.querySelector(`.ln[data-line="${anchorLineNum - 1}"]`);
-        const anchorBtnEl = this.buttonsColumn.querySelector(`.bt[data-line="${anchorLineNum - 1}"]`);
-
-        // Insert at the correct positions in all three containers.
-        const codeInsertBefore = anchorLine ?? this.codeContent.lastElementChild;
-        const gutterInsertBefore = anchorGutterEl ?? this.gutter.lastElementChild;
-        const btnInsertBefore = anchorBtnEl ?? this.buttonsColumn.lastElementChild;
-
-        this.codeContent.insertBefore(codeFrag, codeInsertBefore);
-        this.gutter.insertBefore(gutterFrag, gutterInsertBefore);
-        this.buttonsColumn.insertBefore(btnFrag, btnInsertBefore);
-    }
+    // ========== Ghost Lines ==========
 
     private createDeletedGhostLine(
         text: string, settings: EditorSettings, hunkId: number
@@ -286,61 +117,149 @@ export class DiffRenderer {
         return { code: ghostLine, gutter: emptyGutter, btn: emptyButton };
     }
 
-    private findGhostLinesForHunk(hunkId: number): HTMLElement[] {
-        const ghostLines: HTMLElement[] = [];
-        const allGhostLines = this.codeContent.querySelectorAll('[data-ghost="true"]');
-        allGhostLines.forEach((ghost) => {
-            if (ghost.getAttribute('data-hunk-id') === hunkId.toString()) {
-                ghostLines.push(ghost as HTMLElement);
-            }
-        });
-        return ghostLines;
-    }
-
-    private removeGhostLinesForHunk(hunkId: number): void {
-        const ghostLines = this.findGhostLinesForHunk(hunkId);
-        ghostLines.forEach(ghost => ghost.remove());
-
-        const gutterGhosts = this.gutter.querySelectorAll(`[data-ghost="true"][data-hunk-id="${hunkId}"]`);
-        gutterGhosts.forEach(ghost => ghost.remove());
-
-        const btnGhosts = this.buttonsColumn.querySelectorAll(`[data-ghost="true"][data-hunk-id="${hunkId}"]`);
-        btnGhosts.forEach(ghost => ghost.remove());
-    }
-
-    private getGhostAnchorLineInHunk(
-        hunkId: number, diffResult: Map<number, DiffInfo>
-    ): number | null {
-        let minAnchorLine: number | null = null;
-        for (const [lineNum, info] of diffResult) {
-            if (info.hunkId === hunkId && this.hasGhostContent(info)) {
-                const anchorLine = this.getGhostAnchorLine(lineNum, info);
-                if (minAnchorLine === null || anchorLine < minAnchorLine) {
-                    minAnchorLine = anchorLine;
-                }
-            }
-        }
-        return minAnchorLine;
-    }
-
     public clearAllGhostLines(): void {
-        // Remove all ghost lines from code
         const ghostLines = this.codeContent.querySelectorAll('[data-ghost="true"]');
         ghostLines.forEach((ghostLine) => {
             ghostLine.remove();
         });
 
-        // Remove ghost elements from gutter
         const gutterGhosts = this.gutter.querySelectorAll('[data-ghost="true"]');
         gutterGhosts.forEach((ghost) => {
             ghost.remove();
         });
 
-        // Remove ghost elements from buttons
         const btnGhosts = this.buttonsColumn.querySelectorAll('[data-ghost="true"]');
         btnGhosts.forEach((ghost) => {
             ghost.remove();
         });
+    }
+
+    // ========== Focused Diff Model ==========
+
+    public isFocusedDiffEnabled(): boolean {
+        return this.focusedDiffEnabled;
+    }
+
+    public setFocusedDiffMode(enabled: boolean, contextLines: number = 3): void {
+        this.focusedDiffEnabled = enabled;
+        this.focusedDiffContextLines = Math.max(0, contextLines);
+        if (!enabled) {
+            this.focusedDiffExpandedRanges = [];
+        }
+    }
+
+    /**
+     * Returns the set of 0-indexed real line indices that should be rendered,
+     * or `undefined` when focused diff is disabled (meaning "show all lines").
+     */
+    public computeVisibleLines(
+        totalLines: number,
+        diffs: Map<number, DiffInfo> | undefined,
+    ): Set<number> | undefined {
+        if (!this.focusedDiffEnabled) {
+            return undefined;
+        }
+
+        const visible = new Set<number>();
+        if (!diffs || diffs.size === 0) {
+            for (let i = 0; i < totalLines; i++) visible.add(i);
+            return visible;
+        }
+
+        const clamp = (line: number) => Math.max(0, Math.min(totalLines - 1, line));
+
+        for (const [lineNumber] of diffs) {
+            const center = lineNumber - 1;
+            const start = clamp(center - this.focusedDiffContextLines);
+            const end = clamp(center + this.focusedDiffContextLines);
+            for (let i = start; i <= end; i++) {
+                visible.add(i);
+            }
+        }
+
+        for (const range of this.focusedDiffExpandedRanges) {
+            const start = clamp(range.start);
+            const end = clamp(range.end);
+            for (let i = start; i <= end; i++) {
+                visible.add(i);
+            }
+        }
+
+        return visible;
+    }
+
+    /**
+     * Walk through `rows` and insert `SeparatorRow`s wherever consecutive real
+     * lines are non-contiguous (i.e. some lines were hidden).
+     * No-op when focused diff is disabled.
+     */
+    public insertSeparators(rows: VisualRow[]): VisualRow[] {
+        if (!this.focusedDiffEnabled) {
+            return rows;
+        }
+
+        const result: VisualRow[] = [];
+        let prevRealLine: number | null = null;
+
+        for (const row of rows) {
+            if (row.kind === 'real') {
+                if (prevRealLine !== null && row.lineIndex - prevRealLine > 1) {
+                    const hiddenStart = prevRealLine + 1;
+                    const hiddenEnd = row.lineIndex - 1;
+                    result.push({
+                        kind: 'separator',
+                        hiddenStart,
+                        hiddenEnd,
+                        hiddenCount: hiddenEnd - hiddenStart + 1,
+                    });
+                }
+                prevRealLine = row.lineIndex;
+            }
+            result.push(row);
+        }
+
+        return result;
+    }
+
+    /**
+     * Expand a hidden region so that more lines become visible on the next render.
+     * Returns `true` if the model was mutated.
+     */
+    public expandRange(
+        hiddenStart: number,
+        hiddenEnd: number,
+        amount: number = 5,
+        side: ExpandDirection = 'both',
+    ): boolean {
+        if (!this.focusedDiffEnabled || hiddenStart > hiddenEnd) {
+            return false;
+        }
+
+        if (side === 'all') {
+            this.focusedDiffExpandedRanges.push({ start: hiddenStart, end: hiddenEnd });
+            return true;
+        }
+
+        const step = Math.max(1, amount);
+
+        if (side === 'up') {
+            const nextEnd = Math.min(hiddenEnd, hiddenStart + step - 1);
+            this.focusedDiffExpandedRanges.push({ start: hiddenStart, end: nextEnd });
+            return true;
+        }
+
+        if (side === 'down') {
+            const nextStart = Math.max(hiddenStart, hiddenEnd - step + 1);
+            this.focusedDiffExpandedRanges.push({ start: nextStart, end: hiddenEnd });
+            return true;
+        }
+
+        // 'both'
+        const upEnd = Math.min(hiddenEnd, hiddenStart + step - 1);
+        const downStart = Math.max(hiddenStart, hiddenEnd - step + 1);
+        this.focusedDiffExpandedRanges.push({ start: hiddenStart, end: upEnd });
+        this.focusedDiffExpandedRanges.push({ start: downStart, end: hiddenEnd });
+        return true;
     }
 
     // ========== Diff Class Management ==========
@@ -462,5 +381,73 @@ export class DiffRenderer {
 
         // Clear all ghost lines
         this.clearAllGhostLines();
+    }
+
+    // ========== Gap Row (Separator) Rendering ==========
+
+    public createGapRowElements(
+        row: SeparatorRow,
+        visualIndex: number,
+        settings: EditorSettings
+    ): { code: HTMLElement; gutter: HTMLElement; btn: HTMLElement } {
+        const code = document.createElement('div');
+        code.className = 'line diff-gap';
+        code.style.lineHeight = `${settings.lineHeight}px`;
+        code.style.height = `${settings.lineHeight}px`;
+        code.setAttribute('data-visual-index', visualIndex.toString());
+        setGapElementData(code, {
+            hiddenStart: row.hiddenStart,
+            hiddenEnd: row.hiddenEnd,
+            expandStep: 5,
+            expandDirection: 'all',
+        });
+
+        const labelBtn = document.createElement('button');
+        labelBtn.className = 'diff-gap-expand-btn diff-gap-expand-btn-label';
+        labelBtn.type = 'button';
+        labelBtn.textContent = `${row.hiddenCount} unmodified ${row.hiddenCount === 1 ? 'line' : 'lines'}`;
+        setGapElementData(labelBtn, {
+            hiddenStart: row.hiddenStart,
+            hiddenEnd: row.hiddenEnd,
+            expandStep: 0,
+            expandDirection: 'all',
+        });
+        code.appendChild(labelBtn);
+
+        const gutter = document.createElement('div');
+        gutter.className = 'ln diff-gap-gutter';
+        gutter.style.height = `${settings.lineHeight}px`;
+        gutter.setAttribute('data-visual-index', visualIndex.toString());
+
+        const upBtn = document.createElement('button');
+        upBtn.className = 'diff-gap-expand-btn diff-gap-gutter-btn diff-gap-gutter-btn-up';
+        upBtn.type = 'button';
+        upBtn.setAttribute('aria-label', 'Expand hidden lines up');
+        setGapElementData(upBtn, {
+            hiddenStart: row.hiddenStart,
+            hiddenEnd: row.hiddenEnd,
+            expandStep: 5,
+            expandDirection: 'up',
+        });
+        gutter.appendChild(upBtn);
+
+        const downBtn = document.createElement('button');
+        downBtn.className = 'diff-gap-expand-btn diff-gap-gutter-btn diff-gap-gutter-btn-down';
+        downBtn.type = 'button';
+        downBtn.setAttribute('aria-label', 'Expand hidden lines down');
+        setGapElementData(downBtn, {
+            hiddenStart: row.hiddenStart,
+            hiddenEnd: row.hiddenEnd,
+            expandStep: 5,
+            expandDirection: 'down',
+        });
+        gutter.appendChild(downBtn);
+
+        const btn = document.createElement('div');
+        btn.className = 'bt diff-gap-btn';
+        btn.style.height = `${settings.lineHeight}px`;
+        btn.setAttribute('data-visual-index', visualIndex.toString());
+
+        return { code, gutter, btn };
     }
 }

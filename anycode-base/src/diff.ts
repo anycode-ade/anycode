@@ -1,4 +1,3 @@
-import { diffChars, diffLines, Change } from 'diff';
 import * as JsDiff from 'diff';
 
 export enum EditKind {

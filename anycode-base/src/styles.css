@@ -103,8 +103,8 @@
 } */
 
 .diff-added {
-  background-color: rgba(76, 175, 79, 0.206);
-  position: relative;
+    background-color: rgba(71, 168, 91, 0.32);
+    position: relative;
 }
 
 /* .gutter .ln.diff-added::before {
@@ -203,12 +203,99 @@
 }
 
 .line-deleted-ghost {
-  color: #f6564b;
-  opacity: 0.6;
+  color: rgba(244, 67, 54, 0.75);
+  /*opacity: 0.6;*/
   background-color: rgba(244, 67, 54, 0.15);
   /* pointer-events: none; */
   user-select: none;
 }
+
+.diff-gap {
+  color: #a5acb5;
+  /*background: #303238;*/
+  border-radius: 0 8px 8px 0;
+  user-select: none;
+  -webkit-user-select: none;
+  display: flex;
+  align-items: center;
+  gap: 0;
+  text-align: left;
+}
+
+.diff-gap-gutter,
+.diff-gap-btn {
+  background: #303238;
+}
+
+.diff-gap-gutter {
+  /*background: #303238 !important;*/
+  color: #9ea5af;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  border-radius: 8px 0 0 8px;
+  padding-left: 6px;
+}
+
+.diff-gap-gutter-btn {
+  width: 14px;
+  height: 7px;
+  border-radius: 4px;
+  position: relative;
+}
+
+.diff-gap-gutter-btn::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 5px;
+  height: 5px;
+  border-left: 1.5px solid #666666;
+  border-bottom: 1.5px solid #666666;
+  transform: translate(-50%, -50%) rotate(-45deg);
+}
+
+.diff-gap-gutter-btn-up::before {
+  transform: translate(-50%, -60%) rotate(-45deg);
+}
+
+.diff-gap-gutter-btn-down::before {
+  transform: translate(-50%, -40%) rotate(135deg);
+}
+
+.diff-gap-expand-btn {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  line-height: 1;
+  user-select: none;
+  -webkit-user-select: none;
+  margin: 0;
+  padding: 0;
+}
+
+.diff-gap-expand-btn-label {
+  flex: 1;
+  height: 100%;
+  border-radius: 0 8px 8px 0;
+  background: transparent;
+  color: #9ea5af;
+  font-size: 11px;
+  padding: 0 12px;
+  text-align: left;
+  cursor: inherit;
+}
+
+/*.diff-gap-gutter-btn:hover {
+  background: #353a42;
+}
+
+.diff-gap-expand-btn-label:hover {
+  background: #373b42;
+  color: #b8bec8;
+}*/
 
 .search {
   position: absolute;
