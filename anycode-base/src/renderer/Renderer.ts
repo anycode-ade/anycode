@@ -13,6 +13,7 @@ import { CompletionRenderer } from "./CompletionRenderer";
 import { HoverRenderer } from "./HoverRenderer";
 import { DiagnosticRenderer } from "./DiagnosticRenderer";
 
+
 /**
  * A real line from the code
  */
@@ -31,7 +32,14 @@ export interface GhostRow {
     text: string;
 }
 
-export type VisualRow = RealRow | GhostRow;
+export interface SeparatorRow {
+    kind: 'separator';
+    hiddenStart: number; // inclusive, 0-indexed real line 
+    hiddenEnd: number;   // inclusive, 0-indexed real line
+    hiddenCount: number;
+}
+
+export type VisualRow = RealRow | GhostRow | SeparatorRow;
 
 export class Renderer {
     private container: HTMLDivElement;
@@ -82,10 +90,15 @@ export class Renderer {
             container,
             (lineNumber) => this.getLine(lineNumber)
         );
+
     }
 
     public setDiffEnabled(enabled: boolean) {
         this.diffEnabled = enabled;
+    }
+
+    public setFocusedDiffMode(enabled: boolean, contextLines: number = 3) {
+        this.diffRenderer.setFocusedDiffMode(enabled, contextLines);
     }
 
     public render(state: EditorState, search?: Search) {
@@ -134,7 +147,7 @@ export class Renderer {
                 codeFrag.appendChild(lineWrapper);
                 gutterFrag.appendChild(lineNumberEl);
                 btnFrag.appendChild(lineButtonEl);
-            } else {
+            } else if (row.kind === 'ghost') {
                 // Ghost row
                 const ghostElements = this.diffRenderer.createGhostRowElements(row, settings);
                 ghostElements.code.setAttribute('data-visual-index', i.toString());
@@ -144,6 +157,11 @@ export class Renderer {
                 codeFrag.appendChild(ghostElements.code);
                 gutterFrag.appendChild(ghostElements.gutter);
                 btnFrag.appendChild(ghostElements.btn);
+            } else {
+                const dividerElements = this.createRowElements(row, i, state);
+                codeFrag.appendChild(dividerElements.code);
+                gutterFrag.appendChild(dividerElements.gutter);
+                btnFrag.appendChild(dividerElements.btn);
             }
         }
 
@@ -197,6 +215,7 @@ export class Renderer {
     ): VisualRow[] {
         const rows: VisualRow[] = [];
         const processedHunks = new Set<number>();
+        const visibleRealLines = this.diffRenderer.computeVisibleLines(totalLines, diffs);
 
         // Collect ghost info by anchor line for efficient lookup
         const ghostsByAnchor = new Map<number, { hunkId: number; texts: string[] }[]>();
@@ -240,8 +259,10 @@ export class Renderer {
                 }
             }
             
-            // Add the real line
-            rows.push({ kind: 'real', lineIndex: i });
+            // Add real lines based on focused mode visibility
+            if (!visibleRealLines || visibleRealLines.has(i)) {
+                rows.push({ kind: 'real', lineIndex: i });
+            }
         }
 
         // Handle EOF ghosts (deletions anchored after the last line)
@@ -263,7 +284,16 @@ export class Renderer {
             }
         }
 
-        return rows;
+        return this.diffRenderer.insertSeparators(rows);
+    }
+
+    public expandFocusedHiddenRange(
+        hiddenStart: number,
+        hiddenEnd: number,
+        amount: number = 5,
+        side: 'up' | 'down' | 'both' | 'all' = 'both'
+    ): boolean {
+        return this.diffRenderer.expandRange(hiddenStart, hiddenEnd, amount, side);
     }
 
     /**
@@ -277,9 +307,30 @@ export class Renderer {
                 return i;
             }
         }
-        // Fallback: if line not found, estimate based on lineIndex
-        // This shouldn't happen in normal operation
-        return lineIndex;
+        // In focused diff mode, cursor can temporarily point to a hidden line.
+        // Snap to nearest rendered real row for scrolling purposes.
+        let nearestIndex = -1;
+        let nearestDistance = Number.POSITIVE_INFINITY;
+        for (let i = 0; i < this.visualRows.length; i++) {
+            const row = this.visualRows[i];
+            if (row.kind !== 'real') continue;
+            const distance = Math.abs(row.lineIndex - lineIndex);
+            if (distance < nearestDistance) {
+                nearestDistance = distance;
+                nearestIndex = i;
+            }
+        }
+        return nearestIndex >= 0 ? nearestIndex : 0;
+    }
+
+    public getVisibleRealLineIndices(): Set<number> {
+        const lines = new Set<number>();
+        for (const row of this.visualRows) {
+            if (row.kind === 'real') {
+                lines.add(row.lineIndex);
+            }
+        }
+        return lines;
     }
     
     /**
@@ -468,16 +519,17 @@ export class Renderer {
             lineButtonEl.setAttribute('data-visual-index', visualIndex.toString());
             
             return { code: lineWrapper, gutter: lineNumberEl, btn: lineButtonEl };
-        } else {
+        } else if (row.kind === 'ghost') {
             const ghostElements = this.diffRenderer.createGhostRowElements(row, settings);
             ghostElements.code.setAttribute('data-visual-index', visualIndex.toString());
             ghostElements.gutter.setAttribute('data-visual-index', visualIndex.toString());
             ghostElements.btn.setAttribute('data-visual-index', visualIndex.toString());
             
             return ghostElements;
+        } else {
+            return this.diffRenderer.createGapRowElements(row, visualIndex, settings);
         }
     }
-
     /**
      * Get all rendered elements (excluding spacers)
      */
@@ -670,7 +722,11 @@ export class Renderer {
 
     public getLines(): AnycodeLine[] {
         return Array.from(this.codeContent.children)
-            .filter((child) => !child.classList.contains('spacer') && !child.hasAttribute('data-ghost')) as AnycodeLine[];
+            .filter((child) =>
+                !child.classList.contains('spacer')
+                && !child.hasAttribute('data-ghost')
+                && child.classList.contains('line')
+            ) as AnycodeLine[];
     }
 
     public getLine(lineNumber: number): AnycodeLine | null {
