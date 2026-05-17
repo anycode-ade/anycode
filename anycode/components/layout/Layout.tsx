@@ -729,6 +729,7 @@ export const Layout: React.FC<LayoutProps> = ({
     const panelViewStateHandlersRef = useRef(new Map<string, PanelViewStateHandlers>());
     const panelViewStatesRef = useRef<Record<string, unknown>>({});
     const restoreViewStatesFrameRef = useRef<number | null>(null);
+    const lastLayoutSnapshotRef = useRef<string | null>(null);
     const splitRightRef = useRef<(api: DockviewApi, referencePanelId: string) => void>(() => {});
     const splitDownRef = useRef<(api: DockviewApi, referencePanelId: string) => void>(() => {});
     const addTabRef = useRef<(api: DockviewApi, referencePanelId: string) => void>(() => {});
@@ -749,6 +750,19 @@ export const Layout: React.FC<LayoutProps> = ({
             visible: visibility[id],
         }))
     ), [visibility]);
+
+    const getLayoutSnapshot = useCallback((api: DockviewApi): string => {
+        const raw = api.toJSON();
+        const sanitized = {
+            ...raw,
+            panels: Object.fromEntries(
+                Object.entries(raw.panels).map(([id, state]) => [id, { ...state, params: {} }]),
+            ),
+        };
+        delete sanitized.activeGroup;
+
+        return JSON.stringify(sanitized);
+    }, []);
 
     useEffect(() => {
         saveItem('filesPanelVisible', visibility.files);
@@ -912,19 +926,17 @@ export const Layout: React.FC<LayoutProps> = ({
         if (layoutSaveTimerRef.current !== null) {
             clearTimeout(layoutSaveTimerRef.current);
         }
-        restorePanelViewStates();
         layoutSaveTimerRef.current = window.setTimeout(() => {
             layoutSaveTimerRef.current = null;
-            const raw = api.toJSON();
-            const sanitized = {
-                ...raw,
-                panels: Object.fromEntries(
-                    Object.entries(raw.panels).map(([id, state]) => [id, { ...state, params: {} }]),
-                ),
-            };
-            storeLayoutState(createLayoutState(sanitized, getLayoutPanelId));
+            const snapshot = getLayoutSnapshot(api);
+            if (snapshot === lastLayoutSnapshotRef.current) {
+                return;
+            }
+            lastLayoutSnapshotRef.current = snapshot;
+            const parsedSnapshot = JSON.parse(snapshot) as DockviewLayout;
+            storeLayoutState(createLayoutState(parsedSnapshot, getLayoutPanelId));
         }, 120);
-    }, [restorePanelViewStates]);
+    }, [getLayoutSnapshot]);
 
     const syncPanels = useCallback((api: DockviewApi) => {
         for (const panel of panelEntries) {
@@ -970,13 +982,8 @@ export const Layout: React.FC<LayoutProps> = ({
 
     const syncToolbarSize = useCallback((api: DockviewApi) => {
         const toolbarPanel = api.getPanel('toolbar');
-        if (!toolbarPanel) {
-            return;
-        }
-
-        toolbarPanel.api.setSize({
-            height: 44,
-        });
+        if (!toolbarPanel) return;
+        toolbarPanel.api.setSize({ height: 44 });
     }, []);
 
     const refreshPanelContents = useCallback((api: DockviewApi) => {
@@ -1189,6 +1196,10 @@ export const Layout: React.FC<LayoutProps> = ({
                     const hasRemainingPanels = getPanelsByBaseId(api, baseId).length > 0;
                     setVisibility((prev) => ({ ...prev, [baseId]: hasRemainingPanels }));
                 }
+                
+                // dockview resets scroll positions for panels, 
+                // here is a workaround to restore them
+                restorePanelViewStates();
 
                 if (api.totalPanels === 0 && emptyPaneRestoreTimerRef.current === null) {
                     emptyPaneRestoreTimerRef.current = window.setTimeout(() => {
@@ -1209,6 +1220,9 @@ export const Layout: React.FC<LayoutProps> = ({
                 if (isRestoringLayoutRef.current) {
                     return;
                 }
+                // const layoutSnapshot = getLayoutSnapshot(api);
+                // const layoutChanged = layoutSnapshot !== lastLayoutSnapshotRef.current;
+                // if (!layoutChanged) return;
                 queueSaveLayout(api);
             }),
             api.onWillDragPanel(() => {
@@ -1256,6 +1270,9 @@ export const Layout: React.FC<LayoutProps> = ({
             api.getPanel('files')?.api.setActive();
             api.getPanel('editor')?.api.setActive();
         }
+
+        lastLayoutSnapshotRef.current = getLayoutSnapshot(api);
+
         syncToolbarSize(api);
         queueSaveLayout(api);
     }, [
@@ -1271,6 +1288,7 @@ export const Layout: React.FC<LayoutProps> = ({
         rebindPickerPanels,
         syncPanels,
         syncToolbarSize,
+        getLayoutSnapshot,
     ]);
 
     return (
