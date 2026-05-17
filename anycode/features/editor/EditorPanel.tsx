@@ -26,10 +26,15 @@ export const EditorPanel = ({ panelKey, editors }: EditorPanelProps) => {
     const [lastReadyEditor, setLastReadyEditor] = useState<{ id: string; state: AnycodeEditor } | null>(null);
 
     useEffect(() => {
+        if (!paneFileId) {
+            setLastReadyEditor(null);
+            return;
+        }
+
         if (paneFile && editorState) {
             setLastReadyEditor({ id: paneFile.id, state: editorState });
         }
-    }, [paneFile, editorState]);
+    }, [paneFileId, paneFile, editorState]);
 
     const displayedEditor = paneFile && editorState
         ? { id: paneFile.id, state: editorState }
