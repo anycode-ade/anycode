@@ -35,7 +35,7 @@ import {
 import {
     DEFAULT_DIFF_VIEW_MODE,
     getNextDiffMode,
-    type DiffViewMode,
+    type DiffMode,
 } from '../../types/diffMode';
 import './Layout.css';
 
@@ -218,7 +218,7 @@ type LayoutProps = {
     onPanelActivated?: (id: PanelId, panelKey: string) => void;
     onCycleEditorDiffMode?: (panelKey: string) => void;
     isEditorDiffEnabled?: (panelKey: string) => boolean;
-    getEditorDiffViewMode?: (panelKey: string) => DiffViewMode;
+    getEditorDiffMode?: (panelKey: string) => DiffMode;
     onActionsReady?: (actions: LayoutActions | null) => void;
 };
 
@@ -559,7 +559,7 @@ const LayoutHeaderActions: React.FC<IDockviewHeaderActionsProps & {
     onClosePanel: (api: DockviewApi, panel: IDockviewPanel) => void;
     onCycleEditorDiffMode?: (panelKey: string) => void;
     isEditorDiffEnabled?: (panelKey: string) => boolean;
-    getEditorDiffViewMode?: (panelKey: string) => DiffViewMode;
+    getEditorDiffMode?: (panelKey: string) => DiffMode;
 }> = ({
     containerApi,
     activePanel,
@@ -569,7 +569,7 @@ const LayoutHeaderActions: React.FC<IDockviewHeaderActionsProps & {
     onClosePanel,
     onCycleEditorDiffMode,
     isEditorDiffEnabled,
-    getEditorDiffViewMode,
+    getEditorDiffMode,
 }) => {
     if (!activePanel) {
         return null;
@@ -578,7 +578,7 @@ const LayoutHeaderActions: React.FC<IDockviewHeaderActionsProps & {
     const activePanelBaseId = getPanelBaseId(activePanel.id);
     const isEditorPanel = activePanelBaseId === 'editor';
     const fallbackMode = isEditorDiffEnabled?.(activePanel.id) ? 'combine' : DEFAULT_DIFF_VIEW_MODE;
-    const diffMode = getEditorDiffViewMode?.(activePanel.id) ?? fallbackMode;
+    const diffMode = getEditorDiffMode?.(activePanel.id) ?? fallbackMode;
     const nextDiffMode = getNextDiffMode(diffMode);
     const canClosePanel = activePanel.id !== 'toolbar' && (containerApi.totalPanels > 1 || !isPickerPanel(activePanel.id));
 
@@ -717,7 +717,7 @@ export const Layout: React.FC<LayoutProps> = ({
     onPanelActivated,
     onCycleEditorDiffMode,
     isEditorDiffEnabled,
-    getEditorDiffViewMode,
+    getEditorDiffMode,
     onActionsReady,
 }) => {
     const apiRef = useRef<DockviewApi | null>(null);
@@ -735,14 +735,8 @@ export const Layout: React.FC<LayoutProps> = ({
     const addTabRef = useRef<(api: DockviewApi, referencePanelId: string) => void>(() => {});
     const closePanelRef = useRef<(api: DockviewApi, panel: IDockviewPanel) => void>(() => {});
     const renderPanelRef = useRef<LayoutProps['renderPanel']>(renderPanel);
-    const onCycleEditorDiffModeRef = useRef<LayoutProps['onCycleEditorDiffMode']>(onCycleEditorDiffMode);
-    const isEditorDiffEnabledRef = useRef<LayoutProps['isEditorDiffEnabled']>(isEditorDiffEnabled);
-    const getEditorDiffViewModeRef = useRef<LayoutProps['getEditorDiffViewMode']>(getEditorDiffViewMode);
 
     renderPanelRef.current = renderPanel;
-    onCycleEditorDiffModeRef.current = onCycleEditorDiffMode;
-    isEditorDiffEnabledRef.current = isEditorDiffEnabled;
-    getEditorDiffViewModeRef.current = getEditorDiffViewMode;
 
     const panelEntries = useMemo(() => (
         panelSyncOrder.map((id) => ({
@@ -1144,11 +1138,11 @@ export const Layout: React.FC<LayoutProps> = ({
             onSplitDown={(api, referencePanelId) => splitDownRef.current(api, referencePanelId)}
             onAddTab={(api, referencePanelId) => addTabRef.current(api, referencePanelId)}
             onClosePanel={(api, panel) => closePanelRef.current(api, panel)}
-            onCycleEditorDiffMode={(panelKey) => onCycleEditorDiffModeRef.current?.(panelKey)}
-            isEditorDiffEnabled={(panelKey) => isEditorDiffEnabledRef.current?.(panelKey) ?? false}
-            getEditorDiffViewMode={(panelKey) => getEditorDiffViewModeRef.current?.(panelKey) ?? DEFAULT_DIFF_VIEW_MODE}
+            onCycleEditorDiffMode={onCycleEditorDiffMode}
+            isEditorDiffEnabled={isEditorDiffEnabled}
+            getEditorDiffMode={getEditorDiffMode}
         />
-    ), []);
+    ), [getEditorDiffMode, isEditorDiffEnabled, onCycleEditorDiffMode]);
 
     useEffect(() => () => {
         if (layoutSaveTimerRef.current !== null) {

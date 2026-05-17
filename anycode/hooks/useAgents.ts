@@ -20,7 +20,6 @@ type UseAgentsParams = {
     isConnected: boolean;
     followEnabled: boolean;
     openFile: (path: string, line?: number, column?: number) => void;
-    openFileDiff: (path: string, line?: number, column?: number) => void;
     onAgentStarted?: () => void;
 };
 
@@ -29,7 +28,6 @@ export const useAgents = ({
     isConnected,
     followEnabled,
     openFile,
-    openFileDiff,
     onAgentStarted,
 }: UseAgentsParams) => {
     const mergeConsecutiveErrors = (messages: AcpMessage[]): AcpMessage[] => {
@@ -237,7 +235,6 @@ export const useAgents = ({
             //         if (matchingToolCall?.locations && matchingToolCall.locations.length > 0) {
             //             const loc = matchingToolCall.locations[0];
             //             openFile(loc.path, loc.line, 0);
-            //             openFileDiff(loc.path, loc.line, 0);
             //         }
             //     }
             // }
@@ -299,7 +296,7 @@ export const useAgents = ({
                 messages: [...existing.messages, messageToAdd],
             };
         });
-    }, [openFile, openFileDiff, updateSession]);
+    }, [openFile, updateSession]);
 
     const handleAcpHistory = useCallback((data: { agent_id: string; history: AcpMessage[] }) => {
         const reversedHistory = [...data.history].reverse();

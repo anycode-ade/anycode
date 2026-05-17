@@ -38,12 +38,12 @@ import { BrowserPanel } from './features/browser/BrowserPanel';
 import {
     DEFAULT_DIFF_VIEW_MODE,
     getNextDiffMode,
-    type DiffViewMode,
+    type DiffMode,
 } from './types/diffMode';
 
 const App: React.FC = () => {
     const [diffEnabled, setDiffEnabled] = useState<boolean>(loadDiffEnabled());
-    const [editorDiffViewModeByPane, setEditorDiffViewModeByPane] = useState<Record<string, DiffViewMode>>({});
+    const [editorDiffModeByPane, setEditorDiffModeByPane] = useState<Record<string, DiffMode>>({});
     const layoutActionsRef = useRef<LayoutActions | null>(null);
     // const [followEnabled, setFollowEnabled] = useState<boolean>(loadFollowEnabled());
     const [permissionMode, setPermissionMode] = useState<AcpPermissionMode>(loadAcpPermissionMode());
@@ -72,7 +72,6 @@ const App: React.FC = () => {
         // followEnabled,
         followEnabled: false,
         openFile: editors.openFile,
-        openFileDiff: editors.openFileDiff,
         onAgentStarted: () => {
             setDiffEnabled(true);
             // setFollowEnabled(true);
@@ -198,8 +197,9 @@ const App: React.FC = () => {
     const handleOpenFileDiff = useCallback((path: string, line?: number, column?: number) => {
         const paneId = resolveEditorPaneId();
         if (!paneId) return;
-        editors.openFileDiff(path, line, column, paneId);
-    }, [editors, resolveEditorPaneId]);
+        const mode = editorDiffModeByPane[paneId] ?? (diffEnabled ? 'combine' : DEFAULT_DIFF_VIEW_MODE);
+        editors.openFile(path, line, column, paneId, { originalContentMode: mode });
+    }, [diffEnabled, editorDiffModeByPane, editors, resolveEditorPaneId]);
 
     const handleSelectFile = useCallback((fileId: string) => {
         const paneId = resolveEditorPaneId();
@@ -211,15 +211,15 @@ const App: React.FC = () => {
         handleOpenFile(filePath, match.line, match.column);
     };
 
-    const getEditorDiffViewMode = useCallback((panelKey: string): DiffViewMode => {
-        return editorDiffViewModeByPane[panelKey] ?? (diffEnabled ? 'combine' : DEFAULT_DIFF_VIEW_MODE);
-    }, [diffEnabled, editorDiffViewModeByPane]);
+    const getEditorDiffMode = useCallback((panelKey: string): DiffMode => {
+        return editorDiffModeByPane[panelKey] ?? (diffEnabled ? 'combine' : DEFAULT_DIFF_VIEW_MODE);
+    }, [diffEnabled, editorDiffModeByPane]);
 
     const isEditorDiffEnabled = useCallback((panelKey: string) => {
-        return getEditorDiffViewMode(panelKey) !== 'plain';
-    }, [getEditorDiffViewMode]);
+        return getEditorDiffMode(panelKey) !== 'plain';
+    }, [getEditorDiffMode]);
 
-    const applyDiffModeToPaneEditor = useCallback((panelKey: string, mode: DiffViewMode) => {
+    const applyDiffModeToPaneEditor = useCallback((panelKey: string, mode: DiffMode) => {
         const fileId = editors.getActiveFileIdForPane(panelKey);
         if (!fileId) {
             return false;
@@ -236,28 +236,28 @@ const App: React.FC = () => {
     }, [editors]);
 
     const handleCycleEditorDiffMode = useCallback((panelKey: string) => {
-        const currentMode = getEditorDiffViewMode(panelKey);
+        const currentMode = getEditorDiffMode(panelKey);
         const nextMode = getNextDiffMode(currentMode);
 
         if (!applyDiffModeToPaneEditor(panelKey, nextMode)) {
             return;
         }
 
-        setEditorDiffViewModeByPane((prev) => ({ ...prev, [panelKey]: nextMode }));
+        setEditorDiffModeByPane((prev) => ({ ...prev, [panelKey]: nextMode }));
 
         if (panelKey === editors.activeEditorPaneId) {
             setDiffEnabled(nextMode !== 'plain');
         }
-    }, [applyDiffModeToPaneEditor, editors.activeEditorPaneId, getEditorDiffViewMode]);
+    }, [applyDiffModeToPaneEditor, editors.activeEditorPaneId, getEditorDiffMode]);
 
     useEffect(() => {
         const paneId = editors.activeEditorPaneId;
         if (!paneId) {
             return;
         }
-        const mode = getEditorDiffViewMode(paneId);
+        const mode = getEditorDiffMode(paneId);
         applyDiffModeToPaneEditor(paneId, mode);
-    }, [applyDiffModeToPaneEditor, editors.activeEditorPaneId, editors.activeFileId, getEditorDiffViewMode]);
+    }, [applyDiffModeToPaneEditor, editors.activeEditorPaneId, editors.activeFileId, getEditorDiffMode]);
 
     // const toggleFollowMode = useCallback(() => {
     //     setFollowEnabled((prev) => !prev);
@@ -510,7 +510,7 @@ const App: React.FC = () => {
 
         if (panelId === 'editor') {
             editors.unregisterEditorPane(panelKey);
-            setEditorDiffViewModeByPane((prev) => {
+            setEditorDiffModeByPane((prev) => {
                 if (!Object.hasOwn(prev, panelKey)) {
                     return prev;
                 }
@@ -566,7 +566,7 @@ const App: React.FC = () => {
                     onPanelActivated={handlePanelActivated}
                     onCycleEditorDiffMode={handleCycleEditorDiffMode}
                     isEditorDiffEnabled={isEditorDiffEnabled}
-                    getEditorDiffViewMode={getEditorDiffViewMode}
+                    getEditorDiffMode={getEditorDiffMode}
                     onActionsReady={(actions) => {
                         layoutActionsRef.current = actions;
                     }}

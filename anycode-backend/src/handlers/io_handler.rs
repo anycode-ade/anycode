@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{self, json};
 use socketioxide::extract::{AckSender, Data, SocketRef, State};
 use std::path::PathBuf;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 /// Apply edits to a Code instance and return LSP change events.
 /// If `use_history` is true, wraps edits in tx()/commit() for undo support.
@@ -74,6 +74,14 @@ pub struct FileOpenRequest {
     pub path: String,
 }
 
+#[derive(Debug, Serialize)]
+struct FileOriginalPayload {
+    content: String,
+    #[serde(rename = "isNew")]
+    is_new: bool,
+    status: &'static str,
+}
+
 pub async fn handle_file_open(
     socket: SocketRef,
     Data(request): Data<FileOpenRequest>,
@@ -101,9 +109,31 @@ pub async fn handle_file_open(
     }
 
     let content = code.text.to_string();
+    let original = {
+        let git = state.git_manager.lock().await;
+        match git.file_original(&abs_path) {
+            Ok(file) => {
+                let status = if file.is_new { "new" } else { "ok" };
+                FileOriginalPayload {
+                    content: file.content,
+                    is_new: file.is_new,
+                    status,
+                }
+            }
+            Err(err) => {
+                warn!("Failed to resolve original content for {}: {}", abs_path, err);
+                FileOriginalPayload {
+                    content: String::new(),
+                    is_new: false,
+                    status: "error",
+                }
+            }
+        }
+    };
 
     ack.send(&json!({
         "content": content,
+        "original": original,
         "path": request.path,
         "success": true,
         "history": code.history,

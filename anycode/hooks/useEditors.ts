@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Socket } from 'socket.io-client';
 import { AnycodeEditor } from 'anycode-react';
 import type { Change, Position } from '../../anycode-base/src/code';
@@ -14,6 +14,7 @@ import {
 import { BATCH_DELAY_MS } from '../constants';
 import { getFileName, getLanguageFromFileName } from '../utils';
 import { loadOpenFiles, saveOpenFiles } from '../storage';
+import type { DiffMode } from '../types/diffMode';
 import {
     Completion,
     CompletionRequest,
@@ -32,11 +33,17 @@ type UseEditorsParams = {
     onFileClosed?: (fileId: string) => void;
 };
 
-type PendingExistingOpenRequest = {
+type History = { changes: Change[]; index: number; };
+
+type EditorOpenRequest = {
     path: string;
+    paneId: string;
+    content: string;
+    originalContent: string;
+    mode: DiffMode;
     line?: number;
     column?: number;
-    paneId: string;
+    history?: History;
 };
 
 const DEFAULT_EDITOR_PANE_ID = 'editor';
@@ -152,17 +159,15 @@ export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: Us
     const savedFileContentsRef = useRef<Map<string, string>>(new Map());
     const previewFileContentsRef = useRef<Map<string, string>>(new Map());
     const diagnosticsRef = useRef<Map<string, Diagnostic[]>>(new Map());
-    const pendingPositions = useRef<Map<string, { line: number; column: number }>>(new Map());
     const cursor2FileRef = useRef(persistedEditorState.cursorByFileId);
     const cursorHistory = useRef<CursorHistory>({ undoStack: [], redoStack: [] });
     const pendingOpenFilesRef = useRef<Set<string>>(new Set());
-    const pendingOriginalContentRef = useRef<Map<string, string>>(new Map());
+    const editorOpenRequestsRef = useRef<Map<string, EditorOpenRequest>>(new Map());
     const pendingChangesRef = useRef<Map<string, PendingBatch>>(new Map());
     const ignoreChangeFilesRef = useRef<Set<string>>(new Set());
     const [referencesPeekByPane, setReferencesPeekByPane] = useState<Record<string, ReferencesPeekState | null>>({});
     const referencesPeekByPaneRef = useRef<Record<string, ReferencesPeekState | null>>({});
     const referencesPeekRequestTokenRef = useRef<number>(0);
-    const [pendingExistingOpenRequest, setPendingExistingOpenRequest] = useState<PendingExistingOpenRequest | null>(null);
     const lastFocusedEditorPaneIdRef = useRef<string>(DEFAULT_EDITOR_PANE_ID);
 
     const activeFile = files.find((f) => f.id === activeFileId);
@@ -288,26 +293,6 @@ export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: Us
             };
         });
     }, []);
-
-    useLayoutEffect(() => {
-        if (!pendingExistingOpenRequest) return;
-
-        const { path, line, column, paneId } = pendingExistingOpenRequest;
-        setPendingExistingOpenRequest(null);
-
-        // Reattach the already-open file to the pane we resolved earlier.
-        setActiveEditorPaneId(paneId);
-        setActiveFileId(path, paneId);
-
-        const editor = editorRefs.current.get(path);
-        if (!editor) return;
-
-        if (line !== undefined && column !== undefined) {
-            editor.requestFocus(line, column, true);
-        } else {
-            editor.onAttach();
-        }
-    }, [pendingExistingOpenRequest, setActiveFileId]);
 
     const unregisterEditorPane = useCallback((paneId: string) => {
         registeredPaneIdsRef.current.delete(paneId);
@@ -590,75 +575,68 @@ export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: Us
         });
     }, [loadReferencesPeekPreview]);
 
-    const requestOriginalContent = useCallback((
-        path: string,
-        options?: { enableDiff?: boolean; enableFocusedDiff?: boolean },
-    ) => {
-        if (!wsRef.current || !isConnected) {
-            return;
+    const applyEditorOpenRequest = useCallback((path: string, editorArg?: AnycodeEditor) => {
+        const request = editorOpenRequestsRef.current.get(path);
+        if (!request) return;
+
+        const editor = editorArg ?? editorRefs.current.get(path);
+        if (!editor) return;
+
+        editor.setOriginalCode(request.originalContent);
+        if (request.mode === 'plain') {
+            editor.setDiffEnabled(false);
+            editor.setFocusedDiffMode(false, 0);
+        }
+        if (request.mode === 'combine') {
+            editor.setDiffEnabled(true);
+            editor.setFocusedDiffMode(false, 0);
+        }
+        if (request.mode === 'diff') {
+            editor.setDiffEnabled(true);
+            editor.setFocusedDiffMode(true, 3);
         }
 
-        const { enableDiff = false, enableFocusedDiff = false } = options ?? {};
+        if (request.line !== undefined && request.column !== undefined) {
+            editor.requestFocus(request.line, request.column, true);
+        } else {
+            const cursor = editor.getCursor();
+            editor.requestFocus(cursor.line, cursor.column, true);
+        }
+    }, []);
 
-        wsRef.current.emit('git:file-original', { path }, (response: any) => {
-            if (!response?.success || typeof response.content !== 'string') {
-                return;
-            }
-
-            const content = response.content as string;
-            pendingOriginalContentRef.current.set(path, content);
-
-            const editor = editorRefs.current.get(path);
-            if (!editor) {
-                return;
-            }
-
-            editor.setOriginalCode(content);
-            if (enableDiff) {
-                editor.setDiffEnabled(true);
-            }
-            if (enableFocusedDiff) {
-                editor.setFocusedDiffMode(true, 3);
-            }
-        });
-    }, [isConnected, wsRef]);
-
-    const openFile = useCallback((path: string, line?: number, column?: number, paneId?: string) => {
+    const openFile = useCallback((
+        path: string,
+        line?: number,
+        column?: number,
+        paneId?: string,
+        options?: { originalContentMode?: DiffMode },
+    ) => {
         if (!paneId && !hasVisibleEditorPane()) {
             return;
         }
 
         const existingFile = filesRef.current.find((file) => file.id === path);
         const targetPaneId = resolveTargetPaneId(paneId, existingFile?.id);
+        const mode = options?.originalContentMode ?? 'plain';
 
         if (existingFile) {
             const editor = editorRefs.current.get(existingFile.id);
             if (editor && savedFileContentsRef.current.has(existingFile.id)) {
-                requestOriginalContent(path);
+                const content = savedFileContentsRef.current.get(existingFile.id) ?? '';
+                const existingRequest = editorOpenRequestsRef.current.get(path);
+                editorOpenRequestsRef.current.set(path, {
+                    path,
+                    paneId: targetPaneId,
+                    content,
+                    originalContent: existingRequest?.originalContent ?? '',
+                    mode,
+                    line,
+                    column,
+                    history: existingFile.history,
+                });
                 setActiveEditorPaneId(targetPaneId);
                 setActiveFileId(existingFile.id, targetPaneId);
-                if (line !== undefined && column !== undefined) {
-                    editor.requestFocus(line, column, true);
-                } else {
-                    const cursor = editor.getCursor();
-                    editor.requestFocus(cursor.line, cursor.column, true);
-                }
-                return;
-            }
-        }
-
-        if (line !== undefined && column !== undefined) {
-            pendingPositions.current.set(path, { line, column });
-        }
-
-        if (existingFile) {
-            setPendingExistingOpenRequest({
-                path: existingFile.id,
-                line, column,
-                paneId: targetPaneId,
-            });
-
-            if (savedFileContentsRef.current.has(existingFile.id)) {
+                applyEditorOpenRequest(path, editor);
                 return;
             }
         }
@@ -675,6 +653,19 @@ export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: Us
                     const fileName = getFileName(path);
                     const language = getLanguageFromFileName(fileName);
                     savedFileContentsRef.current.set(path, response.content);
+                    const originalContent = typeof response?.original?.content === 'string'
+                        ? response.original.content
+                        : '';
+                    editorOpenRequestsRef.current.set(path, {
+                        path,
+                        paneId: targetPaneId,
+                        content: response.content,
+                        originalContent,
+                        mode,
+                        line,
+                        column,
+                        history: response.history,
+                    });
                     setFiles((prev) => {
                         const nextFile: FileState = { id: path, name: fileName, language, history: response.history };
                         return prev.some((file) => file.id === path)
@@ -683,11 +674,14 @@ export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: Us
                     });
                     setActiveEditorPaneId(targetPaneId);
                     setActiveFileId(path, targetPaneId);
-                    requestOriginalContent(path);
+                    const existingEditor = editorRefs.current.get(path);
+                    if (existingEditor) {
+                        applyEditorOpenRequest(path, existingEditor);
+                    }
                 }
             });
         }
-    }, [hasVisibleEditorPane, isConnected, requestOriginalContent, resolveTargetPaneId, setActiveFileId, wsRef]);
+    }, [applyEditorOpenRequest, hasVisibleEditorPane, isConnected, resolveTargetPaneId, setActiveFileId, wsRef]);
 
     const openReferenceFromPeek = useCallback((paneId: string, itemIndex?: number): boolean => {
         const peek = referencesPeekByPaneRef.current[paneId];
@@ -881,8 +875,6 @@ export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: Us
                     const filePath = uri.replace('file://', '');
                     const fileName = getFileName(filePath);
 
-                    pendingPositions.current.set(filePath, { line, column });
-
                     const existingFile = filesRef.current.find((f) => f.id === filePath || f.name === fileName);
                     if (existingFile) {
                         setActiveFileId(existingFile.id);
@@ -891,7 +883,7 @@ export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: Us
                             editor.requestFocus(line, column);
                         }
                     } else {
-                        openFile(filePath);
+                        openFile(filePath, line, column);
                     }
 
                     resolve(definition);
@@ -906,17 +898,10 @@ export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: Us
         content: string,
         language: string,
         filename: string,
-        initialPosition?: { line: number; column: number },
         errors?: { line: number; message: string }[],
-        history?: { changes: Change[]; index: number },
+        history?: History,
     ): Promise<AnycodeEditor> => {
-        const options: any = {};
-        if (initialPosition) {
-            options.line = initialPosition.line;
-            options.column = initialPosition.column;
-        }
-
-        const editor = new AnycodeEditor(content, filename, language, options);
+        const editor = new AnycodeEditor(content, filename, language, {});
         await editor.init();
 
         if (history) {
@@ -946,25 +931,15 @@ export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: Us
                         continue;
                     }
 
-                    const pendingPosition = pendingPositions.current.get(file.id);
                     const pendingDiagnostics = diagnosticsRef.current.get(file.id);
                     const errors = pendingDiagnostics
                         ? pendingDiagnostics.map((d) => ({ line: d.range.start.line, message: d.message }))
                         : undefined;
-                    const editor = await createEditor(content, file.language, file.id, pendingPosition, errors, file.history);
+                    const editor = await createEditor(content, file.language, file.id, errors, file.history);
                     newEditorStates.set(file.id, editor);
                     savedFileContentsRef.current.set(file.id, content);
                     editorRefs.current.set(file.id, editor);
-
-                    if (pendingPosition) pendingPositions.current.delete(file.id);
-
-                    const pendingDiff = pendingOriginalContentRef.current.get(file.id);
-                    if (pendingDiff !== undefined) {
-                        editor.setOriginalCode(pendingDiff);
-                        editor.setDiffEnabled(true);
-                        editor.setFocusedDiffMode(true,3);
-                        pendingOriginalContentRef.current.delete(file.id);
-                    }
+                    applyEditorOpenRequest(file.id, editor);
                 } else {
                     const existing = editorStatesRef.current.get(file.id)!;
                     newEditorStates.set(file.id, existing);
@@ -977,7 +952,7 @@ export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: Us
         } catch (error) {
             console.error('Error initializing editors:', error);
         }
-    }, [createEditor]);
+    }, [applyEditorOpenRequest, createEditor]);
 
     useEffect(() => {
         if (files.length > 0) {
@@ -1033,6 +1008,7 @@ export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: Us
 
         editorRefs.current.delete(fileId);
         savedFileContentsRef.current.delete(fileId);
+        editorOpenRequestsRef.current.delete(fileId);
         onFileClosed?.(fileId);
     }, [flushChanges, wsRef, isConnected, onFileClosed]);
 
@@ -1098,11 +1074,6 @@ export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: Us
             ignoreChangeFilesRef.current.delete(file);
         }
     }, []);
-
-    const openFileDiff = useCallback((path: string, line?: number, column?: number, paneId?: string) => {
-        openFile(path, line, column, paneId);
-        requestOriginalContent(path, { enableDiff: true, enableFocusedDiff: true });
-    }, [openFile, requestOriginalContent]);
 
     const undoCursor = useCallback(() => {
         if (cursorHistory.current.undoStack.length === 0) return;
@@ -1172,7 +1143,6 @@ export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: Us
         closeFile,
         saveFile,
         openFile,
-        openFileDiff,
         referencesPeekByPane,
         getReferencesPeekForPane,
         openReferencesPeekForActiveCursor,
