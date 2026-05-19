@@ -203,8 +203,8 @@
 }
 
 .line-deleted-ghost {
-  color: rgba(244, 67, 54, 0.75);
-  /*opacity: 0.6;*/
+  /*color: rgba(244, 67, 54, 0.75); */
+  opacity: 0.6;
   background-color: rgba(244, 67, 54, 0.15);
   /* pointer-events: none; */
   user-select: none;

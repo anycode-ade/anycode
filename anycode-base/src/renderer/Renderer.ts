@@ -29,7 +29,7 @@ export interface GhostRow {
     kind: 'ghost';
     hunkId: number;
     anchorLine: number;  // 1-indexed, the line before which this ghost appears
-    text: string;
+    originalLineIndex: number; // 0-indexed line in original code
 }
 
 export interface SeparatorRow {
@@ -130,39 +130,10 @@ export class Renderer {
         // Render visible slice of visual rows
         for (let i = startIndex; i < endIndex; i++) {
             const row = this.visualRows[i];
-            
-            if (row.kind === 'real') {
-                const lineIndex = row.lineIndex;
-                const syntaxNodes = code.getLineNodes(lineIndex);
-                
-                const lineWrapper = this.lineRenderer.createLineWrapper(lineIndex, syntaxNodes, errorLines, settings, diffs);
-                lineWrapper.setAttribute('data-visual-index', i.toString());
-                
-                const lineNumberEl = this.lineRenderer.createLineNumber(lineIndex, settings, diffs);
-                lineNumberEl.setAttribute('data-visual-index', i.toString());
-                
-                const lineButtonEl = this.lineRenderer.createLineButtons(lineIndex, runLines, errorLines, settings);
-                lineButtonEl.setAttribute('data-visual-index', i.toString());
-
-                codeFrag.appendChild(lineWrapper);
-                gutterFrag.appendChild(lineNumberEl);
-                btnFrag.appendChild(lineButtonEl);
-            } else if (row.kind === 'ghost') {
-                // Ghost row
-                const ghostElements = this.diffRenderer.createGhostRowElements(row, settings);
-                ghostElements.code.setAttribute('data-visual-index', i.toString());
-                ghostElements.gutter.setAttribute('data-visual-index', i.toString());
-                ghostElements.btn.setAttribute('data-visual-index', i.toString());
-                
-                codeFrag.appendChild(ghostElements.code);
-                gutterFrag.appendChild(ghostElements.gutter);
-                btnFrag.appendChild(ghostElements.btn);
-            } else {
-                const dividerElements = this.createRowElements(row, i, state);
-                codeFrag.appendChild(dividerElements.code);
-                gutterFrag.appendChild(dividerElements.gutter);
-                btnFrag.appendChild(dividerElements.btn);
-            }
+            const elements = this.createRowElements(row, i, state);
+            codeFrag.appendChild(elements.code);
+            gutterFrag.appendChild(elements.gutter);
+            btnFrag.appendChild(elements.btn);
         }
 
         // Bottom spacers
@@ -205,8 +176,7 @@ export class Renderer {
     }
 
     /**
-     * Build a unified list of visual rows (real + ghost lines).
-     * Ghost lines are inserted before their anchor line.
+     * Build a unified list of visual rows.
      * This provides a stable model for virtualized scrolling.
      */
     private buildVisualRows(
@@ -218,11 +188,11 @@ export class Renderer {
         const visibleRealLines = this.diffRenderer.computeVisibleLines(totalLines, diffs);
 
         // Collect ghost info by anchor line for efficient lookup
-        const ghostsByAnchor = new Map<number, { hunkId: number; texts: string[] }[]>();
+        const ghostsByAnchor = new Map<number, { hunkId: number; oldLineNumbers: number[] }[]>();
         
         if (diffs) {
             for (const [lineNumber, diffInfo] of diffs) {
-                if (!diffInfo.oldLines || diffInfo.oldLines.length === 0) continue;
+                if (!diffInfo.oldLineNumbers || diffInfo.oldLineNumbers.length === 0) continue;
                 if (diffInfo.changeType !== 'modified' && diffInfo.changeType !== 'deleted') continue;
                 
                 const anchorLine = diffInfo.ghostAnchorLine ?? lineNumber;
@@ -232,7 +202,7 @@ export class Renderer {
                 }
                 ghostsByAnchor.get(anchorLine)!.push({
                     hunkId: diffInfo.hunkId,
-                    texts: diffInfo.oldLines
+                    oldLineNumbers: diffInfo.oldLineNumbers,
                 });
             }
         }
@@ -248,12 +218,14 @@ export class Renderer {
                     if (processedHunks.has(ghostGroup.hunkId)) continue;
                     processedHunks.add(ghostGroup.hunkId);
                     
-                    for (const text of ghostGroup.texts) {
+                    for (let ghostIndex = 0; ghostIndex < ghostGroup.oldLineNumbers.length; ghostIndex++) {
+                        const originalLineNumber = ghostGroup.oldLineNumbers[ghostIndex];
+                        if (originalLineNumber < 1) continue;
                         rows.push({
                             kind: 'ghost',
                             hunkId: ghostGroup.hunkId,
                             anchorLine: lineNumber,
-                            text
+                            originalLineIndex: originalLineNumber - 1,
                         });
                     }
                 }
@@ -273,12 +245,14 @@ export class Renderer {
                 if (processedHunks.has(ghostGroup.hunkId)) continue;
                 processedHunks.add(ghostGroup.hunkId);
                 
-                for (const text of ghostGroup.texts) {
+                for (let ghostIndex = 0; ghostIndex < ghostGroup.oldLineNumbers.length; ghostIndex++) {
+                    const originalLineNumber = ghostGroup.oldLineNumbers[ghostIndex];
+                    if (originalLineNumber < 1) continue;
                     rows.push({
                         kind: 'ghost',
                         hunkId: ghostGroup.hunkId,
                         anchorLine: eofAnchor,
-                        text
+                        originalLineIndex: originalLineNumber - 1,
                     });
                 }
             }
@@ -504,31 +478,30 @@ export class Renderer {
         state: EditorState
     ): { code: HTMLElement; gutter: HTMLElement; btn: HTMLElement } {
         const { code, settings, diffs, runLines, errorLines } = state;
+        const visualIndexAttr = String(visualIndex);
+        let elements: { code: HTMLElement; gutter: HTMLElement; btn: HTMLElement };
         
         if (row.kind === 'real') {
-            const lineIndex = row.lineIndex;
-            const syntaxNodes = code.getLineNodes(lineIndex);
-            
-            const lineWrapper = this.lineRenderer.createLineWrapper(lineIndex, syntaxNodes, errorLines, settings, diffs);
-            lineWrapper.setAttribute('data-visual-index', visualIndex.toString());
-            
-            const lineNumberEl = this.lineRenderer.createLineNumber(lineIndex, settings, diffs);
-            lineNumberEl.setAttribute('data-visual-index', visualIndex.toString());
-            
-            const lineButtonEl = this.lineRenderer.createLineButtons(lineIndex, runLines, errorLines, settings);
-            lineButtonEl.setAttribute('data-visual-index', visualIndex.toString());
-            
-            return { code: lineWrapper, gutter: lineNumberEl, btn: lineButtonEl };
+            const syntaxNodes = code.getLineNodes(row.lineIndex);
+            elements = this.lineRenderer.createLineElements(
+                row.lineIndex, syntaxNodes, errorLines, settings, diffs, runLines
+            );
         } else if (row.kind === 'ghost') {
-            const ghostElements = this.diffRenderer.createGhostRowElements(row, settings);
-            ghostElements.code.setAttribute('data-visual-index', visualIndex.toString());
-            ghostElements.gutter.setAttribute('data-visual-index', visualIndex.toString());
-            ghostElements.btn.setAttribute('data-visual-index', visualIndex.toString());
-            
-            return ghostElements;
+            const originalNodes = state.originalCode?.getLineNodes(row.originalLineIndex);
+            const originalText = state.originalCode?.line(row.originalLineIndex) ?? '';
+            elements = this.diffRenderer.createGhostRowElements(
+                row, settings, originalText, originalNodes
+            );
         } else {
-            return this.diffRenderer.createGapRowElements(row, visualIndex, settings);
+            elements = this.diffRenderer.createGapRowElements(
+                row, settings
+            );
         }
+
+        elements.code.setAttribute('data-visual-index', visualIndexAttr);
+        elements.gutter.setAttribute('data-visual-index', visualIndexAttr);
+        elements.btn.setAttribute('data-visual-index', visualIndexAttr);
+        return elements;
     }
     /**
      * Get all rendered elements (excluding spacers)
@@ -539,9 +512,7 @@ export class Renderer {
     }
 
     public renderChanges(state: EditorState, search?: Search) {
-        console.log("renderChanges");
-
-        const { code, offset, selection, errorLines, settings, diffs } = state;
+        const { code, offset, selection, errorLines, settings, diffs, runLines } = state;
 
         // Rebuild visual rows - structure may have changed
         const totalRealLines = code.linesLength();
@@ -598,16 +569,18 @@ export class Renderer {
             if (existingLine) {
                 const existingHash = existingLine.hash;
                 if (existingHash !== newHash) {
-                    const newLineEl = this.lineRenderer.createLineWrapper(lineIndex, nodes, errorLines, settings, diffs);
-                    newLineEl.setAttribute('data-visual-index', i.toString());
-                    existingLine.replaceWith(newLineEl);
+                    const visualIndexAttr = String(i);
+                    const lineElements = this.lineRenderer.createLineElements(
+                        lineIndex, nodes, errorLines, settings, diffs, runLines
+                    );
+                    lineElements.code.setAttribute('data-visual-index', visualIndexAttr);
+                    existingLine.replaceWith(lineElements.code);
 
                     // Replace the line number (gutter) to reflect changes
                     const oldGutterLine = this.gutter.querySelector(`.ln[data-line="${lineIndex}"]`) as HTMLElement;
                     if (oldGutterLine) {
-                        const newGutterLine = this.lineRenderer.createLineNumber(lineIndex, settings, diffs);
-                        newGutterLine.setAttribute('data-visual-index', i.toString());
-                        this.gutter.replaceChild(newGutterLine, oldGutterLine);
+                        lineElements.gutter.setAttribute('data-visual-index', visualIndexAttr);
+                        this.gutter.replaceChild(lineElements.gutter, oldGutterLine);
                     }
                 }
             } else {

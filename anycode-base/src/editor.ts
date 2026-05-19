@@ -43,6 +43,7 @@ export interface EditorOptions {
 
 export interface EditorState {
     code: Code;
+    originalCode?: Code;
     offset: number;
     selection: Selection | null;
     runLines: number[];
@@ -94,7 +95,7 @@ export class AnycodeEditor {
     private diffEnabled: boolean = false;
     private focusedDiffEnabled: boolean;
     private focusedDiffContextLines: number;
-    private originalCode?: string;
+    private originalCode?: Code;
     private diffs?: Map<number, DiffInfo>;
     private readonly readOnly: boolean;
 
@@ -117,12 +118,6 @@ export class AnycodeEditor {
         }
 
         this.settings = { lineHeight: 20, buffer: 30 };
-
-        if (this.diffEnabled) {
-            this.originalCode = initialText;
-            const currentText = this.code.getContent();
-            this.diffs = computeGitChanges(this.originalCode, currentText);
-        }
 
         const theme = options.theme || vesper;
         const css = generateCssClasses(theme);
@@ -259,6 +254,33 @@ export class AnycodeEditor {
             return;
         }
         this.setupEventListeners();
+    }
+
+    private async initOriginalCode(content: string): Promise<boolean> {
+        if (this.originalCode?.getContent() === content) {
+            return false;
+        }
+        const originalCode = new Code(
+            content,
+            this.code.filename,
+            this.code.language ?? 'text',
+        );
+        this.originalCode = originalCode;
+
+        try {
+            await originalCode.init();
+            // Ignore stale async completion if a newer baseline replaced this instance.
+            if (this.originalCode !== originalCode) return false;
+            this.originalCode = originalCode;
+            return true;
+        } catch (error) {
+            // Don't wipe newer baseline on stale failure.
+            if (this.originalCode === originalCode) {
+                this.originalCode = undefined;
+            }
+            console.warn('Failed to initialize original code for diff rendering', error);
+            return false;
+        }
     }
 
     private setupReadOnlyEventListeners() {
@@ -472,6 +494,7 @@ export class AnycodeEditor {
     private getEditorState(): EditorState {
         return {
             code: this.code,
+            originalCode: this.originalCode,
             offset: this.offset,
             selection: this.selection,
             runLines: this.runLines,
@@ -911,7 +934,6 @@ export class AnycodeEditor {
     }
 
     private async handleKeydown(event: KeyboardEvent) {
-        console.log('keydown', event);
         this.clearPendingHover();
         this.closeHover();
 
@@ -1497,8 +1519,14 @@ export class AnycodeEditor {
         this.diffEnabled = enabled;
         this.renderer.setDiffEnabled(enabled);
 
-        if (enabled && this.originalCode === undefined) {
-            this.originalCode = this.code.getContent();
+        if (enabled) {
+            const baseline = this.originalCode?.getContent() ?? this.code.getContent();
+            void this.initOriginalCode(baseline).then((updated) => {
+                if (!this.diffEnabled || !updated) return;
+                this.recomputeDiffs();
+                this.renderer.render(this.getEditorState(), this.search);
+                this.verifyDiffRendering();
+            });
         }
 
         this.recomputeDiffs();
@@ -1523,17 +1551,17 @@ export class AnycodeEditor {
     }
 
     public setOriginalCode(content: string): void {
-        this.originalCode = content;
-        if (this.diffEnabled) {
+        void this.initOriginalCode(content).then((updated) => {
+            if (!this.diffEnabled || !updated) return;
             this.recomputeDiffs();
             this.renderer.render(this.getEditorState(), this.search);
             this.verifyDiffRendering();
-        }
+        });
     }
 
     private recomputeDiffs(): void {
-        if (this.diffEnabled && this.originalCode !== undefined) {
-            this.diffs = computeGitChanges(this.originalCode, this.code.getContent());
+        if (this.diffEnabled && this.originalCode) {
+            this.diffs = computeGitChanges(this.originalCode.getContent(), this.code.getContent());
         } else {
             this.diffs = undefined;
         }

@@ -127,6 +127,20 @@ export class LineRenderer {
         return div;
     }
 
+    public createLineElements(
+        lineNumber: number,
+        nodes: HighlighedNode[],
+        errorLines: Map<number, string>,
+        settings: EditorSettings,
+        diffs: Map<number, DiffInfo> | undefined,
+        runLines: number[],
+    ): { code: AnycodeLine; gutter: HTMLDivElement; btn: HTMLDivElement } {
+        const code = this.createLineWrapper(lineNumber, nodes, errorLines, settings, diffs);
+        const gutter = this.createLineNumber(lineNumber, settings, diffs);
+        const btn = this.createLineButtons(lineNumber, runLines, errorLines, settings);
+        return { code, gutter, btn };
+    }
+
     /**
      * Creates a spacer element for virtual scrolling
      */

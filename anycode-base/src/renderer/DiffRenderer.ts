@@ -1,6 +1,7 @@
 import { AnycodeLine } from "../utils";
 import { EditorSettings } from "../editor";
 import { DiffInfo, ChangeType } from "../diff";
+import { HighlighedNode } from "../code";
 import type { GhostRow, SeparatorRow, VisualRow } from "./Renderer";
 
 export type ExpandDirection = 'up' | 'down' | 'both' | 'all';
@@ -73,7 +74,10 @@ export class DiffRenderer {
     // ========== Ghost Lines ==========
 
     private createDeletedGhostLine(
-        text: string, settings: EditorSettings, hunkId: number
+        text: string,
+        settings: EditorSettings,
+        hunkId: number,
+        nodes?: HighlighedNode[]
     ): HTMLDivElement {
         const ghostLine = document.createElement('div');
         ghostLine.className = "line line-deleted-ghost";
@@ -81,7 +85,15 @@ export class DiffRenderer {
         ghostLine.setAttribute('data-ghost', 'true');
         ghostLine.setAttribute('data-hunk-id', hunkId.toString());
 
-        if (text === '') {
+        if (nodes && nodes.length > 0) {
+            for (const { name, text: nodeText } of nodes) {
+                const span = document.createElement('span');
+                if (name) span.className = name;
+                if (!name && nodeText === '\t') span.className = 'indent';
+                span.textContent = nodeText;
+                ghostLine.appendChild(span);
+            }
+        } else if (text === '') {
             ghostLine.textContent = '\u00A0'; // non-breaking space
         } else {
             ghostLine.textContent = text;
@@ -96,11 +108,13 @@ export class DiffRenderer {
      */
     public createGhostRowElements(
         ghostRow: GhostRow, 
-        settings: EditorSettings
+        settings: EditorSettings,
+        originalText: string,
+        originalNodes?: HighlighedNode[]
     ): GhostLine {
-        const { hunkId, text } = ghostRow;
+        const { hunkId } = ghostRow;
         
-        const ghostLine = this.createDeletedGhostLine(text, settings, hunkId);
+        const ghostLine = this.createDeletedGhostLine(originalText, settings, hunkId, originalNodes);
 
         const emptyGutter = document.createElement('div');
         emptyGutter.className = 'ln';
@@ -387,14 +401,12 @@ export class DiffRenderer {
 
     public createGapRowElements(
         row: SeparatorRow,
-        visualIndex: number,
         settings: EditorSettings
     ): { code: HTMLElement; gutter: HTMLElement; btn: HTMLElement } {
         const code = document.createElement('div');
         code.className = 'line diff-gap';
         code.style.lineHeight = `${settings.lineHeight}px`;
         code.style.height = `${settings.lineHeight}px`;
-        code.setAttribute('data-visual-index', visualIndex.toString());
         setGapElementData(code, {
             hiddenStart: row.hiddenStart,
             hiddenEnd: row.hiddenEnd,
@@ -417,7 +429,6 @@ export class DiffRenderer {
         const gutter = document.createElement('div');
         gutter.className = 'ln diff-gap-gutter';
         gutter.style.height = `${settings.lineHeight}px`;
-        gutter.setAttribute('data-visual-index', visualIndex.toString());
 
         const upBtn = document.createElement('button');
         upBtn.className = 'diff-gap-expand-btn diff-gap-gutter-btn diff-gap-gutter-btn-up';
@@ -446,7 +457,6 @@ export class DiffRenderer {
         const btn = document.createElement('div');
         btn.className = 'bt diff-gap-btn';
         btn.style.height = `${settings.lineHeight}px`;
-        btn.setAttribute('data-visual-index', visualIndex.toString());
 
         return { code, gutter, btn };
     }

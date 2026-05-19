@@ -16,7 +16,7 @@ export type ChangeType = 'added' | 'modified' | 'deleted';
 
 export type DiffInfo = {
   changeType: ChangeType;
-  oldLines?: string[];
+  oldLineNumbers?: number[];
   ghostAnchorLine?: number;
   hunkId: number;
 };
@@ -40,7 +40,9 @@ export function computeGitChanges(
     if (line.startsWith('@@ -')) {
       const headerMatch = line.match(/ \+(\d+)(?:,(\d+))?/);
       if (headerMatch) {
+        const oldHeaderMatch = line.match(/@@ -(\d+)(?:,(\d+))?/);
         let newLine = parseInt(headerMatch[1], 10);
+        let oldLine = oldHeaderMatch ? parseInt(oldHeaderMatch[1], 10) : 1;
         i++;
         lastChangeWasConsecutive = false;
 
@@ -60,11 +62,12 @@ export function computeGitChanges(
           }
 
           if (currentLine.startsWith('-') || currentLine.startsWith('+')) {
-            const deletedLines: string[] = [];
+            const deletedLineNumbers: number[] = [];
             const addedLineNumbers: number[] = [];
 
             while (i < lines.length && lines[i].startsWith('-')) {
-              deletedLines.push(lines[i].slice(1));
+              deletedLineNumbers.push(oldLine);
+              oldLine++;
               i++;
             }
 
@@ -82,11 +85,11 @@ export function computeGitChanges(
               i++;
             }
 
-            if (deletedLines.length > 0 && addedLineNumbers.length > 0) {
+            if (deletedLineNumbers.length > 0 && addedLineNumbers.length > 0) {
               for (const lineNum of addedLineNumbers) {
                 changes.set(lineNum, {
                   changeType: 'modified',
-                  oldLines: deletedLines,
+                  oldLineNumbers: deletedLineNumbers,
                   hunkId: hunkId,
                 });
               }
@@ -98,18 +101,17 @@ export function computeGitChanges(
                   hunkId: hunkId,
                 });
               }
-            } else if (deletedLines.length > 0) {
+            } else if (deletedLineNumbers.length > 0) {
               // deleted
               // JsDiff can emit +0 for deletions before the first line.
               // ghostAnchorLine is the line BEFORE which ghost lines appear.
               // markerLine is the line where the deletion marker appears in gutter
-              // (the last real line before the deletion, i.e. anchorLine - 1).
+              // (aligned with the ghost anchor line in our renderer model).
               const ghostAnchorLine = Math.max(1, newLine + 1);
-              // Marker should be on the line BEFORE the ghosts
-              const markerLine = Math.max(1, Math.min(ghostAnchorLine - 1, currentLineCount));
+              const markerLine = Math.max(1, Math.min(ghostAnchorLine, currentLineCount));
               changes.set(markerLine, {
                 changeType: 'deleted',
-                oldLines: deletedLines,
+                oldLineNumbers: deletedLineNumbers,
                 ghostAnchorLine,
                 hunkId: hunkId,
               });
@@ -122,6 +124,7 @@ export function computeGitChanges(
               hunkId++;
               lastChangeWasConsecutive = false;
             }
+            oldLine++;
             newLine++;
             i++;
           } else {

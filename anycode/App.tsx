@@ -424,14 +424,6 @@ const App: React.FC = () => {
 
         if (panelId === 'editor') {
             editors.unregisterEditorPane(panelKey);
-            setEditorDiffModeByPane((prev) => {
-                if (!Object.hasOwn(prev, panelKey)) {
-                    return prev;
-                }
-                const next = { ...prev };
-                delete next[panelKey];
-                return next;
-            });
             return;
         }
         if (panelId === 'agent') {
