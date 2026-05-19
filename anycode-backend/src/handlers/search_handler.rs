@@ -10,6 +10,7 @@ use tracing::info;
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct SearchRequest {
     pub pattern: String,
+    pub case_sensitive: Option<bool>,
 }
 
 pub async fn handle_search(
@@ -47,8 +48,9 @@ pub async fn handle_search(
 
     // Start the search in the background
     tokio::spawn(async move {
+        let case_sensitive = search_request.case_sensitive.unwrap_or(false);
         let search_result =
-            global_search(&current_dir, &search_request.pattern, cancel, result_tx).await;
+            global_search(&current_dir, &search_request.pattern, case_sensitive, cancel, result_tx).await;
 
         if let Err(err) = search_result {
             let _ = socket_clone.emit(

@@ -49,19 +49,29 @@ fn collect_files_inner(dir_path: &Path, collected: &mut Vec<PathBuf>) -> Result<
     Ok(())
 }
 
-pub fn line_search(line_content: &str, pattern: &str, line_number: usize) -> Vec<SearchResult> {
+pub fn line_search(line_content: &str, pattern: &str, line_number: usize, case_sensitive: bool) -> Vec<SearchResult> {
     let mut results = Vec::new();
     let mut search_start = 0;
 
+    let matcher = regex::RegexBuilder::new(&regex::escape(pattern))
+        .case_insensitive(!case_sensitive)
+        .build();
+    let re = match matcher {
+        Ok(re) => re,
+        Err(_) => return results,
+    };
+
     // Search for all occurrences in the line
-    while let Some(byte_index) = line_content[search_start..].find(pattern) {
-        let match_start = search_start + byte_index;
+    for mat in re.find_iter(line_content) {
+        let match_start = mat.start();
+        let match_end = mat.end();
+
         // Count characters correctly – Unicode taught me to be careful
-        let symbol_column = line_content[..search_start + byte_index].chars().count();
+        let symbol_column = line_content[..match_start].chars().count();
 
         let chars: Vec<char> = line_content.chars().collect();
-        let match_char_start = line_content[..match_start].chars().count();
-        let match_char_end = match_char_start + pattern.chars().count();
+        let match_char_start = symbol_column;
+        let match_char_end = line_content[..match_end].chars().count();
         let preview_start = match_char_start.saturating_sub(50);
         let preview_end = (match_char_end + 50).min(chars.len());
         let preview: String = chars[preview_start..preview_end].iter().collect();
@@ -71,21 +81,27 @@ pub fn line_search(line_content: &str, pattern: &str, line_number: usize) -> Vec
             column: symbol_column,
             preview,
         });
-
-        // Move forward in the line, search for the next match
-        search_start += byte_index + pattern.len();
     }
 
     results
 }
 
-pub fn multiline_search(content: &str, pattern: &str) -> Vec<SearchResult> {
+pub fn multiline_search(content: &str, pattern: &str, case_sensitive: bool) -> Vec<SearchResult> {
     let mut results = Vec::new();
     let mut search_start = 0;
 
+    let matcher = regex::RegexBuilder::new(&regex::escape(pattern))
+        .case_insensitive(!case_sensitive)
+        .build();
+    let re = match matcher {
+        Ok(re) => re,
+        Err(_) => return results,
+    };
+
     // Find all occurrences of the pattern in the content
-    while let Some(byte_index) = content[search_start..].find(pattern) {
-        let match_start = search_start + byte_index;
+    for mat in re.find_iter(content) {
+        let match_start = mat.start();
+        let match_end = mat.end();
 
         // Count lines and characters up to the match start to find line number and column
         let mut line_number = 0;
@@ -103,7 +119,7 @@ pub fn multiline_search(content: &str, pattern: &str) -> Vec<SearchResult> {
         // Create preview: extract surrounding context (up to 50 chars before and after)
         let chars: Vec<char> = content.chars().collect();
         let match_char_start = content[..match_start].chars().count();
-        let match_char_end = match_char_start + pattern.chars().count();
+        let match_char_end = content[..match_end].chars().count();
         let preview_start = match_char_start.saturating_sub(50);
         let preview_end = (match_char_end + 50).min(chars.len());
         let preview: String = chars[preview_start..preview_end].iter().collect();
@@ -113,9 +129,6 @@ pub fn multiline_search(content: &str, pattern: &str) -> Vec<SearchResult> {
             column,
             preview,
         });
-
-        // Move forward in the content, search for the next match
-        search_start += byte_index + pattern.len();
     }
 
     results
@@ -131,6 +144,7 @@ pub struct SearchResult {
 pub async fn file_search(
     file_path: &str,
     pattern: &str,
+    case_sensitive: bool,
     cancel_token: CancellationToken,
 ) -> Result<Vec<SearchResult>> {
     let mut results = Vec::new();
@@ -150,7 +164,7 @@ pub async fn file_search(
             return Ok(results);
         }
 
-        results = multiline_search(&content, pattern);
+        results = multiline_search(&content, pattern, case_sensitive);
     } else {
         // For single-line patterns, use line-by-line processing (more memory efficient)
         let path = Path::new(file_path);
@@ -169,7 +183,7 @@ pub async fn file_search(
                                 break;
                             }
 
-                            let line_results = line_search(&content, pattern, line_number);
+                            let line_results = line_search(&content, pattern, line_number, case_sensitive);
                             results.extend(line_results);
                             line_number += 1;
                         }
@@ -199,6 +213,7 @@ pub struct FileSearchResult {
 pub async fn search_file_result(
     path: &Path,
     pattern: &str,
+    case_sensitive: bool,
     cancel: CancellationToken,
 ) -> Option<FileSearchResult> {
     if is_ignored_path(path) {
@@ -218,7 +233,7 @@ pub async fn search_file_result(
         });
     }
 
-    let matches = match file_search(&file_path_str, pattern, cancel).await {
+    let matches = match file_search(&file_path_str, pattern, case_sensitive, cancel).await {
         Ok(m) => m,
         Err(_) => return None,
     };
@@ -233,6 +248,7 @@ pub async fn search_file_result(
 pub async fn global_search(
     dir_path: &Path,
     pattern: &str,
+    case_sensitive: bool,
     cancel: CancellationToken,
     result_tx: mpsc::Sender<FileSearchResult>,
 ) -> Result<()> {
@@ -270,7 +286,7 @@ pub async fn global_search(
                 .map(|p| p.to_string_lossy().to_string())
                 .unwrap_or_else(|| file_path_str.clone());
 
-            let matches = match file_search(&file_path_str, &pattern, cancel_token.clone()).await {
+            let matches = match file_search(&file_path_str, &pattern, case_sensitive, cancel_token.clone()).await {
                 Ok(m) => m,
                 Err(_err) => {
                     // Error reading/searching file, skip it
@@ -304,12 +320,13 @@ pub async fn global_search(
 }
 
 pub mod search_exp {
+    use super::*;
 
     #[test]
     fn test_line_search_simple() {
         let line = "This is a test string where test appears twice: test.";
         let pattern = "test";
-        let results = line_search(line, pattern, 0);
+        let results = line_search(line, pattern, 0, true);
 
         assert_eq!(results.len(), 3);
 
@@ -331,7 +348,7 @@ pub mod search_exp {
     fn test_line_search_unicode() {
         let line = "Пример строки с шаблон шаблоном и ещё текст.";
         let pattern = "шаблон";
-        let results = line_search(line, pattern, 0);
+        let results = line_search(line, pattern, 0, true);
 
         assert_eq!(results.len(), 2);
 
@@ -349,7 +366,7 @@ pub mod search_exp {
     fn test_line_search_no_match() {
         let line = "Nothing to see here.";
         let pattern = "absent";
-        let results = line_search(line, pattern, 0);
+        let results = line_search(line, pattern, 0, true);
 
         assert!(results.is_empty());
     }
@@ -358,7 +375,7 @@ pub mod search_exp {
     fn test_line_search_long_preview_cutoff() {
         let line = "A".repeat(100) + "pattern" + &"B".repeat(100);
         let pattern = "pattern";
-        let results = line_search(&line, pattern, 0);
+        let results = line_search(&line, pattern, 0, true);
 
         assert_eq!(results.len(), 1);
         let result = &results[0];
@@ -394,7 +411,7 @@ pub mod search_exp {
         let cancel = CancellationToken::new();
 
         let results =
-            file_search(temp_file_path.to_string_lossy().as_ref(), pattern, cancel).await?;
+            file_search(temp_file_path.to_string_lossy().as_ref(), pattern, true, cancel).await?;
 
         println!("Results: {:?}", results);
 
@@ -430,7 +447,7 @@ pub mod search_exp {
 
         // Search should return empty results when cancelled
         let results =
-            file_search(temp_file_path.to_string_lossy().as_ref(), pattern, cancel).await?;
+            file_search(temp_file_path.to_string_lossy().as_ref(), pattern, true, cancel).await?;
 
         println!("Results len: {}", results.len());
         println!("Results: {:?}", results);
@@ -478,7 +495,7 @@ pub mod search_exp {
         // Run batch search with a cancellation token
         let pattern = "search_term";
         tokio::spawn(async move {
-            let search_result = global_search(&dir_path, pattern, cancel_clone, result_tx).await;
+            let search_result = global_search(&dir_path, pattern, true, cancel_clone, result_tx).await;
 
             if let Err(err) = search_result {
                 eprintln!("search failed: {}", err);
@@ -534,7 +551,7 @@ pub mod search_exp {
     fn test_multiline_search() {
         let content = "line 1\nline 2\nline 3 with pattern\nline 4\nline 5";
         let pattern = "line 2\nline 3";
-        let results = multiline_search(content, pattern);
+        let results = multiline_search(content, pattern, true);
 
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].line, 1); // line 2 is at index 1 (0-indexed)
@@ -557,7 +574,7 @@ pub mod search_exp {
         let cancel = CancellationToken::new();
 
         let results =
-            file_search(temp_file_path.to_string_lossy().as_ref(), pattern, cancel).await?;
+            file_search(temp_file_path.to_string_lossy().as_ref(), pattern, true, cancel).await?;
 
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].line, 1); // second line is at index 1
@@ -589,7 +606,7 @@ pub mod search_exp {
         let start = Instant::now();
 
         // Run the search
-        global_search(&rust_dir, pattern, cancel, result_tx).await?;
+        global_search(&rust_dir, pattern, true, cancel, result_tx).await?;
 
         let elapsed = start.elapsed();
 

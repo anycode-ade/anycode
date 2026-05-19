@@ -266,7 +266,8 @@ async fn handle_search_update(
 
     for (_, pattern) in searches {
         let cancel = CancellationToken::new();
-        if let Some(file_result) = search_file_result(path, &pattern, cancel).await {
+        // NOTE: Assuming case insensitive for now as watch handler doesnt store the state easily
+        if let Some(file_result) = search_file_result(path, &pattern, false, cancel).await {
             let _ = socket.emit("search:result", &file_result).await;
         }
     }
