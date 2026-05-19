@@ -526,6 +526,7 @@ export class AnycodeEditor {
             this.container.scrollTop = prevScrollTop;
             if (!this.readOnly) {
                 this.codeContent.focus({ preventScroll: true });
+                this.renderer.renderCursorOrSelection(this.getEditorState(), false);
             }
         }
 
@@ -533,7 +534,6 @@ export class AnycodeEditor {
     }
 
     private handleClick(e: MouseEvent): void {
-        console.log("click", e);
         this.clearPendingHover();
         this.closeHover();
 
@@ -896,7 +896,6 @@ export class AnycodeEditor {
         this.selection = new Selection(start, end);
 
         this.offset = end;
-        console.log('selectWord', end);
         this.renderer.renderSelection(this.code, this.selection);
     }
 
@@ -908,7 +907,6 @@ export class AnycodeEditor {
         this.selection = new Selection(start, end);
 
         this.offset = end;
-        console.log('selectLine', end);
         this.renderer.renderSelection(this.code, this.selection);
     }
 

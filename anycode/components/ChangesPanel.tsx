@@ -13,6 +13,7 @@ export interface ChangedFile {
 
 interface ChangesPanelProps {
     files: ChangedFile[];
+    active: ChangedFile | null;
     branch: string;
     branches: { name: string; is_current: boolean }[];
     isSwitchingBranch: boolean;
@@ -41,6 +42,7 @@ const getDisplayName = (path: string): string => {
 
 export const ChangesPanel: React.FC<ChangesPanelProps> = ({ 
     files, 
+    active,
     branch,
     branches,
     isSwitchingBranch,
@@ -58,6 +60,7 @@ export const ChangesPanel: React.FC<ChangesPanelProps> = ({
     });
     const [excludedFiles, setExcludedFiles] = useState<Set<string>>(new Set());
     const [activeFilePath, setActiveFilePath] = useState<string | null>(null);
+    const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
     const listRef = useRef<HTMLDivElement | null>(null);
     const itemRefs = useRef<Map<string, HTMLDivElement>>(new Map());
     const shouldAutoScrollRef = useRef(false);
@@ -98,23 +101,44 @@ export const ChangesPanel: React.FC<ChangesPanelProps> = ({
     useEffect(() => {
         if (files.length === 0) {
             setActiveFilePath(null);
+            setSelectedFilePath(null);
             return;
         }
 
-        if (!activeFilePath || !files.some((file) => file.path === activeFilePath)) {
-            setActiveFilePath(files[0].path);
+        if (!active) {
+            setActiveFilePath(null);
+            return;
         }
-    }, [files, activeFilePath]);
+        setActiveFilePath(active.path);
+    }, [active, files]);
 
     useEffect(() => {
-        if (!activeFilePath || !shouldAutoScrollRef.current) {
+        if (files.length === 0) {
+            setSelectedFilePath(null);
             return;
         }
 
-        const item = itemRefs.current.get(activeFilePath);
+        if (selectedFilePath && files.some((file) => file.path === selectedFilePath)) {
+            return;
+        }
+
+        if (activeFilePath && files.some((file) => file.path === activeFilePath)) {
+            setSelectedFilePath(activeFilePath);
+            return;
+        }
+
+        setSelectedFilePath(files[0].path);
+    }, [activeFilePath, files, selectedFilePath]);
+
+    useEffect(() => {
+        if (!selectedFilePath || !shouldAutoScrollRef.current) {
+            return;
+        }
+
+        const item = itemRefs.current.get(selectedFilePath);
         item?.scrollIntoView({ block: 'nearest' });
         shouldAutoScrollRef.current = false;
-    }, [activeFilePath]);
+    }, [selectedFilePath]);
 
     const toggleExcludedFile = (path: string, e: React.MouseEvent) => {
         e.stopPropagation();
@@ -138,30 +162,30 @@ export const ChangesPanel: React.FC<ChangesPanelProps> = ({
             return true;
         }
 
-        const currentIndex = Math.max(0, files.findIndex((file) => file.path === activeFilePath));
+        const currentIndex = Math.max(0, files.findIndex((file) => file.path === selectedFilePath));
 
         if (key === 'ArrowDown') {
             const nextIndex = Math.min(files.length - 1, currentIndex + 1);
-            setActiveFilePath(files[nextIndex].path);
+            setSelectedFilePath(files[nextIndex].path);
             shouldAutoScrollRef.current = true;
             return true;
         }
 
         if (key === 'ArrowUp') {
             const prevIndex = Math.max(0, currentIndex - 1);
-            setActiveFilePath(files[prevIndex].path);
+            setSelectedFilePath(files[prevIndex].path);
             shouldAutoScrollRef.current = true;
             return true;
         }
 
-        if (key === 'Enter' && activeFilePath) {
-            onFileClick(activeFilePath);
+        if (key === 'Enter' && selectedFilePath) {
+            onFileClick(selectedFilePath);
             listRef.current?.blur();
             return true;
         }
 
         return false;
-    }, [activeFilePath, files, onFileClick]);
+    }, [files, onFileClick, selectedFilePath]);
 
     const handleListKeyDown = useCallback((event: React.KeyboardEvent<HTMLDivElement>) => {
         const handled = navigateByKey(event.key);
@@ -363,13 +387,13 @@ export const ChangesPanel: React.FC<ChangesPanelProps> = ({
                         <div 
                             ref={(element) => setItemRef(file.path, element)}
                             key={file.path}
-                            className={`changes-item ${activeFilePath === file.path ? 'active' : ''} ${excludedFiles.has(file.path) ? 'excluded' : ''}`}
+                            className={`changes-item ${activeFilePath === file.path ? 'active' : ''} ${selectedFilePath === file.path ? 'selected' : ''} ${excludedFiles.has(file.path) ? 'excluded' : ''}`}
                             onClick={() => {
-                                setActiveFilePath(file.path);
+                                setSelectedFilePath(file.path);
                                 onFileClick(file.path);
                             }}
                             role="option"
-                            aria-selected={activeFilePath === file.path}
+                            aria-selected={selectedFilePath === file.path}
                         >
                             <div className="changes-file-info">
                                 <div className="changes-file-main">

@@ -4,7 +4,6 @@ import { AcpSession } from '../../components/agent/AcpSession';
 import { AcpEmptyPane } from '../../components/agent/AcpEmptyPane';
 import type {
     AcpAgent,
-    AcpPermissionMode,
     AcpSession as AcpSessionState,
     AcpSessionSummary,
 } from '../../types';
@@ -34,8 +33,7 @@ type AgentPanelProps = {
     availableAgents: AcpAgent[];
     settingsAgents: AcpAgent[];
     settingsDefaultAgentId: string | null;
-    permissionMode: AcpPermissionMode;
-    onSaveAgents: (agentList: AcpAgent[], defaultAgentId: string | null, permissionMode: AcpPermissionMode) => void;
+    onSaveAgents: (agentList: AcpAgent[], defaultAgentId: string | null) => void;
     onCloseSettings: () => void;
     onResumeSettingsSession: (agent: AcpAgent, sessionId: string) => void;
     onStartSpecificAgent: (agent: AcpAgent) => string | null | undefined;
@@ -54,7 +52,6 @@ export const AgentPanel = ({
     availableAgents,
     settingsAgents,
     settingsDefaultAgentId,
-    permissionMode,
     onSaveAgents,
     onCloseSettings,
     onResumeSettingsSession,
@@ -95,7 +92,6 @@ export const AgentPanel = ({
                 <AcpSettings
                     agents={settingsAgents}
                     defaultAgentId={settingsDefaultAgentId}
-                    permissionMode={permissionMode}
                     onSave={onSaveAgents}
                     onClose={onCloseSettings}
                     onLoadSessions={agents.fetchAvailableSessions}

@@ -274,6 +274,14 @@
   -webkit-user-select: none;
   margin: 0;
   padding: 0;
+  outline: none;
+  box-shadow: none;
+}
+
+.diff-gap-expand-btn:focus,
+.diff-gap-expand-btn:focus-visible {
+  outline: none;
+  box-shadow: none;
 }
 
 .diff-gap-expand-btn-label {

@@ -1,4 +1,4 @@
-# AGENTS.md test
+# AGENTS.md
 
 This file provides guidance for AI coding agents working with the Anycode codebase.
 

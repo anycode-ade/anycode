@@ -44,6 +44,7 @@ export const EditorPanel = ({ panelKey, editors }: EditorPanelProps) => {
         <div
             className="editor-container"
             onMouseDown={() => editors.setActiveEditorPaneId(panelKey)}
+            onWheelCapture={() => editors.setActiveEditorPaneId(panelKey)}
         >
             {displayedEditor ? (
                 <AnycodeEditorReact

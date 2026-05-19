@@ -769,7 +769,7 @@ export class Renderer {
         const viewportTop = this.container.scrollTop;
         const viewportBottom = viewportTop + this.container.clientHeight;
 
-        const bottomPaddingLines = 3;
+        const bottomPaddingLines = 0;
         const padding = settings.lineHeight * bottomPaddingLines;
         let targetScrollTop = viewportTop;
 

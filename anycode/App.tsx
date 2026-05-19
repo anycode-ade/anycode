@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import 'dockview/dist/styles/dockview.css';
-import { ChangesPanel } from './components';
+import { ChangesPanel, type ChangedFile } from './components';
 import Search from './components/Search';
 import { Layout, type LayoutActions, type PanelId } from './components/layout/Layout';
 import { Toolbar } from './components/toolbar/Toolbar';
@@ -13,10 +13,6 @@ import {
 import { AcpAgent, type SearchMatch } from './types';
 import './App.css';
 import {
-    loadDiffEnabled,
-    // loadFollowEnabled,
-    loadAcpPermissionMode,
-    saveAcpPermissionMode,
     saveItem,
 } from './storage';
 import { useSocket } from './hooks/useSocket';
@@ -27,7 +23,6 @@ import { useTerminals } from './hooks/useTerminals';
 import { useEditors } from './hooks/useEditors';
 import { useAgents } from './hooks/useAgents';
 import { useLayout } from './hooks/useLayout';
-import { type AcpPermissionMode } from './types';
 import { useTerminalPanes } from './features/terminal/useTerminalPanes';
 import { useAgentPanes } from './features/agents/useAgentPanes';
 import { FilesPanel } from './features/files/FilesPanel';
@@ -35,28 +30,14 @@ import { EditorPanel } from './features/editor/EditorPanel';
 import { TerminalPanel } from './features/terminal/TerminalPanel';
 import { AgentPanel } from './features/agents/AgentPanel';
 import { BrowserPanel } from './features/browser/BrowserPanel';
-import {
-    DEFAULT_DIFF_VIEW_MODE,
-    getNextDiffMode,
-    type DiffMode,
-} from './types/diffMode';
+import { type DiffMode } from './types/diffMode';
+import { normalizePath } from './utils';
 
 const App: React.FC = () => {
-    const [diffEnabled, setDiffEnabled] = useState<boolean>(loadDiffEnabled());
-    const [editorDiffModeByPane, setEditorDiffModeByPane] = useState<Record<string, DiffMode>>({});
-    const layoutActionsRef = useRef<LayoutActions | null>(null);
-    // const [followEnabled, setFollowEnabled] = useState<boolean>(loadFollowEnabled());
-    const [permissionMode, setPermissionMode] = useState<AcpPermissionMode>(loadAcpPermissionMode());
-
     const { wsRef, isConnected } = useSocket({});
 
     const fileTree = useFileTree();
-    const editors = useEditors({
-        wsRef,
-        isConnected,
-        diffEnabled,
-    });
-
+    const editors = useEditors({ wsRef, isConnected });
     const terminals = useTerminals({ wsRef, isConnected });
     const terminalPanes = useTerminalPanes({
         terminals: terminals.terminals,
@@ -66,17 +47,8 @@ const App: React.FC = () => {
     const git = useGit({ wsRef, isConnected });
     const search = useSearch({ wsRef, isConnected });
     const wasConnectedRef = useRef<boolean>(false);
-    const agents = useAgents({
-        wsRef,
-        isConnected,
-        // followEnabled,
-        followEnabled: false,
-        openFile: editors.openFile,
-        onAgentStarted: () => {
-            setDiffEnabled(true);
-            // setFollowEnabled(true);
-        },
-    });
+    const agents = useAgents({ wsRef, isConnected });
+    const layoutActionsRef = useRef<LayoutActions | null>(null);
 
     const openFolder = useMemo(() => {
         return (path: string) => {
@@ -158,24 +130,6 @@ const App: React.FC = () => {
     }, [editors.activeFileId, fileTree.fileTree, fileTree.findNodeByPath, fileTree.selectNode]);
 
     useEffect(() => {
-        saveItem('diffEnabled', diffEnabled);
-    }, [diffEnabled]);
-
-    // useEffect(() => {
-    //     saveItem('followEnabled', followEnabled);
-    // }, [followEnabled]);
-
-    useEffect(() => {
-        saveAcpPermissionMode(permissionMode);
-    }, [permissionMode]);
-
-    useEffect(() => {
-        if (!isConnected || !wsRef.current) return;
-
-        wsRef.current.emit('acp:set_permission_mode', { mode: permissionMode });
-    }, [isConnected, permissionMode, wsRef]);
-
-    useEffect(() => {
         saveItem('terminals', terminals.terminals);
     }, [terminals.terminals]);
 
@@ -188,18 +142,11 @@ const App: React.FC = () => {
         return layoutActionsRef.current?.ensureEditorPanel(editors.activeEditorPaneId);
     }, [editors]);
 
-    const handleOpenFile = useCallback((path: string, line?: number, column?: number) => {
+    const handleOpenFile = useCallback((path: string, line?: number, column?: number, mode?: DiffMode) => {
         const paneId = resolveEditorPaneId();
         if (!paneId) return;
-        editors.openFile(path, line, column, paneId);
+        editors.openFile(path, line, column, paneId, mode);
     }, [editors, resolveEditorPaneId]);
-
-    const handleOpenFileDiff = useCallback((path: string, line?: number, column?: number) => {
-        const paneId = resolveEditorPaneId();
-        if (!paneId) return;
-        const mode = editorDiffModeByPane[paneId] ?? (diffEnabled ? 'combine' : DEFAULT_DIFF_VIEW_MODE);
-        editors.openFile(path, line, column, paneId, { originalContentMode: mode });
-    }, [diffEnabled, editorDiffModeByPane, editors, resolveEditorPaneId]);
 
     const handleSelectFile = useCallback((fileId: string) => {
         const paneId = resolveEditorPaneId();
@@ -211,57 +158,25 @@ const App: React.FC = () => {
         handleOpenFile(filePath, match.line, match.column);
     };
 
-    const getEditorDiffMode = useCallback((panelKey: string): DiffMode => {
-        return editorDiffModeByPane[panelKey] ?? (diffEnabled ? 'combine' : DEFAULT_DIFF_VIEW_MODE);
-    }, [diffEnabled, editorDiffModeByPane]);
+    const handleOpenFileDiff = useCallback((path: string, line?: number, column?: number) => {
+        handleOpenFile(path, line, column, editors.getEditorDiffMode(editors.activeEditorPaneId));
+    }, [editors, handleOpenFile]);
+
+    const activeChangedFile = useMemo<ChangedFile | null>(() => {
+        if (!editors.activeFileId) {
+            return null;
+        }
+        const normalizedActivePath = normalizePath(editors.activeFileId).replace(/^\.\/+/, '');
+        return git.changedFiles.find((file) => normalizePath(file.path).replace(/^\.\/+/, '') === normalizedActivePath) ?? null;
+    }, [editors.activeFileId, git.changedFiles]);
 
     const isEditorDiffEnabled = useCallback((panelKey: string) => {
-        return getEditorDiffMode(panelKey) !== 'plain';
-    }, [getEditorDiffMode]);
-
-    const applyDiffModeToPaneEditor = useCallback((panelKey: string, mode: DiffMode) => {
-        const fileId = editors.getActiveFileIdForPane(panelKey);
-        if (!fileId) {
-            return false;
-        }
-
-        const editor = editors.getEditorState(fileId);
-        if (!editor) {
-            return false;
-        }
-
-        editor.setDiffEnabled(mode !== 'plain');
-        editor.setFocusedDiffMode(mode === 'diff', 3);
-        return true;
+        return editors.getEditorDiffMode(panelKey) !== 'plain';
     }, [editors]);
 
     const handleCycleEditorDiffMode = useCallback((panelKey: string) => {
-        const currentMode = getEditorDiffMode(panelKey);
-        const nextMode = getNextDiffMode(currentMode);
-
-        if (!applyDiffModeToPaneEditor(panelKey, nextMode)) {
-            return;
-        }
-
-        setEditorDiffModeByPane((prev) => ({ ...prev, [panelKey]: nextMode }));
-
-        if (panelKey === editors.activeEditorPaneId) {
-            setDiffEnabled(nextMode !== 'plain');
-        }
-    }, [applyDiffModeToPaneEditor, editors.activeEditorPaneId, getEditorDiffMode]);
-
-    useEffect(() => {
-        const paneId = editors.activeEditorPaneId;
-        if (!paneId) {
-            return;
-        }
-        const mode = getEditorDiffMode(paneId);
-        applyDiffModeToPaneEditor(paneId, mode);
-    }, [applyDiffModeToPaneEditor, editors.activeEditorPaneId, editors.activeFileId, getEditorDiffMode]);
-
-    // const toggleFollowMode = useCallback(() => {
-    //     setFollowEnabled((prev) => !prev);
-    // }, []);
+        editors.cycleEditorDiffMode(panelKey);
+    }, [editors]);
 
     const sessionsArray = useMemo(() => Array.from(agents.acpSessions.values()), [agents.acpSessions]);
     const availableAgents = useMemo<AcpAgent[]>(() => getAllAgents(), [agents.agentsVersion]);
@@ -362,9 +277,8 @@ const App: React.FC = () => {
         agents.resumeSession(agent, sessionId);
     }, [agents.resumeSession, agents.setIsAgentSettingsOpen]);
 
-    const handleSaveAgents = useCallback((agentList: AcpAgent[], defaultAgentId: string | null, nextPermissionMode: AcpPermissionMode) => {
+    const handleSaveAgents = useCallback((agentList: AcpAgent[], defaultAgentId: string | null) => {
         updateAgents(agentList, defaultAgentId);
-        setPermissionMode(nextPermissionMode);
         agents.setAgentsVersion((prev) => prev + 1);
     }, [agents.setAgentsVersion]);
 
@@ -409,6 +323,7 @@ const App: React.FC = () => {
                 return (
                     <ChangesPanel
                         files={git.changedFiles}
+                        active={activeChangedFile}
                         branch={git.gitBranch}
                         branches={git.branches}
                         isSwitchingBranch={git.isSwitchingBranch}
@@ -449,7 +364,6 @@ const App: React.FC = () => {
                         availableAgents={availableAgents}
                         settingsAgents={settingsAgents}
                         settingsDefaultAgentId={settingsDefaultAgentId}
-                        permissionMode={permissionMode}
                         onSaveAgents={handleSaveAgents}
                         onCloseSettings={handleCloseAgentSettings}
                         onResumeSettingsSession={handleResumeSettingsSession}
@@ -566,7 +480,7 @@ const App: React.FC = () => {
                     onPanelActivated={handlePanelActivated}
                     onCycleEditorDiffMode={handleCycleEditorDiffMode}
                     isEditorDiffEnabled={isEditorDiffEnabled}
-                    getEditorDiffMode={getEditorDiffMode}
+                    getEditorDiffMode={editors.getEditorDiffMode}
                     onActionsReady={(actions) => {
                         layoutActionsRef.current = actions;
                     }}

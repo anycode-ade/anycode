@@ -1,5 +1,5 @@
 
-import { type Terminal, type AcpSession, type AcpAgent, type AcpPermissionMode, type FileState } from './types';
+import { type Terminal, type AcpSession, type AcpAgent, type FileState } from './types';
 
 export type PersistedEditorState = {
     files: FileState[];
@@ -50,9 +50,6 @@ export function loadAgentPanelVisible(): boolean {
 export function loadEditorPanelVisible(): boolean {
     return loadItemWithFallback<boolean>('editorPanelVisible', 'centerPanelVisible') ?? true;
 }
-export function loadDiffEnabled(): boolean {
-    return loadItem('diffEnabled') ?? false;
-}
 export function loadOpenFiles(): PersistedEditorState {
     const stored = loadItem<PersistedEditorState>('openFiles');
     if (!stored || !Array.isArray(stored.files)) {
@@ -79,18 +76,6 @@ export function loadOpenFiles(): PersistedEditorState {
 export function saveOpenFiles(state: PersistedEditorState): void {
     saveItem('openFiles', state);
 }
-export function loadFollowEnabled(): boolean {
-    return loadItem('followEnabled') ?? false;
-}
-
-export function loadAcpPermissionMode(): AcpPermissionMode {
-    return loadItem<AcpPermissionMode>('acpPermissionMode') ?? 'full_access';
-}
-
-export function saveAcpPermissionMode(mode: AcpPermissionMode): void {
-    saveItem('acpPermissionMode', mode);
-}
-
 export function loadAcpSessions(): Map<string, AcpSession> {
     const stored = localStorage.getItem('acpSessions');
     if (stored) {

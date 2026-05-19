@@ -13,8 +13,9 @@ import {
 } from '../types';
 import { BATCH_DELAY_MS } from '../constants';
 import { getFileName, getLanguageFromFileName } from '../utils';
-import { loadOpenFiles, saveOpenFiles } from '../storage';
+import { loadItem, loadOpenFiles, saveItem, saveOpenFiles } from '../storage';
 import type { DiffMode } from '../types/diffMode';
+import { DEFAULT_DIFF_VIEW_MODE, getNextDiffMode } from '../types/diffMode';
 import {
     Completion,
     CompletionRequest,
@@ -29,7 +30,6 @@ import {
 type UseEditorsParams = {
     wsRef: React.RefObject<Socket | null>;
     isConnected: boolean;
-    diffEnabled: boolean;
     onFileClosed?: (fileId: string) => void;
 };
 
@@ -141,7 +141,7 @@ const getPersistedActiveFileId = (files: FileState[], activeFileId: string | nul
     return files[0]?.id ?? null;
 };
 
-export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: UseEditorsParams) => {
+export const useEditors = ({ wsRef, isConnected, onFileClosed }: UseEditorsParams) => {
     const [files, setFiles] = useState<FileState[]>(() => persistedEditorState.files);
     const filesRef = useRef<FileState[]>(persistedEditorState.files);
     const [activeEditorPaneId, setActiveEditorPaneId] = useState<string>(DEFAULT_EDITOR_PANE_ID);
@@ -169,6 +169,10 @@ export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: Us
     const referencesPeekByPaneRef = useRef<Record<string, ReferencesPeekState | null>>({});
     const referencesPeekRequestTokenRef = useRef<number>(0);
     const lastFocusedEditorPaneIdRef = useRef<string>(DEFAULT_EDITOR_PANE_ID);
+    const [editorDiffModeByPane, setEditorDiffModeByPane] = useState<Record<string, DiffMode>>(
+        () => loadItem<Record<string, DiffMode>>('editorDiffModeByPane') ?? {},
+    );
+    const lastAppliedDiffStateRef = useRef<string | null>(null);
 
     const activeFile = files.find((f) => f.id === activeFileId);
     const hasVisibleEditorPane = useCallback(() => (
@@ -236,6 +240,7 @@ export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: Us
     useEffect(() => { activeFileIdRef.current = activeFileId; }, [activeFileId]);
     useEffect(() => { editorStatesRef.current = editorStates; }, [editorStates]);
     useEffect(() => { referencesPeekByPaneRef.current = referencesPeekByPane; }, [referencesPeekByPane]);
+    useEffect(() => { saveItem('editorDiffModeByPane', editorDiffModeByPane); }, [editorDiffModeByPane]);
 
     const getActiveFileIdForPane = useCallback((paneId: string): string | null => {
         return paneActiveFileIdsRef.current[paneId] ?? null;
@@ -431,6 +436,8 @@ export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: Us
     }, [updateReferencesPeekForPane]);
 
     const focusEditorInPane = useCallback((paneId: string) => {
+        setActiveEditorPaneId(paneId);
+
         const fileId = getActiveFileIdForPane(paneId);
         if (!fileId) {
             return;
@@ -442,7 +449,6 @@ export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: Us
         }
 
         const cursor = editor.getCursor();
-        setActiveEditorPaneId(paneId);
         editor.requestFocus(cursor.line, cursor.column);
     }, [getActiveFileIdForPane]);
 
@@ -604,12 +610,41 @@ export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: Us
         }
     }, []);
 
+    const getEditorDiffMode = useCallback((paneId: string): DiffMode => {
+        return editorDiffModeByPane[paneId] ?? DEFAULT_DIFF_VIEW_MODE;
+    }, [editorDiffModeByPane]);
+
+    const applyDiffModeToPaneEditor = useCallback((paneId: string, mode: DiffMode): boolean => {
+        const fileId = paneActiveFileIdsRef.current[paneId];
+        if (!fileId) return false;
+
+        const editor = editorRefs.current.get(fileId);
+        if (!editor) return false;
+
+        editor.setDiffEnabled(mode !== 'plain');
+        editor.setFocusedDiffMode(mode === 'diff', 3);
+        return true;
+    }, []);
+
+    const setEditorDiffMode = useCallback((paneId: string, mode: DiffMode): boolean => {
+        if (!applyDiffModeToPaneEditor(paneId, mode)) {
+            return false;
+        }
+        setEditorDiffModeByPane((prev) => ({ ...prev, [paneId]: mode }));
+        return true;
+    }, [applyDiffModeToPaneEditor]);
+
+    const cycleEditorDiffMode = useCallback((paneId: string): boolean => {
+        const nextMode = getNextDiffMode(getEditorDiffMode(paneId));
+        return setEditorDiffMode(paneId, nextMode);
+    }, [getEditorDiffMode, setEditorDiffMode]);
+
     const openFile = useCallback((
         path: string,
         line?: number,
         column?: number,
         paneId?: string,
-        options?: { originalContentMode?: DiffMode },
+        diffMode?: DiffMode,
     ) => {
         if (!paneId && !hasVisibleEditorPane()) {
             return;
@@ -617,7 +652,7 @@ export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: Us
 
         const existingFile = filesRef.current.find((file) => file.id === path);
         const targetPaneId = resolveTargetPaneId(paneId, existingFile?.id);
-        const mode = options?.originalContentMode ?? 'plain';
+        const mode = diffMode ?? getEditorDiffMode(targetPaneId);
 
         if (existingFile) {
             const editor = editorRefs.current.get(existingFile.id);
@@ -647,6 +682,7 @@ export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: Us
 
         if (wsRef.current && isConnected) {
             pendingOpenFilesRef.current.add(path);
+
             wsRef.current.emit('file:open', { path }, (response: any) => {
                 pendingOpenFilesRef.current.delete(path);
                 if (response.success) {
@@ -681,7 +717,7 @@ export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: Us
                 }
             });
         }
-    }, [applyEditorOpenRequest, hasVisibleEditorPane, isConnected, resolveTargetPaneId, setActiveFileId, wsRef]);
+    }, [applyEditorOpenRequest, getEditorDiffMode, hasVisibleEditorPane, isConnected, resolveTargetPaneId, setActiveFileId, wsRef]);
 
     const openReferenceFromPeek = useCallback((paneId: string, itemIndex?: number): boolean => {
         const peek = referencesPeekByPaneRef.current[paneId];
@@ -908,7 +944,7 @@ export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: Us
             editor.setHistory(history.changes, history.index);
         }
 
-        editor.setDiffEnabled(diffEnabled);
+        editor.setDiffEnabled(false);
         editor.setOnChange((change: Change) => handleChange(filename, change));
         editor.setOnCursorChange((newState: any, oldState: any) => handleCursorChange(filename, newState, oldState));
         editor.setCompletionProvider(handleCompletion);
@@ -918,7 +954,7 @@ export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: Us
         editor.setErrors(errors || []);
 
         return editor;
-    }, [diffEnabled, handleChange, handleCursorChange, handleCompletion, handleGoToDefinition, handleHover, openReferencesPeek]);
+    }, [handleChange, handleCursorChange, handleCompletion, handleGoToDefinition, handleHover, openReferencesPeek]);
 
     const initializeEditors = useCallback(async () => {
         try {
@@ -972,10 +1008,27 @@ export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: Us
 
             if (shouldRestore) {
                 const cursor = cursor2FileRef.current[fileId];
-                openFile(fileId, cursor?.line, cursor?.column, paneId);
+                const mode = getEditorDiffMode(paneId);
+                openFile(fileId, cursor?.line, cursor?.column, paneId, mode);
             }
         });
-    }, [isConnected, openFile, paneActiveFileIds, wsRef]);
+    }, [getEditorDiffMode, isConnected, openFile, paneActiveFileIds, wsRef]);
+
+    useEffect(() => {
+        const paneId = activeEditorPaneIdRef.current;
+        if (!paneId) return;
+        const fileId = paneActiveFileIdsRef.current[paneId];
+        if (!fileId) return;
+
+        const mode = getEditorDiffMode(paneId);
+        const applyKey = `${paneId}:${fileId}:${mode}`;
+        if (lastAppliedDiffStateRef.current === applyKey) {
+            return;
+        }
+
+        applyDiffModeToPaneEditor(paneId, mode);
+        lastAppliedDiffStateRef.current = applyKey;
+    }, [activeEditorPaneId, activeFileId, applyDiffModeToPaneEditor, getEditorDiffMode]);
 
     const closeFile = useCallback((fileId: string) => {
         flushChanges(fileId);
@@ -1111,12 +1164,6 @@ export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: Us
         openFile(nextPosition.file, line, column);
     }, [openFile]);
 
-    const setDiffForAllEditors = useCallback((enabled: boolean) => {
-        editorRefs.current.forEach((editor) => {
-            editor.setDiffEnabled(enabled);
-        });
-    }, []);
-
     const flushAllPendingChanges = useCallback(() => {
         pendingChangesRef.current.forEach((batch, filename) => {
             if (batch.timerId) {
@@ -1139,6 +1186,9 @@ export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: Us
         setActiveEditorPaneId,
         registerEditorPane,
         unregisterEditorPane,
+        getEditorDiffMode,
+        setEditorDiffMode,
+        cycleEditorDiffMode,
         editorStates,
         closeFile,
         saveFile,
@@ -1156,7 +1206,6 @@ export const useEditors = ({ wsRef, isConnected, diffEnabled, onFileClosed }: Us
         handleWatcherEdits,
         undoCursor,
         redoCursor,
-        setDiffForAllEditors,
         flushAllPendingChanges,
     };
 };

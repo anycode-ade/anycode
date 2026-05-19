@@ -5,29 +5,22 @@ import {
     type AcpContextUsageMessage,
     type AcpMessage,
     type AcpModelSelectorMessage,
-    type AcpOpenFileMessage,
     type AcpPromptStateMessage,
     type AcpReasoningSelectorMessage,
     type AcpSelectOption,
     type AcpSession,
     type AcpSessionSummary,
-    type AcpToolCallMessage,
-    type AcpToolResultMessage,
 } from '../types';
 
 type UseAgentsParams = {
     wsRef: React.RefObject<Socket | null>;
     isConnected: boolean;
-    followEnabled: boolean;
-    openFile: (path: string, line?: number, column?: number) => void;
     onAgentStarted?: () => void;
 };
 
 export const useAgents = ({
     wsRef,
     isConnected,
-    followEnabled,
-    openFile,
     onAgentStarted,
 }: UseAgentsParams) => {
     const mergeConsecutiveErrors = (messages: AcpMessage[]): AcpMessage[] => {
@@ -53,10 +46,8 @@ export const useAgents = ({
 
     const agentCounterRef = useRef<Map<string, number>>(new Map());
     const acpSessionsRef = useRef<Map<string, AcpSession>>(new Map());
-    const followEnabledRef = useRef<boolean>(followEnabled);
 
     useEffect(() => { acpSessionsRef.current = acpSessions; }, [acpSessions]);
-    useEffect(() => { followEnabledRef.current = followEnabled; }, [followEnabled]);
 
     const sendPermissionResponse = useCallback((agentId: string, permissionId: string, optionId: string) => {
         if (!wsRef.current || !isConnected) return;
@@ -123,13 +114,6 @@ export const useAgents = ({
     }, []);
 
     const handleAcpMessage = useCallback((data: { agent_id: string; item: AcpMessage }) => {
-        // Follow mode is temporarily disabled.
-        // if (data.item.role === 'open_file' && followEnabledRef.current) {
-        //     const openFileMsg = data.item as AcpOpenFileMessage;
-        //     openFile(openFileMsg.path, openFileMsg.line, 0);
-        //     return;
-        // }
-
         if (data.item.role === 'prompt_state') {
             const promptState = data.item as AcpPromptStateMessage;
             updateSession(data.agent_id, (existing) => ({
@@ -224,21 +208,6 @@ export const useAgents = ({
         }
 
         if (data.item.role === 'tool_call' || data.item.role === 'tool_result' || data.item.role === 'tool_update' || data.item.role === 'permission_request') {
-            // Follow mode is temporarily disabled.
-            // if (data.item.role === 'tool_result' && followEnabledRef.current) {
-            //     const toolResult = data.item as AcpToolResultMessage;
-            //     const session = acpSessionsRef.current.get(data.agent_id);
-            //     if (session) {
-            //         const matchingToolCall = session.messages.find(
-            //             (m) => m.role === 'tool_call' && (m as AcpToolCallMessage).id === toolResult.id,
-            //         ) as AcpToolCallMessage | undefined;
-            //         if (matchingToolCall?.locations && matchingToolCall.locations.length > 0) {
-            //             const loc = matchingToolCall.locations[0];
-            //             openFile(loc.path, loc.line, 0);
-            //         }
-            //     }
-            // }
-
             updateSession(data.agent_id, (existing) => ({
                 agentId: data.agent_id,
                 agentName: existing?.agentName ?? '',
@@ -296,7 +265,7 @@ export const useAgents = ({
                 messages: [...existing.messages, messageToAdd],
             };
         });
-    }, [openFile, updateSession]);
+    }, [updateSession]);
 
     const handleAcpHistory = useCallback((data: { agent_id: string; history: AcpMessage[] }) => {
         const reversedHistory = [...data.history].reverse();

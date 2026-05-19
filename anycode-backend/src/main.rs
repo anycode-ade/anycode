@@ -80,7 +80,6 @@ async fn on_connect(socket: SocketRef, _state: State<AppState>) {
     socket.on("acp:sessions_list", handle_acp_sessions_list);
     socket.on("acp:reconnect", handle_acp_reconnect);
     socket.on("acp:permission_response", handle_acp_permission_response);
-    socket.on("acp:set_permission_mode", handle_acp_permission_mode);
     socket.on("acp:undo", handle_acp_undo);
 
     socket.on("git:status", handle_git_status);
