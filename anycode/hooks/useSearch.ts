@@ -9,11 +9,16 @@ type UseSearchParams = {
 
 export const useSearch = ({ wsRef, isConnected }: UseSearchParams) => {
     const SEARCH_INPUT_STORAGE_KEY = 'searchInput';
+    const CASE_SENSITIVE_STORAGE_KEY = 'searchCaseSensitive';
     const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
     const [searchEnded, setSearchEnded] = useState<boolean>(true);
     const [searchInput, setSearchInput] = useState<string>(() => {
         if (typeof window === 'undefined') return '';
         return localStorage.getItem(SEARCH_INPUT_STORAGE_KEY) ?? '';
+    });
+    const [isCaseSensitive, setIsCaseSensitive] = useState<boolean>(() => {
+        if (typeof window === 'undefined') return false;
+        return localStorage.getItem(CASE_SENSITIVE_STORAGE_KEY) === 'true';
     });
 
     useEffect(() => {
@@ -25,14 +30,20 @@ export const useSearch = ({ wsRef, isConnected }: UseSearchParams) => {
         }
     }, [searchInput]);
 
-    const startSearch = useCallback((pattern: string) => {
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+        localStorage.setItem(CASE_SENSITIVE_STORAGE_KEY, String(isCaseSensitive));
+    }, [isCaseSensitive]);
+
+    const startSearch = useCallback((pattern: string, caseSensitiveOverride?: boolean) => {
         if (!pattern) return;
         if (!wsRef.current || !isConnected) return;
 
-        wsRef.current.emit('search:start', { pattern });
+        const useCaseSensitive = caseSensitiveOverride ?? isCaseSensitive;
+        wsRef.current.emit('search:start', { pattern, case_sensitive: useCaseSensitive });
         setSearchResults([]);
         setSearchEnded(false);
-    }, [wsRef, isConnected]);
+    }, [wsRef, isConnected, isCaseSensitive]);
 
     const cancelSearch = useCallback(() => {
         if (!wsRef.current || !isConnected) return;
@@ -78,6 +89,8 @@ export const useSearch = ({ wsRef, isConnected }: UseSearchParams) => {
     return {
         searchInput,
         setSearchInput,
+        isCaseSensitive,
+        setIsCaseSensitive,
         searchResults,
         searchEnded,
         startSearch,

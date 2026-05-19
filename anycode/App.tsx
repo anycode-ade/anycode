@@ -310,6 +310,8 @@ const App: React.FC = () => {
                         focusRequestToken={layout.getFocusRequestToken('search')}
                         inputValue={search.searchInput}
                         onInputValueChange={search.setSearchInput}
+                        isCaseSensitive={search.isCaseSensitive}
+                        onCaseSensitiveChange={search.setIsCaseSensitive}
                         onEnter={handleSearch}
                         onInputChange={search.cancelSearch}
                         onCancel={search.cancelSearch}
