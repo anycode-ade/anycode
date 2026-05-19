@@ -137,4 +137,11 @@ export const Icons = {
       </g>
     </svg>
   ),
+  MatchCase: () => (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M6 17V7H8L13 17H11L10 14H6L5 17H3L8 7H10L11.5 10.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+      <path d="M6.5 12H9.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+      <path d="M19 17V12M19 12C19 10.5 17.5 10.5 16.5 11.5C15.5 12.5 15.5 14.5 16.5 15.5C17.5 16.5 19 16.5 20 15M19 12V10M19 17H20" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  ),
 };

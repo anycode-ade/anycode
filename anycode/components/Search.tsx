@@ -24,10 +24,11 @@ const DownIcon = () => (
 interface SearchPreviewProps {
     match: SearchMatch;
     pattern: string;
+    isCaseSensitive: boolean;
     maxLength?: number;
 }
 
-const SearchPreview = ({ match, pattern, maxLength = 100 }: SearchPreviewProps) => {
+const SearchPreview = ({ match, pattern, isCaseSensitive, maxLength = 100 }: SearchPreviewProps) => {
     const displayPreview = maxLength > 0 ? match.preview.slice(0, maxLength) : match.preview;
     
     if (!pattern.trim()) {
@@ -44,7 +45,7 @@ const SearchPreview = ({ match, pattern, maxLength = 100 }: SearchPreviewProps) 
     // Ensure we don't go beyond preview bounds
     if (matchPositionInPreview < 0 || matchPositionInPreview + patternLength > displayPreview.length) {
         // Fallback: try to find pattern in preview
-        const matchIndex = displayPreview.indexOf(pattern);
+        const matchIndex = isCaseSensitive ? displayPreview.indexOf(pattern) : displayPreview.toLowerCase().indexOf(pattern.toLowerCase());
         if (matchIndex === -1) {
             return <span className="search-preview" title={match.preview}>{displayPreview}</span>;
         }
@@ -80,6 +81,8 @@ interface SearchProps {
     focusRequestToken?: number | null;
     inputValue: string;
     onInputValueChange: (value: string) => void;
+    isCaseSensitive: boolean;
+    onCaseSensitiveChange: (value: boolean) => void;
     onEnter: (data: { id: string; pattern: string }) => void;
     onInputChange?: () => void;
     onCancel: () => void;
@@ -93,7 +96,7 @@ type SearchNavItem =
     | { key: string; type: "file"; filePath: string }
     | { key: string; type: "match"; filePath: string; match: SearchMatch };
 
-const Search = ({ id, focusRequestToken, inputValue, onInputValueChange, onEnter, onInputChange, onCancel, onClear, onMatchClick, results, searchEnded }: SearchProps) => {
+const Search = ({ id, focusRequestToken, inputValue, onInputValueChange, isCaseSensitive, onCaseSensitiveChange, onEnter, onInputChange, onCancel, onClear, onMatchClick, results, searchEnded }: SearchProps) => {
     const searchPatternRef = useRef("");
     const [visibleMatches, setVisibleMatches] = useState<Record<string, Set<string> | undefined>>({});
     const [activeItemKey, setActiveItemKey] = useState<string | null>(null);
@@ -168,6 +171,17 @@ const Search = ({ id, focusRequestToken, inputValue, onInputValueChange, onEnter
         if (e.key === "ArrowDown") {
             e.preventDefault();
             resultsRef.current?.focus();
+            return;
+        }
+
+        if (e.altKey && e.key.toLowerCase() === "c") {
+            e.preventDefault();
+            const nextCaseSensitive = !isCaseSensitive;
+            onCaseSensitiveChange(nextCaseSensitive);
+            searchPatternRef.current = inputValue;
+            if (onEnter && inputValue) {
+                onEnter({ id: id, pattern: inputValue });
+            }
             return;
         }
 
@@ -396,17 +410,28 @@ const Search = ({ id, focusRequestToken, inputValue, onInputValueChange, onEnter
         <div className="search-container">
             
             <div className="search-input-wrapper">
-                <textarea
-                    className="search-input"
-                    value={inputValue}
-                    onChange={handleInputChange}
-                    onKeyDown={handleKeyDown}
-                    ref={inputRef}
-                    autoFocus
-                    rows={1}
-                    title={`Search... (Enter to search, Shift+Enter for newline)`}
-                    placeholder={`Search...`}
-                />
+                <div className="search-input-container">
+                    <textarea
+                        className="search-input"
+                        value={inputValue}
+                        onChange={handleInputChange}
+                        onKeyDown={handleKeyDown}
+                        ref={inputRef}
+                        autoFocus
+                        rows={1}
+                        title={`Search... (Enter to search, Shift+Enter for newline)`}
+                        placeholder={`Search...`}
+                    />
+                    <div className="search-input-actions">
+                        <button
+                            className={`search-option-btn ${isCaseSensitive ? 'active' : ''}`}
+                            onClick={() => onCaseSensitiveChange(!isCaseSensitive)}
+                            title="Match Case (Alt+C)"
+                        >
+                            <Icons.MatchCase />
+                        </button>
+                    </div>
+                </div>
             </div>
 
             <div className="search-summary">
@@ -551,7 +576,7 @@ const Search = ({ id, focusRequestToken, inputValue, onInputValueChange, onEnter
                                                 data-active={activeItemKey === matchKey ? 'true' : 'false'}
                                             >
                                                 <strong>{match.line + 1} </strong>
-                                                <SearchPreview match={match} pattern={searchPatternRef.current} />
+                                                <SearchPreview match={match} pattern={searchPatternRef.current} isCaseSensitive={isCaseSensitive} />
                                             </div>
                                         );
                                     })}
