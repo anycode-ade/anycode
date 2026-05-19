@@ -185,8 +185,6 @@ export class Code {
                 } catch (e) {
                     console.error(e);
                 }
-
-                console.log('injection language initialized', name);
             }
         }
     }

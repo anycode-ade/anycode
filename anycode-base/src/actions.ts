@@ -281,7 +281,6 @@ export const handleCopy = async (ctx: ActionContext): Promise<ActionResult> => {
 
         let content = ctx.code.getIntervalContent2(start, end);
         await copyToClipboard(content);
-        console.log('Copied:', content);
     } catch (err) {
         console.error('Failed to copy:', err);
     }
@@ -474,7 +473,6 @@ export const handleCut = async (ctx: ActionContext): Promise<ActionResult> => {
 
         let content = ctx.code.getIntervalContent2(start, end);
         await copyToClipboard(content);
-        console.log('Cut:', content);
 
         ctx.code.tx();
         ctx.code.setStateBefore(ctx.offset, ctx.selection);

@@ -15,130 +15,94 @@ export type Edit = {
 export type ChangeType = 'added' | 'modified' | 'deleted';
 
 export type DiffInfo = {
-  changeType: ChangeType;
-  oldLineNumbers?: number[];
-  ghostAnchorLine?: number;
-  hunkId: number;
+    changeType: ChangeType;
+    oldLineNumbers?: number[];
+    ghostAnchorLine?: number;
+    hunkId: number;
 };
 
 export function computeGitChanges(
-  original: string, current: string
+    original: string, current: string
 ): Map<number, DiffInfo> {
-  const changes = new Map<number, DiffInfo>();
-  const currentLineCount = current === '' ? 1 : current.split('\n').length;
-  const patch = JsDiff.createTwoFilesPatch(
-    'a', 'b', original, current, '', '', { context: 0 }
-  );
+    const changes = new Map<number, DiffInfo>();
+    const diffs = JsDiff.diffLines(original, current);
+    const currentLineCount = current === '' ? 1 : current.split('\n').length;
 
-  const lines = patch.split('\n');
-  let hunkId = 0;
-  let lastChangeWasConsecutive = false;
+    let oldLine = 1;
+    let newLine = 1;
+    let hunkId = 0;
+    let inChangeBlock = false;
 
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-
-    if (line.startsWith('@@ -')) {
-      const headerMatch = line.match(/ \+(\d+)(?:,(\d+))?/);
-      if (headerMatch) {
-        const oldHeaderMatch = line.match(/@@ -(\d+)(?:,(\d+))?/);
-        let newLine = parseInt(headerMatch[1], 10);
-        let oldLine = oldHeaderMatch ? parseInt(oldHeaderMatch[1], 10) : 1;
-        i++;
-        lastChangeWasConsecutive = false;
-
-        let iterations = 0;
-        while (i < lines.length && !lines[i].startsWith('@@')) {
-          iterations++;
-          if (iterations > 1000) {
-            console.error('INFINITE LOOP DETECTED at i =', i, 'line:', lines[i]);
-            break;
-          }
-
-          const currentLine = lines[i];
-
-          if (currentLine.startsWith('\\')) {
-            i++;
-            continue;
-          }
-
-          if (currentLine.startsWith('-') || currentLine.startsWith('+')) {
-            const deletedLineNumbers: number[] = [];
-            const addedLineNumbers: number[] = [];
-
-            while (i < lines.length && lines[i].startsWith('-')) {
-              deletedLineNumbers.push(oldLine);
-              oldLine++;
-              i++;
-            }
-
-            if (i < lines.length && lines[i].startsWith('\\')) {
-              i++;
-            }
-
-            while (i < lines.length && lines[i].startsWith('+')) {
-              addedLineNumbers.push(newLine);
-              newLine++;
-              i++;
-            }
-
-            if (i < lines.length && lines[i].startsWith('\\')) {
-              i++;
-            }
-
-            if (deletedLineNumbers.length > 0 && addedLineNumbers.length > 0) {
-              for (const lineNum of addedLineNumbers) {
-                changes.set(lineNum, {
-                  changeType: 'modified',
-                  oldLineNumbers: deletedLineNumbers,
-                  hunkId: hunkId,
-                });
-              }
-            } else if (addedLineNumbers.length > 0) {
-              // added
-              for (const lineNum of addedLineNumbers) {
-                changes.set(lineNum, {
-                  changeType: 'added',
-                  hunkId: hunkId,
-                });
-              }
-            } else if (deletedLineNumbers.length > 0) {
-              // deleted
-              // JsDiff can emit +0 for deletions before the first line.
-              // ghostAnchorLine is the line BEFORE which ghost lines appear.
-              // markerLine is the line where the deletion marker appears in gutter
-              // (aligned with the ghost anchor line in our renderer model).
-              const ghostAnchorLine = Math.max(1, newLine + 1);
-              const markerLine = Math.max(1, Math.min(ghostAnchorLine, currentLineCount));
-              changes.set(markerLine, {
-                changeType: 'deleted',
-                oldLineNumbers: deletedLineNumbers,
-                ghostAnchorLine,
-                hunkId: hunkId,
-              });
-            }
-
-            lastChangeWasConsecutive = true;
-            continue;
-          } else if (currentLine.startsWith(' ')) {
-            if (lastChangeWasConsecutive) {
-              hunkId++;
-              lastChangeWasConsecutive = false;
-            }
-            oldLine++;
-            newLine++;
-            i++;
-          } else {
-            i++;
-          }
+    const countLines = (value: string): number => {
+        if (value === '') {
+            return 0;
         }
-        // At the end of a @@ hunk, reset for next hunk
-        if (lastChangeWasConsecutive) {
-          hunkId++;
+        const parts = value.split('\n');
+        return value.endsWith('\n') ? parts.length - 1 : parts.length;
+    };
+
+    for (let i = 0; i < diffs.length; i++) {
+        const diff = diffs[i];
+        const { added, removed } = diff;
+        const count = countLines(diff.value);
+
+        if (added || removed) {
+            inChangeBlock = true;
+
+            if (removed) {
+                const deletedLineNumbers: number[] = [];
+                for (let j = 0; j < count; j++) {
+                    deletedLineNumbers.push(oldLine + j);
+                }
+                oldLine += count;
+
+                const next = diffs[i + 1];
+                if (next?.added) {
+                    const addedCount = countLines(next.value);
+                    for (let j = 0; j < addedCount; j++) {
+                        changes.set(newLine + j, {
+                            changeType: 'modified',
+                            oldLineNumbers: deletedLineNumbers,
+                            hunkId: hunkId,
+                        });
+                    }
+                    newLine += addedCount;
+                    i++; // skip the added block
+                } else {
+                    const ghostAnchorLine = Math.max(1, newLine);
+                    const markerLine = Math.max(1, Math.min(ghostAnchorLine, currentLineCount));
+
+                    changes.set(markerLine, {
+                        changeType: 'deleted',
+                        oldLineNumbers: deletedLineNumbers,
+                        ghostAnchorLine,
+                        hunkId: hunkId,
+                    });
+                }
+            } else {
+                // Pure addition
+                for (let j = 0; j < count; j++) {
+                    changes.set(newLine + j, {
+                        changeType: 'added',
+                        hunkId: hunkId,
+                    });
+                }
+                newLine += count;
+            }
+        } else {
+            // Context lines (unchanged)
+            if (inChangeBlock) {
+                hunkId++;
+                inChangeBlock = false;
+            }
+            oldLine += count;
+            newLine += count;
         }
-        i--;
-      }
     }
-  }
 
-  return changes;
+    if (inChangeBlock) {
+        hunkId++;
+    }
+
+    return changes;
 }
