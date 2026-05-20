@@ -207,7 +207,7 @@ export class DiffRenderer {
      * lines are non-contiguous (i.e. some lines were hidden).
      * No-op when focused diff is disabled.
      */
-    public insertSeparators(rows: VisualRow[]): VisualRow[] {
+    public insertSeparators(rows: VisualRow[], totalLines: number): VisualRow[] {
         if (!this.focusedDiffEnabled) {
             return rows;
         }
@@ -217,7 +217,18 @@ export class DiffRenderer {
 
         for (const row of rows) {
             if (row.kind === 'real') {
-                if (prevRealLine !== null && row.lineIndex - prevRealLine > 1) {
+                if (prevRealLine === null) {
+                    if (row.lineIndex > 0) {
+                        const hiddenStart = 0;
+                        const hiddenEnd = row.lineIndex - 1;
+                        result.push({
+                            kind: 'separator',
+                            hiddenStart,
+                            hiddenEnd,
+                            hiddenCount: hiddenEnd - hiddenStart + 1,
+                        });
+                    }
+                } else if (row.lineIndex - prevRealLine > 1) {
                     const hiddenStart = prevRealLine + 1;
                     const hiddenEnd = row.lineIndex - 1;
                     result.push({
@@ -230,6 +241,26 @@ export class DiffRenderer {
                 prevRealLine = row.lineIndex;
             }
             result.push(row);
+        }
+
+        if (prevRealLine !== null) {
+            if (prevRealLine < totalLines - 1) {
+                const hiddenStart = prevRealLine + 1;
+                const hiddenEnd = totalLines - 1;
+                result.push({
+                    kind: 'separator',
+                    hiddenStart,
+                    hiddenEnd,
+                    hiddenCount: hiddenEnd - hiddenStart + 1,
+                });
+            }
+        } else if (totalLines > 0) {
+            result.push({
+                kind: 'separator',
+                hiddenStart: 0,
+                hiddenEnd: totalLines - 1,
+                hiddenCount: totalLines,
+            });
         }
 
         return result;

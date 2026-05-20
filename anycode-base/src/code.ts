@@ -255,6 +255,10 @@ export class Code {
         return this.buffer.getLinesContent().join("\n");
     }
 
+    public getLines(): string[] {
+        return this.buffer.getLinesContent();
+    }
+
     public getContentLength(): number {
         return this.buffer.getLength();
     }

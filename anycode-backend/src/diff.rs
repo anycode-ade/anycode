@@ -27,7 +27,7 @@ pub fn compute_text_edits(old: &str, new: &str) -> Vec<Edit> {
                 let text = slice.concat();
                 edits.push(Edit {
                     start: utf16_offset,
-                    text: text.clone(),
+                    text,
                     operation: Operation::Remove,
                 });
                 // Deletion does not move offset forward
@@ -36,7 +36,7 @@ pub fn compute_text_edits(old: &str, new: &str) -> Vec<Edit> {
                 let text = slice.concat();
                 edits.push(Edit {
                     start: utf16_offset,
-                    text: text.clone(),
+                    text,
                     operation: Operation::Insert,
                 });
                 // Insertion moves offset forward

@@ -59,7 +59,7 @@ pub async fn handle_hover(
     ack: AckSender,
     state: State<AppState>,
 ) {
-    info!("handle_completion {}", request.file);
+    info!("handle_hover {}", request.file);
     let HoverRequest { file, row, column } = request;
 
     let abs_path = match abs_file(&file) {

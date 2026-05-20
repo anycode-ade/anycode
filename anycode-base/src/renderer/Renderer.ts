@@ -258,7 +258,7 @@ export class Renderer {
             }
         }
 
-        return this.diffRenderer.insertSeparators(rows);
+        return this.diffRenderer.insertSeparators(rows, totalLines);
     }
 
     public expandFocusedHiddenRange(

@@ -21,30 +21,33 @@ export type DiffInfo = {
     hunkId: number;
 };
 
+function splitLines(str: string): string[] {
+    if (str === '') {
+        return [];
+    }
+    return str.split(/\r?\n/);
+}
+
 export function computeGitChanges(
-    original: string, current: string
+    original: string[] | string,
+    current: string[] | string
 ): Map<number, DiffInfo> {
     const changes = new Map<number, DiffInfo>();
-    const diffs = JsDiff.diffLines(original, current);
-    const currentLineCount = current === '' ? 1 : current.split('\n').length;
+    const originalLines = typeof original === 'string' ? splitLines(original) : original;
+    const currentLines = typeof current === 'string' ? splitLines(current) : current;
+
+    const diffs = JsDiff.diffArrays(originalLines, currentLines);
+    const currentLineCount = currentLines.length === 0 ? 1 : currentLines.length;
 
     let oldLine = 1;
     let newLine = 1;
     let hunkId = 0;
     let inChangeBlock = false;
 
-    const countLines = (value: string): number => {
-        if (value === '') {
-            return 0;
-        }
-        const parts = value.split('\n');
-        return value.endsWith('\n') ? parts.length - 1 : parts.length;
-    };
-
     for (let i = 0; i < diffs.length; i++) {
         const diff = diffs[i];
         const { added, removed } = diff;
-        const count = countLines(diff.value);
+        const count = diff.value.length;
 
         if (added || removed) {
             inChangeBlock = true;
@@ -58,7 +61,7 @@ export function computeGitChanges(
 
                 const next = diffs[i + 1];
                 if (next?.added) {
-                    const addedCount = countLines(next.value);
+                    const addedCount = next.value.length;
                     for (let j = 0; j < addedCount; j++) {
                         changes.set(newLine + j, {
                             changeType: 'modified',

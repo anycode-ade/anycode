@@ -1561,7 +1561,10 @@ export class AnycodeEditor {
 
     private recomputeDiffs(): void {
         if (this.diffEnabled && this.originalCode) {
-            this.diffs = computeGitChanges(this.originalCode.getContent(), this.code.getContent());
+            this.diffs = computeGitChanges(
+                this.originalCode.getLines(),
+                this.code.getLines()
+            );
         } else {
             this.diffs = undefined;
         }

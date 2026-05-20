@@ -339,7 +339,8 @@ impl Lsp {
             text_document: TextDocumentIdentifier {
                 uri: path_to_uri(path).unwrap(),
             },
-            text: text.map(|s| s.to_string()),
+            text: None,
+            // text: text.map(|s| s.to_string()),
         };
         self.send_notification::<DidSaveTextDocument>(params);
     }
