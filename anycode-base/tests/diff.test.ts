@@ -87,6 +87,24 @@ describe('computeGitChanges', () => {
         expect(result.size).toBe(0);
     });
 
+    it('should mark blank lines as added when diffing a new file from Code lines', () => {
+        const result = computeGitChanges([''], [
+            '.settings-panel {',
+            '    display: flex;',
+            '',
+            '}',
+            '',
+            '.settings-section {',
+        ]);
+
+        expect(result.get(1)).toEqual({ changeType: 'added', hunkId: 0 });
+        expect(result.get(2)).toEqual({ changeType: 'added', hunkId: 0 });
+        expect(result.get(3)).toEqual({ changeType: 'added', hunkId: 0 });
+        expect(result.get(4)).toEqual({ changeType: 'added', hunkId: 0 });
+        expect(result.get(5)).toEqual({ changeType: 'added', hunkId: 0 });
+        expect(result.get(6)).toEqual({ changeType: 'added', hunkId: 0 });
+    });
+
     it('should handle complete replacement of content', () => {
         const original = 'oldContent';
         const current = 'newContent';

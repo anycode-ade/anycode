@@ -70,25 +70,64 @@ export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
             setGitBranch(data.branch || '');
             setChangedFiles((prev) => {
                 const next = new Map(prev.map((file) => [file.path, file]));
+                let structurallyChanged = false;
                 for (const item of data.files || []) {
                     if (item.status === 'removed') {
-                        next.delete(item.path);
+                        if (next.has(item.path)) {
+                            next.delete(item.path);
+                            structurallyChanged = true;
+                        }
                     } else {
-                        next.set(item.path, {
-                            path: item.path,
-                            status: item.status,
-                            added: item.added,
-                            removed: item.removed,
-                        });
+                        const existing = next.get(item.path);
+                        if (
+                            !existing ||
+                            existing.status !== item.status ||
+                            existing.added !== item.added ||
+                            existing.removed !== item.removed
+                        ) {
+                            next.set(item.path, {
+                                path: item.path,
+                                status: item.status,
+                                added: item.added,
+                                removed: item.removed,
+                            });
+                            structurallyChanged = true;
+                        }
                     }
+                }
+                if (!structurallyChanged) {
+                    return prev;
                 }
                 return Array.from(next.values());
             });
             return;
         }
 
-        setChangedFiles(data.files || []);
         setGitBranch(data.branch || '');
+        setChangedFiles((prev) => {
+            const nextFiles = data.files || [];
+            if (prev.length !== nextFiles.length) {
+                return nextFiles;
+            }
+            let isDifferent = false;
+            for (let i = 0; i < prev.length; i++) {
+                const a = prev[i];
+                const b = nextFiles[i];
+                if (
+                    a.path !== b.path ||
+                    a.status !== b.status ||
+                    a.added !== b.added ||
+                    a.removed !== b.removed
+                ) {
+                    isDifferent = true;
+                    break;
+                }
+            }
+            if (isDifferent) {
+                return nextFiles;
+            }
+            return prev;
+        });
     }, []);
 
     const commit = useCallback((files: string[], message: string): Promise<boolean> => {

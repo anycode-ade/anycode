@@ -58,6 +58,10 @@ export const FilesPanel = ({
                 shouldAutoScrollRef.current = true;
             }
             event.preventDefault();
+            event.stopPropagation();
+            if (event.key === 'Enter') {
+                treeRef.current?.blur();
+            }
         }
     }, [navigate]);
 
@@ -65,47 +69,15 @@ export const FilesPanel = ({
         if (event.button !== 0) {
             return;
         }
-        treeRef.current?.focus();
+        treeRef.current?.focus({ preventScroll: true });
     }, []);
-
-    useEffect(() => {
-        const onDocumentKeyDown = (event: globalThis.KeyboardEvent) => {
-            const treeEl = treeRef.current;
-            if (!treeEl) {
-                return;
-            }
-
-            const activeEl = document.activeElement;
-            const isTreeFocused = activeEl === treeEl || treeEl.contains(activeEl);
-            if (!isTreeFocused) {
-                return;
-            }
-
-            const handled = navigate(event.key);
-            if (handled) {
-                if (event.key === 'ArrowDown' || event.key === 'ArrowUp' || event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
-                    shouldAutoScrollRef.current = true;
-                }
-                event.preventDefault();
-                event.stopPropagation();
-                if (event.key === 'Enter') {
-                    treeRef.current?.blur();
-                }
-            }
-        };
-
-        document.addEventListener('keydown', onDocumentKeyDown, true);
-        return () => {
-            document.removeEventListener('keydown', onDocumentKeyDown, true);
-        };
-    }, [navigate]);
 
     useEffect(() => {
         if (focusRequestToken === null) {
             return;
         }
 
-        treeRef.current?.focus();
+        treeRef.current?.focus({ preventScroll: true });
     }, [focusRequestToken]);
 
     useEffect(() => {

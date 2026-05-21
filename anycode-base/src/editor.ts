@@ -1,5 +1,4 @@
 import { Code, Change, Position, Operation } from "./code";
-import { vesper } from './theme';
 import { Renderer } from './renderer/Renderer';
 import { getPosFromMouse } from './mouse';
 import { Selection, hasDiagnosticSelection } from "./selection";
@@ -119,9 +118,10 @@ export class AnycodeEditor {
 
         this.settings = { lineHeight: 20, buffer: 30 };
 
-        const theme = options.theme || vesper;
-        const css = generateCssClasses(theme);
-        addCssToDocument(css, 'anyeditor-theme');
+        if (options.theme) {
+            const css = generateCssClasses(options.theme);
+            addCssToDocument(css, 'anyeditor-theme');
+        }
         this.createDomElements();
         this.renderer = new Renderer(this.container, this.buttonsColumn, this.gutter, this.codeContent);
         this.renderer.setFocusedDiffMode(this.focusedDiffEnabled, this.focusedDiffContextLines);

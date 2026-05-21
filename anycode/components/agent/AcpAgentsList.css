@@ -29,7 +29,7 @@
     cursor: pointer;
     white-space: nowrap;
     flex-shrink: 0;
-    color: #888;
+    color: var(--text-color-secondary, #888);
     user-select: none;
     -webkit-user-select: none;
     -moz-user-select: none;
@@ -38,7 +38,7 @@
 }
 
 .acp-agent-item.selected {
-    color: #fff;
+    color: var(--text-color, #fff);
     text-shadow: 0 0 6px rgba(255, 255, 255, 0.8);
 }
 
@@ -55,7 +55,7 @@
     background: transparent;
     outline: none;
     border: none;
-    color: #fff;
+    color: var(--text-color, #fff);
     padding: 2px;
     cursor: pointer;
     display: flex;

@@ -4,7 +4,7 @@
   overflow: auto;
   font-family: monospace;
   background: var(--background-color);
-  color: #fff;
+  color: var(--theme-editor-foreground, var(--foreground-color, #fff));
   white-space: pre;
   outline: none;
   position: relative;
@@ -36,7 +36,7 @@
   background: inherit;
   min-width: 48px;
   /* text-align: center; */
-  color: #888;
+  color: var(--theme-editor-line-number, #888);
   z-index: 10;
 }
 

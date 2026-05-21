@@ -36,7 +36,7 @@ mod diff;
 mod handlers;
 use handlers::{
     acp_handler::*, git_handler::*, io_handler::*, lsp_handler::*, search_handler::*,
-    terminal_handler::*, watch_handler::handle_watch_event,
+    terminal_handler::*, watch_handler::handle_watch_event, theme_handler::*,
 };
 
 mod history;
@@ -90,6 +90,10 @@ async fn on_connect(socket: SocketRef, _state: State<AppState>) {
     socket.on("git:branches", handle_git_branches);
     socket.on("git:checkout", handle_git_checkout);
     socket.on("git:revert", handle_git_revert);
+
+    socket.on("theme:list", handle_theme_list);
+    socket.on("theme:get", handle_theme_get);
+    socket.on("config:get", handle_config_get);
 
     socket.on_disconnect(on_disconnect)
 }
@@ -188,6 +192,7 @@ fn build_app_state() -> (
     let file2code = Arc::new(Mutex::new(HashMap::new()));
     let socket2data = Arc::new(Mutex::new(HashMap::new()));
     let terminals = Arc::new(Mutex::new(HashMap::new()));
+    let config = Arc::new(Mutex::new(config));
 
     let state = AppState {
         config,
@@ -256,7 +261,7 @@ async fn main() -> Result<()> {
     // Prepare ACP filesystem task dependencies (spawned after SocketIo creation)
     let acp_fs_file2code = state.file2code.clone();
     let acp_fs_lsp = state.lsp_manager.clone();
-    let acp_fs_config = state.config.clone();
+    let acp_fs_config = state.config.lock().await.clone();
 
     let (layer, io) = SocketIo::builder().with_state(state.clone()).build_layer();
     let cors = ServiceBuilder::new()
@@ -298,14 +303,79 @@ async fn main() -> Result<()> {
     let dir = std::path::Path::new(".");
     watcher.watch(dir, RecursiveMode::Recursive)?;
 
+    // Create a channel for batching/debouncing git status updates
+    let (git_update_tx, mut git_update_rx) = mpsc::channel::<std::path::PathBuf>(1000);
+
+    // Spawn a task to process git status updates in a debounced, batched manner
+    let git_manager_clone = git_manager.clone();
+    let socket_clone = io.clone();
+    tokio::spawn(async move {
+        let mut paths_to_update = HashSet::new();
+
+        loop {
+            // Wait for the first path to arrive
+            let first_path = match git_update_rx.recv().await {
+                Some(path) => path,
+                None => break, // Channel closed
+            };
+            paths_to_update.insert(first_path);
+
+            // Debounce window: wait for 150ms of inactivity, or up to a max timeout (500ms) to prevent starvation
+            let start_time = std::time::Instant::now();
+            let max_wait = std::time::Duration::from_millis(500);
+
+            loop {
+                let elapsed = start_time.elapsed();
+                if elapsed >= max_wait {
+                    break;
+                }
+                let remaining = max_wait - elapsed;
+                let step_timeout = std::time::Duration::from_millis(50).min(remaining);
+
+                match tokio::time::timeout(step_timeout, git_update_rx.recv()).await {
+                    Ok(Some(path)) => {
+                        paths_to_update.insert(path);
+                    }
+                    Ok(None) => {
+                        // Channel closed
+                        break;
+                    }
+                    Err(_) => {
+                        // Timeout hit: no events for step_timeout, flush the batch
+                        break;
+                    }
+                }
+            }
+
+            // Process batched paths under a single lock on GitManager
+            if !paths_to_update.is_empty() {
+                let paths: Vec<std::path::PathBuf> = paths_to_update.drain().collect();
+                let mut git = git_manager_clone.lock().await;
+                
+                // Filter out paths that should be ignored under the lock
+                let paths_to_check: Vec<std::path::PathBuf> = paths
+                    .into_iter()
+                    .filter(|path| !git.should_ignore(path))
+                    .collect();
+
+                if !paths_to_check.is_empty() {
+                    if let Some(update) = git.check_status_changed_for_paths(&paths_to_check) {
+                        let _ = socket_clone.emit("changes:update", &update.to_json()).await;
+                    }
+                }
+            }
+        }
+    });
+
     let file_states = Arc::new(Mutex::new(HashMap::new()));
     let socket = io.clone();
+    let git_update_tx_clone = git_update_tx.clone();
     tokio::spawn(async move {
         while let Some(res) = watch_rx.recv().await {
             match res {
                 Ok(event) => {
                     for path in &event.paths {
-                        if crate::utils::is_ignored_dir(path) {
+                        if crate::utils::is_ignored_path(path) {
                             continue;
                         } else {
                             handle_watch_event(
@@ -315,7 +385,7 @@ async fn main() -> Result<()> {
                                 &file2code,
                                 &socket2data,
                                 &file_states,
-                                &git_manager,
+                                &git_update_tx_clone,
                                 &lsp_manager,
                             )
                             .await

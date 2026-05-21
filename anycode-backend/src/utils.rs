@@ -5,11 +5,31 @@ use std::path::{Component, Path, PathBuf};
 pub const DEFAULT_IGNORE_DIRS: &[&str] = &[
     // Version control and IDEs
     ".git",
+    ".anycode",
     // Python
     "__pycache__",
     ".pytest_cache",
+    ".venv",
+    "venv",
+    "env",
+    ".mypy_cache",
+    ".tox",
+    // Build artifacts and output directories
     "target",
     "node_modules",
+    "dist",
+    "build",
+    "out",
+    "bin",
+    "obj",
+    ".next",
+    ".nuxt",
+    ".output",
+    "coverage",
+    // Java
+    ".gradle",
+    ".m2",
+    "classes",
 ];
 
 pub const DEFAULT_IGNORE_FILES: &[&str] = &[

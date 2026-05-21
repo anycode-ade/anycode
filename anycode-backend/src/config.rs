@@ -7,12 +7,15 @@ use rust_embed::Embed;
 #[derive(Embed, Debug)]
 #[folder = ""]
 #[include = "config.toml"]
-
 pub struct Assets;
 
 #[derive(Embed, Debug)]
 #[folder = "dist"]
 pub struct Dist;
+
+#[derive(Embed, Debug)]
+#[folder = "../themes"]
+pub struct Themes;
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct Config {
@@ -266,5 +269,13 @@ mod congif_tests {
         for file in Dist::iter() {
             println!("{}", file.as_ref());
         }
+    }
+
+    #[test]
+    fn test_themes() {
+        assert!(Themes::iter().count() > 0);
+        let default_theme = Themes::get("default-theme.json").expect("default-theme.json should be embedded");
+        let content = std::str::from_utf8(default_theme.data.as_ref()).unwrap();
+        assert!(content.contains("themes"));
     }
 }

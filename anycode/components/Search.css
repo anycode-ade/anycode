@@ -21,7 +21,7 @@
     justify-content: flex-start;
     gap: 12px;
     padding: 4px 10px;
-    color: #e0e0e0;
+    color: var(--theme-foreground, var(--text-color, #e0e0e0));
     user-select: none;
 }
 
@@ -32,7 +32,7 @@
 }
 
 .search-summary-text {
-    color: #c8c8c8;
+    color: var(--theme-muted-foreground, var(--text-color-secondary, #c8c8c8));
     font-size: 14px;
     white-space: nowrap;
     overflow: hidden;
@@ -101,8 +101,8 @@
 }
 
 .search-input {
-    background-color: #2d2d2d;
-    border: 1px solid transparent;
+    background-color: var(--background-color, #2d2d2d);
+    border: 1px solid var(--theme-border, #3f3f3f);
     border-radius: 8px;
     padding: 6px 8px;
     width: 100%;
@@ -114,7 +114,7 @@
     font-family: inherit;
     font-size: 13px;
     line-height: 1.4;
-    color: #e0e0e0;
+    color: var(--theme-foreground, var(--foreground-color, #e0e0e0));
     overflow-y: auto;
     grid-area: 1 / 1 / 2 / 2;
 }
@@ -130,14 +130,13 @@
     gap: 6px;
     padding: 2px;
     border-radius: 6px;
-    background-color: #262626;
 }
 
 .search-button {
     background: transparent;
     border: 1px solid transparent;
     outline: none;
-    color: #ffffff;
+    color: var(--theme-foreground, var(--text-color, #ffffff));
     cursor: pointer;
     padding: 0.25rem 0.45rem;
     font-size: 14px;
@@ -152,14 +151,14 @@
 
 .search-button:hover {
     opacity: 1;
-    background-color: #3c3c3c;
+    background-color: var(--hover-bg, rgba(255, 255, 255, 0.08));
     outline: none;
 }
 
 .search-button:focus-visible {
     opacity: 1;
-    background-color: #3c3c3c;
-    box-shadow: inset 0 0 0 1px #7a7a7a;
+    background-color: var(--hover-bg, rgba(255, 255, 255, 0.08));
+    box-shadow: inset 0 0 0 1px var(--theme-border, #7a7a7a);
     outline: none;
 }
 
@@ -179,7 +178,7 @@
 }
 
 .replay {
-    color: #ffffff;
+    color: var(--theme-foreground, var(--text-color, #ffffff));
 }
 
 .search-button.replay svg {
@@ -189,17 +188,17 @@
 
 
 .search-button-cancel {
-    color: #ffffff;
+    color: var(--theme-foreground, var(--text-color, #ffffff));
 }
 
 .search-input::placeholder {
-    color: #888;
+    color: var(--theme-tab-foreground, #888);
     opacity: 1;
 }
 
 .no-results,
 .no-matches {
-    color: #888;
+    color: var(--theme-muted-foreground, var(--text-color-secondary, #888));
     margin-left: 8px;
 }
 
@@ -211,26 +210,36 @@
 }
 
 .file-path:hover {
-    background-color: #4a4a4a;
+    background-color: var(--hover-bg, rgba(255, 255, 255, 0.08));
     border-radius: 6px;
 }
 
 .file-path[data-active='true'] {
-    background-color: #3c3c3c;
-    color: #fff;
+    background-color: var(--theme-accent-background, #3c3c3c);
+    color: var(--theme-accent-foreground, #fff) !important;
     border-radius: 6px;
+}
+
+.file-path[data-active='true'] .file-arrow,
+.file-path[data-active='true'] .file-path-label {
+    color: var(--theme-accent-foreground, #fff) !important;
+}
+
+.file-path[data-active='true'] .file-match-badge {
+    background-color: var(--theme-accent-foreground, #fff) !important;
+    color: var(--theme-accent-background, #3c3c3c) !important;
 }
 
 .search-results:focus .file-path[data-active='true'],
 .search-results:focus-visible .file-path[data-active='true'] {
-    box-shadow: inset 0 0 0 1px #7a7a7a;
+    box-shadow: inset 0 0 0 1px var(--theme-accent-foreground, #7a7a7a);
 }
 
 .file-arrow {
     display: inline-block;
     margin-right: 6px;
     font-size: 11px;
-    color: #8a8a8a;
+    color: var(--theme-muted-foreground, var(--text-color-secondary, #8a8a8a));
     line-height: 1;
 }
 
@@ -250,7 +259,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    color: #e0e0e0;
+    color: var(--theme-foreground, var(--text-color, #e0e0e0));
     user-select: none;
 }
 
@@ -264,8 +273,8 @@
 
 .file-match-badge {
     flex-shrink: 0;
-    color: #b9b9b9;
-    background-color: #2f2f2f;
+    color: var(--theme-muted-foreground, var(--text-color-secondary, #b9b9b9));
+    background-color: var(--hover-bg, rgba(255, 255, 255, 0.08));
     border-radius: 999px;
     padding: 1px 7px;
     font-size: 12px;
@@ -284,52 +293,57 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    color: #e0e0e0;
+    color: var(--theme-foreground, var(--text-color, #e0e0e0));
     user-select: none;
 }
 
 .search-preview {
-    color: #888;
+    color: var(--theme-muted-foreground, var(--text-color-secondary, #888));
 }
 
 .search-preview mark.search-match {
-    background-color: rgba(92, 92, 92, 0.977);
+    background-color: color-mix(in srgb, var(--theme-accent-background, #007acc) 35%, transparent);
     color: inherit;
-    padding: 0;
+    padding: 0 2px;
+    border-radius: 2px;
     font-weight: 500;
 }
 .search-item:hover {
-    color: #888;
-    background-color: rgba(92, 92, 92, 0.977);
+    background-color: var(--hover-bg, rgba(255, 255, 255, 0.08));
     border-radius: 4px;
 }
 
 .search-item[data-active='true'] {
-    background-color: #3c3c3c;
-    color: #fff;
+    background-color: var(--theme-accent-background, #3c3c3c);
+    color: var(--theme-accent-foreground, #fff) !important;
     border-radius: 4px;
 }
 
+.search-item[data-active='true'] .search-preview,
+.search-item[data-active='true'] strong {
+    color: var(--theme-accent-foreground, #fff) !important;
+}
+
 .search-item[data-active='true']:hover {
-    background-color: #3c3c3c;
-    color: #fff;
+    background-color: var(--theme-accent-background, #3c3c3c);
+    color: var(--theme-accent-foreground, #fff) !important;
 }
 
 .search-results:focus .search-item[data-active='true'],
 .search-results:focus-visible .search-item[data-active='true'] {
-    box-shadow: inset 0 0 0 1px #7a7a7a;
+    box-shadow: inset 0 0 0 1px var(--theme-accent-foreground, #7a7a7a);
 }
 .search-item strong {
-    color: #888;
+    color: var(--theme-muted-foreground, var(--text-color-secondary, #888));
 }
 
 .loading {
     font-size: 18px;
-    color: #999;
+    color: var(--theme-muted-foreground, var(--text-color-secondary, #999));
 }
 
 .search-incomplete {
-    color: #999;
+    color: var(--theme-muted-foreground, var(--text-color-secondary, #999));
 }
 
 @media (max-width: 768px) {

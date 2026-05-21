@@ -61,7 +61,7 @@
 
     font-size: 12px;
 
-    color: rgba(255, 255, 255, 0.7);
+    color: var(--text-color-secondary, rgba(255, 255, 255, 0.7));
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -71,7 +71,7 @@
 .acp-input-toggle-btn {
     background: transparent;
     border: none;
-    color: rgba(255, 255, 255, 0.5);
+    color: var(--text-color-secondary, rgba(255, 255, 255, 0.5));
     padding: 4px;
     display: flex;
     align-items: center;
@@ -82,7 +82,7 @@
 }
 
 .acp-input-toggle-btn:hover {
-    color: #fff;
+    color: var(--text-color, #fff);
     background-color: rgba(255, 255, 255, 0.1);
 }
 
@@ -134,7 +134,7 @@
 .acp-input-context-value {
     min-height: 26px;
     border-radius: 8px;
-    color: #fff;
+    color: var(--text-color, #fff);
     font-size: 11px;
     padding: 0 8px;
 }
@@ -194,8 +194,8 @@
     background-color: transparent;
     border: none;
     padding: 6px 8px;
-    color: #fff;
-    -webkit-text-fill-color: #fff;
+    color: var(--text-color, #fff);
+    -webkit-text-fill-color: var(--text-color, #fff);
     font-size: 14px;
     resize: none;
     min-height: 32px;
@@ -212,8 +212,8 @@
 }
 
 .acp-input textarea::placeholder {
-    color: rgba(255, 255, 255, 0.55);
-    -webkit-text-fill-color: rgba(255, 255, 255, 0.55);
+    color: var(--text-color-secondary, rgba(255, 255, 255, 0.55));
+    -webkit-text-fill-color: var(--text-color-secondary, rgba(255, 255, 255, 0.55));
     font-size: 13px;
 }
 
@@ -222,7 +222,7 @@
     background: rgba(45, 45, 45, 0.5);
     backdrop-filter: blur(2px);
     -webkit-backdrop-filter: blur(2px);
-    color: #fff;
+    color: var(--text-color, #fff);
     border: none;
     padding: 0px;
     border-radius: 50%;

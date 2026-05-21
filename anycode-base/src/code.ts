@@ -74,6 +74,7 @@ export interface Patch {
 }
 
 var langsCache: Map<string, Parser.Language> = new Map();
+var pendingLangsCache: Map<string, Promise<Parser.Language>> = new Map();
 
 export class Code {
     public filename: string
@@ -129,11 +130,23 @@ export class Code {
         const filename = `tree-sitter-${this.language}.wasm`;
         const wasmPath = getWasmPath(filename);
 
-        const lang = langsCache.has(this.language) ?
-            langsCache.get(this.language)! :
-            await Parser.Language.load(wasmPath);
+        let lang: Parser.Language;
+        if (langsCache.has(this.language)) {
+            lang = langsCache.get(this.language)!;
+        } else {
+            let loadPromise = pendingLangsCache.get(this.language);
+            if (!loadPromise) {
+                loadPromise = Parser.Language.load(wasmPath);
+                pendingLangsCache.set(this.language, loadPromise);
+            }
+            try {
+                lang = await loadPromise;
+                langsCache.set(this.language, lang);
+            } finally {
+                pendingLangsCache.delete(this.language);
+            }
+        }
 
-        langsCache.set(this.language, lang);
         this.parser.setLanguage(lang);
 
         this.tree = this.parser.parse(this.input) || undefined;
@@ -166,9 +179,18 @@ export class Code {
                 if (langsCache.has(language)) {
                     lang = langsCache.get(language)!;
                 } else {
-                    const injectionWasmPath = getWasmPath(`tree-sitter-${language}.wasm`);
-                    lang = await Parser.Language.load(injectionWasmPath);
-                    langsCache.set(language, lang);
+                    let loadPromise = pendingLangsCache.get(language);
+                    if (!loadPromise) {
+                        const injectionWasmPath = getWasmPath(`tree-sitter-${language}.wasm`);
+                        loadPromise = Parser.Language.load(injectionWasmPath);
+                        pendingLangsCache.set(language, loadPromise);
+                    }
+                    try {
+                        lang = await loadPromise;
+                        langsCache.set(language, lang);
+                    } finally {
+                        pendingLangsCache.delete(language);
+                    }
                 }
 
                 parser.setLanguage(lang);

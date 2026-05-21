@@ -1,6 +1,6 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import 'dockview/dist/styles/dockview.css';
-import { ChangesPanel, type ChangedFile } from './components';
+import { ChangesPanel, type ChangedFile, SettingsPanel } from './components';
 import Search from './components/Search';
 import { Layout, type LayoutActions, type PanelId } from './components/layout/Layout';
 import { Toolbar } from './components/toolbar/Toolbar';
@@ -23,6 +23,8 @@ import { useTerminals } from './hooks/useTerminals';
 import { useEditors } from './hooks/useEditors';
 import { useAgents } from './hooks/useAgents';
 import { useLayout } from './hooks/useLayout';
+import { useTheme } from './hooks/useTheme';
+import { useEvent } from './hooks/useEvent';
 import { useTerminalPanes } from './features/terminal/useTerminalPanes';
 import { useAgentPanes } from './features/agents/useAgentPanes';
 import { FilesPanel } from './features/files/FilesPanel';
@@ -48,6 +50,7 @@ const App: React.FC = () => {
     const search = useSearch({ wsRef, isConnected });
     const wasConnectedRef = useRef<boolean>(false);
     const agents = useAgents({ wsRef, isConnected });
+    const { currentThemeId, handleThemeChange } = useTheme({ wsRef, isConnected });
     const layoutActionsRef = useRef<LayoutActions | null>(null);
 
     const openFolder = useMemo(() => {
@@ -100,7 +103,8 @@ const App: React.FC = () => {
             git.fetchBranches();
         }
         wasConnectedRef.current = isConnected;
-    }, [isConnected, openFolder, terminals.reconnectTerminals, agents.reconnectToAcpAgents, git.fetchGitStatus, git.fetchBranches]);
+    }, [isConnected, openFolder, terminals.reconnectTerminals,
+        agents.reconnectToAcpAgents, git.fetchGitStatus, git.fetchBranches]);
 
     useEffect(() => {
         return () => {
@@ -127,7 +131,8 @@ const App: React.FC = () => {
         }
 
         fileTree.selectNode(node.id);
-    }, [editors.activeFileId, fileTree.fileTree, fileTree.findNodeByPath, fileTree.selectNode]);
+    }, [editors.activeFileId, fileTree.fileTree,
+        fileTree.findNodeByPath, fileTree.selectNode]);
 
     useEffect(() => {
         saveItem('terminals', terminals.terminals);
@@ -142,7 +147,9 @@ const App: React.FC = () => {
         return layoutActionsRef.current?.ensureEditorPanel(editors.activeEditorPaneId);
     }, [editors]);
 
-    const handleOpenFile = useCallback((path: string, line?: number, column?: number, mode?: DiffMode) => {
+    const handleOpenFile = useCallback((
+        path: string, line?: number, column?: number, mode?: DiffMode,
+    ) => {
         const paneId = resolveEditorPaneId();
         if (!paneId) return;
         editors.openFile(path, line, column, paneId, mode);
@@ -158,9 +165,13 @@ const App: React.FC = () => {
         handleOpenFile(filePath, match.line, match.column);
     };
 
-    const handleOpenFileDiff = useCallback((path: string, line?: number, column?: number) => {
-        handleOpenFile(path, line, column, editors.getEditorDiffMode(editors.activeEditorPaneId));
-    }, [editors, handleOpenFile]);
+    const handleOpenFileDiff = useEvent((
+        path: string, line?: number, column?: number,
+    ) => {
+        const paneId = editors.activeEditorPaneId;
+        const mode = editors.getEditorDiffMode(paneId);
+        handleOpenFile(path, line, column, mode);
+    });
 
     const activeChangedFile = useMemo<ChangedFile | null>(() => {
         if (!editors.activeFileId) {
@@ -203,17 +214,24 @@ const App: React.FC = () => {
         onActivateAgentPane: agentPanes.setActivePaneId,
     });
 
-    useEffect(() => {
-        const handleKeyDown = (e: KeyboardEvent) => {
+    const handleGlobalKeyDown = useEvent((e: KeyboardEvent) => {
+            const target = e.target;
+            if (target instanceof Element) {
+                const isFilesTreeFocused = target.closest('.file-tree') !== null;
+                if (isFilesTreeFocused) {
+                    return;
+                }
+            }
+    
             const activePaneId = editors.activeEditorPaneId;
             if (activePaneId && editors.handleReferencesPeekKeyDown(activePaneId, e)) {
                 return;
             }
-
+    
             if (e.metaKey && e.key === 'f') {
                 e.preventDefault();
             }
-
+    
             if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'f') {
                 e.preventDefault();
                 const selectedText = editors.getActiveEditorSelectedText().trim();
@@ -225,18 +243,18 @@ const App: React.FC = () => {
                 layout.requestPanelFocus('search');
                 return;
             }
-
+    
             if ((e.ctrlKey || e.metaKey) && e.key === 's') {
                 e.preventDefault();
                 if (editors.activeFileId) {
                     editors.saveFile(editors.activeFileId);
                 }
             }
-
+    
             if (layout.handleCtrlFocusShortcut(e)) {
                 return;
             }
-
+    
             if (e.ctrlKey && e.key === '-') {
                 e.preventDefault();
                 editors.undoCursor();
@@ -244,23 +262,14 @@ const App: React.FC = () => {
                 e.preventDefault();
                 editors.redoCursor();
             }
-        };
+    });
 
-        document.addEventListener('keydown', handleKeyDown, true);
+    useEffect(() => {
+        document.addEventListener('keydown', handleGlobalKeyDown, true);
         return () => {
-            document.removeEventListener('keydown', handleKeyDown, true);
+            document.removeEventListener('keydown', handleGlobalKeyDown, true);
         };
-    }, [
-        editors.activeEditorPaneId,
-        editors.activeFileId,
-        editors.handleReferencesPeekKeyDown,
-        editors.getActiveEditorSelectedText,
-        editors.redoCursor,
-        editors.saveFile,
-        editors.undoCursor,
-        layout,
-        search,
-    ]);
+    }, [handleGlobalKeyDown]);
 
     const handleStartSpecificAgent = useCallback((agent: AcpAgent) => {
         return agents.startAgent(agent);
@@ -390,6 +399,15 @@ const App: React.FC = () => {
                         onCloseTerminal={terminalPanes.closeTab}
                         onSelectAgent={agentPanes.selectFromToolbar}
                         onCloseAgent={agents.closeAgent}
+                    />
+                );
+            case 'settings':
+                return (
+                    <SettingsPanel
+                        wsRef={wsRef}
+                        isConnected={isConnected}
+                        currentThemeId={currentThemeId}
+                        onThemeChange={handleThemeChange}
                     />
                 );
             default:

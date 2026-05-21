@@ -88,7 +88,11 @@ export class DiffRenderer {
         if (nodes && nodes.length > 0) {
             for (const { name, text: nodeText } of nodes) {
                 const span = document.createElement('span');
-                if (name) span.className = name;
+                if (name) {
+                    // Keep class fallback behavior consistent with normal line rendering.
+                    const parts = name.split('.').filter(Boolean);
+                    span.className = [name, ...parts].join(' ');
+                }
                 if (!name && nodeText === '\t') span.className = 'indent';
                 span.textContent = nodeText;
                 ghostLine.appendChild(span);

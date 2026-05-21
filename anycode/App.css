@@ -170,6 +170,7 @@
     width: 100%;
     height: 100%;
     position: relative;
+    color: var(--theme-foreground, var(--foreground-color, #e0e0e0));
 }
 
 .file-system-panel::after {

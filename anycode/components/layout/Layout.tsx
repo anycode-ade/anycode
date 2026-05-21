@@ -166,7 +166,7 @@ export const Split: React.FC<SplitProps> = ({ direction, panes, className }) => 
     );
 };
 
-export type PanelId = 'files' | 'search' | 'changes' | 'editor' | 'agent' | 'terminal' | 'browser' | 'toolbar';
+export type PanelId = 'files' | 'search' | 'changes' | 'editor' | 'agent' | 'terminal' | 'browser' | 'toolbar' | 'settings';
 
 type PanelParams = {
     panelKey: string;
@@ -419,6 +419,14 @@ const panelDefinitions = [
             { direction: 'right', referenceIds: ['editor', 'terminal'] },
         ],
     },
+    {
+        id: 'settings',
+        title: 'Settings',
+        pickerVisible: true,
+        defaultPlacements: [
+            { direction: 'within', referenceIds: ['files', 'search', 'changes'] },
+        ],
+    },
 ] as const satisfies readonly PanelDefinition[];
 
 const panelDefinitionById = Object.fromEntries(
@@ -433,7 +441,7 @@ const getLayoutPanelTitle = (panelId: LayoutPanelId): string => (
     panelId === 'picker' ? 'Empty' : panelTitles[panelId]
 );
 
-const panelSyncOrder: PanelId[] = ['files', 'editor', 'agent', 'search', 'changes', 'terminal', 'browser'];
+const panelSyncOrder: PanelId[] = ['files', 'editor', 'agent', 'search', 'changes', 'terminal', 'browser', 'settings'];
 const loadPanelVisibility = (): PanelVisibility => ({
     files: (loadItem<number>(LAYOUT_VERSION_STORAGE_KEY) ?? 0) < CURRENT_LAYOUT_VERSION ? true : loadFilesPanelVisible(),
     search: (loadItem<number>(LAYOUT_VERSION_STORAGE_KEY) ?? 0) < CURRENT_LAYOUT_VERSION ? true : (loadItem<boolean>('searchPanelVisible') ?? false),
@@ -442,6 +450,7 @@ const loadPanelVisibility = (): PanelVisibility => ({
     agent: (loadItem<number>(LAYOUT_VERSION_STORAGE_KEY) ?? 0) < CURRENT_LAYOUT_VERSION ? true : loadAgentPanelVisible(),
     terminal: loadTerminalPanelVisible(),
     browser: (loadItem<boolean>('browserPanelVisible') ?? false),
+    settings: (loadItem<boolean>('settingsPanelVisible') ?? false),
     toolbar: true,
 });
 

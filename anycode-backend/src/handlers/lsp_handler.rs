@@ -28,7 +28,8 @@ pub async fn handle_completion(
     };
 
     let mut f2c = state.file2code.lock().await;
-    let code = match get_or_create_code(&mut f2c, &abs_path, &state.config) {
+    let config = state.config.lock().await;
+    let code = match get_or_create_code(&mut f2c, &abs_path, &config) {
         Ok(c) => c,
         Err(e) => error_ack!(ack, &abs_path, "{:?}", e),
     };
@@ -68,7 +69,8 @@ pub async fn handle_hover(
     };
 
     let mut f2c = state.file2code.lock().await;
-    let code = match get_or_create_code(&mut f2c, &abs_path, &state.config) {
+    let config = state.config.lock().await;
+    let code = match get_or_create_code(&mut f2c, &abs_path, &config) {
         Ok(c) => c,
         Err(e) => error_ack!(ack, &abs_path, "{:?}", e),
     };
@@ -109,7 +111,8 @@ pub async fn handle_definition(
     };
 
     let mut f2c = state.file2code.lock().await;
-    let code = match get_or_create_code(&mut f2c, &abs_path, &state.config) {
+    let config = state.config.lock().await;
+    let code = match get_or_create_code(&mut f2c, &abs_path, &config) {
         Ok(c) => c,
         Err(e) => error_ack!(ack, &abs_path, "{:?}", e),
     };
@@ -149,7 +152,8 @@ pub async fn handle_references(
     };
 
     let mut f2c = state.file2code.lock().await;
-    let code = match get_or_create_code(&mut f2c, &abs_path, &state.config) {
+    let config = state.config.lock().await;
+    let code = match get_or_create_code(&mut f2c, &abs_path, &config) {
         Ok(c) => c,
         Err(e) => error_ack!(ack, &abs_path, "{:?}", e),
     };

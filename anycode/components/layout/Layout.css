@@ -29,21 +29,21 @@
 }
 
 .layout.dockview-theme-dark {
-    --dv-group-view-background-color: var(--background-color, #242424);
-    --dv-tabs-and-actions-container-background-color: var(--background-color, #242424);
-    --dv-activegroup-visiblepanel-tab-background-color: #2a2a2a;
-    --dv-activegroup-hiddenpanel-tab-background-color: var(--background-color, #242424);
-    --dv-inactivegroup-visiblepanel-tab-background-color: #2a2a2a;
-    --dv-inactivegroup-hiddenpanel-tab-background-color: var(--background-color, #242424);
+    --dv-group-view-background-color: var(--theme-background, var(--background-color, #242424));
+    --dv-tabs-and-actions-container-background-color: var(--theme-background, var(--background-color, #242424));
+    --dv-activegroup-visiblepanel-tab-background-color: var(--theme-tab-active-background, #2a2a2a);
+    --dv-activegroup-hiddenpanel-tab-background-color: var(--theme-tab-background, var(--theme-background, #242424));
+    --dv-inactivegroup-visiblepanel-tab-background-color: var(--theme-tab-active-background, #2a2a2a);
+    --dv-inactivegroup-hiddenpanel-tab-background-color: var(--theme-tab-background, var(--theme-background, #242424));
     --dv-tab-divider-color: transparent;
-    --dv-activegroup-visiblepanel-tab-color: #f0f0f0;
-    --dv-activegroup-hiddenpanel-tab-color: #b2b2b2;
-    --dv-inactivegroup-visiblepanel-tab-color: #c2c2c2;
-    --dv-inactivegroup-hiddenpanel-tab-color: #8f8f8f;
+    --dv-activegroup-visiblepanel-tab-color: var(--theme-tab-active-foreground, #f0f0f0);
+    --dv-activegroup-hiddenpanel-tab-color: var(--theme-tab-foreground, #b2b2b2);
+    --dv-inactivegroup-visiblepanel-tab-color: var(--theme-tab-active-foreground, #c2c2c2);
+    --dv-inactivegroup-hiddenpanel-tab-color: var(--theme-tab-foreground, #8f8f8f);
     --dv-separator-border: transparent;
-    --dv-paneview-header-border-color: #3f3f3f;
+    --dv-paneview-header-border-color: var(--theme-border, #3f3f3f);
     --dv-icon-hover-background-color: rgba(255, 255, 255, 0.08);
-    --dv-paneview-active-outline-color: #4a4a4a;
+    --dv-paneview-active-outline-color: var(--theme-accent-background, #4a4a4a);
 }
 
 .layout.dockview-theme-dark .dv-groupview,
@@ -63,7 +63,7 @@
 
 .layout.dockview-theme-dark .dv-groupview > .dv-tabs-and-actions-container {
     background-color: var(--background-color, #242424) !important;
-    border: 1px solid #4a4a4a !important;
+    border: 1px solid var(--theme-border, #4a4a4a) !important;
     border-bottom: none !important;
     border-top-left-radius: 8px !important;
     border-top-right-radius: 8px !important;
@@ -78,6 +78,7 @@
 /* Dockview custom scrollbars in tab header are unstable under frequent relayout.
    Use native horizontal scrolling for tabs and reserve geometry for actions. */
 .layout .dv-tabs-and-actions-container .dv-scrollable {
+    background-color: var(--background-color, #242424) !important;
     flex: 1 1 auto;
     min-width: 0;
     width: 100%;
@@ -133,13 +134,13 @@
 
 .layout.dockview-theme-dark .dv-tab.dv-active-tab {
     background-color: #2a2a2a00 !important;
-    color: #f0f0f0 !important;
+    color: var(--theme-tab-active-foreground, #f0f0f0) !important;
     border-radius: 8px !important;
 }
 
 .layout.dockview-theme-dark .dv-tab.dv-inactive-tab {
     background-color: var(--background-color, #242424) !important;
-    color: #a8a8a8 !important;
+    color: var(--theme-tab-foreground, #a8a8a8) !important;
 }
 
 .layout .dv-split-view-container.dv-separator-border .dv-view:not(:first-child)::before {
@@ -180,7 +181,7 @@
 
 .layout .dv-tab .dv-default-tab .dv-default-tab-content {
     text-transform: uppercase;
-    color: #9a9a9a;
+    color: var(--theme-tab-foreground, #9a9a9a);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -188,7 +189,7 @@
 }
 
 .layout .dv-tab.dv-active-tab .dv-default-tab .dv-default-tab-content {
-    color: #f0f0f0;
+    color: var(--theme-tab-active-foreground, #f0f0f0);
     /*text-shadow: 0 0 6px rgba(255, 255, 255, 0.8);*/
 }
 
@@ -211,7 +212,7 @@
     min-height: 0;
     display: flex;
     flex-direction: column;
-    border: 1px solid #4a4a4a;
+    border: 1px solid var(--theme-border, #4a4a4a);
     border-top: none;
     border-radius: 0 0 8px 8px;
     box-sizing: border-box;
@@ -236,7 +237,7 @@
 }
 
 .layout-header-action-btn {
-    border: 1px solid transparent;
+    border: 1px solid var(--theme-border, #4a4a4a);
     background: transparent;
     color: #9a9a9a;
     border-radius: 6px;
@@ -394,7 +395,7 @@
     width: 100%;
     min-width: 0;
     overflow: hidden;
-    border: 1px solid #4a4a4a;
+    border: 1px solid var(--theme-border, #4a4a4a);
     border-radius: 8px;
     background: var(--background-color, #242424);
     box-sizing: border-box;

@@ -294,7 +294,7 @@
 }
 
 .agent-settings-session-id {
-  color: #6b7280;
+  color: var(--text-color-secondary, #6b7280);
   font-size: 10px;
   white-space: nowrap;
   overflow: hidden;
@@ -304,7 +304,7 @@
 .agent-settings-session-resume-btn {
   border: none;
   background: rgba(79, 195, 247, 0.14);
-  color: #7dd3fc;
+  color: var(--theme-accent-background, #7dd3fc);
   padding: 8px 12px;
   border-radius: 8px;
   cursor: pointer;

@@ -1,11 +1,13 @@
 .tab {
     display: flex;
     align-items: center;
-    color: #888888;
+    color: var(--theme-tab-foreground, #888888);
     cursor: pointer;
     position: relative;
     white-space: nowrap;
     gap: 4px;
+    padding-bottom: 2px;
+    border-bottom: 2px solid transparent;
 }
 
 .tab.active > .tab-filename {
@@ -13,7 +15,8 @@
 }
 
 .tab.active {
-    color: #fff;
+    color: var(--theme-tab-active-foreground, #ffffff);
+    border-bottom-color: var(--theme-accent-background, #7ec8ff);
 }
 
 .tab-filename {
@@ -59,19 +62,19 @@
 }
 
 .tab-terminal {
-    color: #7ec8ff;
+    color: var(--theme-tab-foreground, #7ec8ff);
 }
 
 .tab-terminal.active {
-    color: #d8f0ff;
+    color: var(--theme-tab-active-foreground, #d8f0ff);
 }
 
 .tab-agent {
-    color: #9fd5a9;
+    color: var(--theme-tab-foreground, #9fd5a9);
 }
 
 .tab-agent.active {
-    color: #d9f5de;
+    color: var(--theme-tab-active-foreground, #d9f5de);
 }
 
 .toolbar button:focus {

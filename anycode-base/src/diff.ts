@@ -28,13 +28,18 @@ function splitLines(str: string): string[] {
     return str.split(/\r?\n/);
 }
 
+function normalizeLines(lines: string[] | string): string[] {
+    const normalized = typeof lines === 'string' ? splitLines(lines) : lines;
+    return normalized.length === 1 && normalized[0] === '' ? [] : normalized;
+}
+
 export function computeGitChanges(
     original: string[] | string,
     current: string[] | string
 ): Map<number, DiffInfo> {
     const changes = new Map<number, DiffInfo>();
-    const originalLines = typeof original === 'string' ? splitLines(original) : original;
-    const currentLines = typeof current === 'string' ? splitLines(current) : current;
+    const originalLines = normalizeLines(original);
+    const currentLines = normalizeLines(current);
 
     const diffs = JsDiff.diffArrays(originalLines, currentLines);
     const currentLineCount = currentLines.length === 0 ? 1 : currentLines.length;

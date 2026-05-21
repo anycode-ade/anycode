@@ -31,15 +31,15 @@ const resolveItemPath = (item: ReferencesPeekItem): string => {
 
 let referencesPeekEditorCounter = 0;
 
-const getHighlightRange = (preview: ReferencesPeekState['preview']) => {
-    if (!preview) {
+const getHighlightRange = (item: ReferencesPeekItem | undefined) => {
+    if (!item) {
         return null;
     }
 
-    const startLine = Math.max(0, preview.focusLine - preview.lineStart);
-    const startColumn = Math.max(0, preview.focusColumn);
-    let endLine = Math.max(0, preview.focusEndLine - preview.lineStart);
-    let endColumn = Math.max(0, preview.focusEndColumn);
+    const startLine = Math.max(0, item.range.start.line);
+    const startColumn = Math.max(0, item.range.start.character);
+    let endLine = Math.max(0, item.range.end.line);
+    let endColumn = Math.max(0, item.range.end.character);
 
     if (endLine < startLine || (endLine === startLine && endColumn <= startColumn)) {
         endLine = startLine;
@@ -106,6 +106,8 @@ export const ReferencesPeek = ({
     const previewEditorIdRef = useRef<string | null>(null);
     const previewEditorMetaRef = useRef<{ fileName: string; language: string } | null>(null);
 
+    const selectedItem = state.items[state.selectedIndex];
+
     if (!previewEditorIdRef.current) {
         referencesPeekEditorCounter += 1;
         previewEditorIdRef.current = `references-peek-editor-${referencesPeekEditorCounter}`;
@@ -140,7 +142,7 @@ export const ReferencesPeek = ({
     }, [previewEditor]);
 
     useEffect(() => {
-        if (!state.preview) {
+        if (state.preview === null) {
             setPreviewEditor((prev) => {
                 prev?.clean();
                 return null;
@@ -151,17 +153,23 @@ export const ReferencesPeek = ({
         }
 
         let cancelled = false;
-        const previewText = state.preview.lines.join('\n');
-        const fileName = getFileName(state.preview.filePath);
+        const previewText = state.preview;
+        if (!selectedItem) {
+            return;
+        }
+
+        const filePath = resolveItemPath(selectedItem);
+        const fileName = getFileName(filePath);
         const language = getLanguageFromFileName(fileName);
-        const range = getHighlightRange(state.preview);
+        const range = getHighlightRange(selectedItem);
         if (!range) {
             return;
         }
         const currentEditor = previewEditorRef.current;
         const currentMeta = previewEditorMetaRef.current;
 
-        if (currentEditor && currentMeta && currentMeta.fileName === fileName && currentMeta.language === language) {
+        if (currentEditor && currentMeta && currentMeta.fileName === fileName &&
+            currentMeta.language === language) {
             currentEditor.updateTextIncremental(previewText);
             currentEditor.setSelectionRange(
                 range.startLine,
@@ -211,7 +219,7 @@ export const ReferencesPeek = ({
         return () => {
             cancelled = true;
         };
-    }, [state.preview]);
+    }, [state.preview, selectedItem]);
 
     useEffect(() => {
         return () => {
@@ -223,7 +231,7 @@ export const ReferencesPeek = ({
 
     const refocusPreviewSelection = () => {
         const editor = previewEditorRef.current;
-        const range = getHighlightRange(state.preview);
+        const range = getHighlightRange(selectedItem);
         if (!editor || !range) {
             return;
         }
@@ -244,9 +252,9 @@ export const ReferencesPeek = ({
                     <div className="references-peek-title">
                         References ({state.items.length})
                     </div>
-                    {state.preview ? (
-                        <div className="references-peek-header-path" title={state.preview.filePath}>
-                            {state.preview.filePath}
+                    {state.preview && selectedItem ? (
+                        <div className="references-peek-header-path" title={resolveItemPath(selectedItem)}>
+                            {resolveItemPath(selectedItem)}
                         </div>
                     ) : null}
                 </div>

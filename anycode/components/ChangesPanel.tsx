@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Icons } from './Icons';
 import './ChangesPanel.css';
 
@@ -40,7 +40,95 @@ const getDisplayName = (path: string): string => {
     return parts[parts.length - 1] || path;
 };
 
-export const ChangesPanel: React.FC<ChangesPanelProps> = ({ 
+interface ChangesPanelItemProps {
+    file: ChangedFile;
+    isActive: boolean;
+    isSelected: boolean;
+    isExcluded: boolean;
+    onClick: (path: string) => void;
+    onRevert: (path: string) => void;
+    onToggleExclude: (path: string, e: React.MouseEvent) => void;
+    setItemRef: (path: string, element: HTMLDivElement | null) => void;
+}
+
+const ChangesPanelItemImpl: React.FC<ChangesPanelItemProps> = ({
+    file,
+    isActive,
+    isSelected,
+    isExcluded,
+    onClick,
+    onRevert,
+    onToggleExclude,
+    setItemRef,
+}) => {
+    const handleRevert = useCallback((e: React.MouseEvent) => {
+        e.stopPropagation();
+        const confirmed = window.confirm(
+            `Revert changes for "${file.path}"? This cannot be undone.`
+        );
+        if (confirmed) {
+            onRevert(file.path);
+        }
+    }, [file.path, onRevert]);
+
+    const refCallback = useCallback((element: HTMLDivElement | null) => {
+        setItemRef(file.path, element);
+    }, [file.path, setItemRef]);
+
+    return (
+        <div 
+            ref={refCallback}
+            className={`changes-item ${isActive ? 'active' : ''} ${isSelected ? 'selected' : ''} ${isExcluded ? 'excluded' : ''}`}
+            onClick={() => onClick(file.path)}
+            role="option"
+            aria-selected={isSelected}
+        >
+            <div className="changes-file-info">
+                <div className="changes-file-main">
+                    <span
+                        className={`changes-filename ${statusTextColors[file.status]}`}
+                        title={file.path}
+                    >
+                        {getDisplayName(file.path)}
+                    </span>
+                </div>
+            </div>
+            <div className="changes-file-meta">
+                <div className="changes-item-actions">
+                    <button
+                        className="changes-revert-btn"
+                        onClick={handleRevert}
+                        title="Revert Changes"
+                    >
+                        ↩
+                    </button>
+                    <button
+                        className={`changes-exclude-btn ${isExcluded ? 'excluded' : ''}`}
+                        onClick={(e) => onToggleExclude(file.path, e)}
+                        title={isExcluded ? 'Include in commit' : 'Exclude from commit'}
+                        aria-label={isExcluded ? 'Include in commit' : 'Exclude from commit'}
+                    >
+                        {isExcluded ? '+' : '−'}
+                    </button>
+                </div>
+                {(file.added ?? 0) > 0 || (file.removed ?? 0) > 0 ? (
+                    <span className="changes-file-stats">
+                        {(file.added ?? 0) > 0 && (
+                            <span className="changes-stat-added">+{file.added}</span>
+                        )}
+                        {(file.removed ?? 0) > 0 && (
+                            <span className="changes-stat-removed">-{file.removed}</span>
+                        )}
+                    </span>
+                ) : null}
+            </div>
+        </div>
+    );
+};
+
+const ChangesPanelItem = React.memo(ChangesPanelItemImpl);
+
+const ChangesPanelImpl: React.FC<ChangesPanelProps> = ({ 
     files, 
     active,
     branch,
@@ -85,15 +173,25 @@ export const ChangesPanel: React.FC<ChangesPanelProps> = ({
     // Sync exclude set with current files (remove deleted files)
     useEffect(() => {
         setExcludedFiles(prev => {
-            const newExcluded = new Set(prev);
+            if (prev.size === 0) return prev;
             const currentPaths = new Set(files.map(f => f.path));
-            
+            let changed = false;
+            for (const path of prev) {
+                if (!currentPaths.has(path)) {
+                    changed = true;
+                    break;
+                }
+            }
+            if (!changed) {
+                return prev;
+            }
+
+            const newExcluded = new Set(prev);
             for (const path of newExcluded) {
                 if (!currentPaths.has(path)) {
                     newExcluded.delete(path);
                 }
             }
-
             return newExcluded;
         });
     }, [files]);
@@ -140,7 +238,7 @@ export const ChangesPanel: React.FC<ChangesPanelProps> = ({
         shouldAutoScrollRef.current = false;
     }, [selectedFilePath]);
 
-    const toggleExcludedFile = (path: string, e: React.MouseEvent) => {
+    const toggleExcludedFile = useCallback((path: string, e: React.MouseEvent) => {
         e.stopPropagation();
         setExcludedFiles(prev => {
             const next = new Set(prev);
@@ -151,7 +249,12 @@ export const ChangesPanel: React.FC<ChangesPanelProps> = ({
             }
             return next;
         });
-    };
+    }, []);
+
+    const handleItemClick = useCallback((path: string) => {
+        setSelectedFilePath(path);
+        onFileClick(path);
+    }, [onFileClick]);
 
     const navigateByKey = useCallback((key: string): boolean => {
         if (!['ArrowDown', 'ArrowUp', 'Enter'].includes(key)) {
@@ -202,11 +305,19 @@ export const ChangesPanel: React.FC<ChangesPanelProps> = ({
         listRef.current?.focus();
     }, []);
 
-    const filesToCommit = files
-        .map((file) => file.path)
-        .filter((path) => !excludedFiles.has(path));
-    const totalAdded = files.reduce((acc, file) => acc + (file.added ?? 0), 0);
-    const totalRemoved = files.reduce((acc, file) => acc + (file.removed ?? 0), 0);
+    const filesToCommit = useMemo(() => (
+        files
+            .map((file) => file.path)
+            .filter((path) => !excludedFiles.has(path))
+    ), [excludedFiles, files]);
+    const totalAdded = useMemo(
+        () => files.reduce((acc, file) => acc + (file.added ?? 0), 0),
+        [files],
+    );
+    const totalRemoved = useMemo(
+        () => files.reduce((acc, file) => acc + (file.removed ?? 0), 0),
+        [files],
+    );
 
     const handleCommit = async () => {
         if (message.trim() && filesToCommit.length > 0) {
@@ -384,68 +495,87 @@ export const ChangesPanel: React.FC<ChangesPanelProps> = ({
                     </div>
                 ) : (
                     files.map((file) => (
-                        <div 
-                            ref={(element) => setItemRef(file.path, element)}
+                        <ChangesPanelItem
                             key={file.path}
-                            className={`changes-item ${activeFilePath === file.path ? 'active' : ''} ${selectedFilePath === file.path ? 'selected' : ''} ${excludedFiles.has(file.path) ? 'excluded' : ''}`}
-                            onClick={() => {
-                                setSelectedFilePath(file.path);
-                                onFileClick(file.path);
-                            }}
-                            role="option"
-                            aria-selected={selectedFilePath === file.path}
-                        >
-                            <div className="changes-file-info">
-                                <div className="changes-file-main">
-                                    <span
-                                        className={`changes-filename ${statusTextColors[file.status]}`}
-                                        title={file.path}
-                                    >
-                                        {getDisplayName(file.path)}
-                                    </span>
-                                </div>
-                            </div>
-                            <div className="changes-file-meta">
-                                <div className="changes-item-actions">
-                                    <button
-                                        className="changes-revert-btn"
-                                        onClick={(e) => {
-                                    e.stopPropagation();
-                                    const confirmed = window.confirm(
-                                        `Revert changes for "${file.path}"? This cannot be undone.`
-                                    );
-                                    if (confirmed) {
-                                        onRevert(file.path);
-                                    }
-                                }}
-                                title="Revert Changes"
-                            >
-                                ↩
-                            </button>
-                                    <button
-                                        className={`changes-exclude-btn ${excludedFiles.has(file.path) ? 'excluded' : ''}`}
-                                        onClick={(e) => toggleExcludedFile(file.path, e)}
-                                        title={excludedFiles.has(file.path) ? 'Include in commit' : 'Exclude from commit'}
-                                        aria-label={excludedFiles.has(file.path) ? 'Include in commit' : 'Exclude from commit'}
-                                    >
-                                        {excludedFiles.has(file.path) ? '+' : '−'}
-                                    </button>
-                                </div>
-                                {(file.added ?? 0) > 0 || (file.removed ?? 0) > 0 ? (
-                                    <span className="changes-file-stats">
-                                        {(file.added ?? 0) > 0 && (
-                                            <span className="changes-stat-added">+{file.added}</span>
-                                        )}
-                                        {(file.removed ?? 0) > 0 && (
-                                            <span className="changes-stat-removed">-{file.removed}</span>
-                                        )}
-                                    </span>
-                                ) : null}
-                            </div>
-                        </div>
+                            file={file}
+                            isActive={activeFilePath === file.path}
+                            isSelected={selectedFilePath === file.path}
+                            isExcluded={excludedFiles.has(file.path)}
+                            onClick={handleItemClick}
+                            onRevert={onRevert}
+                            onToggleExclude={toggleExcludedFile}
+                            setItemRef={setItemRef}
+                        />
                     ))
                 )}
             </div>
         </div>
     );
 };
+
+const areChangedFilesEqual = (prev: ChangedFile[], next: ChangedFile[]): boolean => {
+    if (prev === next) {
+        return true;
+    }
+    if (prev.length !== next.length) {
+        return false;
+    }
+
+    for (let i = 0; i < prev.length; i += 1) {
+        const a = prev[i];
+        const b = next[i];
+        if (
+            a.path !== b.path
+            || a.status !== b.status
+            || (a.added ?? 0) !== (b.added ?? 0)
+            || (a.removed ?? 0) !== (b.removed ?? 0)
+        ) {
+            return false;
+        }
+    }
+
+    return true;
+};
+
+const areBranchesEqual = (
+    prev: { name: string; is_current: boolean }[],
+    next: { name: string; is_current: boolean }[],
+): boolean => {
+    if (prev === next) {
+        return true;
+    }
+    if (prev.length !== next.length) {
+        return false;
+    }
+
+    for (let i = 0; i < prev.length; i += 1) {
+        if (prev[i].name !== next[i].name || prev[i].is_current !== next[i].is_current) {
+            return false;
+        }
+    }
+    return true;
+};
+
+const areEqual = (prev: ChangesPanelProps, next: ChangesPanelProps): boolean => {
+    if (prev.branch !== next.branch || prev.isSwitchingBranch !== next.isSwitchingBranch) {
+        return false;
+    }
+
+    const prevActivePath = prev.active?.path ?? null;
+    const nextActivePath = next.active?.path ?? null;
+    if (prevActivePath !== nextActivePath) {
+        return false;
+    }
+
+    if (!areChangedFilesEqual(prev.files, next.files)) {
+        return false;
+    }
+
+    if (!areBranchesEqual(prev.branches, next.branches)) {
+        return false;
+    }
+
+    return true;
+};
+
+export const ChangesPanel = React.memo(ChangesPanelImpl, areEqual);

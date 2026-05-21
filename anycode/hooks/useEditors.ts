@@ -7,7 +7,6 @@ import {
     type FileState,
     type PendingBatch,
     type ReferencesPeekItem,
-    type ReferencesPeekPreview,
     type ReferencesPeekState,
     type WatcherEdits,
 } from '../types';
@@ -113,26 +112,6 @@ const uriToFilePath = (uriOrPath: string): string => {
     }
 };
 
-const createPreviewFromContent = (
-    content: string,
-    filePath: string,
-    startLine: number,
-    startColumn: number,
-    endLine: number,
-    endColumn: number,
-): ReferencesPeekPreview => {
-    const allLines = content.split('\n');
-
-    return {
-        filePath,
-        lineStart: 0,
-        focusLine: startLine,
-        focusColumn: startColumn,
-        focusEndLine: endLine,
-        focusEndColumn: endColumn,
-        lines: allLines,
-    };
-};
 
 const getPersistedActiveFileId = (files: FileState[], activeFileId: string | null): string | null => {
     if (activeFileId && files.some((file) => file.id === activeFileId)) {
@@ -155,6 +134,7 @@ export const useEditors = ({ wsRef, isConnected, onFileClosed }: UseEditorsParam
     const [editorStates, setEditorStates] = useState<Map<string, AnycodeEditor>>(new Map());
     const editorStatesRef = useRef<Map<string, AnycodeEditor>>(new Map());
     const editorRefs = useRef<Map<string, AnycodeEditor>>(new Map());
+    const initializingEditorsRef = useRef<Map<string, Promise<AnycodeEditor>>>(new Map());
 
     const savedFileContentsRef = useRef<Map<string, string>>(new Map());
     const previewFileContentsRef = useRef<Map<string, string>>(new Map());
@@ -456,7 +436,7 @@ export const useEditors = ({ wsRef, isConnected, onFileClosed }: UseEditorsParam
         return referencesPeekByPaneRef.current[paneId] ?? null;
     }, []);
 
-    const resolveFileContentForPreview = useCallback(async (filePath: string): Promise<string | null> => {
+    const getFileContentForPreviewSync = useCallback((filePath: string): string | null => {
         const editor = editorRefs.current.get(filePath);
         if (editor) {
             const content = editor.getText();
@@ -473,6 +453,15 @@ export const useEditors = ({ wsRef, isConnected, onFileClosed }: UseEditorsParam
         if (savedContent !== undefined) {
             previewFileContentsRef.current.set(filePath, savedContent);
             return savedContent;
+        }
+
+        return null;
+    }, []);
+
+    const resolveFileContentForPreview = useCallback(async (filePath: string): Promise<string | null> => {
+        const syncContent = getFileContentForPreviewSync(filePath);
+        if (syncContent !== null) {
+            return syncContent;
         }
 
         if (!wsRef.current || !isConnected) {
@@ -497,7 +486,7 @@ export const useEditors = ({ wsRef, isConnected, onFileClosed }: UseEditorsParam
                 resolve(content);
             });
         });
-    }, [wsRef, isConnected]);
+    }, [getFileContentForPreviewSync, wsRef, isConnected]);
 
     const loadReferencesPeekPreview = useCallback(async (
         paneId: string,
@@ -525,15 +514,6 @@ export const useEditors = ({ wsRef, isConnected, onFileClosed }: UseEditorsParam
             return;
         }
 
-        const preview = createPreviewFromContent(
-            content,
-            filePath,
-            item.range.start.line,
-            item.range.start.character,
-            item.range.end.line,
-            item.range.end.character,
-        );
-
         setReferencesPeekByPane((prev) => {
             const current = prev[paneId];
             if (!current) {
@@ -544,7 +524,7 @@ export const useEditors = ({ wsRef, isConnected, onFileClosed }: UseEditorsParam
                 ...prev,
                 [paneId]: {
                     ...current,
-                    preview,
+                    preview: content,
                 },
             };
         });
@@ -562,6 +542,10 @@ export const useEditors = ({ wsRef, isConnected, onFileClosed }: UseEditorsParam
         }
 
         const requestToken = ++referencesPeekRequestTokenRef.current;
+        const item = current.items[boundedIndex];
+        const filePath = uriToFilePath(item.uri || item.file);
+        const syncContent = filePath ? getFileContentForPreviewSync(filePath) : null;
+
         setReferencesPeekByPane((prev) => {
             const target = prev[paneId];
             if (!target) {
@@ -572,14 +556,17 @@ export const useEditors = ({ wsRef, isConnected, onFileClosed }: UseEditorsParam
                 [paneId]: {
                     ...target,
                     selectedIndex: boundedIndex,
+                    preview: syncContent,
                 },
             };
         });
 
-        loadReferencesPeekPreview(paneId, boundedIndex, requestToken).catch(() => {
-            // Swallow preview load errors in lite mode.
-        });
-    }, [loadReferencesPeekPreview]);
+        if (syncContent === null) {
+            loadReferencesPeekPreview(paneId, boundedIndex, requestToken).catch(() => {
+                // Swallow preview load errors in lite mode.
+            });
+        }
+    }, [loadReferencesPeekPreview, getFileContentForPreviewSync]);
 
     const applyEditorOpenRequest = useCallback((path: string, editorArg?: AnycodeEditor) => {
         const request = editorOpenRequestsRef.current.get(path);
@@ -822,16 +809,24 @@ export const useEditors = ({ wsRef, isConnected, onFileClosed }: UseEditorsParam
                 );
             });
 
+            const firstItem = dedupedItems[0];
+            const firstFilePath = firstItem ? uriToFilePath(firstItem.uri || firstItem.file) : '';
+            const syncContent = firstFilePath ? getFileContentForPreviewSync(firstFilePath) : null;
+            let initialPreview: string | null = null;
+            if (syncContent !== null && firstItem) {
+                initialPreview = syncContent;
+            }
+
             updateReferencesPeekForPane(targetPaneId, {
                 paneId: targetPaneId,
                 loading: false,
                 error: null,
                 items: dedupedItems,
                 selectedIndex: 0,
-                preview: null,
+                preview: initialPreview,
             });
 
-            if (dedupedItems.length > 0) {
+            if (dedupedItems.length > 0 && initialPreview === null) {
                 loadReferencesPeekPreview(targetPaneId, 0, requestToken, dedupedItems).catch(() => {
                     // Swallow preview load errors in lite mode.
                 });
@@ -841,6 +836,7 @@ export const useEditors = ({ wsRef, isConnected, onFileClosed }: UseEditorsParam
         isConnected,
         loadReferencesPeekPreview,
         updateReferencesPeekForPane,
+        getFileContentForPreviewSync,
         wsRef,
     ]);
 
@@ -971,11 +967,24 @@ export const useEditors = ({ wsRef, isConnected, onFileClosed }: UseEditorsParam
                     const errors = pendingDiagnostics
                         ? pendingDiagnostics.map((d) => ({ line: d.range.start.line, message: d.message }))
                         : undefined;
-                    const editor = await createEditor(content, file.language, file.id, errors, file.history);
-                    newEditorStates.set(file.id, editor);
-                    savedFileContentsRef.current.set(file.id, content);
-                    editorRefs.current.set(file.id, editor);
-                    applyEditorOpenRequest(file.id, editor);
+
+                    let editorPromise = initializingEditorsRef.current.get(file.id);
+                    if (!editorPromise) {
+                        editorPromise = createEditor(content, file.language, file.id, errors, file.history);
+                        initializingEditorsRef.current.set(file.id, editorPromise);
+                    }
+
+                    try {
+                        const editor = await editorPromise;
+                        newEditorStates.set(file.id, editor);
+                        savedFileContentsRef.current.set(file.id, content);
+                        editorRefs.current.set(file.id, editor);
+                        applyEditorOpenRequest(file.id, editor);
+                    } catch (err) {
+                        console.error('Failed to initialize editor for file', file.id, err);
+                    } finally {
+                        initializingEditorsRef.current.delete(file.id);
+                    }
                 } else {
                     const existing = editorStatesRef.current.get(file.id)!;
                     newEditorStates.set(file.id, existing);

@@ -2,7 +2,7 @@
     display: flex;
     flex-direction: column;
     height: 100%;
-    color: #e0e0e0;
+    color: var(--theme-foreground, var(--foreground-color, #e0e0e0));
     font-size: 13px;
 }
 
@@ -40,7 +40,7 @@
     justify-content: center;
     width: 14px;
     height: 14px;
-    color: #888;
+    color: var(--theme-tab-foreground, #888);
 }
 
 .changes-branch-icon svg {
@@ -64,7 +64,7 @@
     -webkit-appearance: none;
     border: none;
     background-color: transparent;
-    color: #e0e0e0;
+    color: var(--theme-foreground, var(--foreground-color, #e0e0e0));
     font-size: 12px;
     border-radius: 0;
     padding: 2px 18px 2px 0;
@@ -88,7 +88,7 @@
 .changes-action-btn {
     background: none;
     border: 1px solid transparent;
-    color: #e0e0e0;
+    color: var(--theme-foreground, var(--foreground-color, #e0e0e0));
     font-size: 11px;
     cursor: pointer;
     padding: 2px 8px;
@@ -98,7 +98,6 @@
     align-items: center;
     justify-content: center;
     height: 24px;
-    transition: background-color 0.1s ease;
 }
 
 .changes-action-btn-icon {
@@ -113,11 +112,11 @@
 }
 
 .changes-action-btn:hover {
-    background-color: #3c3c3c;
+    background-color: var(--hover-bg, rgba(255, 255, 255, 0.08));
 }
 
 .changes-action-btn:disabled {
-    color: #555;
+    color: var(--theme-tab-foreground, #555);
     cursor: not-allowed;
     background-color: transparent;
 }
@@ -137,9 +136,9 @@
 
 .changes-message-mirror,
 .changes-message-input {
-    background-color: #2d2d2d;
-    border: 1px solid transparent;
-    color: #e0e0e0;
+    background-color: var(--background-color, #2d2d2d);
+    border: 1px solid var(--theme-border, #3f3f3f);
+    color: var(--theme-foreground, var(--foreground-color, #e0e0e0));
     padding: 6px 8px;
     border-radius: 8px;
     font-family: inherit;
@@ -171,6 +170,11 @@
     resize: none;
     overflow-y: auto;
     outline: none;
+}
+
+.changes-message-input::placeholder {
+    color: var(--theme-tab-foreground, #888);
+    opacity: 1;
 }
 
 
@@ -218,7 +222,6 @@
     position: absolute;
     inset: 0;
     justify-content: flex-end;
-    transition: opacity 0.1s ease;
 }
 
 .changes-list-header-actions {
@@ -231,12 +234,11 @@
     visibility: hidden;
     opacity: 0;
     pointer-events: none;
-    transition: opacity 0.1s ease;
 }
 
 .changes-select-all {
     cursor: pointer;
-    color: #4fc3f7;
+    color: var(--theme-accent-background, #4fc3f7);
 }
 
 .changes-select-all:hover {
@@ -267,7 +269,7 @@
 }
 
 .changes-empty {
-    color: #666;
+    color: var(--theme-tab-foreground, #666);
     text-align: center;
     padding: 24px;
     font-style: italic;
@@ -281,24 +283,32 @@
 }
 
 .changes-item:hover {
-    background-color: #4a4a4a;
+    background-color: var(--hover-bg, rgba(255, 255, 255, 0.08));
     border-radius: 6px;
 }
 
 .changes-item.active {
-    background-color: #3c3c3c;
+    background-color: var(--theme-accent-background, #3c3c3c);
     border-radius: 6px;
-    color: #fff;
+    color: var(--theme-accent-foreground, #fff) !important;
+}
+
+.changes-item.active .changes-filename,
+.changes-item.active .changes-revert-btn,
+.changes-item.active .changes-exclude-btn,
+.changes-item.active .changes-stat-added,
+.changes-item.active .changes-stat-removed {
+    color: var(--theme-accent-foreground, #fff) !important;
 }
 
 .changes-item.selected {
-    box-shadow: inset 0 0 0 1px #7a7a7a;
+    box-shadow: inset 0 0 0 1px var(--theme-border, #7a7a7a);
     border-radius: 6px;
 }
 
 .changes-list:focus .changes-item.active,
 .changes-list:focus-visible .changes-item.active {
-    box-shadow: inset 0 0 0 1px #7a7a7a;
+    box-shadow: inset 0 0 0 1px var(--theme-accent-foreground, #7a7a7a);
 }
 
 .changes-item.excluded .changes-filename {
@@ -309,13 +319,12 @@
 .changes-revert-btn {
     background: none;
     border: none;
-    color: #7f7f7f;
+    color: var(--theme-tab-foreground, #7f7f7f);
     margin-right: 0;
     font-size: 14px;
     cursor: pointer !important;
     padding: 1px 4px;
     opacity: 0;
-    transition: opacity 0.1s ease, color 0.1s ease;
     flex-shrink: 0;
     outline: none;
     box-shadow: none;
@@ -328,8 +337,8 @@
 }
 
 .changes-revert-btn:hover {
-    color: #d6d6d6;
-    background-color: #3c3c3c;
+    color: var(--theme-foreground, var(--foreground-color, #d6d6d6));
+    background-color: var(--hover-bg, rgba(255, 255, 255, 0.08));
     border-radius: 4px;
 }
 
@@ -342,14 +351,13 @@
 .changes-exclude-btn {
     background: none;
     border: none;
-    color: #7f7f7f;
+    color: var(--theme-tab-foreground, #7f7f7f);
     margin-right: 0;
     font-size: 16px;
     line-height: 1;
     cursor: pointer !important;
     padding: 1px 4px;
     opacity: 0;
-    transition: opacity 0.1s ease, color 0.1s ease;
     flex-shrink: 0;
     outline: none;
     box-shadow: none;
@@ -380,11 +388,11 @@
 
 .changes-exclude-btn:hover,
 .changes-exclude-btn.excluded {
-    color: #d6d6d6;
+    color: var(--theme-foreground, var(--foreground-color, #d6d6d6));
 }
 
 .changes-exclude-btn:hover {
-    background-color: #3c3c3c;
+    background-color: var(--hover-bg, rgba(255, 255, 255, 0.08));
     border-radius: 4px;
 }
 
@@ -405,13 +413,12 @@
     justify-content: center;
      /* Pushed to right in flex container if it's the last item */
     margin-left: auto;
-    color: white;
+    color: var(--theme-foreground, var(--foreground-color, #ffffff));
     font-size: 15px;
-    background-color: #2d2d2d;
+    background-color: var(--theme-background, var(--background-color, #2d2d2d));
     cursor: pointer !important;
     flex-shrink: 0;
     opacity: 0;
-    transition: opacity 0.1s ease;
 }
 
 .changes-item:hover .changes-checkbox,
@@ -435,7 +442,7 @@
 }
 
 .changes-filename {
-    color: #e0e0e0;
+    color: var(--theme-foreground, var(--foreground-color, #e0e0e0));
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -451,21 +458,19 @@
     line-height: 1;
     font-variant-numeric: tabular-nums;
     flex-shrink: 0;
-    opacity: 0.95;
     width: auto;
     min-width: 0;
-    transition: opacity 0.1s ease;
 }
 
 .changes-stat-added {
-    color: #79c97d;
+    color: var(--theme-git-added, #79c97d);
     min-width: 0;
     text-align: left;
     padding: 0;
 }
 
 .changes-stat-removed {
-    color: rgba(248, 65, 61, 1);
+    color: var(--theme-git-removed, rgba(248, 65, 61, 1));
     min-width: 0;
     text-align: left;
     padding: 0;
@@ -494,7 +499,6 @@
     visibility: hidden;
     opacity: 0;
     pointer-events: none;
-    transition: opacity 0.1s ease;
 }
 
 .changes-item:hover .changes-item-actions {
@@ -509,21 +513,21 @@
 }
 
 .file-status-modified {
-    color: #ffffff;
+    color: var(--theme-foreground, var(--foreground-color, #ffffff));
 }
 
 .file-status-added {
-    color: #34a853;
+    color: var(--theme-git-added-strong, #34a853);
 }
 
 .file-status-deleted {
-    color: #ea4335;
+    color: var(--theme-git-removed-strong, #ea4335);
 }
 
 .file-status-renamed {
-    color: #8ab4f8;
+    color: var(--theme-git-renamed, #8ab4f8);
 }
 
 .file-status-conflict {
-    color: #ff9800;
+    color: var(--theme-git-conflict, #ff9800);
 }

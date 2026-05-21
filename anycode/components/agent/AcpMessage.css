@@ -117,8 +117,9 @@
 .acp-message-markdown .acp-inline-code {
     padding: 0.12em 0.35em;
     border-radius: 4px;
-    background-color: #333;
-
+    background-color: rgba(127, 127, 127, 0.18);
+    border: 1px solid var(--theme-border, var(--border-color, #333));
+    color: inherit;
 }
 
 .acp-message-markdown pre {
@@ -230,8 +231,12 @@
 }
 
 .acp-message-user .acp-message-content {
-    background-color: var(--user-message-bg, #474747);
-    color: white;
+    background-color: var(--theme-accent-background, #3c3c3c);
+    color: var(--theme-accent-foreground, var(--text-color, #ffffff));
+}
+
+.acp-message-assistant .acp-message-content {
+    color: var(--theme-foreground, var(--text-color, #e0e0e0));
 }
 
 .acp-message-thought .acp-message-content {
@@ -247,8 +252,8 @@
 }
 
 .acp-message-tool_call .acp-message-content {
-    background-color: var(--assistant-message-bg, #2a2a2a);
-    /* color: var(--text-color, #ccc); */
+    background-color: rgba(127, 127, 127, 0.18);
+     color: var(--text-color, #ccc); 
     /* border: 1px solid var(--border-color, #333); */
     max-width: 100%;
     box-sizing: border-box;

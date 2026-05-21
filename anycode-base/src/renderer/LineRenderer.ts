@@ -50,7 +50,13 @@ export class LineRenderer {
         } else {
             for (const { name, text } of nodes) {
                 const span = document.createElement('span');
-                if (name) span.className = name;
+                if (name) {
+                    // Add both full token class (e.g. "function.method") and path segments
+                    // ("function", "method") so styles can gracefully fall back from specific
+                    // to general when a theme misses a deep token color.
+                    const parts = name.split('.').filter(Boolean);
+                    span.className = [name, ...parts].join(' ');
+                }
                 if (!name && text === '\t') span.className = 'indent';
                 span.textContent = text;
                 wrapper.appendChild(span);
