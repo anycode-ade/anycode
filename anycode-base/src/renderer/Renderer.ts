@@ -699,6 +699,7 @@ export class Renderer {
                 !child.classList.contains('spacer')
                 && !child.hasAttribute('data-ghost')
                 && child.classList.contains('line')
+                && typeof (child as AnycodeLine).lineNumber === 'number'
             ) as AnycodeLine[];
     }
 

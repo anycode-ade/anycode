@@ -199,6 +199,7 @@ export function renderSelection(
     selection: Selection, lines: AnycodeLine[], code: Code
 ) {
     // console.log("setSelectionFromOffsets ", selection);
+    const [selectionStart, selectionEnd] = selection.sorted(); // DOM needs sorted
 
     if (lines.length === 0) return;
 
@@ -210,7 +211,6 @@ export function renderSelection(
         const [newStart, newEnd] = selection.sorted();
 
         if (currentStartOffset === newStart && currentEndOffset === newEnd) {
-            // console.log('Selection is already set, skipping');
             return;
         }
     }
@@ -231,12 +231,11 @@ export function renderSelection(
         code.getOffset(lastLine.lineNumber, 0) +
         getLineTextLength(lastLine);
 
-    const [selectionStart, selectionEnd] = selection.sorted(); // DOM needs sorted
+    const clampedStart = Math.max(selectionStart, visibleStart);
+    const clampedEnd = Math.min(selectionEnd, visibleEnd);
+    if (clampedStart > clampedEnd) return;
 
-    const clamped = new Selection(
-        Math.max(selectionStart, visibleStart),
-        Math.min(selectionEnd, visibleEnd)
-    );
+    const clamped = new Selection(clampedStart, clampedEnd);
 
     const startPos = resolveDOMPosition(clamped.start, lines, code);
     const endPos = resolveDOMPosition(clamped.end, lines, code);
