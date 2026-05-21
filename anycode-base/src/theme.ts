@@ -91,3 +91,25 @@ export let edgo = {
     "accent_color": "#767676",
     "accent_color2": "#F9D992"
 }
+
+export let anycode = {
+    "string": "#b1fce5",
+    "variable": "#fff",
+    "variable.builtin": "#a0a0a0",
+    "function": "#f6c99f",
+    "type": "#f6c99f",
+    "namespace": "#f6c99f",
+    "method": "#f6c99f",
+    "function.method": "#f6c99f",
+    "function.macro": '#f6c99f',
+    "function.builtin": '#f6c99f',
+    "constructor": "#f6c99f",
+    "identifier": "#A5FCB6",
+    "keyword": "#a0a0a0",
+    "number": "#b1fce5",
+    "constant": '#f6c99f',
+    "comment": "#727171",
+    "accent_color": "#b1fce5",
+    "accent_color2": "#a0a0a0"
+};
+

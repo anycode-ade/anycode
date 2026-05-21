@@ -10,7 +10,7 @@ type UseThemeParams = {
 export const useTheme = ({ wsRef, isConnected }: UseThemeParams) => {
     const [currentThemeId, setCurrentThemeId] = useState<string | null>(() => {
         if (typeof window === 'undefined') return null;
-        return localStorage.getItem('themeId');
+        return localStorage.getItem('themeId') || 'anycode.json:anycode';
     });
 
     const applyBrowserChromeColor = useCallback((color: string) => {
@@ -118,21 +118,19 @@ export const useTheme = ({ wsRef, isConnected }: UseThemeParams) => {
             return;
         }
 
-        const storedThemeId = localStorage.getItem('themeId');
-        const storedThemeFileName = localStorage.getItem('themeFileName');
-        const storedThemeName = localStorage.getItem('themeName');
+        const storedThemeId = localStorage.getItem('themeId') || 'anycode.json:anycode';
+        const storedThemeFileName = localStorage.getItem('themeFileName') || 'anycode.json';
+        const storedThemeName = localStorage.getItem('themeName') || 'anycode';
 
-        if (storedThemeId && storedThemeFileName && storedThemeName) {
-            wsRef.current.emit('theme:get', {
-                fileName: storedThemeFileName,
-                themeName: storedThemeName,
-            }, (res: any) => {
-                if (res && res.success && res.theme) {
-                    applyTheme(res.theme);
-                    setCurrentThemeId(storedThemeId);
-                }
-            });
-        }
+        wsRef.current.emit('theme:get', {
+            fileName: storedThemeFileName,
+            themeName: storedThemeName,
+        }, (res: any) => {
+            if (res && res.success && res.theme) {
+                applyTheme(res.theme);
+                setCurrentThemeId(storedThemeId);
+            }
+        });
     }, [isConnected, wsRef, applyTheme]);
 
     return {
