@@ -143,8 +143,8 @@ jobs:
         with:
           command: build
           target: aarch64-unknown-linux-musl
-          args: "--release"
-          working-directory: ./anycode-backend
+          args: "--release --manifest-path anycode-backend/Cargo.toml"
+          working-directory: .
       
       - name: Package as tar.gz
         working-directory: ./anycode-backend
