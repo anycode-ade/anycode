@@ -1,7 +1,6 @@
-use crate::app_state::AppState;
 use serde::{Deserialize, Serialize};
 use serde_json::{self, json, Value};
-use socketioxide::extract::{AckSender, Data, SocketRef, State};
+use socketioxide::extract::{AckSender, Data, SocketRef};
 use std::fs;
 use std::path::PathBuf;
 use tracing::info;
@@ -159,14 +158,4 @@ pub async fn handle_theme_get(
     } else {
         let _ = ack.send(&json!({ "success": false, "error": "Theme name not found in file" }));
     }
-}
-
-pub async fn handle_config_get(
-    _socket: SocketRef,
-    ack: AckSender,
-    state: State<AppState>,
-) {
-    info!("config:get requested");
-    let autosave = state.config.lock().await.autosave;
-    let _ = ack.send(&json!({ "success": true, "autosave": autosave }));
 }

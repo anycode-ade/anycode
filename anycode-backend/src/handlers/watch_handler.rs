@@ -4,13 +4,14 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::{Mutex, watch, mpsc};
+use tokio::sync::{Mutex, watch};
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 
 use crate::app_state::SocketData;
 use crate::code::Code;
 use crate::diff::compute_text_edits;
+use crate::git::GitManager;
 use crate::handlers::io_handler::apply_edits_to_code;
 use crate::lsp::LspManager;
 use crate::search::search_file_result;
@@ -92,7 +93,7 @@ pub async fn handle_watch_event(
     file2code: &Arc<Mutex<HashMap<String, Code>>>,
     socket2data: &Arc<Mutex<HashMap<String, SocketData>>>,
     file_states: &Arc<Mutex<HashMap<String, FileWatchState>>>,
-    git_update_tx: &mpsc::Sender<PathBuf>,
+    git_manager: &Arc<Mutex<GitManager>>,
     lsp_manager: &Arc<Mutex<LspManager>>,
 ) {
     let normalized_path = normalize_watch_path(path);
@@ -127,7 +128,7 @@ pub async fn handle_watch_event(
     let file2code = file2code.clone();
     let socket2data = socket2data.clone();
     let file_states = file_states.clone();
-    let git_update_tx = git_update_tx.clone();
+    let git_manager = git_manager.clone();
     let lsp_manager = lsp_manager.clone();
     let path_str_key = path_str.clone();
     let event_kind = event.kind.clone();
@@ -155,7 +156,7 @@ pub async fn handle_watch_event(
         .await;
 
         handle_search_update(&path, &socket, &socket2data).await;
-        let _ = git_update_tx.send(path.clone()).await;
+        handle_changes_update(&path, &socket, &git_manager).await;
 
         let mut states = file_states.lock().await;
         if let Some(state) = states.get_mut(&path_str_key) {
@@ -268,6 +269,24 @@ async fn handle_search_update(
         if let Some(file_result) = search_file_result(path, &pattern, cancel).await {
             let _ = socket.emit("search:result", &file_result).await;
         }
+    }
+}
+
+async fn handle_changes_update(
+    path: &Path,
+    socket: &Arc<socketioxide::SocketIo>,
+    git_manager: &Arc<Mutex<crate::git::GitManager>>
+) {
+    let update = {
+        let mut git = git_manager.lock().await;
+        if git.should_ignore(path) {
+            return;
+        }
+        git.check_status_changed_for_paths(&[path.to_path_buf()])
+    };
+
+    if let Some(update) = update {
+        let _ = socket.emit("changes:update", &update.to_json()).await;
     }
 }
 

@@ -96,8 +96,7 @@ pub async fn handle_file_open(
     };
 
     let mut f2c = state.file2code.lock().await;
-    let config = state.config.lock().await;
-    let code = match get_or_create_code(&mut f2c, &abs_path, &config) {
+    let code = match get_or_create_code(&mut f2c, &abs_path, &state.config) {
         Ok(c) => c,
         Err(e) => error_ack!(ack, &abs_path, "{:?}", e),
     };
@@ -244,8 +243,7 @@ pub async fn handle_file_close(
 
     let lang = {
         let mut f2c = state.file2code.lock().await;
-        let config = state.config.lock().await;
-        let code = match get_or_create_code(&mut f2c, &abs_path, &config) {
+        let code = match get_or_create_code(&mut f2c, &abs_path, &state.config) {
             Ok(c) => c,
             Err(e) => error_ack!(ack, &abs_path, "{:?}", e),
         };
@@ -318,8 +316,7 @@ pub async fn handle_file_change(
     };
 
     let mut f2c = state.file2code.lock().await;
-    let config = state.config.lock().await;
-    let code = match get_or_create_code(&mut f2c, &abs_path, &config) {
+    let code = match get_or_create_code(&mut f2c, &abs_path, &state.config) {
         Ok(c) => c,
         Err(e) => {
             tracing::error!("Failed to get code: {:?}", e);
@@ -352,15 +349,6 @@ pub async fn handle_file_change(
         }
     }
 
-    let autosave = state.config.lock().await.autosave;
-    if autosave {
-        if let Err(e) = code.save_file() {
-            error!("Autosave failed for {}: {:?}", abs_path, e);
-        } else if let Some(lsp) = lsp_manager.get(&code.lang).await {
-            lsp.did_save(&abs_path, Some(&code.text.to_string()));
-        }
-    }
-
     // Broadcast as a single message for other clients if needed
     socket.broadcast().emit("file:change", &change).await.ok();
 }
@@ -384,8 +372,7 @@ pub async fn handle_file_save(
     };
 
     let mut f2c = state.file2code.lock().await;
-    let config = state.config.lock().await;
-    let code = match get_or_create_code(&mut f2c, &abs_path, &config) {
+    let code = match get_or_create_code(&mut f2c, &abs_path, &state.config) {
         Ok(c) => c,
         Err(e) => error_ack!(ack, &abs_path, "{:?}", e),
     };

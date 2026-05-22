@@ -1,6 +1,5 @@
 theme = "themes/anycode.json"
 left_panel_width = 25
-autosave = true
 
 terminal.command = "bash"
 

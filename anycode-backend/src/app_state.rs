@@ -14,7 +14,7 @@ use tokio_util::sync::CancellationToken;
 
 #[derive(Clone)]
 pub struct AppState {
-    pub config: Arc<Mutex<Config>>,
+    pub config: Arc<Config>,
     pub file2code: Arc<Mutex<HashMap<String, Code>>>,
     pub lsp_manager: Arc<Mutex<LspManager>>,
     pub acp_manager: Arc<Mutex<AcpManager>>,
