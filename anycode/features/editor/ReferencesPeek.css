@@ -187,7 +187,7 @@
 }
 
 .references-peek-item-select:hover {
-    background: var(--hover-bg, rgba(255, 255, 255, 0.08));
+    /*background: var(--hover-bg, rgba(255, 255, 255, 0.08));*/
 }
 
 .references-peek-item-select.is-selected {

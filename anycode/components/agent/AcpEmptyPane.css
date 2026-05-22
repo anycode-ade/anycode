@@ -23,24 +23,62 @@
 }
 
 .acp-pane-empty-action {
-    background: rgba(255, 255, 255, 0.03);
+    appearance: none;
+    -webkit-appearance: none;
+    box-sizing: border-box;
+    border: 1px solid var(--theme-border, #4a4a4a);
+    background: var(--theme-tab-background, var(--theme-background, var(--background-color, #242424)));
+    color: var(--theme-tab-foreground, #b2b2b2);
     cursor: pointer;
     font-size: 12px;
     font-weight: 450;
-    padding: 7px 12px;
+    padding: 8px 10px;
     border-radius: 8px;
-    transition: background-color 0.2s, color 0.2s, border-color 0.2s;
     line-height: 1.1;
-    max-width: 100%;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    flex: 1 1 140px;
+    max-width: 160px;
+    text-align: center;
     white-space: nowrap;
 }
 
 .acp-pane-empty-action:hover {
-    background-color: rgba(255, 255, 255, 0.08);
-    border-color: rgba(255, 255, 255, 0.22);
-    color: #ffffff;
+    background: color-mix(
+        in srgb,
+        var(--theme-accent-background, #007acc) 12%,
+        var(--theme-tab-background, var(--theme-background, var(--background-color, #242424)))
+    );
+    color: var(--theme-foreground, var(--foreground-color, #f0f0f0));
+    border-color: color-mix(
+        in srgb,
+        var(--theme-accent-background, #007acc) 35%,
+        var(--theme-border, #4a4a4a)
+    );
+}
+
+.acp-pane-empty-action:focus {
+    outline: none;
+}
+
+.acp-pane-empty-action:focus-visible {
+    outline: 2px solid var(--theme-accent-background, #007acc);
+    outline-offset: 2px;
+    background: color-mix(
+        in srgb,
+        var(--theme-accent-background, #007acc) 16%,
+        var(--theme-tab-background, var(--theme-background, var(--background-color, #242424)))
+    );
+    color: var(--theme-foreground, var(--foreground-color, #f0f0f0));
+}
+
+.acp-pane-empty-action:active {
+    transform: translateY(1px);
+}
+
+.acp-pane-empty-action,
+.acp-pane-settings-btn {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .acp-pane-opened-agents {
@@ -51,7 +89,7 @@
 
 .acp-pane-opened-agents-title {
     font-size: 12px;
-    color: #c8ccd2;
+    color: var(--theme-muted-foreground, var(--text-color-secondary, #8f8f8f));
     margin-bottom: 5px;
     letter-spacing: 0.01em;
     font-weight: 500;
@@ -65,9 +103,13 @@
 }
 
 .acp-pane-opened-agent {
-    border-color: rgba(112, 233, 189, 0.38);
-    background: rgba(112, 233, 189, 0.1);
-    color: #b8f0dc;
+    border-color: color-mix(in srgb, var(--theme-accent-background, #007acc) 38%, var(--theme-border, #4a4a4a));
+    background: color-mix(
+        in srgb,
+        var(--theme-accent-background, #007acc) 10%,
+        var(--theme-tab-background, var(--theme-background, var(--background-color, #242424)))
+    );
+    color: var(--theme-accent-background, var(--theme-foreground, #7ec8ff));
 }
 
 .acp-pane-opened-agent-item {
@@ -80,7 +122,7 @@
 .acp-pane-close-button {
     opacity: 0;
     pointer-events: none;
-    color: #8ea0ad;
+    color: var(--theme-muted-foreground, var(--text-color-secondary, #8ea0ad));
     font-size: 20px;
     line-height: 1;
     width: 20px;
@@ -98,7 +140,7 @@
 }
 
 .acp-pane-close-button:hover {
-    color: #eef7ff;
+    color: var(--theme-accent-background, var(--theme-foreground, #eef7ff));
     background: transparent;
 }
 
@@ -109,7 +151,7 @@
 }
 
 .acp-pane-start-agents-title {
-    color: #8f8f8f;
+    color: var(--theme-muted-foreground, var(--text-color-secondary, #8f8f8f));
     text-transform: uppercase;
     font-size: 12px;
     letter-spacing: 0.08em;
@@ -117,21 +159,51 @@
 }
 
 .acp-pane-settings-btn {
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    background: rgba(255, 255, 255, 0.03);
-    color: var(--text-color, #cfd3d8);
+    appearance: none;
+    -webkit-appearance: none;
+    box-sizing: border-box;
+    border: 1px solid var(--theme-border, #4a4a4a);
+    background: var(--theme-tab-background, var(--theme-background, var(--background-color, #242424)));
+    color: var(--theme-tab-foreground, #b2b2b2);
     font-size: 12px;
     line-height: 1;
-    padding: 7px 12px;
-    border-radius: 10px;
+    padding: 8px 10px;
+    border-radius: 8px;
     cursor: pointer;
-    transition: background-color 0.2s, color 0.2s, border-color 0.2s;
+    width: min(140px, 100%);
 }
 
 .acp-pane-settings-btn:hover {
-    background-color: rgba(255, 255, 255, 0.08);
-    border-color: rgba(255, 255, 255, 0.22);
-    color: #ffffff;
+    background: color-mix(
+        in srgb,
+        var(--theme-accent-background, #007acc) 12%,
+        var(--theme-tab-background, var(--theme-background, var(--background-color, #242424)))
+    );
+    color: var(--theme-foreground, var(--foreground-color, #f0f0f0));
+    border-color: color-mix(
+        in srgb,
+        var(--theme-accent-background, #007acc) 35%,
+        var(--theme-border, #4a4a4a)
+    );
+}
+
+.acp-pane-settings-btn:focus {
+    outline: none;
+}
+
+.acp-pane-settings-btn:focus-visible {
+    outline: 2px solid var(--theme-accent-background, #007acc);
+    outline-offset: 2px;
+    background: color-mix(
+        in srgb,
+        var(--theme-accent-background, #007acc) 16%,
+        var(--theme-tab-background, var(--theme-background, var(--background-color, #242424)))
+    );
+    color: var(--theme-foreground, var(--foreground-color, #f0f0f0));
+}
+
+.acp-pane-settings-btn:active {
+    transform: translateY(1px);
 }
 
 .acp-pane-settings-wrap {
@@ -139,6 +211,7 @@
     padding-top: 10px;
     display: flex;
     justify-content: center;
+    width: 100%;
 }
 
 @media (max-width: 768px) {

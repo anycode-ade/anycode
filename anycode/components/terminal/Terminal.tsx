@@ -30,6 +30,29 @@ interface XTerminalProps {
 
 const TERMINAL_DELAY_MS = 100;
 
+const getTerminalTheme = () => {
+  const rootStyles = getComputedStyle(document.documentElement);
+  const background =
+    rootStyles.getPropertyValue("--background-color").trim() ||
+    rootStyles.getPropertyValue("--theme-background").trim() ||
+    "#242424";
+  const foreground =
+    rootStyles.getPropertyValue("--foreground-color").trim() ||
+    rootStyles.getPropertyValue("--theme-foreground").trim() ||
+    "#f0f0f0";
+
+  return {
+    background,
+    foreground,
+    cursor: foreground,
+    selectionBackground: rootStyles.getPropertyValue("--theme-accent-background").trim() || "#458588",
+  };
+};
+
+const applyTerminalTheme = (terminal: XTermTerminal) => {
+  terminal.options.theme = getTerminalTheme();
+};
+
 const Terminal: React.FC<XTerminalProps> = ({
   name,
   focusRequestToken,
@@ -51,6 +74,7 @@ const Terminal: React.FC<XTerminalProps> = ({
   const resizeRafRef = useRef<number | null>(null);
   const fitDebounceTimerRef = useRef<number | null>(null);
   const saveSnapshotTimerRef = useRef<number | null>(null);
+  const themeObserverRef = useRef<MutationObserver | null>(null);
   const didAutoFocusRef = useRef<boolean>(false);
   const onDataRef = useRef(onData);
   const onResizeRef = useRef(onResize);
@@ -128,6 +152,10 @@ const Terminal: React.FC<XTerminalProps> = ({
         resizeObserverRef.current.disconnect();
         resizeObserverRef.current = null;
       }
+      if (themeObserverRef.current) {
+        themeObserverRef.current.disconnect();
+        themeObserverRef.current = null;
+      }
       if (xtermRef.current) {
         xtermRef.current.dispose();
         xtermRef.current = null;
@@ -161,9 +189,16 @@ const Terminal: React.FC<XTerminalProps> = ({
       }
       xtermRef.current = terminal;
 
-      const rootStyles = getComputedStyle(document.documentElement);
-      const panelBackground = rootStyles.getPropertyValue("--background-color").trim() || "#242424";
-      terminal.options.theme = { background: panelBackground };
+      applyTerminalTheme(terminal);
+
+      const themeObserver = new MutationObserver(() => {
+        applyTerminalTheme(terminal);
+      });
+      themeObserver.observe(document.documentElement, {
+        attributes: true,
+        attributeFilter: ["style"],
+      });
+      themeObserverRef.current = themeObserver;
 
       requestAnimationFrame(() => {
         fitAddon.fit();
@@ -242,6 +277,10 @@ const Terminal: React.FC<XTerminalProps> = ({
         resizeObserverRef.current.disconnect();
         resizeObserverRef.current = null;
       }
+      if (themeObserverRef.current) {
+        themeObserverRef.current.disconnect();
+        themeObserverRef.current = null;
+      }
       if (xtermRef.current) {
         xtermRef.current.dispose();
         xtermRef.current = null;
@@ -269,7 +308,7 @@ const Terminal: React.FC<XTerminalProps> = ({
       style={{
         width: "100%",
         height: "100%",
-        color: "white",
+        color: "var(--foreground-color, var(--theme-foreground, #f0f0f0))",
         position: "relative",
       }}
     >

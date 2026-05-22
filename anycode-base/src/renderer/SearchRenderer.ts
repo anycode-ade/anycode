@@ -44,9 +44,6 @@ export class SearchRenderer {
         // Create a container for the search UI
         this.searchContainer = document.createElement('div');
         this.searchContainer.className = 'search';
-        this.searchContainer.style.display = 'flex';
-        this.searchContainer.style.flexDirection = 'column';
-        this.searchContainer.style.position = 'fixed';
 
         // Create a search textarea field for multiline search (full width)
         const inputField = document.createElement('textarea');

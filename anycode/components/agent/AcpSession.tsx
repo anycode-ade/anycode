@@ -16,9 +16,12 @@ const ACP_INPUT_DRAFTS_STORAGE_KEY = 'acpInputDrafts';
 
 const useAutoScroll = (messages: AcpMessage[], isProcessing: boolean) => {
   const contentRef = useRef<HTMLDivElement>(null);
+  const innerRef = useRef<HTMLDivElement>(null);
   const autoScrollEnabledRef = useRef(true);
   const lastScrollTopRef = useRef<number>(0);
-  const isProgrammaticScrollRef = useRef(false);
+  const lastTouchYRef = useRef<number | null>(null);
+  const pointerScrollStartRef = useRef<number | null>(null);
+  const userScrollUpIntentRef = useRef(false);
   const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
 
   const checkIfScrolledToBottom = (element: HTMLElement): boolean => (
@@ -34,51 +37,123 @@ const useAutoScroll = (messages: AcpMessage[], isProcessing: boolean) => {
     const element = contentRef.current;
     if (!element) return;
 
-    isProgrammaticScrollRef.current = true;
     element.scrollTo({
       top: element.scrollHeight,
       behavior,
     });
+    lastScrollTopRef.current = element.scrollTop;
   };
 
   useEffect(() => {
     const contentElement = contentRef.current;
     if (!contentElement) return;
 
+    const noteUserScrollIntent = (event: WheelEvent) => {
+      if (event.deltaY < 0) {
+        userScrollUpIntentRef.current = true;
+      }
+    };
+
+    const noteTouchStart = () => {
+      userScrollUpIntentRef.current = false;
+      lastTouchYRef.current = null;
+    };
+
+    const noteTouchMove = (event: TouchEvent) => {
+      const currentY = event.touches[0]?.clientY;
+      const previousY = lastTouchYRef.current;
+      lastTouchYRef.current = currentY ?? null;
+
+      if (currentY !== undefined && previousY !== null && currentY > previousY) {
+        userScrollUpIntentRef.current = true;
+      }
+    };
+
+    const notePointerDown = (event: PointerEvent) => {
+      if (event.target !== contentElement) {
+        return;
+      }
+
+      pointerScrollStartRef.current = contentElement.scrollTop;
+    };
+
+    const notePointerUp = () => {
+      pointerScrollStartRef.current = null;
+    };
+
+    const noteKeyboardScrollIntent = (event: KeyboardEvent) => {
+      if (
+        event.key === 'ArrowUp' ||
+        event.key === 'PageUp' ||
+        event.key === 'Home'
+      ) {
+        userScrollUpIntentRef.current = true;
+      }
+    };
+
     const handleScroll = () => {
       const currentScrollTop = contentElement.scrollTop;
       const delta = currentScrollTop - lastScrollTopRef.current;
       const scrollDirection = delta < -1 ? 'up' : delta > 1 ? 'down' : 'none';
 
-      if (isProgrammaticScrollRef.current) {
-        if (checkIfScrolledToBottom(contentElement)) {
-          isProgrammaticScrollRef.current = false;
-        }
-        lastScrollTopRef.current = currentScrollTop;
-        return;
-      }
+      const pointerDraggedUp =
+        pointerScrollStartRef.current !== null &&
+        currentScrollTop < pointerScrollStartRef.current - 1;
 
-      if (scrollDirection === 'up') {
+      if (scrollDirection === 'up' && (userScrollUpIntentRef.current || pointerDraggedUp)) {
         setAutoScroll(false);
       }
 
+      if (checkIfScrolledToBottom(contentElement)) {
+        setAutoScroll(true);
+      }
+
+      userScrollUpIntentRef.current = false;
       lastScrollTopRef.current = currentScrollTop;
     };
 
+    contentElement.addEventListener('wheel', noteUserScrollIntent, { passive: true });
+    contentElement.addEventListener('touchstart', noteTouchStart, { passive: true });
+    contentElement.addEventListener('touchmove', noteTouchMove, { passive: true });
+    contentElement.addEventListener('pointerdown', notePointerDown);
+    window.addEventListener('pointerup', notePointerUp);
+    contentElement.addEventListener('keydown', noteKeyboardScrollIntent);
     contentElement.addEventListener('scroll', handleScroll);
     lastScrollTopRef.current = contentElement.scrollTop;
-    return () => contentElement.removeEventListener('scroll', handleScroll);
+    return () => {
+      contentElement.removeEventListener('wheel', noteUserScrollIntent);
+      contentElement.removeEventListener('touchstart', noteTouchStart);
+      contentElement.removeEventListener('touchmove', noteTouchMove);
+      contentElement.removeEventListener('pointerdown', notePointerDown);
+      window.removeEventListener('pointerup', notePointerUp);
+      contentElement.removeEventListener('keydown', noteKeyboardScrollIntent);
+      contentElement.removeEventListener('scroll', handleScroll);
+    };
   }, []);
 
   useEffect(() => {
-    if (!isProcessing) return;
-
     if (autoScrollEnabledRef.current && contentRef.current) {
       requestAnimationFrame(() => {
         scrollToBottom('auto');
       });
     }
   }, [messages, isProcessing]);
+
+  useEffect(() => {
+    const innerElement = innerRef.current;
+    if (!innerElement) return;
+
+    const observer = new ResizeObserver(() => {
+      if (!autoScrollEnabledRef.current) return;
+
+      requestAnimationFrame(() => {
+        scrollToBottom('auto');
+      });
+    });
+
+    observer.observe(innerElement);
+    return () => observer.disconnect();
+  }, []);
 
   const enableAutoScroll = () => {
     setAutoScroll(true);
@@ -88,7 +163,7 @@ const useAutoScroll = (messages: AcpMessage[], isProcessing: boolean) => {
     });
   };
 
-  return { contentRef, autoScrollEnabled, enableAutoScroll };
+  return { contentRef, innerRef, autoScrollEnabled, enableAutoScroll };
 };
 
 const useExpandableItems = () => {
@@ -160,7 +235,7 @@ export const AcpSession: React.FC<AcpSessionProps> = ({
   const { expanded: expandedToolResults, toggle: toggleToolResult } = useExpandableItems();
   const { expanded: expandedThoughts, toggle: toggleThought } = useExpandableItems();
   const { expanded: expandedPermissions, toggle: togglePermission } = useExpandableItems();
-  const { contentRef, autoScrollEnabled, enableAutoScroll } = useAutoScroll(messages, isProcessing);
+  const { contentRef, innerRef, autoScrollEnabled, enableAutoScroll } = useAutoScroll(messages, isProcessing);
 
   const handlePermissionResponse = useCallback(
     (permissionId: string, optionId: string) => onPermissionResponse(agentId, permissionId, optionId),
@@ -220,7 +295,7 @@ export const AcpSession: React.FC<AcpSessionProps> = ({
     >
       <div className="acp-session-content">
         <div className="acp-messages" ref={contentRef}>
-          <div className="acp-messages-inner">
+          <div className="acp-messages-inner" ref={innerRef}>
             <AcpMessages
               messages={messages}
               toolCalls={[]}

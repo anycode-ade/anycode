@@ -1,5 +1,5 @@
 .xterm-viewport {
-    background-color: var(--background-color, #242424) !important;
+    background-color: var(--background-color, var(--theme-background, #242424)) !important;
 }
 
 .terminal-container {
@@ -34,7 +34,7 @@
   flex: 1;
   min-height: 0;
   position: relative;
-  background-color: var(--background-color, #242424);
+  background-color: var(--background-color, var(--theme-background, #242424));
 }
 
 .terminal-disconnected {
@@ -47,7 +47,7 @@
   align-items: center;
   justify-content: center;
   background-color: rgba(0, 0, 0, 0.0);
-  color: white;
+  color: var(--foreground-color, var(--theme-foreground, #f0f0f0));
   font-size: 1.2rem;
   z-index: 10;  
 }

@@ -1421,9 +1421,11 @@ export class AnycodeEditor {
             if (currentMatches.length === 0) return;
             this.renderer.removeSelectedHighlight(this.search);
             this.search.selectPrev();
+            this.search.setFocused(true);
             this.search.setNeedsFocus(true);
             this.renderer.focus(this.getEditorState(), this.search.getSelectedMatch()?.line);
             this.renderer.updateSearchHighlights(this.search);
+            this.renderer.focusSearchInput();
             return;
         }
 
@@ -1434,9 +1436,11 @@ export class AnycodeEditor {
             if (currentMatches.length === 0) return;
             this.renderer.removeSelectedHighlight(this.search);
             this.search.selectNext();
+            this.search.setFocused(true);
             this.search.setNeedsFocus(true);
             this.renderer.focus(this.getEditorState(), this.search.getSelectedMatch()?.line);
             this.renderer.updateSearchHighlights(this.search);
+            this.renderer.focusSearchInput();
             return;
         }
 
@@ -1467,8 +1471,9 @@ export class AnycodeEditor {
         if (!pattern) {
             this.renderer.updateSearchLabel('');
             this.search.clear();
-            this.search.setActive(false);
-            this.search.setNeedsFocus(false);
+            this.search.setActive(true);
+            this.search.setFocused(true);
+            this.search.setNeedsFocus(true);
             return;
         }
 
@@ -1476,6 +1481,7 @@ export class AnycodeEditor {
         const matches = this.getEditorState().code.search(pattern);
         this.search.clear();
         this.search.setActive(true);
+        this.search.setFocused(true);
         this.search.setMatches(matches);
         this.search.setPattern(pattern);
 

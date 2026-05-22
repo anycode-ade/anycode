@@ -78,12 +78,6 @@
     justify-content: center;
     cursor: pointer;
     border-radius: 4px;
-    transition: color 0.2s, background-color 0.2s;
-}
-
-.acp-input-toggle-btn:hover {
-    color: var(--text-color, #fff);
-    background-color: rgba(255, 255, 255, 0.1);
 }
 
 .acp-input-floating-expand-btn {
@@ -97,16 +91,11 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    color: var(--text-color, #ccc);
-    background: rgba(45, 45, 45, 0.5);
+    color: var(--theme-accent-background, #3c3c3c);
+    background: rgba(45, 45, 45, 0.25);
     backdrop-filter: blur(2px);
     -webkit-backdrop-filter: blur(2px);
     z-index: 2;
-}
-
-.acp-input-floating-expand-btn:hover {
-    background-color: var(--hover-bg, #2a2a2a);
-    transform: translateY(-1px);
 }
 
 .acp-input-controls-row {
@@ -219,7 +208,7 @@
 
 .acp-send-btn,
 .acp-stop-prompt-btn {
-    background: rgba(45, 45, 45, 0.5);
+    background: rgba(45, 45, 45, 0.25);
     backdrop-filter: blur(2px);
     -webkit-backdrop-filter: blur(2px);
     color: var(--text-color, #fff);
@@ -236,7 +225,10 @@
     height: 36px;
     flex-shrink: 0;
     outline: none;
-    transition: background-color 0.2s, transform 0.2s, opacity 0.2s, color 0.2s;
+}
+
+.acp-send-btn {
+    color: var(--theme-accent-background, #3c3c3c);
 }
 
 .acp-send-btn:focus,
@@ -253,11 +245,7 @@
     height: 20px;
 }
 
-.acp-send-btn:hover:not(:disabled),
-.acp-stop-prompt-btn:hover:not(:disabled) {
-    background-color: var(--hover-bg, #2a2a2a);
-    transform: translateY(-1px);
-}
+
 
 .acp-send-btn:disabled,
 .acp-stop-prompt-btn:disabled {
