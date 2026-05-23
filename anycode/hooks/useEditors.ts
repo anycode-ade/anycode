@@ -417,17 +417,10 @@ export const useEditors = ({ wsRef, isConnected, onFileClosed }: UseEditorsParam
 
     const focusEditorInPane = useCallback((paneId: string) => {
         setActiveEditorPaneId(paneId);
-
         const fileId = getActiveFileIdForPane(paneId);
-        if (!fileId) {
-            return;
-        }
-
+        if (!fileId) return;
         const editor = editorRefs.current.get(fileId);
-        if (!editor) {
-            return;
-        }
-
+        if (!editor) return;
         const cursor = editor.getCursor();
         editor.requestFocus(cursor.line, cursor.column);
     }, [getActiveFileIdForPane]);

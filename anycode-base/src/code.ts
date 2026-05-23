@@ -155,9 +155,9 @@ export class Code {
             let q = this.getQuery();
             if (q) this.query = lang.query(q);
             if (this.query) await this.initInjections();
-            let tq = this.getRunnablesQuery();
-            if (tq) this.runnablesQuery = lang.query(tq);
-            if (this.runnablesQuery || this.isExecutable()) this.updateRunnables();
+            // let tq = this.getRunnablesQuery();
+            // if (tq) this.runnablesQuery = lang.query(tq);
+            // if (this.runnablesQuery || this.isExecutable()) this.updateRunnables();
         }
     }
 

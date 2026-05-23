@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { AcpSettings } from '../../components/agent/AcpSettings';
 import { AcpSession } from '../../components/agent/AcpSession';
 import { AcpEmptyPane } from '../../components/agent/AcpEmptyPane';
@@ -42,7 +42,7 @@ type AgentPanelProps = {
     onOpenFileDiff: (path: string, line?: number, column?: number) => void;
 };
 
-export const AgentPanel = ({
+const AgentPanelComponent = ({
     panelKey,
     focusRequestToken,
     isConnected,
@@ -145,3 +145,5 @@ export const AgentPanel = ({
         </div>
     );
 };
+
+export const AgentPanel = React.memo(AgentPanelComponent);

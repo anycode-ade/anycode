@@ -143,23 +143,23 @@ const App: React.FC = () => {
         search.startSearch(pattern);
     };
 
-    const resolveEditorPaneId = useCallback(() => {
+    const resolveEditorPaneId = useEvent(() => {
         return layoutActionsRef.current?.ensureEditorPanel(editors.activeEditorPaneId);
-    }, [editors]);
+    });
 
-    const handleOpenFile = useCallback((
+    const handleOpenFile = useEvent((
         path: string, line?: number, column?: number, mode?: DiffMode,
     ) => {
         const paneId = resolveEditorPaneId();
         if (!paneId) return;
         editors.openFile(path, line, column, paneId, mode);
-    }, [editors, resolveEditorPaneId]);
+    });
 
-    const handleSelectFile = useCallback((fileId: string) => {
+    const handleSelectFile = useEvent((fileId: string) => {
         const paneId = resolveEditorPaneId();
         if (!paneId) return;
         editors.setActiveFileId(fileId, paneId);
-    }, [editors, resolveEditorPaneId]);
+    });
 
     const handleSearchResultClick = (filePath: string, match: SearchMatch) => {
         handleOpenFile(filePath, match.line, match.column);
@@ -186,7 +186,10 @@ const App: React.FC = () => {
     }, [editors]);
 
     const handleCycleEditorDiffMode = useCallback((panelKey: string) => {
-        editors.cycleEditorDiffMode(panelKey);
+        const changed = editors.cycleEditorDiffMode(panelKey);
+        if (changed) {
+            editors.focusEditorInPane(panelKey);
+        }
     }, [editors]);
 
     const sessionsArray = useMemo(() => Array.from(agents.acpSessions.values()), [agents.acpSessions]);
@@ -415,7 +418,7 @@ const App: React.FC = () => {
         }
     };
 
-    const handlePanelAdded = useCallback((panelId: PanelId, panelKey: string) => {
+    const handlePanelAdded = useEvent((panelId: PanelId, panelKey: string) => {
         layout.handlePanelAdded(panelId, panelKey);
 
         if (panelId === 'changes') {
@@ -435,9 +438,9 @@ const App: React.FC = () => {
         if (panelId === 'terminal') {
             terminalPanes.registerPane(panelKey);
         }
-    }, [agentPanes, editors, git.fetchGitStatus, git.fetchBranches, layout, terminalPanes]);
+    });
 
-    const handlePanelRemoved = useCallback((panelId: PanelId, panelKey: string) => {
+    const handlePanelRemoved = useEvent((panelId: PanelId, panelKey: string) => {
         layout.handlePanelRemoved(panelId, panelKey);
 
         if (panelId === 'editor') {
@@ -451,9 +454,9 @@ const App: React.FC = () => {
         if (panelId === 'terminal') {
             terminalPanes.unregisterPane(panelKey);
         }
-    }, [agentPanes, editors, layout, terminalPanes]);
+    });
 
-    const handlePanelActivated = useCallback((panelId: PanelId, panelKey: string) => {
+    const handlePanelActivated = useEvent((panelId: PanelId, panelKey: string) => {
         layout.handlePanelActivated(panelId, panelKey);
 
         if (panelId === 'editor') {
@@ -478,7 +481,7 @@ const App: React.FC = () => {
         if (panelId === 'terminal') {
             terminalPanes.setActivePaneId(panelKey);
         }
-    }, [agentPanes, editors, layout, terminalPanes]);
+    });
 
     return (
         <div className="app-container toolbar-header-compact">

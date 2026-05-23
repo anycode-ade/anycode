@@ -13,6 +13,7 @@ import { AcpIcons } from './AcpIcons';
 import { loadItem, saveItem } from '../../storage';
 
 const ACP_INPUT_DRAFTS_STORAGE_KEY = 'acpInputDrafts';
+const EMPTY_ARRAY: any[] = [];
 
 const useAutoScroll = (messages: AcpMessage[], isProcessing: boolean) => {
   const contentRef = useRef<HTMLDivElement>(null);
@@ -201,7 +202,7 @@ interface AcpSessionProps {
   onOpenFileDiff?: (path: string, line?: number, column?: number) => void;
 }
 
-export const AcpSession: React.FC<AcpSessionProps> = ({
+const AcpSessionComponent: React.FC<AcpSessionProps> = ({
   agentId,
   title,
   isConnected,
@@ -298,7 +299,7 @@ export const AcpSession: React.FC<AcpSessionProps> = ({
           <div className="acp-messages-inner" ref={innerRef}>
             <AcpMessages
               messages={messages}
-              toolCalls={[]}
+              toolCalls={EMPTY_ARRAY}
               expandedToolCalls={expandedToolCalls}
               expandedToolResults={expandedToolResults}
               expandedThoughts={expandedThoughts}
@@ -344,3 +345,5 @@ export const AcpSession: React.FC<AcpSessionProps> = ({
     </div>
   );
 };
+
+export const AcpSession = React.memo(AcpSessionComponent);

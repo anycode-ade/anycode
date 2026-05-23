@@ -1077,7 +1077,7 @@ const PermissionRequestMessage: React.FC<{
   );
 };
 
-export const AcpMessage: React.FC<AcpMessageProps> = ({
+const AcpMessageComponent: React.FC<AcpMessageProps> = ({
   message,
   toolResult,
   toolUpdates,
@@ -1165,3 +1165,5 @@ export const AcpMessage: React.FC<AcpMessageProps> = ({
       return null;
   }
 };
+
+export const AcpMessage = React.memo(AcpMessageComponent);
