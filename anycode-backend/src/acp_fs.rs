@@ -121,8 +121,6 @@ async fn handle_write(
         }
 
         let lang = code.lang.clone();
-        let saved_content = code.get_content();
-
         // Serialize edits for frontend notification
         let edits_json = json!({
             "file": abs_path,
@@ -141,8 +139,12 @@ async fn handle_write(
         if !lsp_changes.is_empty() {
             let mut lsp = lsp_manager.lock().await;
             if let Some(lsp) = lsp.get(&lang).await {
-                lsp.did_change_multi(&abs_path, lsp_changes).await;
-                lsp.did_save(&abs_path, Some(&saved_content));
+                if let Err(e) = lsp.did_change_multi(&abs_path, lsp_changes).await {
+                    error!("ACP write: failed to notify LSP didChange for {}: {}", abs_path, e);
+                }
+                if let Err(e) = lsp.did_save(&abs_path) {
+                    error!("ACP write: failed to notify LSP didSave for {}: {}", abs_path, e);
+                }
             }
         }
 

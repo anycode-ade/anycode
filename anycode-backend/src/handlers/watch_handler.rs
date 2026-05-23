@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{Mutex, watch};
 use tokio_util::sync::CancellationToken;
-use tracing::info;
+use tracing::{error, info};
 
 use crate::app_state::SocketData;
 use crate::code::Code;
@@ -353,8 +353,12 @@ async fn handle_file_modification(
     if !lsp_changes.is_empty() {
         let mut lsp = lsp_manager.lock().await;
         if let Some(lsp) = lsp.get(&lang).await {
-            lsp.did_change_multi(path_str, lsp_changes).await;
-            lsp.did_save(path_str, Some(&new_text));
+            if let Err(e) = lsp.did_change_multi(path_str, lsp_changes).await {
+                error!("Failed to notify LSP didChange for {}: {:?}", path_str, e);
+            }
+            if let Err(e) = lsp.did_save(path_str) {
+                error!("Failed to notify LSP didSave for {}: {:?}", path_str, e);
+            }
         }
     }
 

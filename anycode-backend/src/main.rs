@@ -9,7 +9,7 @@ use socketioxide::{
 };
 use tower::ServiceBuilder;
 use tower_http::cors::CorsLayer;
-use tracing::info;
+use tracing::{error, info};
 
 mod acp;
 mod acp_fs;
@@ -151,7 +151,9 @@ async fn on_disconnect(socket: SocketRef, state: State<AppState>) {
 
         for (file_path, lang) in &files_to_close {
             if let Some(lsp) = lsp_manager.get(lang).await {
-                lsp.did_close(file_path);
+                if let Err(e) = lsp.did_close(file_path) {
+                    error!("Failed to notify LSP didClose for {}: {:?}", file_path, e);
+                }
                 // f2c.remove(file_path);
             }
         }

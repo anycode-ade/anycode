@@ -1,3 +1,4 @@
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
@@ -215,11 +216,11 @@ impl Lsp {
         }
     }
 
-    pub async fn init(&mut self, dir: &str) {
+    pub async fn init(&mut self, dir: &str) -> Result<()> {
         let id = 0;
         let (tx, rx) = mpsc::channel::<String>(1);
         self.add_pending(id, tx).await;
-        let message = lsp_messages::initialize(dir, self.lsp_name.as_deref());
+        let message = lsp_messages::initialize(dir, self.lsp_name.as_deref())?;
         self.send_async(message);
         self.wait(5, rx).await;
         self.remove_pending(id).await;
@@ -231,7 +232,8 @@ impl Lsp {
             self.did_change_configuration(settings);
         }
 
-        self.ready.store(true, Ordering::SeqCst)
+        self.ready.store(true, Ordering::SeqCst);
+        Ok(())
     }
 
     pub fn send_notification<N>(&self, params: N::Params)
@@ -308,41 +310,41 @@ impl Lsp {
         self.send_notification::<DidChangeConfiguration>(params);
     }
 
-    pub fn did_open(&mut self, lang: &str, path: &str, text: &str) {
+    pub fn did_open(&mut self, lang: &str, path: &str, text: &str) -> Result<()> {
         self.opened.insert(path.to_string());
-
+        let uri = path_to_uri(path)?;
         let params = DidOpenTextDocumentParams {
             text_document: TextDocumentItem {
-                uri: path_to_uri(path).unwrap(),
+                uri,
                 language_id: lang.to_string(),
                 version: 0,
                 text: text.to_string(),
             },
         };
         self.send_notification::<DidOpenTextDocument>(params);
+        Ok(())
     }
 
-    pub fn did_close(&mut self, path: &str) {
+    pub fn did_close(&mut self, path: &str) -> Result<()> {
         if !self.opened.remove(path) {
-            return;
+            return Ok(());
         }
+        let uri = path_to_uri(path)?;
         let params = DidCloseTextDocumentParams {
-            text_document: TextDocumentIdentifier {
-                uri: path_to_uri(path).unwrap(),
-            },
+            text_document: TextDocumentIdentifier { uri },
         };
         self.send_notification::<DidCloseTextDocument>(params);
+        Ok(())
     }
 
-    pub fn did_save(&mut self, path: &str, text: Option<&str>) {
+    pub fn did_save(&mut self, path: &str) -> Result<()> {
+        let uri = path_to_uri(path)?;
         let params = DidSaveTextDocumentParams {
-            text_document: TextDocumentIdentifier {
-                uri: path_to_uri(path).unwrap(),
-            },
+            text_document: TextDocumentIdentifier { uri },
             text: None,
-            // text: text.map(|s| s.to_string()),
         };
         self.send_notification::<DidSaveTextDocument>(params);
+        Ok(())
     }
 
     fn get_next_version(&mut self, path: &str) -> usize {
@@ -366,7 +368,7 @@ impl Lsp {
         end_column: usize,
         path: &str,
         text: &str,
-    ) {
+    ) -> Result<()> {
         self.did_change_multi(
             path,
             vec![TextDocumentContentChangeEvent {
@@ -378,23 +380,25 @@ impl Lsp {
                 text: text.to_string(),
             }],
         )
-        .await;
+        .await
     }
 
     pub async fn did_change_multi(
         &mut self,
         path: &str,
         content_changes: Vec<TextDocumentContentChangeEvent>,
-    ) {
+    ) -> Result<()> {
+        let uri = path_to_uri(path)?;
         let params = DidChangeTextDocumentParams {
             text_document: VersionedTextDocumentIdentifier {
-                uri: path_to_uri(path).unwrap(),
+                uri,
                 version: self.get_next_version(path) as i32,
             },
             content_changes,
         };
 
         self.send_notification::<DidChangeTextDocument>(params);
+        Ok(())
     }
 
     pub async fn completion(
@@ -536,17 +540,16 @@ mod tests {
             None,
         )?;
 
-        let dir = std::env::current_dir()
-            .unwrap()
+        let dir = std::env::current_dir()?
             .to_string_lossy()
             .into_owned();
 
-        lsp.init(&dir).await;
+        lsp.init(&dir).await?;
 
         let content = r#"for i in range(10000): print(i)"#;
         let file_path = "fast.py";
 
-        lsp.did_open(lang, file_path, content);
+        lsp.did_open(lang, file_path, content)?;
 
         // Test completion on 'range'
         let completions = lsp.completion(file_path, 0, 12).await?;
@@ -665,8 +668,8 @@ pub mod lsp_messages {
         }
     }
 
-    pub fn initialize(dir: &str, lsp_name: Option<&str>) -> String {
-        let uri: Uri = path_to_uri(dir).unwrap();
+    pub fn initialize(dir: &str, lsp_name: Option<&str>) -> Result<String> {
+        let uri: Uri = path_to_uri(dir)?;
 
         let path = std::path::Path::new(dir);
         let folder_name = path
@@ -743,7 +746,7 @@ pub mod lsp_messages {
             "params": params
         });
 
-        to_string(&request).unwrap()
+        Ok(to_string(&request)?)
     }
 }
 
@@ -804,7 +807,10 @@ impl LspManager {
             .to_string_lossy()
             .into_owned();
 
-        lsp.init(&dir).await;
+        if let Err(e) = lsp.init(&dir).await {
+            error!("error initializing lsp process {}: {}", &lsp_cmd, e);
+            return;
+        }
 
         self.lang2lsp.insert(lang, lsp);
     }

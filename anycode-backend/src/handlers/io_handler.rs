@@ -142,7 +142,9 @@ pub async fn handle_file_open(
 
     let mut lsp_manager = state.lsp_manager.lock().await;
     if let Some(lsp) = lsp_manager.get(&code.lang).await {
-        lsp.did_open(&code.lang, &abs_path, &content);
+        if let Err(e) = lsp.did_open(&code.lang, &abs_path, &content) {
+            error!("Failed to notify LSP didOpen for {}: {:?}", abs_path, e);
+        }
     }
 }
 
@@ -254,7 +256,9 @@ pub async fn handle_file_close(
     {
         let mut lsp_manager = state.lsp_manager.lock().await;
         if let Some(lsp) = lsp_manager.get(&lang).await {
-            lsp.did_close(&abs_path);
+            if let Err(e) = lsp.did_close(&abs_path) {
+                error!("Failed to notify LSP didClose for {}: {:?}", abs_path, e);
+            }
         }
     }
 
@@ -315,37 +319,58 @@ pub async fn handle_file_change(
         }
     };
 
-    let mut f2c = state.file2code.lock().await;
-    let code = match get_or_create_code(&mut f2c, &abs_path, &state.config) {
-        Ok(c) => c,
-        Err(e) => {
-            tracing::error!("Failed to get code: {:?}", e);
-            return;
+    let edits = change.edits.clone();
+    let (lsp_changes, lang, did_autosave) = {
+        let mut f2c = state.file2code.lock().await;
+        let code = match get_or_create_code(&mut f2c, &abs_path, &state.config) {
+            Ok(c) => c,
+            Err(e) => {
+                tracing::error!("Failed to get code: {:?}", e);
+                return;
+            }
+        };
+
+        let mut apply_tx = true;
+
+        if let Some(true) = change.is_undo {
+            let _undo = code.undo_change();
+            apply_tx = false;
         }
+
+        if let Some(true) = change.is_redo {
+            let _redo = code.redo_change();
+            apply_tx = false;
+        }
+
+        // Apply all edits to code and collect LSP changes
+        let lsp_changes = apply_edits_to_code(code, &edits, apply_tx);
+        let lang = code.lang.clone();
+        let did_autosave = match code.save_file() {
+            Ok(()) => true,
+            Err(e) => {
+                error!("Autosave failed for {}: {:?}", abs_path, e);
+                false
+            }
+        };
+
+        (lsp_changes, lang, did_autosave)
     };
 
-    let mut lsp_manager = state.lsp_manager.lock().await;
-    let edits = change.edits.clone();
+    // Send all changes to LSP in a single notification, then notify save after autosave.
+    if !lsp_changes.is_empty() || did_autosave {
+        let mut lsp_manager = state.lsp_manager.lock().await;
+        if let Some(lsp) = lsp_manager.get(&lang).await {
+            if !lsp_changes.is_empty() {
+                if let Err(e) = lsp.did_change_multi(&abs_path, lsp_changes).await {
+                    error!("Failed to notify LSP didChange for {}: {:?}", abs_path, e);
+                }
+            }
 
-    let mut apply_tx = true;
-
-    if let Some(true) = change.is_undo {
-        let _undo = code.undo_change();
-        apply_tx = false;
-    }
-
-    if let Some(true) = change.is_redo {
-        let _redo = code.redo_change();
-        apply_tx = false;
-    }
-
-    // Apply all edits to code and collect LSP changes
-    let lsp_changes = apply_edits_to_code(code, &edits, apply_tx);
-
-    // Send all changes to LSP in a single notification
-    if !lsp_changes.is_empty() {
-        if let Some(lsp) = lsp_manager.get(&code.lang).await {
-            lsp.did_change_multi(&abs_path, lsp_changes).await;
+            if did_autosave {
+                if let Err(e) = lsp.did_save(&abs_path) {
+                    error!("Failed to notify LSP didSave for {}: {:?}", abs_path, e);
+                }
+            }
         }
     }
 
@@ -385,7 +410,9 @@ pub async fn handle_file_save(
 
     let mut lsp_manager = state.lsp_manager.lock().await;
     if let Some(lsp) = lsp_manager.get(&code.lang).await {
-        lsp.did_save(&abs_path, Some(&code.text.to_string()));
+        if let Err(e) = lsp.did_save(&abs_path) {
+            error!("Failed to notify LSP didSave for {}: {:?}", abs_path, e);
+        }
     }
 
     ack.send(&json!({ "success": true, "file": abs_path })).ok();
