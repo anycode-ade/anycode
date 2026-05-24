@@ -249,7 +249,19 @@ export const useFileTree = () => {
     }, []);
 
     const clearFileSelection = useCallback(() => {
+        const hasSelection = (nodes: TreeNode[]): boolean => {
+            if (!Array.isArray(nodes)) return false;
+            for (const node of nodes) {
+                if (node.isSelected) return true;
+                if (node.children && hasSelection(node.children)) return true;
+            }
+            return false;
+        };
+
         setFileTree((prevTree) => {
+            if (!hasSelection(prevTree)) {
+                return prevTree;
+            }
             const clearSelection = (nodes: TreeNode[]): TreeNode[] => {
                 return nodes.map((node) => {
                     const updatedChildren = node.children ? clearSelection(node.children) : undefined;

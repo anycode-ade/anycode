@@ -59,6 +59,9 @@ const TreeNodeComponentImpl: React.FC<TreeNodeComponentProps> = ({
 
     const handleNameClick = (e: React.MouseEvent) => {
         e.stopPropagation();
+        if (isActive) {
+            return;
+        }
         onActivate(node.id);
 
         if (node.type === 'file') {
@@ -99,7 +102,7 @@ const TreeNodeComponentImpl: React.FC<TreeNodeComponentProps> = ({
                     {hasChildren ? '▶' : ''}
                 </div>
 
-                <span className="tree-name" title={title} onClick={handleNameClick}>
+                <span className="tree-name" title={title} onClick={handleNameClick} onMouseDown={(e) => e.stopPropagation()}>
                     {node.name}
                 </span>
             </div>
@@ -159,7 +162,7 @@ const areEqual = (prev: TreeNodeComponentProps, next: TreeNodeComponentProps): b
     if (prev.node.type === 'directory') {
         const prevInside = isPathWithinNode(prev.node.path, prev.activeNodeId);
         const nextInside = isPathWithinNode(prev.node.path, next.activeNodeId);
-        if (prevInside !== nextInside) {
+        if (prevInside || nextInside) {
             return false;
         }
     }

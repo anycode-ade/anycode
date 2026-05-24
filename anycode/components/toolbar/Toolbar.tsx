@@ -36,7 +36,7 @@ export const Toolbar = ({
                 <div
                     key={file.id}
                     className={`tab ${activeFileId === file.id ? 'active' : ''}`}
-                    onClick={() => onSelectFile(file.id)}
+                    onClick={() => activeFileId !== file.id && onSelectFile(file.id)}
                 >
                     <span className="tab-filename" title={file.id}> {file.name} </span>
                     <button
@@ -54,7 +54,7 @@ export const Toolbar = ({
                 <div
                     key={`toolbar-terminal-${terminal.id}`}
                     className={`tab tab-terminal ${activeTerminalIndex === index ? 'active' : ''}`}
-                    onClick={() => onSelectTerminal(index)}
+                    onClick={() => activeTerminalIndex !== index && onSelectTerminal(index)}
                 >
                     <span className="tab-filename">{`term:${terminal.name}`}</span>
                     <button
@@ -72,7 +72,7 @@ export const Toolbar = ({
                 <div
                     key={`toolbar-agent-${session.agentId}`}
                     className={`tab tab-agent ${activeAgentId === session.agentId ? 'active' : ''}`}
-                    onClick={() => onSelectAgent(session.agentId)}
+                    onClick={() => activeAgentId !== session.agentId && onSelectAgent(session.agentId)}
                 >
                     <span className="tab-filename">{`${session.agentName || session.agentId}`}</span>
                     <button

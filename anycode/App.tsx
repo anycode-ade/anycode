@@ -113,26 +113,28 @@ const App: React.FC = () => {
     }, [editors.flushAllPendingChanges]);
 
     useEffect(() => {
-        if (!editors.activeFileId) {
-            return;
-        }
-
         fileTree.setActiveNode(editors.activeFileId);
     }, [editors.activeFileId, fileTree.setActiveNode]);
 
     useEffect(() => {
         if (!editors.activeFileId) {
+            fileTree.clearFileSelection();
             return;
         }
 
         const node = fileTree.findNodeByPath(fileTree.fileTree, editors.activeFileId);
-        if (!node || node.isSelected) {
+        if (!node) {
+            fileTree.clearFileSelection();
+            return;
+        }
+
+        if (node.isSelected) {
             return;
         }
 
         fileTree.selectNode(node.id);
     }, [editors.activeFileId, fileTree.fileTree,
-        fileTree.findNodeByPath, fileTree.selectNode]);
+        fileTree.findNodeByPath, fileTree.selectNode, fileTree.clearFileSelection]);
 
     useEffect(() => {
         saveItem('terminals', terminals.terminals);
