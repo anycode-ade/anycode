@@ -24,6 +24,8 @@
     overflow: hidden;
     padding-left: 8px;
     padding-right: 4px;
+    user-select: none;
+    -webkit-user-select: none;
 }
 
 .tab:hover .tab-close-button {
