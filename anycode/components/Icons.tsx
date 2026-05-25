@@ -137,4 +137,20 @@ export const Icons = {
       </g>
     </svg>
   ),
+  Pin: () => (
+    <svg
+      width="11"
+      height="11"
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      style={{ transform: 'rotate(45deg)', display: 'block' }}
+    >
+      <path d="M12 17v5" strokeWidth="3" />
+      <path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.89a1 1 0 0 0-.53.76c-.08.56.32 1.08.89 1.08h11.06a1 1 0 0 0 .89-1.08c-.08-.56-.37-.67-.53-.76l-1.78-.89A2 2 0 0 1 15 10.76V6a2 2 0 0 1 2-2v0a2 2 0 0 1-2-2H9a2 2 0 0 1-2 2v0a2 2 0 0 1 2 2z" />
+    </svg>
+  ),
 };

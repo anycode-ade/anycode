@@ -1,10 +1,13 @@
 import type { MouseEvent as ReactMouseEvent } from 'react';
+import { Icons } from '../Icons';
 
 type ToolbarTabProps = {
     active: boolean;
     label: string;
     title?: string;
     variant?: 'terminal' | 'agent';
+    pinned?: boolean;
+    onUnpin?: () => void;
     onSelect: () => void;
     onClose: () => void;
     onContextMenu: (event: ReactMouseEvent) => void;
@@ -15,6 +18,8 @@ export const ToolbarTab = ({
     label,
     title,
     variant,
+    pinned,
+    onUnpin,
     onSelect,
     onClose,
     onContextMenu,
@@ -24,6 +29,7 @@ export const ToolbarTab = ({
         variant === 'terminal' ? 'tab-terminal' : '',
         variant === 'agent' ? 'tab-agent' : '',
         active ? 'active' : '',
+        pinned ? 'tab-pinned' : '',
     ].filter(Boolean).join(' ');
 
     return (
@@ -33,16 +39,32 @@ export const ToolbarTab = ({
             onContextMenu={onContextMenu}
         >
             <span className="tab-filename" title={title}>{label}</span>
-            <button
-                type="button"
-                className="tab-close-button"
-                onClick={(event) => {
-                    event.stopPropagation();
-                    onClose();
-                }}
-            >
-                ×
-            </button>
+            {pinned ? (
+                <button
+                    type="button"
+                    className="tab-pin-button"
+                    title="Unpin tab"
+                    onClick={(event) => {
+                        event.stopPropagation();
+                        onUnpin?.();
+                    }}
+                >
+                    <Icons.Pin />
+                </button>
+            ) : (
+                <button
+                    type="button"
+                    className="tab-close-button"
+                    onClick={(event) => {
+                        event.stopPropagation();
+                        onClose();
+                    }}
+                >
+                    ×
+                </button>
+            )}
         </div>
     );
 };
+
+
