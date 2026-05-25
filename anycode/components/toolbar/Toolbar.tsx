@@ -1,5 +1,5 @@
 import type { FileState, Terminal, AcpSession } from '../../types';
-import { WheelEvent, useState, useMemo } from 'react';
+import { WheelEvent, useState, useMemo, useEffect } from 'react';
 import { loadItem, saveItem } from '../../storage';
 import { TabContextMenu } from './TabContextMenu';
 import type { TabMenuAction } from './TabContextMenu';
@@ -10,6 +10,10 @@ import './Toolbar.css';
 const PINNED_FILES_KEY = 'pinnedFiles';
 const PINNED_TERMINALS_KEY = 'pinnedTerminals';
 const PINNED_AGENTS_KEY = 'pinnedAgents';
+
+const FILE_IDS_ORDER_KEY = 'toolbarFileIdsOrder';
+const TERMINAL_IDS_ORDER_KEY = 'toolbarTerminalIdsOrder';
+const AGENT_IDS_ORDER_KEY = 'toolbarAgentIdsOrder';
 
 interface ToolbarProps {
     files: FileState[];
@@ -56,6 +60,33 @@ export const Toolbar = ({
         return loadItem<string[]>(PINNED_AGENTS_KEY) ?? [];
     });
 
+    const [fileIdsOrder, setFileIdsOrder] = useState<string[]>(() => {
+        return loadItem<string[]>(FILE_IDS_ORDER_KEY) ?? [];
+    });
+    const [terminalIdsOrder, setTerminalIdsOrder] = useState<string[]>(() => {
+        return loadItem<string[]>(TERMINAL_IDS_ORDER_KEY) ?? [];
+    });
+    const [agentIdsOrder, setAgentIdsOrder] = useState<string[]>(() => {
+        return loadItem<string[]>(AGENT_IDS_ORDER_KEY) ?? [];
+    });
+
+    const [draggedItem, setDraggedItem] = useState<{
+        type: 'file' | 'terminal' | 'agent';
+        id: string;
+    } | null>(null);
+
+    useEffect(() => {
+        saveItem(FILE_IDS_ORDER_KEY, fileIdsOrder);
+    }, [fileIdsOrder]);
+
+    useEffect(() => {
+        saveItem(TERMINAL_IDS_ORDER_KEY, terminalIdsOrder);
+    }, [terminalIdsOrder]);
+
+    useEffect(() => {
+        saveItem(AGENT_IDS_ORDER_KEY, agentIdsOrder);
+    }, [agentIdsOrder]);
+
     const togglePinFile = (fileId: string) => {
         setPinnedFileIds((prev) => {
             const next = prev.includes(fileId)
@@ -87,31 +118,153 @@ export const Toolbar = ({
     };
 
     const sortedFiles = useMemo(() => {
-        const pinned = pinnedFileIds
-            .map((id) => files.find((f) => f.id === id))
-            .filter((f): f is FileState => !!f);
-        const pinnedSet = new Set(pinnedFileIds);
-        const unpinned = files.filter((f) => !pinnedSet.has(f.id));
-        return [...pinned, ...unpinned];
-    }, [files, pinnedFileIds]);
+        const pinned = files.filter((f) => pinnedFileIds.includes(f.id));
+        const unpinned = files.filter((f) => !pinnedFileIds.includes(f.id));
+
+        const sortFunc = (a: FileState, b: FileState) => {
+            const indexA = fileIdsOrder.indexOf(a.id);
+            const indexB = fileIdsOrder.indexOf(b.id);
+            if (indexA === -1 && indexB === -1) return 0;
+            if (indexA === -1) return 1;
+            if (indexB === -1) return -1;
+            return indexA - indexB;
+        };
+
+        return [...pinned.sort(sortFunc), ...unpinned.sort(sortFunc)];
+    }, [files, pinnedFileIds, fileIdsOrder]);
 
     const sortedTerminals = useMemo(() => {
-        const pinned = pinnedTerminalIds
-            .map((id) => terminals.find((t) => t.id === id))
-            .filter((t): t is Terminal => !!t);
-        const pinnedSet = new Set(pinnedTerminalIds);
-        const unpinned = terminals.filter((t) => !pinnedSet.has(t.id));
-        return [...pinned, ...unpinned];
-    }, [terminals, pinnedTerminalIds]);
+        const pinned = terminals.filter((t) => pinnedTerminalIds.includes(t.id));
+        const unpinned = terminals.filter((t) => !pinnedTerminalIds.includes(t.id));
+
+        const sortFunc = (a: Terminal, b: Terminal) => {
+            const indexA = terminalIdsOrder.indexOf(a.id);
+            const indexB = terminalIdsOrder.indexOf(b.id);
+            if (indexA === -1 && indexB === -1) return 0;
+            if (indexA === -1) return 1;
+            if (indexB === -1) return -1;
+            return indexA - indexB;
+        };
+
+        return [...pinned.sort(sortFunc), ...unpinned.sort(sortFunc)];
+    }, [terminals, pinnedTerminalIds, terminalIdsOrder]);
 
     const sortedAgentSessions = useMemo(() => {
-        const pinned = pinnedAgentIds
-            .map((id) => agentSessions.find((s) => s.agentId === id))
-            .filter((s): s is AcpSession => !!s);
-        const pinnedSet = new Set(pinnedAgentIds);
-        const unpinned = agentSessions.filter((s) => !pinnedSet.has(s.agentId));
-        return [...pinned, ...unpinned];
-    }, [agentSessions, pinnedAgentIds]);
+        const pinned = agentSessions.filter((s) => pinnedAgentIds.includes(s.agentId));
+        const unpinned = agentSessions.filter((s) => !pinnedAgentIds.includes(s.agentId));
+
+        const sortFunc = (a: AcpSession, b: AcpSession) => {
+            const indexA = agentIdsOrder.indexOf(a.agentId);
+            const indexB = agentIdsOrder.indexOf(b.agentId);
+            if (indexA === -1 && indexB === -1) return 0;
+            if (indexA === -1) return 1;
+            if (indexB === -1) return -1;
+            return indexA - indexB;
+        };
+
+        return [...pinned.sort(sortFunc), ...unpinned.sort(sortFunc)];
+    }, [agentSessions, pinnedAgentIds, agentIdsOrder]);
+
+    const handleDragStart = (e: React.DragEvent, type: 'file' | 'terminal' | 'agent', id: string) => {
+        setDraggedItem({ type, id });
+        e.dataTransfer.effectAllowed = 'move';
+    };
+
+    const handleDragEnd = () => {
+        setDraggedItem(null);
+    };
+
+    const handleDrop = (e: React.DragEvent) => {
+        e.preventDefault();
+    };
+
+    const handleDragOver = (e: React.DragEvent, type: 'file' | 'terminal' | 'agent', targetId: string) => {
+        if (!draggedItem || draggedItem.type !== type || draggedItem.id === targetId) {
+            return;
+        }
+
+        e.preventDefault();
+
+        if (type === 'file') {
+            const isDraggedPinned = pinnedFileIds.includes(draggedItem.id);
+            const isTargetPinned = pinnedFileIds.includes(targetId);
+
+            if (isDraggedPinned !== isTargetPinned) {
+                return;
+            }
+
+            setFileIdsOrder((prev) => {
+                let nextOrder = [...prev];
+                const currentSortedIds = sortedFiles.map((f) => f.id);
+                currentSortedIds.forEach((id) => {
+                    if (!nextOrder.includes(id)) {
+                        nextOrder.push(id);
+                    }
+                });
+
+                const fromIndex = nextOrder.indexOf(draggedItem.id);
+                const toIndex = nextOrder.indexOf(targetId);
+
+                if (fromIndex !== -1 && toIndex !== -1 && fromIndex !== toIndex) {
+                    nextOrder.splice(fromIndex, 1);
+                    nextOrder.splice(toIndex, 0, draggedItem.id);
+                }
+                return nextOrder;
+            });
+        } else if (type === 'terminal') {
+            const isDraggedPinned = pinnedTerminalIds.includes(draggedItem.id);
+            const isTargetPinned = pinnedTerminalIds.includes(targetId);
+
+            if (isDraggedPinned !== isTargetPinned) {
+                return;
+            }
+
+            setTerminalIdsOrder((prev) => {
+                let nextOrder = [...prev];
+                const currentSortedIds = sortedTerminals.map((t) => t.id);
+                currentSortedIds.forEach((id) => {
+                    if (!nextOrder.includes(id)) {
+                        nextOrder.push(id);
+                    }
+                });
+
+                const fromIndex = nextOrder.indexOf(draggedItem.id);
+                const toIndex = nextOrder.indexOf(targetId);
+
+                if (fromIndex !== -1 && toIndex !== -1 && fromIndex !== toIndex) {
+                    nextOrder.splice(fromIndex, 1);
+                    nextOrder.splice(toIndex, 0, draggedItem.id);
+                }
+                return nextOrder;
+            });
+        } else if (type === 'agent') {
+            const isDraggedPinned = pinnedAgentIds.includes(draggedItem.id);
+            const isTargetPinned = pinnedAgentIds.includes(targetId);
+
+            if (isDraggedPinned !== isTargetPinned) {
+                return;
+            }
+
+            setAgentIdsOrder((prev) => {
+                let nextOrder = [...prev];
+                const currentSortedIds = sortedAgentSessions.map((s) => s.agentId);
+                currentSortedIds.forEach((id) => {
+                    if (!nextOrder.includes(id)) {
+                        nextOrder.push(id);
+                    }
+                });
+
+                const fromIndex = nextOrder.indexOf(draggedItem.id);
+                const toIndex = nextOrder.indexOf(targetId);
+
+                if (fromIndex !== -1 && toIndex !== -1 && fromIndex !== toIndex) {
+                    nextOrder.splice(fromIndex, 1);
+                    nextOrder.splice(toIndex, 0, draggedItem.id);
+                }
+                return nextOrder;
+            });
+        }
+    };
 
     // Mass tab closing helper handlers
     const handleCloseRightFiles = (fileId: string) => {
@@ -275,6 +428,12 @@ export const Toolbar = ({
                         onSelect={() => onSelectFile(file.id)}
                         onClose={() => onCloseFile(file.id)}
                         onContextMenu={(event) => openMenu(event, 'file', file.id)}
+                        draggable={true}
+                        dragging={draggedItem?.type === 'file' && draggedItem?.id === file.id}
+                        onDragStart={(event) => handleDragStart(event, 'file', file.id)}
+                        onDragEnd={handleDragEnd}
+                        onDragOver={(event) => handleDragOver(event, 'file', file.id)}
+                        onDrop={handleDrop}
                     />
                 ))}
                 {sortedTerminals.map((terminal) => (
@@ -288,6 +447,12 @@ export const Toolbar = ({
                         onSelect={() => onSelectTerminal(terminal.id)}
                         onClose={() => onCloseTerminal(terminal.id)}
                         onContextMenu={(event) => openMenu(event, 'terminal', terminal.id)}
+                        draggable={true}
+                        dragging={draggedItem?.type === 'terminal' && draggedItem?.id === terminal.id}
+                        onDragStart={(event) => handleDragStart(event, 'terminal', terminal.id)}
+                        onDragEnd={handleDragEnd}
+                        onDragOver={(event) => handleDragOver(event, 'terminal', terminal.id)}
+                        onDrop={handleDrop}
                     />
                 ))}
                 {sortedAgentSessions.map((session) => (
@@ -301,6 +466,12 @@ export const Toolbar = ({
                         onSelect={() => onSelectAgent(session.agentId)}
                         onClose={() => onCloseAgent(session.agentId)}
                         onContextMenu={(event) => openMenu(event, 'agent', session.agentId)}
+                        draggable={true}
+                        dragging={draggedItem?.type === 'agent' && draggedItem?.id === session.agentId}
+                        onDragStart={(event) => handleDragStart(event, 'agent', session.agentId)}
+                        onDragEnd={handleDragEnd}
+                        onDragOver={(event) => handleDragOver(event, 'agent', session.agentId)}
+                        onDrop={handleDrop}
                     />
                 ))}
             </div>

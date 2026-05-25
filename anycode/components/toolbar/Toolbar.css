@@ -131,3 +131,9 @@
     padding-right: 6px;
 }
 
+.tab.tab-dragging {
+    /*opacity: 0.4;*/
+    /*border-bottom-style: dashed;*/
+    /*border-bottom-color: var(--theme-accent-background, #7ec8ff);*/
+    /*background: rgba(255, 255, 255, 0.03);*/
+}
