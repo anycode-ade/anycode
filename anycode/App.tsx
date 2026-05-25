@@ -38,7 +38,7 @@ import { normalizePath } from './utils';
 const App: React.FC = () => {
     const { wsRef, isConnected } = useSocket({});
 
-    const fileTree = useFileTree();
+    const fileTree = useFileTree({ wsRef, isConnected });
     const editors = useEditors({ wsRef, isConnected });
     const terminals = useTerminals({ wsRef, isConnected });
     const terminalPanes = useTerminalPanes({
@@ -52,13 +52,6 @@ const App: React.FC = () => {
     const agents = useAgents({ wsRef, isConnected });
     const { currentThemeId, handleThemeChange } = useTheme({ wsRef, isConnected });
     const layoutActionsRef = useRef<LayoutActions | null>(null);
-
-    const openFolder = useMemo(() => {
-        return (path: string) => {
-            if (!wsRef.current || !isConnected) return;
-            wsRef.current.emit('dir:list', { path }, fileTree.handleOpenFolderResponse);
-        };
-    }, [wsRef, isConnected, fileTree.handleOpenFolderResponse]);
 
     useEffect(() => {
         const ws = wsRef.current;
@@ -96,14 +89,14 @@ const App: React.FC = () => {
 
     useEffect(() => {
         if (isConnected && !wasConnectedRef.current) {
-            openFolder('.');
+            fileTree.openFolder('.');
             terminals.reconnectTerminals();
             agents.reconnectToAcpAgents();
             git.fetchGitStatus();
             git.fetchBranches();
         }
         wasConnectedRef.current = isConnected;
-    }, [isConnected, openFolder, terminals.reconnectTerminals,
+    }, [isConnected, fileTree.openFolder, terminals.reconnectTerminals,
         agents.reconnectToAcpAgents, git.fetchGitStatus, git.fetchBranches]);
 
     useEffect(() => {
@@ -326,7 +319,7 @@ const App: React.FC = () => {
                         onToggle={fileTree.toggleNode}
                         onSelect={fileTree.selectNode}
                         onOpenFile={handleOpenFile}
-                        onLoadFolder={openFolder}
+                        onLoadFolder={fileTree.openFolder}
                         onFocusEditor={() => editors.focusEditorInPane(editors.activeEditorPaneId)}
                         onNavigateByKey={fileTree.navigateByKey}
                     />

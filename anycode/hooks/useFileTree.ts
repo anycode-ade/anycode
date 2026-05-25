@@ -1,6 +1,12 @@
 import { useCallback, useState } from 'react';
+import type { Socket } from 'socket.io-client';
 import type { TreeNode, WatcherCreate, WatcherRemove } from '../types';
 import { getFileName, getParentPath, joinPath } from '../utils';
+
+type UseFileTreeParams = {
+    wsRef: React.RefObject<Socket | null>;
+    isConnected: boolean;
+};
 
 type TreeNavigationHandlers = {
     onOpenFile: (path: string) => void;
@@ -105,7 +111,7 @@ const walkVisibleForNode = (nodes: TreeNode[], targetNodeId: string | null): Vis
     return context;
 };
 
-export const useFileTree = () => {
+export const useFileTree = ({ wsRef, isConnected }: UseFileTreeParams) => {
     const [fileTree, setFileTree] = useState<TreeNode[]>([]);
     const [activeNodeId, setActiveNodeId] = useState<string | null>(null);
 
@@ -199,6 +205,11 @@ export const useFileTree = () => {
             return updateNode(prev);
         });
     }, [convertToTree]);
+
+    const openFolder = useCallback((path: string) => {
+        if (!wsRef.current || !isConnected) return;
+        wsRef.current.emit('dir:list', { path }, handleOpenFolderResponse);
+    }, [wsRef, isConnected, handleOpenFolderResponse]);
 
     const toggleNode = useCallback((nodeId: string) => {
         setFileTree((prevTree) => {
@@ -441,6 +452,7 @@ export const useFileTree = () => {
         fileTree,
         activeNodeId,
         setActiveNode,
+        openFolder,
         handleOpenFolderResponse,
         toggleNode,
         findNodeByPath,
