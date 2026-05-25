@@ -12,7 +12,7 @@ const TERMINAL_DELAY_MS = 100;
 
 export const useTerminals = ({ wsRef, isConnected }: UseTerminalsParams) => {
     const [terminals, setTerminals] = useState<Terminal[]>(loadTerminals);
-    const terminalCounterRef = useRef<number>(1);
+    const terminalCounterRef = useRef<number>(0);
     const newTerminalsRef = useRef<Set<string>>(new Set());
     const terminalListenersRef = useRef<Map<string, Set<(data: string) => void>>>(new Map());
     const pendingResizeRef = useRef<Map<string, { cols: number; rows: number }>>(new Map());
