@@ -1,0 +1,52 @@
+.tab-context-menu {
+    position: fixed;
+    z-index: 10000;
+    min-width: 196px;
+    max-height: 240px;
+    overflow-y: auto;
+    padding: 2px 8px;
+    background-color: rgba(28, 28, 28, 0.52);
+    background-image: linear-gradient(
+        160deg,
+        rgba(255, 255, 255, 0.05),
+        rgba(255, 255, 255, 0.015)
+    );
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 12px;
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.34);
+    backdrop-filter: blur(10px) saturate(130%);
+    -webkit-backdrop-filter: blur(10px) saturate(130%);
+    box-sizing: border-box;
+    cursor: pointer;
+}
+
+.tab-context-menu button {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    background: transparent;
+    border: none;
+    border-radius: 10px;
+    color: #f3f6fb;
+    cursor: pointer;
+    font: inherit;
+    line-height: 20px;
+    padding: 2px 8px;
+    text-align: left;
+}
+
+.tab-context-menu button:hover:not(:disabled),
+.tab-context-menu button:focus-visible:not(:disabled) {
+    background-color: rgba(130, 130, 130, 0.33);
+}
+
+.tab-context-menu button:disabled {
+    color: rgba(214, 223, 238, 0.42);
+    cursor: default;
+}
+
+.tab-context-menu-separator {
+    height: 1px;
+    margin: 4px 8px;
+    background: rgba(255, 255, 255, 0.14);
+}

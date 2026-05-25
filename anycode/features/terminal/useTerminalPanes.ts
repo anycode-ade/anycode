@@ -4,8 +4,8 @@ import { loadItem, saveItem } from '../../storage';
 
 type UseTerminalPanesParams = {
     terminals: Terminal[];
-    addTerminal: () => void;
-    closeTerminal: (index: number) => void;
+    addTerminal: () => string;
+    closeTerminal: (id: string) => void;
 };
 
 export const useTerminalPanes = ({
@@ -13,8 +13,8 @@ export const useTerminalPanes = ({
     addTerminal,
     closeTerminal,
 }: UseTerminalPanesParams) => {
-    const [selectedByPane, setSelectedByPane] = useState<Record<string, number | null>>(() => (
-        loadItem<Record<string, number | null>>('terminalSelectedByPane') ?? { terminal: null }
+    const [selectedByPane, setSelectedByPane] = useState<Record<string, string | null>>(() => (
+        loadItem<Record<string, string | null>>('terminalSelectedByPane') ?? { terminal: null }
     ));
     const [activePaneId, setActivePaneId] = useState<string>('terminal');
 
@@ -23,71 +23,58 @@ export const useTerminalPanes = ({
     }, [selectedByPane]);
 
     useEffect(() => {
-        const lastIndex = terminals.length - 1;
+        const terminalIds = new Set(terminals.map((terminal) => terminal.id));
         setSelectedByPane((prev) => {
-            const next: Record<string, number | null> = {};
+            const next: Record<string, string | null> = {};
             const source = Object.keys(prev).length > 0 ? prev : { terminal: null };
+            let hasChanges = false;
             Object.entries(source).forEach(([paneKey, selected]) => {
-                if (selected === null || lastIndex < 0) {
-                    next[paneKey] = null;
-                    return;
+                const normalized = selected !== null && terminalIds.has(selected) ? selected : null;
+                next[paneKey] = normalized;
+                if (normalized !== selected) {
+                    hasChanges = true;
                 }
-                next[paneKey] = Math.min(Math.max(selected, 0), lastIndex);
             });
-            return next;
+            if (!hasChanges && Object.keys(next).length === Object.keys(prev).length) {
+                return prev;
+            }
+            return hasChanges ? next : prev;
         });
-    }, [terminals.length]);
+    }, [terminals]);
 
-    const getSelectedIndex = useCallback((paneKey: string): number | null => {
+    const getSelectedId = useCallback((paneKey: string): string | null => {
         const selected = Object.hasOwn(selectedByPane, paneKey) ? selectedByPane[paneKey] : null;
-        if (selected === null || terminals.length === 0) {
-            return null;
-        }
-        const lastIndex = terminals.length - 1;
-        return Math.min(Math.max(selected, 0), lastIndex);
-    }, [selectedByPane, terminals.length]);
+        return selected ?? null;
+    }, [selectedByPane]);
 
-    const setSelectedForPane = useCallback((paneKey: string, index: number | null) => {
-        const nextIndex = index === null ? null : Math.max(0, index);
+    const setSelectedForPane = useCallback((paneKey: string, terminalId: string | null) => {
         setSelectedByPane((prev) => ({
             ...prev,
-            [paneKey]: nextIndex,
+            [paneKey]: terminalId,
         }));
     }, []);
 
-    const selectTab = useCallback((index: number) => {
+    const selectTab = useCallback((terminalId: string) => {
         const paneKey = activePaneId || 'terminal';
-        setSelectedForPane(paneKey, index);
+        setSelectedForPane(paneKey, terminalId);
     }, [activePaneId, setSelectedForPane]);
 
-    const closeTab = useCallback((index: number) => {
-        closeTerminal(index);
+    const closeTab = useCallback((terminalId: string) => {
+        closeTerminal(terminalId);
         setSelectedByPane((prev) => {
-            const next: Record<string, number | null> = {};
+            const next: Record<string, string | null> = {};
             Object.entries(prev).forEach(([paneKey, selected]) => {
-                if (selected === null) {
-                    next[paneKey] = null;
-                    return;
-                }
-                if (selected > index) {
-                    next[paneKey] = selected - 1;
-                    return;
-                }
-                if (selected === index) {
-                    next[paneKey] = null;
-                    return;
-                }
-                next[paneKey] = selected;
+                next[paneKey] = selected === terminalId ? null : selected;
             });
             return next;
         });
     }, [closeTerminal]);
 
     const createTerminalForActivePane = useCallback(() => {
-        addTerminal();
+        const terminalId = addTerminal();
         const paneKey = activePaneId || 'terminal';
-        setSelectedForPane(paneKey, terminals.length);
-    }, [activePaneId, addTerminal, setSelectedForPane, terminals.length]);
+        setSelectedForPane(paneKey, terminalId);
+    }, [activePaneId, addTerminal, setSelectedForPane]);
 
     const registerPane = useCallback((paneKey: string) => {
         setActivePaneId(paneKey);
@@ -109,7 +96,7 @@ export const useTerminalPanes = ({
     return {
         activePaneId,
         setActivePaneId,
-        getSelectedIndex,
+        getSelectedId,
         setSelectedForPane,
         selectTab,
         closeTab,

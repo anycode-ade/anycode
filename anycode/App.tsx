@@ -296,9 +296,23 @@ const App: React.FC = () => {
         agents.setAgentsVersion((prev) => prev + 1);
     }, [agents.setAgentsVersion]);
 
-    const handleTerminalTabSelect = useCallback((index: number) => {
-        terminalPanes.selectTab(index);
+    const activeTerminalId = useMemo(() => {
+        const paneId = terminalPanes.activePaneId || 'terminal';
+        return terminalPanes.getSelectedId(paneId);
     }, [terminalPanes]);
+
+    const handleTerminalTabSelect = useCallback((terminalId: string) => {
+        terminalPanes.selectTab(terminalId);
+    }, [terminalPanes]);
+
+    const handleTerminalTabClose = useCallback((terminalId: string) => {
+        terminalPanes.closeTab(terminalId);
+    }, [terminalPanes]);
+
+    const activeToolbarAgentId = (
+        agentPanes.getSelectedId(agentPanes.activePaneId || 'agent')
+        ?? agents.selectedAgentId
+    );
 
     const renderPanel = (panelId: PanelId, panelKey: string) => {
         switch (panelId) {
@@ -395,13 +409,13 @@ const App: React.FC = () => {
                         files={editors.files}
                         activeFileId={editors.activeFileId}
                         terminals={terminals.terminals}
-                        activeTerminalIndex={terminalPanes.getSelectedIndex(terminalPanes.activePaneId || 'terminal')}
+                        activeTerminalId={activeTerminalId}
                         agentSessions={sessionsArray}
-                        activeAgentId={agentPanes.getSelectedId(agentPanes.activePaneId || 'agent')}
+                        activeAgentId={activeToolbarAgentId}
                         onSelectFile={handleSelectFile}
                         onCloseFile={editors.closeFile}
                         onSelectTerminal={handleTerminalTabSelect}
-                        onCloseTerminal={terminalPanes.closeTab}
+                        onCloseTerminal={handleTerminalTabClose}
                         onSelectAgent={agentPanes.selectFromToolbar}
                         onCloseAgent={agents.closeAgent}
                     />

@@ -8,9 +8,9 @@ type TerminalPanelProps = {
     isConnected: boolean;
     terminals: TerminalState[];
     terminalPanes: {
-        getSelectedIndex: (paneKey: string) => number | null;
-        setSelectedForPane: (paneKey: string, index: number | null) => void;
-        closeTab: (index: number) => void;
+        getSelectedId: (paneKey: string) => string | null;
+        setSelectedForPane: (paneKey: string, terminalId: string | null) => void;
+        closeTab: (terminalId: string) => void;
         createTerminalForActivePane: () => void;
     };
     onTerminalData: (name: string, data: string) => void;
@@ -30,13 +30,13 @@ export const TerminalPanel = ({
     onTerminalResize,
     onIsTerminalClosing,
 }: TerminalPanelProps) => {
-    const selectedIndex = terminalPanes.getSelectedIndex(panelKey);
-    if (selectedIndex === null) {
+    const selectedTerminalId = terminalPanes.getSelectedId(panelKey);
+    if (selectedTerminalId === null) {
         return (
             <div className="terminal-panel terminal-panel-empty">
                 <TerminalEmptyPane
                     terminals={terminals}
-                    onSelectTerminal={(index) => terminalPanes.setSelectedForPane(panelKey, index)}
+                    onSelectTerminal={(terminalId) => terminalPanes.setSelectedForPane(panelKey, terminalId)}
                     onCloseTerminal={terminalPanes.closeTab}
                     onCreateTerminal={terminalPanes.createTerminalForActivePane}
                 />
@@ -44,9 +44,18 @@ export const TerminalPanel = ({
         );
     }
 
-    const selectedTerminal = terminals[selectedIndex];
+    const selectedTerminal = terminals.find((terminal) => terminal.id === selectedTerminalId);
     if (!selectedTerminal) {
-        return null;
+        return (
+            <div className="terminal-panel terminal-panel-empty">
+                <TerminalEmptyPane
+                    terminals={terminals}
+                    onSelectTerminal={(terminalId) => terminalPanes.setSelectedForPane(panelKey, terminalId)}
+                    onCloseTerminal={terminalPanes.closeTab}
+                    onCreateTerminal={terminalPanes.createTerminalForActivePane}
+                />
+            </div>
+        );
     }
 
     return (

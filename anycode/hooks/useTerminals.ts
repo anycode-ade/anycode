@@ -161,10 +161,11 @@ export const useTerminals = ({ wsRef, isConnected }: UseTerminalsParams) => {
         if (wsRef.current && isConnected) {
             initializeTerminal(newTerminal);
         }
+        return id;
     }, [terminals, wsRef, isConnected, initializeTerminal]);
 
-    const closeTerminal = useCallback((index: number) => {
-        const terminalToRemove = terminals[index];
+    const closeTerminal = useCallback((id: string) => {
+        const terminalToRemove = terminals.find((terminal) => terminal.id === id);
         if (!terminalToRemove) return;
 
         closingTerminalsRef.current.add(terminalToRemove.name);
@@ -173,7 +174,7 @@ export const useTerminals = ({ wsRef, isConnected }: UseTerminalsParams) => {
         window.setTimeout(() => {
             closingTerminalsRef.current.delete(terminalToRemove.name);
         }, TERMINAL_DELAY_MS * 2);
-        setTerminals((prev) => prev.filter((_, i) => i !== index));
+        setTerminals((prev) => prev.filter((terminal) => terminal.id !== id));
 
         if (wsRef.current && isConnected) {
             wsRef.current.emit('terminal:close', {

@@ -4,8 +4,8 @@ import './TerminalEmptyPane.css';
 
 interface TerminalEmptyPaneProps {
   terminals: Terminal[];
-  onSelectTerminal: (index: number) => void;
-  onCloseTerminal: (index: number) => void;
+  onSelectTerminal: (terminalId: string) => void;
+  onCloseTerminal: (terminalId: string) => void;
   onCreateTerminal: () => void;
 }
 
@@ -21,13 +21,13 @@ export const TerminalEmptyPane: React.FC<TerminalEmptyPaneProps> = ({
         <div className="terminal-pane-opened">
           <div className="terminal-pane-title">Opened terminals</div>
           <div className="terminal-pane-actions">
-            {terminals.map((terminal, index) => (
+            {terminals.map((terminal) => (
               <div key={terminal.id} className="terminal-pane-opened-item">
                 <button
                   className="terminal-pane-action terminal-pane-opened-action"
                   onClick={(event) => {
                     event.stopPropagation();
-                    onSelectTerminal(index);
+                    onSelectTerminal(terminal.id);
                   }}
                   title={terminal.name}
                   type="button"
@@ -38,7 +38,7 @@ export const TerminalEmptyPane: React.FC<TerminalEmptyPaneProps> = ({
                   className="tab-close-button terminal-pane-close-button"
                   onClick={(event) => {
                     event.stopPropagation();
-                    onCloseTerminal(index);
+                    onCloseTerminal(terminal.id);
                   }}
                   title={`Close ${terminal.name}`}
                   type="button"
