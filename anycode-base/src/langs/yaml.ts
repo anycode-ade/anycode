@@ -62,6 +62,17 @@ const query = `
 let indent = { width: 4, unit: " " };
 let comment = "#";
 
+let foldsQuery = `
+[
+  (block_mapping_pair)
+  (block_sequence_item)
+  (flow_mapping)
+  (flow_sequence)
+  (block_scalar)
+  (comment)
+] @fold
+`
+
 export default {
-  query, indent, comment
+  query, foldsQuery, indent, comment
 } satisfies Lang

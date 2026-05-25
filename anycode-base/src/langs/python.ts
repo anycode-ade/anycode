@@ -242,6 +242,29 @@ let runnablesQuery = `
 )
 `
 
+let foldsQuery = `
+[
+  (block)
+  (list)
+  (dictionary)
+  (tuple)
+  (argument_list)
+  (parameters)
+  (comment)
+  (string)
+] @fold
+
+[
+  (class_definition)
+  (function_definition)
+  (if_statement)
+  (for_statement)
+  (while_statement)
+  (try_statement)
+  (with_statement)
+] @fold
+`
+
 let executable = true;
 
 let cmd = "python3 {file}";
@@ -251,5 +274,5 @@ let indent = { width: 4, unit: " " };
 let comment = "#";
 
 export default {
-  query, runnablesQuery, executable, cmd, cmdTest, indent, comment
+  query, foldsQuery, runnablesQuery, executable, cmd, cmdTest, indent, comment
 } satisfies Lang

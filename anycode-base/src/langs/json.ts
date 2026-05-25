@@ -18,6 +18,13 @@ const query = `
 let indent = { width: 4, unit: " " };
 let comment = "//";
 
+let foldsQuery = `
+[
+  (object)
+  (array)
+] @fold
+`
+
 export default {
-  query, indent, comment
+  query, foldsQuery, indent, comment
 } satisfies Lang

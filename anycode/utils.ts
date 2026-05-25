@@ -44,7 +44,9 @@ export const LANGUAGE_EXTENSIONS: { [key: string]: string } = {
     'cs': 'csharp',
     'h': 'c',
     'zig': 'zig',
-    'lua': 'lua'
+    'lua': 'lua',
+    'yaml': 'yaml',
+    'yml': 'yaml'
 };
 
 export const getLanguageFromFileName = (fileName: string): string => {

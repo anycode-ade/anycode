@@ -226,9 +226,31 @@ const query = `
 ] @keyword
 `
 
+let foldsQuery = `
+[
+  (block)
+  (class_body)
+  (switch_block)
+  (array_initializer)
+  (line_comment)
+  (block_comment)
+] @fold
+
+[
+  (class_declaration)
+  (interface_declaration)
+  (record_declaration)
+  (enum_declaration)
+  (method_declaration)
+  (constructor_declaration)
+  (compact_constructor_declaration)
+  (switch_block_statement_group)
+] @fold
+`
+
 let indent = { width: 4, unit: " " };
 let comment = "//";
 
 export default {
-  query, indent, comment
+  query, foldsQuery, indent, comment
 } satisfies Lang

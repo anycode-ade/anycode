@@ -75,10 +75,24 @@ const query = `
 let indent = { width: 4, unit: " " };
 let comment = "#";
 
+let foldsQuery = `
+[
+  (function_definition)
+  (if_statement)
+  (for_statement)
+  (while_statement)
+  (case_statement)
+  (case_item)
+  (subshell)
+  (compound_statement)
+  (heredoc_body)
+  (comment)
+] @fold
+`
+
 let executable = true;
 let cmd = "./{file}";
 
-
 export default {
-  query, executable, cmd,  indent, comment
+  query, foldsQuery, executable, cmd, indent, comment
 } satisfies Lang

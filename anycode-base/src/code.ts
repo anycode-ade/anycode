@@ -73,6 +73,12 @@ export interface Patch {
     replace: string;
 }
 
+export interface FoldRange {
+    startLine: number;
+    endLine: number;
+    kind: string;
+}
+
 var langsCache: Map<string, Parser.Language> = new Map();
 var pendingLangsCache: Map<string, Promise<Parser.Language>> = new Map();
 
@@ -83,7 +89,9 @@ export class Code {
     private parser: Parser | undefined
     private tree: Parser.Tree | undefined
     private query: Parser.Query | undefined
+    private foldsQuery: Parser.Query | undefined
     private runnablesQuery: Parser.Query | undefined
+    private foldRanges: FoldRange[] = []
 
     public runnables: Map<number, any> = new Map()
 
@@ -121,7 +129,9 @@ export class Code {
             this.parser = undefined;
             this.tree = undefined;
             this.query = undefined;
+            this.foldsQuery = undefined;
             this.runnablesQuery = undefined;
+            this.foldRanges = [];
             return;
         }
 
@@ -154,6 +164,9 @@ export class Code {
         if (this.language) {
             let q = this.getQuery();
             if (q) this.query = lang.query(q);
+            const foldsQ = this.getFoldsQuery();
+            if (foldsQ) this.foldsQuery = lang.query(foldsQ);
+            this.updateFoldRanges();
             if (this.query) await this.initInjections();
             // let tq = this.getRunnablesQuery();
             // if (tq) this.runnablesQuery = lang.query(tq);
@@ -360,6 +373,7 @@ export class Code {
         this.buffer = pieceTree;
 
         if (this.parser) this.tree = this.parser.parse(this.input) || undefined;
+        this.updateFoldRanges();
     }
 
     public insert(text: string, offset: number, addHistory: boolean = false) {
@@ -464,6 +478,7 @@ export class Code {
         const newTree = this.parser!.parse(this.input, old);
         this.tree!.delete();
         this.tree = newTree || undefined;
+        this.updateFoldRanges();
     }
     
     tx() {
@@ -599,6 +614,59 @@ export class Code {
 
         const language = this.getLang(this.language);
         return language?.runnablesQuery || null;
+    }
+
+    getFoldsQuery(): string | null {
+        if (!this.language) return null;
+
+        const language = this.getLang(this.language);
+        return language?.foldsQuery || null;
+    }
+
+    private updateFoldRanges() {
+        if (!this.tree || !this.foldsQuery) {
+            this.foldRanges = [];
+            return;
+        }
+
+        const ranges: FoldRange[] = [];
+        const seen = new Set<string>();
+        const captures = this.foldsQuery.captures(this.tree.rootNode);
+
+        for (const capture of captures) {
+            if (capture.name !== 'fold') continue;
+
+            const range = this.foldRangeFromNode(capture.node);
+            if (!range) continue;
+
+            const { startLine, endLine } = range;
+
+            const key = `${startLine}:${endLine}`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+
+            ranges.push({
+                startLine,
+                endLine,
+                kind: capture.node.type,
+            });
+        }
+
+        ranges.sort((a, b) => a.startLine - b.startLine || a.endLine - b.endLine);
+        this.foldRanges = ranges;
+    }
+
+    public getFoldRanges(): FoldRange[] {
+        return this.foldRanges;
+    }
+
+    private foldRangeFromNode(node: Parser.SyntaxNode):
+        { startLine: number; endLine: number } | null {
+        const startLine = node.startPosition.row;
+        const endLine = node.endPosition.row;
+
+        if (endLine <= startLine) return null;
+        return { startLine, endLine };
     }
 
     getIndent(): Lang["indent"] | null {

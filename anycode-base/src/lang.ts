@@ -1,5 +1,6 @@
 export interface Lang {
   query: string;
+  foldsQuery?: string;
   indent: {
     width: number;
     unit: string;

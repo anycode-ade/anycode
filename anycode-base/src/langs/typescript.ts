@@ -464,10 +464,43 @@ let runnablesQuery = `
 )
 `
 
+let foldsQuery = `
+[
+  (statement_block)
+  (class_body)
+  (object_type)
+  (object)
+  (array)
+  (arguments)
+  (enum_body)
+  (interface_body)
+  (switch_body)
+  (template_string)
+  (comment)
+] @fold
+
+[
+  (function_declaration)
+  (function_expression)
+  (arrow_function)
+  (method_definition)
+  (class_declaration)
+  (type_alias_declaration)
+  (if_statement)
+  (for_statement)
+  (for_in_statement)
+  (while_statement)
+  (do_statement)
+  (switch_statement)
+  (try_statement)
+  (catch_clause)
+] @fold
+`
+
 let executable = true;
 let cmd = "node {file}"
 let cmdTest = "npx jest {file} -t \"{test-name}\""
 
 export default {
-  query, runnablesQuery, executable, cmd, cmdTest, indent, comment
+  query, foldsQuery, runnablesQuery, executable, cmd, cmdTest, indent, comment
 } satisfies Lang

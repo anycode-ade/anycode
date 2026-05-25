@@ -140,11 +140,26 @@ export class LineRenderer {
         settings: EditorSettings,
         diffs: Map<number, DiffInfo> | undefined,
         runLines: number[],
-    ): { code: AnycodeLine; gutter: HTMLDivElement; btn: HTMLDivElement } {
+        foldIndicator: { canFold: boolean; collapsed: boolean },
+    ): { code: AnycodeLine; gutter: HTMLDivElement; btn: HTMLDivElement; fold: HTMLDivElement } {
         const code = this.createLineWrapper(lineNumber, nodes, errorLines, settings, diffs);
         const gutter = this.createLineNumber(lineNumber, settings, diffs);
         const btn = this.createLineButtons(lineNumber, runLines, errorLines, settings);
-        return { code, gutter, btn };
+        const fold = document.createElement('div');
+        fold.className = 'fd';
+        fold.style.height = `${settings.lineHeight}px`;
+        fold.setAttribute('data-line', lineNumber.toString());
+
+        if (foldIndicator.canFold) {
+            const toggle = document.createElement('button');
+            toggle.className = `fold-toggle ${foldIndicator.collapsed ? 'collapsed' : 'expanded'}`;
+            toggle.setAttribute('data-line', lineNumber.toString());
+            toggle.setAttribute('type', 'button');
+            toggle.setAttribute('aria-label', foldIndicator.collapsed ? 'Expand folded block' : 'Collapse block');
+            fold.appendChild(toggle);
+        }
+
+        return { code, gutter, btn, fold };
     }
 
     /**

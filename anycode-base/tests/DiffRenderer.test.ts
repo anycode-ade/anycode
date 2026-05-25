@@ -4,7 +4,7 @@ import { VisualRow } from '../src/renderer/Renderer';
 
 describe('DiffRenderer.insertSeparators', () => {
     it('should add gaps at start and end of file when appropriate', () => {
-        const renderer = new DiffRenderer({} as any, {} as any, {} as any);
+        const renderer = new DiffRenderer({} as any, {} as any, {} as any, {} as any);
         renderer.setFocusedDiffMode(true);
 
         // Case 1: Gap at start only (line 0 is hidden, lines 1 and 2 are visible)
@@ -77,6 +77,27 @@ describe('DiffRenderer.insertSeparators', () => {
         expect(result7).toEqual([
             { kind: 'ghost', hunkId: 0, anchorLine: 1, originalLineIndex: 0 },
             { kind: 'separator', hiddenStart: 0, hiddenEnd: 2, hiddenCount: 3 },
+        ]);
+
+        // Case 8: Gaps hidden by fold
+        const rows8: VisualRow[] = [
+            { kind: 'real', lineIndex: 0 },
+            { kind: 'real', lineIndex: 4 },
+        ];
+        // Suppose lines 1, 2, 3 are hidden by fold
+        const isHiddenByFold = (lineIndex: number) => lineIndex >= 1 && lineIndex <= 3;
+        const result8 = renderer.insertSeparators(rows8, 5, isHiddenByFold);
+        expect(result8).toEqual([
+            { kind: 'real', lineIndex: 0 },
+            { kind: 'real', lineIndex: 4 },
+        ]);
+
+        // Case 9: Gaps when folding is disabled (predicate returns false or is not passed)
+        const result9 = renderer.insertSeparators(rows8, 5);
+        expect(result9).toEqual([
+            { kind: 'real', lineIndex: 0 },
+            { kind: 'separator', hiddenStart: 1, hiddenEnd: 3, hiddenCount: 3 },
+            { kind: 'real', lineIndex: 4 },
         ]);
     });
 });

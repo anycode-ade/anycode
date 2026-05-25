@@ -27,6 +27,7 @@ export interface GhostLine {
     code: HTMLElement;
     gutter: HTMLElement;
     btn: HTMLElement;
+    fold: HTMLElement;
 }
 
 /**
@@ -38,6 +39,7 @@ export class DiffRenderer {
     private codeContent: HTMLDivElement;
     private gutter: HTMLDivElement;
     private buttonsColumn: HTMLDivElement;
+    private foldsColumn: HTMLDivElement;
 
     // Focused diff model state
     private focusedDiffEnabled: boolean = false;
@@ -47,11 +49,13 @@ export class DiffRenderer {
     constructor(
         codeContent: HTMLDivElement,
         gutter: HTMLDivElement,
-        buttonsColumn: HTMLDivElement
+        buttonsColumn: HTMLDivElement,
+        foldsColumn: HTMLDivElement
     ) {
         this.codeContent = codeContent;
         this.gutter = gutter;
         this.buttonsColumn = buttonsColumn;
+        this.foldsColumn = foldsColumn;
     }
 
     /**
@@ -132,7 +136,13 @@ export class DiffRenderer {
         emptyButton.setAttribute('data-ghost', 'true');
         emptyButton.setAttribute('data-hunk-id', hunkId.toString());
 
-        return { code: ghostLine, gutter: emptyGutter, btn: emptyButton };
+        const emptyFold = document.createElement('div');
+        emptyFold.className = 'fd';
+        emptyFold.style.height = `${settings.lineHeight}px`;
+        emptyFold.setAttribute('data-ghost', 'true');
+        emptyFold.setAttribute('data-hunk-id', hunkId.toString());
+
+        return { code: ghostLine, gutter: emptyGutter, btn: emptyButton, fold: emptyFold };
     }
 
     public clearAllGhostLines(): void {
@@ -148,6 +158,11 @@ export class DiffRenderer {
 
         const btnGhosts = this.buttonsColumn.querySelectorAll('[data-ghost="true"]');
         btnGhosts.forEach((ghost) => {
+            ghost.remove();
+        });
+
+        const foldGhosts = this.foldsColumn.querySelectorAll('[data-ghost="true"]');
+        foldGhosts.forEach((ghost) => {
             ghost.remove();
         });
     }
@@ -211,7 +226,11 @@ export class DiffRenderer {
      * lines are non-contiguous (i.e. some lines were hidden).
      * No-op when focused diff is disabled.
      */
-    public insertSeparators(rows: VisualRow[], totalLines: number): VisualRow[] {
+    public insertSeparators(
+        rows: VisualRow[],
+        totalLines: number,
+        isHiddenByFold?: (lineIndex: number) => boolean
+    ): VisualRow[] {
         if (!this.focusedDiffEnabled) {
             return rows;
         }
@@ -219,28 +238,44 @@ export class DiffRenderer {
         const result: VisualRow[] = [];
         let prevRealLine: number | null = null;
 
+        const addSeparatorsForRange = (start: number, end: number) => {
+            let currentStart: number | null = null;
+            for (let i = start; i <= end; i++) {
+                const folded = isHiddenByFold ? isHiddenByFold(i) : false;
+                if (!folded) {
+                    if (currentStart === null) {
+                        currentStart = i;
+                    }
+                } else {
+                    if (currentStart !== null) {
+                        result.push({
+                            kind: 'separator',
+                            hiddenStart: currentStart,
+                            hiddenEnd: i - 1,
+                            hiddenCount: i - currentStart,
+                        });
+                        currentStart = null;
+                    }
+                }
+            }
+            if (currentStart !== null) {
+                result.push({
+                    kind: 'separator',
+                    hiddenStart: currentStart,
+                    hiddenEnd: end,
+                    hiddenCount: end - currentStart + 1,
+                });
+            }
+        };
+
         for (const row of rows) {
             if (row.kind === 'real') {
                 if (prevRealLine === null) {
                     if (row.lineIndex > 0) {
-                        const hiddenStart = 0;
-                        const hiddenEnd = row.lineIndex - 1;
-                        result.push({
-                            kind: 'separator',
-                            hiddenStart,
-                            hiddenEnd,
-                            hiddenCount: hiddenEnd - hiddenStart + 1,
-                        });
+                        addSeparatorsForRange(0, row.lineIndex - 1);
                     }
                 } else if (row.lineIndex - prevRealLine > 1) {
-                    const hiddenStart = prevRealLine + 1;
-                    const hiddenEnd = row.lineIndex - 1;
-                    result.push({
-                        kind: 'separator',
-                        hiddenStart,
-                        hiddenEnd,
-                        hiddenCount: hiddenEnd - hiddenStart + 1,
-                    });
+                    addSeparatorsForRange(prevRealLine + 1, row.lineIndex - 1);
                 }
                 prevRealLine = row.lineIndex;
             }
@@ -249,22 +284,10 @@ export class DiffRenderer {
 
         if (prevRealLine !== null) {
             if (prevRealLine < totalLines - 1) {
-                const hiddenStart = prevRealLine + 1;
-                const hiddenEnd = totalLines - 1;
-                result.push({
-                    kind: 'separator',
-                    hiddenStart,
-                    hiddenEnd,
-                    hiddenCount: hiddenEnd - hiddenStart + 1,
-                });
+                addSeparatorsForRange(prevRealLine + 1, totalLines - 1);
             }
         } else if (totalLines > 0) {
-            result.push({
-                kind: 'separator',
-                hiddenStart: 0,
-                hiddenEnd: totalLines - 1,
-                hiddenCount: totalLines,
-            });
+            addSeparatorsForRange(0, totalLines - 1);
         }
 
         return result;
@@ -437,7 +460,7 @@ export class DiffRenderer {
     public createGapRowElements(
         row: SeparatorRow,
         settings: EditorSettings
-    ): { code: HTMLElement; gutter: HTMLElement; btn: HTMLElement } {
+    ): { code: HTMLElement; gutter: HTMLElement; btn: HTMLElement; fold: HTMLElement } {
         const code = document.createElement('div');
         code.className = 'line diff-gap';
         code.style.lineHeight = `${settings.lineHeight}px`;
@@ -493,6 +516,10 @@ export class DiffRenderer {
         btn.className = 'bt diff-gap-btn';
         btn.style.height = `${settings.lineHeight}px`;
 
-        return { code, gutter, btn };
+        const fold = document.createElement('div');
+        fold.className = 'fd fold-gap-cell';
+        fold.style.height = `${settings.lineHeight}px`;
+
+        return { code, gutter, btn, fold };
     }
 }

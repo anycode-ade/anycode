@@ -45,6 +45,7 @@ export class Renderer {
     private container: HTMLDivElement;
     private buttonsColumn: HTMLDivElement;
     private gutter: HTMLDivElement;
+    private foldsColumn: HTMLDivElement;
     private codeContent: HTMLDivElement;
     private diffEnabled: boolean = false;
     private lineRenderer: LineRenderer;
@@ -54,6 +55,10 @@ export class Renderer {
     private hoverRenderer: HoverRenderer;
     
     private visualRows: VisualRow[] = [];
+    private lastCollapsedMap: Map<number, number> = new Map();
+    private lastFoldableStarts: Map<number, number> = new Map();
+    private lastHiddenLines: Set<number> = new Set();
+    private codeFoldingEnabled: boolean = true;
     
     private maxWidth: number = 0;
     private charWidth: number = 0;
@@ -62,11 +67,13 @@ export class Renderer {
         container: HTMLDivElement,
         buttonsColumn: HTMLDivElement,
         gutter: HTMLDivElement,
+        foldsColumn: HTMLDivElement,
         codeContent: HTMLDivElement
     ) {
         this.container = container;
         this.buttonsColumn = buttonsColumn;
         this.gutter = gutter;
+        this.foldsColumn = foldsColumn;
         this.codeContent = codeContent;
 
         // Initialize renderers
@@ -80,7 +87,8 @@ export class Renderer {
         this.diffRenderer = new DiffRenderer(
             codeContent,
             gutter,
-            buttonsColumn
+            buttonsColumn,
+            foldsColumn
         );
         this.completionRenderer = new CompletionRenderer(
             container,
@@ -103,6 +111,9 @@ export class Renderer {
 
     public render(state: EditorState, search?: Search) {
         const { code, offset, selection, runLines, errorLines, settings, diffs, readOnly } = state;
+        this.codeFoldingEnabled = state.codeFoldingEnabled ?? true;
+        this.updateFoldableStarts(state);
+        this.updateCollapsedMap(state);
 
         // Build unified visual rows model (real lines + ghost lines)
         const totalRealLines = code.linesLength();
@@ -120,11 +131,13 @@ export class Renderer {
         // Build fragments for better performance
         const btnFrag = document.createDocumentFragment();
         const gutterFrag = document.createDocumentFragment();
+        const foldsFrag = document.createDocumentFragment();
         const codeFrag = document.createDocumentFragment();
 
         // Top spacers
         btnFrag.appendChild(this.lineRenderer.createSpacer(paddingTop));
         gutterFrag.appendChild(this.lineRenderer.createSpacer(paddingTop));
+        foldsFrag.appendChild(this.lineRenderer.createSpacer(paddingTop));
         codeFrag.appendChild(this.lineRenderer.createSpacer(paddingTop));
 
         // Render visible slice of visual rows
@@ -134,16 +147,19 @@ export class Renderer {
             codeFrag.appendChild(elements.code);
             gutterFrag.appendChild(elements.gutter);
             btnFrag.appendChild(elements.btn);
+            foldsFrag.appendChild(elements.fold);
         }
 
         // Bottom spacers
         btnFrag.appendChild(this.lineRenderer.createSpacer(paddingBottom));
         gutterFrag.appendChild(this.lineRenderer.createSpacer(paddingBottom));
+        foldsFrag.appendChild(this.lineRenderer.createSpacer(paddingBottom));
         codeFrag.appendChild(this.lineRenderer.createSpacer(paddingBottom));
 
         // Replace old children atomically
         this.buttonsColumn.replaceChildren(btnFrag);
         this.gutter.replaceChildren(gutterFrag);
+        this.foldsColumn.replaceChildren(foldsFrag);
         this.codeContent.replaceChildren(codeFrag);
 
         // Render cursor or selection
@@ -170,6 +186,7 @@ export class Renderer {
     private buildRealOnlyRows(totalLines: number): VisualRow[] {
         const rows: VisualRow[] = [];
         for (let i = 0; i < totalLines; i++) {
+            if (this.isHiddenByFold(i)) continue;
             rows.push({ kind: 'real', lineIndex: i });
         }
         return rows;
@@ -213,7 +230,7 @@ export class Renderer {
             
             // Check for ghost lines anchored before this line
             const ghostsHere = ghostsByAnchor.get(lineNumber);
-            if (ghostsHere) {
+            if (ghostsHere && !this.isHiddenByFold(i)) {
                 for (const ghostGroup of ghostsHere) {
                     if (processedHunks.has(ghostGroup.hunkId)) continue;
                     processedHunks.add(ghostGroup.hunkId);
@@ -233,6 +250,7 @@ export class Renderer {
             
             // Add real lines based on focused mode visibility
             if (!visibleRealLines || visibleRealLines.has(i)) {
+                if (this.isHiddenByFold(i)) continue;
                 rows.push({ kind: 'real', lineIndex: i });
             }
         }
@@ -240,7 +258,8 @@ export class Renderer {
         // Handle EOF ghosts (deletions anchored after the last line)
         const eofAnchor = totalLines + 1;
         const eofGhosts = ghostsByAnchor.get(eofAnchor);
-        if (eofGhosts) {
+        const isLastLineFolded = totalLines > 0 && this.isHiddenByFold(totalLines - 1);
+        if (eofGhosts && !isLastLineFolded) {
             for (const ghostGroup of eofGhosts) {
                 if (processedHunks.has(ghostGroup.hunkId)) continue;
                 processedHunks.add(ghostGroup.hunkId);
@@ -258,7 +277,11 @@ export class Renderer {
             }
         }
 
-        return this.diffRenderer.insertSeparators(rows, totalLines);
+        return this.diffRenderer.insertSeparators(
+            rows,
+            totalLines,
+            (lineIndex) => this.isHiddenByFold(lineIndex)
+        );
     }
 
     public expandFocusedHiddenRange(
@@ -336,6 +359,8 @@ export class Renderer {
         // console.log("renderScroll");
 
         const { code, offset, selection, settings, diffs, runLines, errorLines } = state;
+        this.updateFoldableStarts(state);
+        this.updateCollapsedMap(state);
         const lineHeight = settings.lineHeight;
         const buffer = settings.buffer;
         
@@ -351,6 +376,7 @@ export class Renderer {
         this.ensureSpacers(this.codeContent);
         this.ensureSpacers(this.gutter);
         this.ensureSpacers(this.buttonsColumn);
+        this.ensureSpacers(this.foldsColumn);
 
         const topSpacer = this.codeContent.firstChild as HTMLElement;
         const bottomSpacer = this.codeContent.lastChild as HTMLElement;
@@ -360,6 +386,8 @@ export class Renderer {
 
         const btnTopSpacer = this.buttonsColumn.firstChild as HTMLElement;
         const btnBottomSpacer = this.buttonsColumn.lastChild as HTMLElement;
+        const foldsTopSpacer = this.foldsColumn.firstChild as HTMLElement;
+        const foldsBottomSpacer = this.foldsColumn.lastChild as HTMLElement;
 
         // Get current rendered range by checking first/last visual index attributes
         const renderedElements = this.getRenderedElements();
@@ -394,6 +422,9 @@ export class Renderer {
             if (this.buttonsColumn.children[1]) {
                 this.buttonsColumn.removeChild(this.buttonsColumn.children[1]);
             }
+            if (this.foldsColumn.children[1]) {
+                this.foldsColumn.removeChild(this.foldsColumn.children[1]);
+            }
             currentStartIndex++;
             changed = true;
         }
@@ -408,6 +439,9 @@ export class Renderer {
             if (this.buttonsColumn.children[index]) {
                 this.buttonsColumn.removeChild(this.buttonsColumn.children[index]);
             }
+            if (this.foldsColumn.children[index]) {
+                this.foldsColumn.removeChild(this.foldsColumn.children[index]);
+            }
             currentEndIndex--;
             changed = true;
         }
@@ -421,6 +455,7 @@ export class Renderer {
             this.codeContent.insertBefore(elements.code, this.codeContent.children[1]);
             this.gutter.insertBefore(elements.gutter, this.gutter.children[1]);
             this.buttonsColumn.insertBefore(elements.btn, this.buttonsColumn.children[1]);
+            this.foldsColumn.insertBefore(elements.fold, this.foldsColumn.children[1]);
 
             changed = true;
         }
@@ -433,6 +468,7 @@ export class Renderer {
             this.codeContent.insertBefore(elements.code, bottomSpacer);
             this.gutter.insertBefore(elements.gutter, gutterBottomSpacer);
             this.buttonsColumn.insertBefore(elements.btn, btnBottomSpacer);
+            this.foldsColumn.insertBefore(elements.fold, foldsBottomSpacer);
 
             currentEndIndex++;
             changed = true;
@@ -467,6 +503,8 @@ export class Renderer {
 
         btnTopSpacer.style.height = `${topHeight}px`;
         btnBottomSpacer.style.height = `${bottomHeight}px`;
+        foldsTopSpacer.style.height = `${topHeight}px`;
+        foldsBottomSpacer.style.height = `${bottomHeight}px`;
     }
 
     /**
@@ -476,15 +514,15 @@ export class Renderer {
         row: VisualRow, 
         visualIndex: number, 
         state: EditorState
-    ): { code: HTMLElement; gutter: HTMLElement; btn: HTMLElement } {
+    ): { code: HTMLElement; gutter: HTMLElement; btn: HTMLElement; fold: HTMLElement } {
         const { code, settings, diffs, runLines, errorLines } = state;
         const visualIndexAttr = String(visualIndex);
-        let elements: { code: HTMLElement; gutter: HTMLElement; btn: HTMLElement };
+        let elements: { code: HTMLElement; gutter: HTMLElement; btn: HTMLElement; fold: HTMLElement };
         
         if (row.kind === 'real') {
             const syntaxNodes = code.getLineNodes(row.lineIndex);
             elements = this.lineRenderer.createLineElements(
-                row.lineIndex, syntaxNodes, errorLines, settings, diffs, runLines
+                row.lineIndex, syntaxNodes, errorLines, settings, diffs, runLines, this.getFoldIndicator(row.lineIndex)
             );
         } else if (row.kind === 'ghost') {
             const originalNodes = state.originalCode?.getLineNodes(row.originalLineIndex);
@@ -501,6 +539,7 @@ export class Renderer {
         elements.code.setAttribute('data-visual-index', visualIndexAttr);
         elements.gutter.setAttribute('data-visual-index', visualIndexAttr);
         elements.btn.setAttribute('data-visual-index', visualIndexAttr);
+        elements.fold.setAttribute('data-visual-index', visualIndexAttr);
         return elements;
     }
     /**
@@ -513,6 +552,9 @@ export class Renderer {
 
     public renderChanges(state: EditorState, search?: Search) {
         const { code, offset, selection, errorLines, settings, diffs, runLines } = state;
+        this.codeFoldingEnabled = state.codeFoldingEnabled ?? true;
+        this.updateFoldableStarts(state);
+        this.updateCollapsedMap(state);
 
         // Rebuild visual rows - structure may have changed
         const totalRealLines = code.linesLength();
@@ -571,7 +613,7 @@ export class Renderer {
                 if (existingHash !== newHash) {
                     const visualIndexAttr = String(i);
                     const lineElements = this.lineRenderer.createLineElements(
-                        lineIndex, nodes, errorLines, settings, diffs, runLines
+                        lineIndex, nodes, errorLines, settings, diffs, runLines, this.getFoldIndicator(lineIndex)
                     );
                     lineElements.code.setAttribute('data-visual-index', visualIndexAttr);
                     existingLine.replaceWith(lineElements.code);
@@ -581,6 +623,12 @@ export class Renderer {
                     if (oldGutterLine) {
                         lineElements.gutter.setAttribute('data-visual-index', visualIndexAttr);
                         this.gutter.replaceChild(lineElements.gutter, oldGutterLine);
+                    }
+
+                    const oldFoldLine = this.foldsColumn.querySelector(`.fd[data-line="${lineIndex}"]`) as HTMLElement;
+                    if (oldFoldLine) {
+                        lineElements.fold.setAttribute('data-visual-index', visualIndexAttr);
+                        this.foldsColumn.replaceChild(lineElements.fold, oldFoldLine);
                     }
                 }
             } else {
@@ -634,6 +682,58 @@ export class Renderer {
         }
         
         this.updateMaxWidth(code);
+    }
+
+    private updateFoldableStarts(state: EditorState) {
+        const map = new Map<number, number>();
+        for (const range of state.foldRanges) {
+            const prevEnd = map.get(range.startLine);
+            if (prevEnd === undefined || range.endLine > prevEnd) {
+                map.set(range.startLine, range.endLine);
+            }
+        }
+        this.lastFoldableStarts = map;
+    }
+
+    private updateCollapsedMap(state: EditorState) {
+        const map = new Map<number, number>();
+        for (const start of state.collapsedFoldStarts) {
+            const end = this.lastFoldableStarts.get(start);
+            if (end !== undefined && end > start) {
+                map.set(start, end);
+            }
+        }
+        this.lastCollapsedMap = map;
+
+        // Pre-build the set of all hidden line indices for O(1) lookups
+        const hidden = new Set<number>();
+        if (this.codeFoldingEnabled) {
+            for (const [start, end] of map) {
+                for (let i = start + 1; i <= end; i++) {
+                    hidden.add(i);
+                }
+            }
+        }
+        this.lastHiddenLines = hidden;
+    }
+
+    private isHiddenByFold(lineIndex: number): boolean {
+        return this.lastHiddenLines.has(lineIndex);
+    }
+
+    private getFoldIndicator(lineIndex: number): { canFold: boolean; collapsed: boolean } {
+        if (!this.codeFoldingEnabled) {
+            return { canFold: false, collapsed: false };
+        }
+        const end = this.lastFoldableStarts.get(lineIndex);
+        if (end === undefined || end <= lineIndex) {
+            return { canFold: false, collapsed: false };
+        }
+
+        return {
+            canFold: true,
+            collapsed: this.lastCollapsedMap.has(lineIndex),
+        };
     }
 
     private ensureSpacers(container: HTMLElement) {

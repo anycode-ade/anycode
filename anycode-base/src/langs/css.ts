@@ -43,10 +43,24 @@ const query = `
 let indent = { width: 4, unit: " " };
 let comment = "//";
 
+let foldsQuery = `
+[
+  (block)
+  (comment)
+] @fold
+
+[
+  (rule_set)
+  (media_statement)
+  (supports_statement)
+  (keyframes_statement)
+  (at_rule)
+] @fold
+`
+
 let executable = false;
 let cmd = "";
 
-
 export default {
-  query, executable, cmd,  indent, comment
+  query, foldsQuery, executable, cmd, indent, comment
 } satisfies Lang

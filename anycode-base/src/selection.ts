@@ -235,7 +235,51 @@ export function renderSelection(
     const clampedEnd = Math.min(selectionEnd, visibleEnd);
     if (clampedStart > clampedEnd) return;
 
-    const clamped = new Selection(clampedStart, clampedEnd);
+    let finalStart = clampedStart;
+    let finalEnd = clampedEnd;
+
+    // Adjust start offset if it falls within a fold gap
+    let startAdjusted = false;
+    for (const line of lines) {
+        const lineOffset = code.getOffset(line.lineNumber, 0);
+        const lineLength = getLineTextLength(line);
+        const lineEnd = lineOffset + lineLength;
+
+        if (finalStart >= lineOffset && finalStart <= lineEnd) {
+            startAdjusted = true;
+            break;
+        }
+        if (finalStart < lineOffset) {
+            finalStart = lineOffset;
+            startAdjusted = true;
+            break;
+        }
+    }
+    if (!startAdjusted) return;
+
+    // Adjust end offset if it falls within a fold gap
+    let endAdjusted = false;
+    for (let i = lines.length - 1; i >= 0; i--) {
+        const line = lines[i];
+        const lineOffset = code.getOffset(line.lineNumber, 0);
+        const lineLength = getLineTextLength(line);
+        const lineEnd = lineOffset + lineLength;
+
+        if (finalEnd >= lineOffset && finalEnd <= lineEnd) {
+            endAdjusted = true;
+            break;
+        }
+        if (finalEnd > lineEnd) {
+            finalEnd = lineEnd;
+            endAdjusted = true;
+            break;
+        }
+    }
+    if (!endAdjusted) return;
+
+    if (finalStart > finalEnd) return;
+
+    const clamped = new Selection(finalStart, finalEnd);
 
     const startPos = resolveDOMPosition(clamped.start, lines, code);
     const endPos = resolveDOMPosition(clamped.end, lines, code);

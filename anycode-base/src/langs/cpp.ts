@@ -166,9 +166,33 @@ const query = `
 "operator" @function
 `
 
+let foldsQuery = `
+[
+  (compound_statement)
+  (initializer_list)
+  (field_declaration_list)
+  (declaration_list)
+  (comment)
+] @fold
+
+[
+  (namespace_definition)
+  (class_specifier)
+  (struct_specifier)
+  (union_specifier)
+  (enum_specifier)
+  (template_declaration)
+  (function_definition)
+  (preproc_if)
+  (preproc_ifdef)
+  (preproc_elif)
+  (preproc_else)
+] @fold
+`
+
 let indent = { width: 4, unit: " " };
 let comment = "//";
 
 export default {
-    query, indent, comment
+    query, foldsQuery, indent, comment
 } satisfies Lang

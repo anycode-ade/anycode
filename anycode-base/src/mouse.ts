@@ -25,21 +25,17 @@ export function getPosFromMouse(e: MouseEvent): Pos | null {
 }
 
 function resolvePosition(node: Node, nodeOffset: number): Pos | null {
-    // corner case, out of row, on buttons column
-    if (node instanceof HTMLElement && node.classList.contains("bt")) {
-        const lineStr = node.getAttribute("data-line");
-        if (!lineStr) return null;
-        let row = parseInt(lineStr);
-        return { row, col: 0 };
-    }
+    // corner case, out of row, on buttons/gutter/folds columns
+    const sideElement = node instanceof HTMLElement
+        ? node.closest(".bt, .ln, .fd")
+        : node.parentElement?.closest(".bt, .ln, .fd");
 
-    // corner case, out of row, on line numbers column
-    if (node.parentNode && node.parentNode instanceof HTMLElement
-        && node.parentNode.classList.contains("ln")) {
-        const lineStr = node.parentNode.getAttribute("data-line");
-        if (!lineStr) return null;
-        let row = parseInt(lineStr);
-        return { row, col: 0 };
+    if (sideElement && sideElement instanceof HTMLElement) {
+        const lineStr = sideElement.getAttribute("data-line");
+        if (lineStr) {
+            const row = parseInt(lineStr, 10);
+            return { row, col: 0 };
+        }
     }
 
     // corner case, whole row selected

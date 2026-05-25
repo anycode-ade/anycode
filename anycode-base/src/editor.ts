@@ -1,4 +1,4 @@
-import { Code, Change, Position, Operation } from "./code";
+import { Code, Change, Position, Operation, type FoldRange } from "./code";
 import { Renderer } from './renderer/Renderer';
 import { getPosFromMouse } from './mouse';
 import { Selection, hasDiagnosticSelection } from "./selection";
@@ -38,6 +38,7 @@ export interface EditorOptions {
     readOnly?: boolean;
     focusedDiffEnabled?: boolean;
     focusedDiffContextLines?: number;
+    codeFoldingEnabled?: boolean;
 }
 
 export interface EditorState {
@@ -50,6 +51,9 @@ export interface EditorState {
     settings: EditorSettings;
     diffs?: Map<number, DiffInfo>;
     readOnly?: boolean;
+    foldRanges: FoldRange[];
+    collapsedFoldStarts: Set<number>;
+    codeFoldingEnabled: boolean;
 }
 
 export class AnycodeEditor {
@@ -60,6 +64,7 @@ export class AnycodeEditor {
     private container!: HTMLDivElement;
     private buttonsColumn!: HTMLDivElement;
     private gutter!: HTMLDivElement;
+    private foldsColumn!: HTMLDivElement;
     private codeContent!: HTMLDivElement;
 
     private isMouseSelecting: boolean = false;
@@ -97,6 +102,8 @@ export class AnycodeEditor {
     private originalCode?: Code;
     private diffs?: Map<number, DiffInfo>;
     private readonly readOnly: boolean;
+    private collapsedFoldStarts: Set<number> = new Set();
+    private codeFoldingEnabled: boolean;
 
     constructor(
         initialText = '',
@@ -108,6 +115,7 @@ export class AnycodeEditor {
         this.readOnly = options.readOnly ?? false;
         this.focusedDiffEnabled = options.focusedDiffEnabled ?? false;
         this.focusedDiffContextLines = Math.max(0, options.focusedDiffContextLines ?? 3);
+        this.codeFoldingEnabled = options.codeFoldingEnabled ?? true;
         // Set initial cursor position
         if (options.line !== undefined && options.column !== undefined) {
             this.offset = this.code.getOffset(options.line, options.column);
@@ -123,7 +131,7 @@ export class AnycodeEditor {
             addCssToDocument(css, 'anyeditor-theme');
         }
         this.createDomElements();
-        this.renderer = new Renderer(this.container, this.buttonsColumn, this.gutter, this.codeContent);
+        this.renderer = new Renderer(this.container, this.buttonsColumn, this.gutter, this.foldsColumn, this.codeContent);
         this.renderer.setFocusedDiffMode(this.focusedDiffEnabled, this.focusedDiffContextLines);
     }
 
@@ -137,6 +145,9 @@ export class AnycodeEditor {
         this.gutter = document.createElement('div');
         this.gutter.className = 'gutter';
 
+        this.foldsColumn = document.createElement('div');
+        this.foldsColumn.className = 'folds';
+
         this.codeContent = document.createElement('div');
         this.codeContent.className = 'code';
         this.codeContent.setAttribute("contentEditable", this.readOnly ? "false" : "true");
@@ -146,9 +157,13 @@ export class AnycodeEditor {
         if (this.readOnly) {
             this.container.classList.add('readonly');
         }
+        if (!this.codeFoldingEnabled) {
+            this.container.classList.add('no-folding');
+        }
 
         this.container.appendChild(this.buttonsColumn);
         this.container.appendChild(this.gutter);
+        this.container.appendChild(this.foldsColumn);
         this.container.appendChild(this.codeContent);
     }
 
@@ -245,6 +260,10 @@ export class AnycodeEditor {
 
     public getTextLength(): number {
         return this.code.getContentLength();
+    }
+
+    public getFoldRanges(): FoldRange[] {
+        return this.code.getFoldRanges();
     }
 
     public async init() {
@@ -417,6 +436,7 @@ export class AnycodeEditor {
         this.handleClick = this.handleClick.bind(this);
         this.codeContent.addEventListener('click', this.handleClick);
         this.gutter.addEventListener('click', this.handleClick);
+        this.foldsColumn.addEventListener('click', this.handleClick);
 
         this.handleKeydown = this.handleKeydown.bind(this);
         this.codeContent.addEventListener('keydown', this.handleKeydown);
@@ -450,6 +470,7 @@ export class AnycodeEditor {
         this.container.removeEventListener("scroll", this.handleScroll);
         this.codeContent.removeEventListener('click', this.handleClick);
         this.gutter.removeEventListener('click', this.handleClick);
+        this.foldsColumn.removeEventListener('click', this.handleClick);
         this.codeContent.removeEventListener('keydown', this.handleKeydown);
         this.codeContent.removeEventListener('paste', this.handlePasteEvent);
         this.container.removeEventListener('beforeinput', this.handleBeforeInput);
@@ -505,7 +526,18 @@ export class AnycodeEditor {
             },
             diffs: this.diffs,
             readOnly: this.readOnly,
+            foldRanges: this.code.getFoldRanges(),
+            collapsedFoldStarts: this.collapsedFoldStarts,
+            codeFoldingEnabled: this.codeFoldingEnabled,
         };
+    }
+
+    private toggleFoldAtLine(line: number) {
+        if (this.collapsedFoldStarts.has(line)) {
+            this.collapsedFoldStarts.delete(line);
+        } else {
+            this.collapsedFoldStarts.add(line);
+        }
     }
 
     public render() {
@@ -561,6 +593,22 @@ export class AnycodeEditor {
         this.closeHover();
 
         if (this.handleDiffGapExpandClick(e)) {
+            return;
+        }
+
+        const foldToggle = this.codeFoldingEnabled ? (e.target as HTMLElement | null)?.closest('.fold-toggle') as HTMLElement | null : null;
+        if (foldToggle) {
+            const line = Number.parseInt(foldToggle.dataset.line ?? '-1', 10);
+            if (line >= 0) {
+                e.preventDefault();
+                e.stopPropagation();
+                this.toggleFoldAtLine(line);
+                this.renderer.render(this.getEditorState(), this.search);
+                if (!this.readOnly) {
+                    this.codeContent.focus({ preventScroll: true });
+                    this.renderer.renderCursorOrSelection(this.getEditorState(), false);
+                }
+            }
             return;
         }
 
@@ -1020,7 +1068,7 @@ export class AnycodeEditor {
     }
 
     private adjustFocusedDiffNavigationOffset(result: ActionResult, action: Action): void {
-        if (!this.focusedDiffEnabled) return;
+        if (!this.focusedDiffEnabled && this.collapsedFoldStarts.size === 0) return;
         if (
             action !== Action.ARROW_LEFT
             && action !== Action.ARROW_RIGHT

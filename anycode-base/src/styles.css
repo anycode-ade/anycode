@@ -40,6 +40,85 @@
   z-index: 10;
 }
 
+.anyeditor .folds {
+  position: sticky;
+  left: 80px;
+  user-select: none;
+  pointer-events: auto;
+  background: inherit;
+  min-width: 24px;
+  max-width: 24px;
+  z-index: 10;
+}
+
+.anyeditor .folds .fd {
+  min-width: 24px;
+  max-width: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: left;
+  background: inherit;
+}
+
+.anyeditor .folds .fold-toggle {
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  border-radius: 4px;
+  position: relative;
+}
+
+.anyeditor .folds .fold-toggle.expanded {
+  opacity: 0;
+}
+
+.anyeditor .folds .fold-toggle.collapsed {
+  opacity: 1;
+}
+
+.anyeditor .folds:hover .fold-toggle.expanded {
+  opacity: 0.4;
+}
+
+.anyeditor .folds .fd:hover .fold-toggle {
+  opacity: 1;
+}
+
+.anyeditor .folds .fold-toggle:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.anyeditor .folds .fold-toggle::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 5px;
+  height: 5px;
+  border-left: 1.5px solid #666666;
+  border-bottom: 1.5px solid #666666;
+}
+
+.anyeditor .folds .fold-toggle.expanded::before {
+  transform: translate(-50%, -62%) rotate(-45deg);
+}
+
+.anyeditor .folds .fold-toggle.collapsed::before {
+  transform: translate(-62%, -50%) rotate(-135deg);
+}
+
+.anyeditor .folds .fold-toggle:hover::before {
+  border-left-color: #9ea5af;
+  border-bottom-color: #9ea5af;
+}
+
+.anyeditor .folds .fold-gap-cell {
+  background: inherit;
+}
+
 .anyeditor .gutter .ln {
   background: inherit;
   min-width: 48px;
@@ -55,7 +134,9 @@
 }
 
 .anyeditor.readonly .buttons,
-.anyeditor.readonly .gutter {
+.anyeditor.readonly .gutter,
+.anyeditor.readonly .folds,
+.anyeditor.no-folding .folds {
   display: none;
 }
 

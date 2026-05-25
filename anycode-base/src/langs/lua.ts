@@ -176,9 +176,26 @@ const query = `
 `
 
 
+let foldsQuery = `
+[
+  (function_body)
+  (tableconstructor)
+  (fieldlist)
+  (comment)
+] @fold
+
+[
+  (if_statement)
+  (for_statement)
+  (while_statement)
+  (repeat_statement)
+  (do_statement)
+] @fold
+`
+
 let indent = { width: 4, unit: " " };
-let comment = "#";
+let comment = "--";
 
 export default {
-  query, indent, comment
+  query, foldsQuery, indent, comment
 } satisfies Lang

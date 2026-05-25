@@ -235,9 +235,29 @@ field_constant: (IDENTIFIER) @constant
 
 `
 
+let foldsQuery = `
+[
+  (Block)
+  (BlockExpr)
+  (InitList)
+  (ParamDeclList)
+  (line_comment)
+  (doc_comment)
+  (container_doc_comment)
+] @fold
+
+[
+  (ContainerDecl)
+  (IfStatement)
+  (WhileStatement)
+  (LoopStatement)
+  (FnProto)
+] @fold
+`
+
 let indent = { width: 4, unit: " " };
 let comment = "//";
 
 export default {
-  query, indent, comment
+  query, foldsQuery, indent, comment
 } satisfies Lang

@@ -392,9 +392,31 @@ const query = `
 
 `
 
+let foldsQuery = `
+[
+  (class_body)
+  (statements)
+  (lambda_literal)
+  (import_list)
+  (value_arguments)
+  (line_comment)
+  (multiline_comment)
+] @fold
+
+[
+  (class_declaration)
+  (function_declaration)
+  (object_declaration)
+  (companion_object)
+  (when_expression)
+  (when_entry)
+  (control_structure_body)
+] @fold
+`
+
 let indent = { width: 4, unit: " " };
 let comment = "//";
 
 export default {
-  query, indent, comment
+  query, foldsQuery, indent, comment
 } satisfies Lang
