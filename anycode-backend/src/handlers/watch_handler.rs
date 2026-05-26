@@ -64,6 +64,13 @@ async fn is_file_opened(
         .any(|data| data.opened_files.contains(path_str))
 }
 
+async fn is_file_cached(
+    path_str: &str, file2code: &Arc<Mutex<HashMap<String, Code>>>
+) -> bool {
+    let f2c = file2code.lock().await;
+    f2c.contains_key(path_str)
+}
+
 fn classify_watch_transition(
     last_state: FileState,
     current_state: FileState,
@@ -189,10 +196,14 @@ async fn process_watch_event(
             .unwrap_or(FileState::DoesNotExist) 
     };
     let is_opened_file = is_file_opened(path_str, socket2data).await;
+    let is_cached_in_file2code = is_file_cached(path_str, file2code).await;
     let is_parent_opened = is_parent_dir_opened(path, socket2data).await;
 
     let watch_action = classify_watch_transition(last_state, current_state, is_opened_file);
-    info!("watch action: {:?} for path: {:?} ", watch_action, path);
+    info!(
+        "watch action: is_opened_file:{is_opened_file} is_cached_in_file2code:{is_cached_in_file2code} is_parent_opened:{is_parent_opened} {:?} for path: {:?}",
+        watch_action, path
+    );
 
     match watch_action {
         WatchAction::Create => {
@@ -218,8 +229,15 @@ async fn process_watch_event(
             }
         }
         WatchAction::Modify => {
-            if is_opened_file {
-                let _ = handle_file_modification(path, socket, file2code, lsp_manager).await;
+            if is_opened_file || is_cached_in_file2code {
+                let _ = handle_file_modification(
+                    path,
+                    socket,
+                    file2code,
+                    lsp_manager,
+                    is_opened_file,
+                )
+                .await;
             }
         }
         WatchAction::Ignore => {}
@@ -290,13 +308,12 @@ async fn handle_changes_update(
     }
 }
 
-
-
 async fn handle_file_modification(
     path: &PathBuf,
     socket: &Arc<socketioxide::SocketIo>,
     file2code: &Arc<Mutex<HashMap<String, Code>>>,
     lsp_manager: &Arc<Mutex<LspManager>>,
+    sync_lsp: bool,
 ) -> Result<()> {
     let path_str = path
         .to_str()
@@ -349,8 +366,8 @@ async fn handle_file_modification(
         .await
         .map_err(|e| anyhow::anyhow!("Failed to emit edits: {}", e))?;
 
-    // Sync LSP
-    if !lsp_changes.is_empty() {
+    // Sync LSP only when file is opened by at least one live socket.
+    if sync_lsp && !lsp_changes.is_empty() {
         let mut lsp = lsp_manager.lock().await;
         if let Some(lsp) = lsp.get(&lang).await {
             if let Err(e) = lsp.did_change_multi(path_str, lsp_changes).await {
