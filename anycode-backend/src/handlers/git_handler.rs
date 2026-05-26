@@ -1,7 +1,7 @@
 use crate::app_state::{AppState, send_response};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use socketioxide::extract::{AckSender, Data, State};
+use socketioxide::extract::{AckSender, Data, SocketRef, State};
 use tracing::info;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -53,17 +53,30 @@ pub async fn handle_git_file_original(
 }
 
 pub async fn handle_git_commit(
+    socket: SocketRef,
     Data(request): Data<GitCommitRequest>,
     ack: AckSender,
     state: State<AppState>,
 ) {
     info!("Received git:commit: {} files", request.files.len());
-    let result = {
-        let git = state.git_manager.lock().await;
-        git.commit(&request.files, &request.message)
-            .map(|_| json!({}))
+
+    let (result, changes_update) = {
+        let mut git = state.git_manager.lock().await;
+        match git.commit(&request.files, &request.message) {
+            Ok(_) => {
+                let status = git.refresh_status_cache().map(|s| s.to_json());
+                (Ok(json!({})), status.ok())
+            }
+            Err(e) => (Err(e), None),
+        }
     };
+
     send_response(ack, result);
+
+    if let Some(update) = changes_update {
+        let _ = socket.emit("changes:update", &update);
+        let _ = socket.broadcast().emit("changes:update", &update).await;
+    }
 }
 
 pub async fn handle_git_push(ack: AckSender, state: State<AppState>) {
