@@ -59,12 +59,12 @@ const TreeNodeComponentImpl: React.FC<TreeNodeComponentProps> = ({
 
     const handleNameClick = (e: React.MouseEvent) => {
         e.stopPropagation();
-        if (isActive) {
-            return;
-        }
         onActivate(node.id);
 
         if (node.type === 'file') {
+            if (isActive) {
+                return;
+            }
             onSelect(node.id);
             onOpenFile(node.path);
             return;
