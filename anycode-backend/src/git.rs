@@ -386,6 +386,16 @@ impl GitManager {
     pub fn commit(&self, files: &[String], message: &str) -> Result<()> {
         let repo = self.repo()?;
         let mut index = repo.index()?;
+        let head_commit = repo.head().ok().and_then(|h| h.peel_to_commit().ok());
+
+        // Build commit index from HEAD tree so the commit contains only explicitly
+        // selected paths from the UI, not previously staged leftovers.
+        if let Some(head) = &head_commit {
+            let head_tree = head.tree()?;
+            index.read_tree(&head_tree)?;
+        } else {
+            index.clear()?;
+        }
 
         let repo_root = repo.workdir().unwrap_or(Path::new("."));
         for file_path in files {
@@ -409,19 +419,10 @@ impl GitManager {
         let tree_id = index.write_tree()?;
         let tree = repo.find_tree(tree_id)?;
 
-        let sig = repo
-            .signature()
-            .or_else(|_| git2::Signature::now("Anycode User", "user@anycode.dev"))?;
-
-        let parents: Vec<git2::Commit> = repo
-            .head()
-            .ok()
-            .and_then(|h| h.peel_to_commit().ok())
-            .map(|c| vec![c])
-            .unwrap_or_default();
-
+        let parents: Vec<git2::Commit> = head_commit.map(|c| vec![c]).unwrap_or_default();
         let parents_refs: Vec<&git2::Commit> = parents.iter().collect();
 
+        let sig = repo.signature()?;
         repo.commit(Some("HEAD"), &sig, &sig, message, &tree, &parents_refs)
             .context("Failed to commit")?;
 

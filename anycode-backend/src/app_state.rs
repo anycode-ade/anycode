@@ -1,16 +1,19 @@
-use crate::acp::AcpManager;
+use crate::acp::{AcpManager, AcpPermissionMode};
+use crate::acp_fs;
 use crate::code::Code;
 use crate::config::Config;
 use crate::git::GitManager;
 use crate::lsp::LspManager;
 use crate::terminal::Terminal;
 use anyhow::{Result, anyhow};
+use lsp_types::PublishDiagnosticsParams;
 use socketioxide::extract::{SocketRef, State};
 use std::collections::HashSet;
 use std::collections::hash_map::{Entry, HashMap};
 use std::{collections::VecDeque, sync::Arc};
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, mpsc};
 use tokio_util::sync::CancellationToken;
+
 
 #[derive(Clone)]
 pub struct AppState {
@@ -39,6 +42,30 @@ pub struct TerminalData {
 }
 
 impl AppState {
+    pub fn new(
+        diagnostic_tx: mpsc::Sender<PublishDiagnosticsParams>,
+        acp_fs_tx: mpsc::Sender<acp_fs::AcpFsCommand>,
+    ) -> Self {
+        let config = crate::config::get();
+        let acp_permission_mode = AcpPermissionMode::from_env();
+
+        let mut lsp_manager = LspManager::new(config.clone());
+        lsp_manager.set_diagnostics_sender(diagnostic_tx);
+
+        let acp_manager = AcpManager::new(acp_permission_mode, acp_fs_tx);
+        let git_manager = GitManager::new(crate::utils::current_dir());
+
+        Self {
+            config: Arc::new(config),
+            file2code: Arc::new(Mutex::new(HashMap::new())),
+            lsp_manager: Arc::new(Mutex::new(lsp_manager)),
+            acp_manager: Arc::new(Mutex::new(acp_manager)),
+            git_manager: Arc::new(Mutex::new(git_manager)),
+            socket2data: Arc::new(Mutex::new(HashMap::new())),
+            terminals: Arc::new(Mutex::new(HashMap::new())),
+        }
+    }
+
     pub async fn shutdown(&self) {
         self.lsp_manager.lock().await.stop_all().await;
         self.acp_manager.lock().await.stop_all().await;

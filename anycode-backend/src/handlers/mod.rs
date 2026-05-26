@@ -1,8 +1,10 @@
 pub mod acp_handler;
+pub mod connection_handler;
 pub mod git_handler;
 pub mod io_handler;
 pub mod lsp_handler;
 pub mod search_handler;
-pub mod terminal_handler;
-pub mod watch_handler;
 pub mod theme_handler;
+pub mod terminal_handler;
+pub mod static_handler;
+pub mod watch_handler;
