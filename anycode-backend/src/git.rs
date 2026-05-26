@@ -20,6 +20,9 @@ pub enum FileStatus {
 pub struct GitFileStatus {
     pub path: String,
     pub status: FileStatus,
+    pub staged: bool,
+    pub unstaged: bool,
+    pub conflicted: bool,
     pub added: usize,
     pub removed: usize,
 }
@@ -44,6 +47,9 @@ impl GitStatus {
 pub struct GitStatusPatchFile {
     pub path: String,
     pub status: String,
+    pub staged: bool,
+    pub unstaged: bool,
+    pub conflicted: bool,
     pub added: usize,
     pub removed: usize,
 }
@@ -116,6 +122,19 @@ impl GitManager {
 
     fn repo(&self) -> Result<Repository> {
         Repository::discover(&self.workdir).context("Failed to discover git repository")
+    }
+
+    fn sort_files(files: &mut [GitFileStatus]) {
+        files.sort_by(|a, b| {
+            a.path
+                .cmp(&b.path)
+                .then_with(|| Self::status_to_str(a.status).cmp(Self::status_to_str(b.status)))
+                .then_with(|| a.staged.cmp(&b.staged))
+                .then_with(|| a.unstaged.cmp(&b.unstaged))
+                .then_with(|| a.conflicted.cmp(&b.conflicted))
+                .then_with(|| a.added.cmp(&b.added))
+                .then_with(|| a.removed.cmp(&b.removed))
+        });
     }
 
     /// Check if a path should be ignored (in .git or gitignored)
@@ -225,11 +244,7 @@ impl GitManager {
             }
         }
 
-        info!(
-            "Git status: {} files changed on branch {}",
-            files.len(),
-            branch
-        );
+        Self::sort_files(&mut files);
 
         Ok(GitStatus { files, branch })
     }
@@ -261,6 +276,12 @@ impl GitManager {
     }
 
     pub fn check_status_changed_for_paths(&mut self, paths: &[PathBuf]) -> Option<GitStatusUpdate> {
+        if self.status_cache.files.is_empty() && self.status_cache.branch.is_empty() {
+            let full = self.status().ok()?;
+            self.status_cache = full.clone();
+            return Some(GitStatusUpdate::Full(full));
+        }
+
         let repo = self.repo().ok()?;
         let repo_root = repo.workdir().unwrap_or(Path::new("."));
         let branch = Self::branch_name(&repo);
@@ -290,7 +311,13 @@ impl GitManager {
             }
 
             let abs_path = repo_root.join(&relative_path).to_string_lossy().to_string();
-            let next_file = self.status_for_relative_path(&repo, &relative_path).ok()?;
+            let next_file = match self.status_for_relative_path(&repo, &relative_path) {
+                Ok(file) => file,
+                Err(e) => {
+                    tracing::warn!("Failed to get status for {}: {}", abs_path, e);
+                    continue;
+                }
+            };
             let prev_index = self
                 .status_cache
                 .files
@@ -309,17 +336,24 @@ impl GitManager {
             if let Some(file) = next_file.clone() {
                 self.status_cache.files.push(file);
             }
+            Self::sort_files(&mut self.status_cache.files);
 
             match next_file {
                 Some(file) => patch_files.push(GitStatusPatchFile {
                     path: file.path,
                     status: Self::status_to_str(file.status).to_string(),
+                    staged: file.staged,
+                    unstaged: file.unstaged,
+                    conflicted: file.conflicted,
                     added: file.added,
                     removed: file.removed,
                 }),
                 None => patch_files.push(GitStatusPatchFile {
                     path: abs_path,
                     status: "removed".to_string(),
+                    staged: false,
+                    unstaged: false,
+                    conflicted: false,
                     added: 0,
                     removed: 0,
                 }),
@@ -382,37 +416,11 @@ impl GitManager {
         })
     }
 
-    /// Commit files
-    pub fn commit(&self, files: &[String], message: &str) -> Result<()> {
+    /// Commit currently staged index entries (like `git commit`)
+    pub fn commit(&self, message: &str) -> Result<()> {
         let repo = self.repo()?;
         let mut index = repo.index()?;
         let head_commit = repo.head().ok().and_then(|h| h.peel_to_commit().ok());
-
-        // Build commit index from HEAD tree so the commit contains only explicitly
-        // selected paths from the UI, not previously staged leftovers.
-        if let Some(head) = &head_commit {
-            let head_tree = head.tree()?;
-            index.read_tree(&head_tree)?;
-        } else {
-            index.clear()?;
-        }
-
-        let repo_root = repo.workdir().unwrap_or(Path::new("."));
-        for file_path in files {
-            let path = Path::new(file_path);
-            let relative_path = if path.is_absolute() {
-                path.strip_prefix(repo_root).unwrap_or(path)
-            } else {
-                path
-            };
-
-            let full_path = repo_root.join(relative_path);
-            if full_path.exists() {
-                index.add_path(relative_path)?;
-            } else {
-                index.remove_path(relative_path)?;
-            }
-        }
 
         index.write()?;
 
@@ -426,7 +434,50 @@ impl GitManager {
         repo.commit(Some("HEAD"), &sig, &sig, message, &tree, &parents_refs)
             .context("Failed to commit")?;
 
-        info!("Committed {} files: {}", files.len(), message);
+        info!("Committed staged index: {}", message);
+        Ok(())
+    }
+
+    /// Stage file in index (like `git add <path>`)
+    pub fn stage(&self, path: &str) -> Result<()> {
+        let repo = self.repo()?;
+        let repo_root = repo.workdir().unwrap_or(Path::new("."));
+        let file_path = Path::new(path);
+        let relative_path = if file_path.is_absolute() {
+            file_path.strip_prefix(repo_root).unwrap_or(file_path)
+        } else {
+            file_path
+        };
+
+        let mut index = repo.index()?;
+        if repo_root.join(relative_path).exists() {
+            index.add_path(relative_path)?;
+        } else {
+            let _ = index.remove_path(relative_path);
+        }
+        index.write()?;
+        Ok(())
+    }
+
+    /// Unstage file from index (like `git restore --staged <path>`)
+    pub fn unstage(&self, path: &str) -> Result<()> {
+        let repo = self.repo()?;
+        let repo_root = repo.workdir().unwrap_or(Path::new("."));
+        let file_path = Path::new(path);
+        let relative_path = if file_path.is_absolute() {
+            file_path.strip_prefix(repo_root).unwrap_or(file_path)
+        } else {
+            file_path
+        };
+
+        let head = repo.head().ok().and_then(|h| h.peel_to_commit().ok());
+        if let Some(commit) = head {
+            repo.reset_default(Some(commit.as_object()), [relative_path])?;
+        } else {
+            let mut index = repo.index()?;
+            let _ = index.remove_path(relative_path);
+            index.write()?;
+        }
         Ok(())
     }
 
@@ -667,7 +718,25 @@ impl GitManager {
         added: usize,
         removed: usize,
     ) -> Option<GitFileStatus> {
-        let file_status = if status.contains(Status::WT_NEW) || status.contains(Status::INDEX_NEW) {
+        let conflicted = status.contains(Status::CONFLICTED);
+        let staged = status.intersects(
+            Status::INDEX_NEW
+                | Status::INDEX_MODIFIED
+                | Status::INDEX_DELETED
+                | Status::INDEX_RENAMED
+                | Status::INDEX_TYPECHANGE,
+        );
+        let unstaged = status.intersects(
+            Status::WT_NEW
+                | Status::WT_MODIFIED
+                | Status::WT_DELETED
+                | Status::WT_RENAMED
+                | Status::WT_TYPECHANGE,
+        );
+
+        let file_status = if conflicted {
+            FileStatus::Conflict
+        } else if status.contains(Status::WT_NEW) || status.contains(Status::INDEX_NEW) {
             FileStatus::Added
         } else if status.contains(Status::WT_DELETED) || status.contains(Status::INDEX_DELETED) {
             FileStatus::Deleted
@@ -675,8 +744,6 @@ impl GitManager {
             FileStatus::Modified
         } else if status.contains(Status::WT_RENAMED) || status.contains(Status::INDEX_RENAMED) {
             FileStatus::Renamed
-        } else if status.contains(Status::CONFLICTED) {
-            FileStatus::Conflict
         } else {
             return None;
         };
@@ -694,6 +761,9 @@ impl GitManager {
         Some(GitFileStatus {
             path: repo_root.join(relative_path).to_string_lossy().to_string(),
             status: file_status,
+            staged,
+            unstaged,
+            conflicted,
             added,
             removed,
         })

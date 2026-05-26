@@ -10,6 +10,9 @@ type UseGitParams = {
 type GitPatchItem = {
     path: string;
     status: ChangedFile['status'] | 'removed';
+    staged?: boolean;
+    unstaged?: boolean;
+    conflicted?: boolean;
     added?: number;
     removed?: number;
 };
@@ -82,12 +85,18 @@ export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
                         if (
                             !existing ||
                             existing.status !== item.status ||
+                            existing.staged !== item.staged ||
+                            existing.unstaged !== item.unstaged ||
+                            existing.conflicted !== item.conflicted ||
                             existing.added !== item.added ||
                             existing.removed !== item.removed
                         ) {
                             next.set(item.path, {
                                 path: item.path,
                                 status: item.status,
+                                staged: item.staged,
+                                unstaged: item.unstaged,
+                                conflicted: item.conflicted,
                                 added: item.added,
                                 removed: item.removed,
                             });
@@ -116,6 +125,9 @@ export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
                 if (
                     a.path !== b.path ||
                     a.status !== b.status ||
+                    a.staged !== b.staged ||
+                    a.unstaged !== b.unstaged ||
+                    a.conflicted !== b.conflicted ||
                     a.added !== b.added ||
                     a.removed !== b.removed
                 ) {
@@ -130,14 +142,14 @@ export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
         });
     }, []);
 
-    const commit = useCallback((files: string[], message: string): Promise<boolean> => {
+    const commit = useCallback((message: string): Promise<boolean> => {
         return new Promise((resolve) => {
             if (!wsRef.current || !isConnected) {
                 resolve(false);
                 return;
             }
 
-            wsRef.current.emit('git:commit', { files, message }, (response: any) => {
+            wsRef.current.emit('git:commit', { message }, (response: any) => {
                 if (response.success) {
                     fetchGitStatus();
                     resolve(true);
@@ -220,6 +232,28 @@ export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
         });
     }, [wsRef, isConnected, fetchGitStatus, fetchBranches]);
 
+    const stage = useCallback((path: string) => {
+        if (!wsRef.current || !isConnected) return;
+        wsRef.current.emit('git:stage', { path }, (response: any) => {
+            if (response.success) {
+                fetchGitStatus();
+            } else {
+                alert('Stage failed: ' + response.error);
+            }
+        });
+    }, [fetchGitStatus, isConnected, wsRef]);
+
+    const unstage = useCallback((path: string) => {
+        if (!wsRef.current || !isConnected) return;
+        wsRef.current.emit('git:unstage', { path }, (response: any) => {
+            if (response.success) {
+                fetchGitStatus();
+            } else {
+                alert('Unstage failed: ' + response.error);
+            }
+        });
+    }, [fetchGitStatus, isConnected, wsRef]);
+
     return {
         changedFiles,
         gitBranch,
@@ -233,5 +267,7 @@ export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
         pull,
         revert,
         checkoutBranch,
+        stage,
+        unstage,
     };
 };

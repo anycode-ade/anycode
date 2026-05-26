@@ -62,7 +62,7 @@ const App: React.FC = () => {
             ['watcher:edits', editors.handleWatcherEdits],
             ['watcher:create', fileTree.handleWatcherCreate],
             ['watcher:remove', fileTree.handleWatcherRemove],
-            ['changes:update', git.handleGitStatusUpdate],
+            ['git:update', git.handleGitStatusUpdate],
             ['acp:message', agents.handleAcpMessage],
             ['acp:history', agents.handleAcpHistory],
             ['search:result', search.handleSearchResult],
@@ -355,6 +355,8 @@ const App: React.FC = () => {
                         onPush={git.push}
                         onPull={git.pull}
                         onRevert={git.revert}
+                        onStage={git.stage}
+                        onUnstage={git.unstage}
                     />
                 );
             case 'editor':

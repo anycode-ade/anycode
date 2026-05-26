@@ -11,7 +11,6 @@ pub struct GitFileOriginalRequest {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct GitCommitRequest {
-    pub files: Vec<String>,
     pub message: String,
 }
 
@@ -58,11 +57,11 @@ pub async fn handle_git_commit(
     ack: AckSender,
     state: State<AppState>,
 ) {
-    info!("Received git:commit: {} files", request.files.len());
+    info!("Received git:commit");
 
     let (result, changes_update) = {
         let mut git = state.git_manager.lock().await;
-        match git.commit(&request.files, &request.message) {
+        match git.commit(&request.message) {
             Ok(_) => {
                 let status = git.refresh_status_cache().map(|s| s.to_json());
                 (Ok(json!({})), status.ok())
@@ -74,8 +73,8 @@ pub async fn handle_git_commit(
     send_response(ack, result);
 
     if let Some(update) = changes_update {
-        let _ = socket.emit("changes:update", &update);
-        let _ = socket.broadcast().emit("changes:update", &update).await;
+        let _ = socket.emit("git:update", &update);
+        let _ = socket.broadcast().emit("git:update", &update).await;
     }
 }
 
@@ -130,6 +129,37 @@ pub async fn handle_git_revert(
     let result = {
         let git = state.git_manager.lock().await;
         git.revert(&request.path).map(|_| json!({}))
+    };
+    send_response(ack, result);
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct GitStageRequest {
+    pub path: String,
+}
+
+pub async fn handle_git_stage(
+    Data(request): Data<GitStageRequest>,
+    ack: AckSender,
+    state: State<AppState>,
+) {
+    info!("Received git:stage: {:?}", request.path);
+    let result = {
+        let git = state.git_manager.lock().await;
+        git.stage(&request.path).map(|_| json!({}))
+    };
+    send_response(ack, result);
+}
+
+pub async fn handle_git_unstage(
+    Data(request): Data<GitStageRequest>,
+    ack: AckSender,
+    state: State<AppState>,
+) {
+    info!("Received git:unstage: {:?}", request.path);
+    let result = {
+        let git = state.git_manager.lock().await;
+        git.unstage(&request.path).map(|_| json!({}))
     };
     send_response(ack, result);
 }

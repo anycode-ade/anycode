@@ -53,7 +53,8 @@ impl AppState {
         lsp_manager.set_diagnostics_sender(diagnostic_tx);
 
         let acp_manager = AcpManager::new(acp_permission_mode, acp_fs_tx);
-        let git_manager = GitManager::new(crate::utils::current_dir());
+        let mut git_manager = GitManager::new(crate::utils::current_dir());
+        let _ = git_manager.refresh_status_cache();
 
         Self {
             config: Arc::new(config),

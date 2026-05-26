@@ -200,10 +200,7 @@ async fn process_watch_event(
     let is_parent_opened = is_parent_dir_opened(path, socket2data).await;
 
     let watch_action = classify_watch_transition(last_state, current_state, is_opened_file);
-    info!(
-        "watch action: is_opened_file:{is_opened_file} is_cached_in_file2code:{is_cached_in_file2code} is_parent_opened:{is_parent_opened} {:?} for path: {:?}",
-        watch_action, path
-    );
+    info!("watch action:  {:?} for path: {:?}", watch_action, path);
 
     match watch_action {
         WatchAction::Create => {
@@ -304,7 +301,7 @@ async fn handle_changes_update(
     };
 
     if let Some(update) = update {
-        let _ = socket.emit("changes:update", &update.to_json()).await;
+        let _ = socket.emit("git:update", &update.to_json()).await;
     }
 }
 

@@ -263,7 +263,8 @@
 .changes-file-info,
 .changes-filename,
 .changes-revert-btn,
-.changes-checkbox {
+.changes-checkbox,
+.changes-group-title {
     -webkit-user-select: none;
     user-select: none;
 }
@@ -277,10 +278,20 @@
 
 .changes-group {
     margin-bottom: 6px;
+    padding-top: 6px;
+    padding-bottom: 6px;
 }
 
 .changes-group:last-child {
     margin-bottom: 0;
+}
+
+.changes-group + .changes-group {
+    border-top: 1px solid var(--theme-border, rgba(255, 255, 255, 0.08));
+}
+
+.changes-group:first-child {
+    border-top: 1px solid var(--theme-border, rgba(255, 255, 255, 0.08));
 }
 
 .changes-group-title {
@@ -290,6 +301,81 @@
     letter-spacing: 0.04em;
     color: var(--theme-tab-foreground, #8f8f8f);
     opacity: 0.9;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.changes-group-title-with-action {
+    gap: 6px;
+}
+
+.changes-group-title-label {
+    min-width: 0;
+    flex: 1 1 auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    padding-right: 8px;
+}
+
+.changes-group-title-right {
+    margin-left: auto;
+    min-width: 78px;
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    position: relative;
+    height: 18px;
+}
+
+.changes-group-stats {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.changes-group-action-btn {
+    border: 1px solid var(--theme-tab-border, #3a3a3a);
+    background: var(--theme-tab-background, #2d2d2d);
+    color: var(--theme-foreground, #d4d4d4);
+    width: 18px;
+    height: 18px;
+    line-height: 16px;
+    font-size: 14px;
+    border-radius: 4px;
+    cursor: pointer;
+    padding: 0;
+}
+
+.changes-group-action-btn:hover {
+    background: var(--theme-hover-background, #383838);
+}
+
+.changes-group-title-hover-action .changes-group-action-btn-hover {
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.15s ease;
+    position: absolute;
+    right: 0;
+}
+
+.changes-group-title-hover-action:hover .changes-group-action-btn-hover,
+.changes-group-title-hover-action:focus-within .changes-group-action-btn-hover {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.changes-group-title-hover-action:hover .changes-group-stats,
+.changes-group-title-hover-action:focus-within .changes-group-stats {
+    visibility: hidden;
+    opacity: 0;
 }
 
 .changes-group-title-conflicts {
@@ -304,7 +390,7 @@
 }
 
 .changes-item:hover {
-    background-color: var(--hover-bg, rgba(255, 255, 255, 0.08));
+    /*background-color: var(--hover-bg, rgba(255, 255, 255, 0.08));*/
     border-radius: 6px;
 }
 
@@ -316,7 +402,7 @@
 
 .changes-item.active .changes-filename,
 .changes-item.active .changes-revert-btn,
-.changes-item.active .changes-exclude-btn,
+.changes-item.active .changes-stage-toggle-btn,
 .changes-item.active .changes-stat-added,
 .changes-item.active .changes-stat-removed {
     color: var(--theme-accent-foreground, #fff) !important;
@@ -330,11 +416,6 @@
 .changes-list:focus .changes-item.active,
 .changes-list:focus-visible .changes-item.active {
     box-shadow: inset 0 0 0 1px var(--theme-accent-foreground, #7a7a7a);
-}
-
-.changes-item.excluded .changes-filename {
-    opacity: 0.65;
-    text-decoration: line-through;
 }
 
 .changes-revert-btn {
@@ -369,7 +450,7 @@
     box-shadow: none;
 }
 
-.changes-exclude-btn {
+.changes-stage-toggle-btn {
     background: none;
     border: none;
     color: var(--theme-tab-foreground, #7f7f7f);
@@ -386,7 +467,7 @@
     -webkit-appearance: none;
 }
 
-.changes-item:hover .changes-exclude-btn {
+.changes-item:hover .changes-stage-toggle-btn {
     opacity: 1;
 }
 
@@ -401,24 +482,19 @@
     pointer-events: auto;
 }
 
-.changes-list-header:hover .changes-revert-all-btn,
-.changes-list-header:hover .changes-exclude-all-btn {
+.changes-list-header:hover .changes-revert-all-btn {
     opacity: 1;
     pointer-events: auto;
 }
 
-.changes-exclude-btn:hover,
-.changes-exclude-btn.excluded {
+.changes-stage-toggle-btn:hover {
     color: var(--theme-foreground, var(--foreground-color, #d6d6d6));
+    /*background-color: var(--hover-bg, rgba(255, 255, 255, 0.08));*/
+    /*border-radius: 4px;*/
 }
 
-.changes-exclude-btn:hover {
-    background-color: var(--hover-bg, rgba(255, 255, 255, 0.08));
-    border-radius: 4px;
-}
-
-.changes-exclude-btn:focus,
-.changes-exclude-btn:focus-visible {
+.changes-stage-toggle-btn:focus,
+.changes-stage-toggle-btn:focus-visible {
     outline: none;
     box-shadow: none;
 }

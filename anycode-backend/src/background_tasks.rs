@@ -7,6 +7,7 @@ use notify::{Event, RecursiveMode, Watcher, recommended_watcher};
 use socketioxide::SocketIo;
 use tokio::sync::mpsc::Receiver;
 use tokio::sync::{Mutex, mpsc};
+use tokio::time::{self, Duration};
 
 use crate::acp_fs;
 use crate::app_state::AppState;
@@ -25,8 +26,33 @@ pub fn spawn_all(
 ) -> Result<notify::RecommendedWatcher> {
     spawn_acp_fs(state, io, acp_fs_rx);
     spawn_diagnostics(io, diagnostics_rx);
+    spawn_git_status_watcher(state, io);
     let watcher = spawn_file_watcher(state, io)?;
     Ok(watcher)
+}
+
+fn spawn_git_status_watcher(state: &AppState, io: &Arc<SocketIo>) {
+    let git_manager = state.git_manager.clone();
+    let socket = io.clone();
+
+    tokio::spawn(async move {
+        let mut ticker = time::interval(Duration::from_secs(1));
+        loop {
+            ticker.tick().await;
+
+            let update = {
+                let mut git = git_manager.lock().await;
+                git.check_status_changed().map(|status| status.to_json())
+            };
+
+            if let Some(status_update) = update {
+                let send_result = socket.emit("git:update", &status_update).await;
+                if let Err(e) = send_result {
+                    tracing::error!("error while sending git:update {}", e);
+                }
+            }
+        }
+    });
 }
 
 fn spawn_acp_fs(

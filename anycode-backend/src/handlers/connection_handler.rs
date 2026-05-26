@@ -58,6 +58,8 @@ pub async fn handle_connect(socket: SocketRef, _state: State<AppState>) {
     socket.on("git:branches", handle_git_branches);
     socket.on("git:checkout", handle_git_checkout);
     socket.on("git:revert", handle_git_revert);
+    socket.on("git:stage", handle_git_stage);
+    socket.on("git:unstage", handle_git_unstage);
 
     socket.on("theme:list", handle_theme_list);
     socket.on("theme:get", handle_theme_get);
