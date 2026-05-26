@@ -275,6 +275,27 @@
     font-style: italic;
 }
 
+.changes-group {
+    margin-bottom: 6px;
+}
+
+.changes-group:last-child {
+    margin-bottom: 0;
+}
+
+.changes-group-title {
+    padding: 6px 8px 4px;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--theme-tab-foreground, #8f8f8f);
+    opacity: 0.9;
+}
+
+.changes-group-title-conflicts {
+    color: var(--theme-git-conflict, #ff9800);
+}
+
 .changes-item {
     display: flex;
     align-items: center;
