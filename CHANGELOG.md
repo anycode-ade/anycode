@@ -1,0 +1,63 @@
+# Changelog
+
+All notable changes are documented here by release tag.
+
+## v0.0.18 - 2026-05-27
+
+### Commits
+- `5992830` feat: add word highlighting 
+
+## v0.0.17 - 2026-05-26
+
+### Commits
+- `af1729b` chore(release): bump backend version to 0.0.17
+- `5959476` refactor: implement git staging/unstaging and fix status updates
+- `6247a69` tmp commit
+- `e00c340` fix: allow active folders to toggle when clicked
+- `0cf54ee` refactor(backend): modularize runtime wiring and harden git change propagation
+- `e8a0723` fix(git): emit changes:update immediately after commit to refresh diff state
+- `285d225` fix watcher sync for cached files and gate lsp sync
+- `d26e6de` feat: add code folding support via Tree-sitter queries
+- `9c051ce` fix: start terminal IDs from 1 instead of 2
+- `863e014` style: disable text selection on tab labels
+- `ff6c7a7` feat: add tab reordering via drag and drop and fix ghost snap-back animation
+- `b850486` style: adjust diff gap gutter button padding
+- `5e96dff` feat(toolbar): implement pin/unpin tab functionality with localStorage persistence
+- `ec1ce58` Move file tree folder loading into hook
+- `124efd3` Add tab context menu and switch terminal tabs to id-based selection
+- `6376862` Improve file tree and tab activation sync
+
+## v0.0.16 - 2026-05-23
+
+### Commits
+- `d38ba58` Optimize agent/editor UI updates and simplify runnable initialization
+- `5162334` Fix backend autosave and LSP notification errors
+- `75ca040` Release v0.0.16
+- `3fe1b83` Polish agent command styling
+- `cc21d2a` Remove autosave config lock from editor hot path
+
+## v0.0.15 - 2026-05-22
+
+### Commits
+- `0732954` Fix ARM64 release cross build context
+- `5300c6c` Release v0.0.15
+- `f1fadc6` Polish agent scrolling, search focus, and themed panels
+- `3aed4a6` feat: add anycode theme cloned from vesper with #242424 background and set as default
+- `d839e62` Add theming system and stabilize editor workflows
+- `9a7187b` Fix selection rendering in focused diff mode
+- `fd1ac68` feat: optimize diff computation, fix diff renderer separators, and fix backend compilation
+- `167c654` refactor(base): rewrite diff computation logic using line-by-line diffing and cleanup debug logs
+- `286cf51` refactor(diff): add syntax-highlighted ghost rows and streamline renderer flow
+- `b41978c` refactor(acp/editor/ui): remove runtime ACP permission mode switch and stabilize diff/editor behavior
+- `b01b034` Refactor diff mode flow and include original content on file open
+- `9e6a966` Fix layout save noise and ignore .zed
+- `dde49ed` fix(editor): clear stale editor when closing last tab
+- `c17a85d` feat(diff): add diff view modes and focused context rendering
+- `0e7934c` fix(diff): include EOF ghost rows in focused diff rendering
+- `2bdfc69` chore: sync pending workspace changes
+- `4e66202` fix(acp): merge consecutive error messages
+
+## v0.0.14 - 2026-05-09
+
+### Commit at tag
+- `620fb30` Improve search actions UX and fast navigation focus
