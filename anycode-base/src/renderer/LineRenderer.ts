@@ -1,4 +1,4 @@
-import { HighlighedNode } from "../code";
+import { HighlighedNode, WordHighlight } from "../code";
 import { AnycodeLine, objectHash } from "../utils";
 import { EditorSettings } from "../editor";
 import { DiffInfo } from "../diff";
@@ -23,7 +23,8 @@ export class LineRenderer {
         nodes: HighlighedNode[],
         errorLines: Map<number, string>,
         settings: EditorSettings,
-        diffs?: Map<number, DiffInfo>
+        diffs?: Map<number, DiffInfo>,
+        wordHighlight?: WordHighlight | null
     ): AnycodeLine {
         const wrapper = document.createElement('div') as AnycodeLine;
 
@@ -50,14 +51,29 @@ export class LineRenderer {
         } else {
             for (const { name, text } of nodes) {
                 const span = document.createElement('span');
+                const classNameParts: string[] = [];
                 if (name) {
                     // Add both full token class (e.g. "function.method") and path segments
                     // ("function", "method") so styles can gracefully fall back from specific
                     // to general when a theme misses a deep token color.
+                    // Deduplicate classes to avoid repeating when category name has no dots.
                     const parts = name.split('.').filter(Boolean);
-                    span.className = [name, ...parts].join(' ');
+                    classNameParts.push(...Array.from(new Set([name, ...parts])));
                 }
-                if (!name && text === '\t') span.className = 'indent';
+                if (!name && text === '\t') classNameParts.push('indent');
+                
+                // Add highlight class if it matches the wordHighlight text and is highlightable
+                if (
+                  wordHighlight?.token &&
+                  classNameParts.includes(wordHighlight.token) &&
+                  text === wordHighlight.text
+                ) {
+                  classNameParts.push('wh');
+                }
+
+                if (classNameParts.length > 0) {
+                    span.className = classNameParts.join(' ');
+                }
                 span.textContent = text;
                 wrapper.appendChild(span);
             }
@@ -141,8 +157,9 @@ export class LineRenderer {
         diffs: Map<number, DiffInfo> | undefined,
         runLines: number[],
         foldIndicator: { canFold: boolean; collapsed: boolean },
+        wordHighlight?: WordHighlight | null,
     ): { code: AnycodeLine; gutter: HTMLDivElement; btn: HTMLDivElement; fold: HTMLDivElement } {
-        const code = this.createLineWrapper(lineNumber, nodes, errorLines, settings, diffs);
+        const code = this.createLineWrapper(lineNumber, nodes, errorLines, settings, diffs, wordHighlight);
         const gutter = this.createLineNumber(lineNumber, settings, diffs);
         const btn = this.createLineButtons(lineNumber, runLines, errorLines, settings);
         const fold = document.createElement('div');

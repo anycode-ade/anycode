@@ -219,6 +219,17 @@ export function getNextGraphemeIndex(line: string, fromColumn: number): number {
     return line.length;
 }
 
+export function getGraphemeAt(line: string, index: number): string {
+    if (index < 0 || index >= line.length) return '';
+    const next = getNextGraphemeIndex(line, index);
+    if (next <= index) return '';
+    return line.slice(index, next);
+}
+
+export function isWordGrapheme(g: string): boolean {
+    return /[\p{L}\p{N}_]/u.test(g);
+}
+
 export function minimize(str: string, maxLength: number = 100): string {
     const newlineIndex = str.indexOf('\n');
     let result = str;

@@ -1,7 +1,7 @@
 import { AnycodeLine } from "../utils";
 import { EditorSettings } from "../editor";
 import { DiffInfo, ChangeType } from "../diff";
-import { HighlighedNode } from "../code";
+import { HighlighedNode, WordHighlight } from "../code";
 import type { GhostRow, SeparatorRow, VisualRow } from "./Renderer";
 
 export type ExpandDirection = 'up' | 'down' | 'both' | 'all';
@@ -81,7 +81,8 @@ export class DiffRenderer {
         text: string,
         settings: EditorSettings,
         hunkId: number,
-        nodes?: HighlighedNode[]
+        nodes?: HighlighedNode[],
+        wordHighlight?: WordHighlight | null
     ): HTMLDivElement {
         const ghostLine = document.createElement('div');
         ghostLine.className = "line line-deleted-ghost";
@@ -92,12 +93,25 @@ export class DiffRenderer {
         if (nodes && nodes.length > 0) {
             for (const { name, text: nodeText } of nodes) {
                 const span = document.createElement('span');
+                const classNameParts: string[] = [];
                 if (name) {
                     // Keep class fallback behavior consistent with normal line rendering.
                     const parts = name.split('.').filter(Boolean);
-                    span.className = [name, ...parts].join(' ');
+                    classNameParts.push(...Array.from(new Set([name, ...parts])));
                 }
-                if (!name && nodeText === '\t') span.className = 'indent';
+                if (!name && nodeText === '\t') classNameParts.push('indent');
+
+                if (
+                    wordHighlight?.token &&
+                    classNameParts.includes(wordHighlight.token) &&
+                    nodeText === wordHighlight.text
+                ) {
+                    classNameParts.push('wh');
+                }
+
+                if (classNameParts.length > 0) {
+                    span.className = classNameParts.join(' ');
+                }
                 span.textContent = nodeText;
                 ghostLine.appendChild(span);
             }
@@ -118,11 +132,18 @@ export class DiffRenderer {
         ghostRow: GhostRow, 
         settings: EditorSettings,
         originalText: string,
-        originalNodes?: HighlighedNode[]
+        originalNodes?: HighlighedNode[],
+        wordHighlight?: WordHighlight | null
     ): GhostLine {
         const { hunkId } = ghostRow;
         
-        const ghostLine = this.createDeletedGhostLine(originalText, settings, hunkId, originalNodes);
+        const ghostLine = this.createDeletedGhostLine(
+            originalText,
+            settings,
+            hunkId,
+            originalNodes,
+            wordHighlight
+        );
 
         const emptyGutter = document.createElement('div');
         emptyGutter.className = 'ln';

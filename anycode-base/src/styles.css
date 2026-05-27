@@ -503,3 +503,8 @@
 .highlight.selected {
     background: rgba(179, 179, 179, 0.9);
 }
+
+.wh {
+    background-color: rgba(173, 214, 255, 0.18);
+    border-radius: 2px;
+}

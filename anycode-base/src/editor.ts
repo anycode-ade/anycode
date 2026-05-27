@@ -1,4 +1,4 @@
-import { Code, Change, Position, Operation, type FoldRange } from "./code";
+import { Code, Change, Position, Operation, type FoldRange, WordHighlight, areWordHighlightsEqual } from "./code";
 import { Renderer } from './renderer/Renderer';
 import { getPosFromMouse } from './mouse';
 import { Selection, hasDiagnosticSelection } from "./selection";
@@ -39,6 +39,7 @@ export interface EditorOptions {
     focusedDiffEnabled?: boolean;
     focusedDiffContextLines?: number;
     codeFoldingEnabled?: boolean;
+    wordHighlightEnabled?: boolean;
 }
 
 export interface EditorState {
@@ -54,6 +55,8 @@ export interface EditorState {
     foldRanges: FoldRange[];
     collapsedFoldStarts: Set<number>;
     codeFoldingEnabled: boolean;
+    wordHighlightEnabled: boolean;
+    wordHighlight: WordHighlight | null;
 }
 
 export class AnycodeEditor {
@@ -104,6 +107,9 @@ export class AnycodeEditor {
     private readonly readOnly: boolean;
     private collapsedFoldStarts: Set<number> = new Set();
     private codeFoldingEnabled: boolean;
+    
+    private wordHighlightEnabled: boolean;
+    private wordHighlight: WordHighlight | null = null;
 
     constructor(
         initialText = '',
@@ -116,6 +122,7 @@ export class AnycodeEditor {
         this.focusedDiffEnabled = options.focusedDiffEnabled ?? false;
         this.focusedDiffContextLines = Math.max(0, options.focusedDiffContextLines ?? 3);
         this.codeFoldingEnabled = options.codeFoldingEnabled ?? true;
+        this.wordHighlightEnabled = options.wordHighlightEnabled ?? true;
         // Set initial cursor position
         if (options.line !== undefined && options.column !== undefined) {
             this.offset = this.code.getOffset(options.line, options.column);
@@ -318,7 +325,38 @@ export class AnycodeEditor {
     public setCursor(line: number, column: number): void {
         const offset = this.code.getOffset(line, column);
         this.offset = offset;
+        this.updateWordHighlight();
         this.renderer.renderCursor(line, column);
+    }
+
+    private updateWordHighlight() {
+        if (!this.code) return;
+
+        if (!this.wordHighlightEnabled) {
+            if (this.wordHighlight !== null) {
+                this.wordHighlight = null;
+                if (this.renderer) {
+                    this.renderer.renderWordHighlight(this.getEditorState());
+                }
+            }
+            return;
+        }
+        const highlight = this.code.getWordAtOffset(this.offset);
+        const hasChanged = !areWordHighlightsEqual(highlight, this.wordHighlight);
+        
+        if (hasChanged) {
+            this.wordHighlight = highlight;
+            if (this.renderer) {
+                this.renderer.renderWordHighlight(this.getEditorState());
+            }
+        }
+    }
+
+    public setWordHighlightEnabled(enabled: boolean) {
+        if (this.wordHighlightEnabled !== enabled) {
+            this.wordHighlightEnabled = enabled;
+            this.updateWordHighlight();
+        }
     }
 
     public setSelectionRange(
@@ -332,6 +370,7 @@ export class AnycodeEditor {
         const endOffset = this.code.getOffset(endLine, endColumn);
         this.selection = new Selection(startOffset, endOffset);
         this.offset = endOffset;
+        this.updateWordHighlight();
 
         if (center) {
             this.renderer.focusCenter(this.getEditorState());
@@ -529,6 +568,8 @@ export class AnycodeEditor {
             foldRanges: this.code.getFoldRanges(),
             collapsedFoldStarts: this.collapsedFoldStarts,
             codeFoldingEnabled: this.codeFoldingEnabled,
+            wordHighlightEnabled: this.wordHighlightEnabled,
+            wordHighlight: this.wordHighlight,
         };
     }
 
@@ -627,6 +668,7 @@ export class AnycodeEditor {
         //if (o == this.offset) { return; }
 
         this.offset = o;
+        this.updateWordHighlight();
 
         const { line, column } = this.code.getPosition(this.offset);
         this.renderer.renderCursor(line, column);
@@ -1194,8 +1236,14 @@ export class AnycodeEditor {
             this.code = result.ctx.code;
             this.recomputeDiffs();
         }
-        if (offsetChanged) this.offset = result.ctx.offset;
+        if (offsetChanged) {
+            this.offset = result.ctx.offset;
+        }
         if (selectionChanged) this.selection = result.ctx.selection || null;
+
+        if (textChanged || offsetChanged) {
+            this.updateWordHighlight();
+        }
 
         const state = this.getEditorState();
 

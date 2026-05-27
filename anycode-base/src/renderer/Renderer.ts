@@ -522,18 +522,17 @@ export class Renderer {
         if (row.kind === 'real') {
             const syntaxNodes = code.getLineNodes(row.lineIndex);
             elements = this.lineRenderer.createLineElements(
-                row.lineIndex, syntaxNodes, errorLines, settings, diffs, runLines, this.getFoldIndicator(row.lineIndex)
+                row.lineIndex, syntaxNodes, errorLines, settings,
+                diffs, runLines, this.getFoldIndicator(row.lineIndex), state.wordHighlight
             );
         } else if (row.kind === 'ghost') {
             const originalNodes = state.originalCode?.getLineNodes(row.originalLineIndex);
             const originalText = state.originalCode?.line(row.originalLineIndex) ?? '';
             elements = this.diffRenderer.createGhostRowElements(
-                row, settings, originalText, originalNodes
+                row, settings, originalText, originalNodes, state.wordHighlight
             );
         } else {
-            elements = this.diffRenderer.createGapRowElements(
-                row, settings
-            );
+            elements = this.diffRenderer.createGapRowElements(row, settings);
         }
 
         elements.code.setAttribute('data-visual-index', visualIndexAttr);
@@ -613,7 +612,8 @@ export class Renderer {
                 if (existingHash !== newHash) {
                     const visualIndexAttr = String(i);
                     const lineElements = this.lineRenderer.createLineElements(
-                        lineIndex, nodes, errorLines, settings, diffs, runLines, this.getFoldIndicator(lineIndex)
+                        lineIndex, nodes, errorLines, settings,
+                        diffs, runLines, this.getFoldIndicator(lineIndex), state.wordHighlight
                     );
                     lineElements.code.setAttribute('data-visual-index', visualIndexAttr);
                     existingLine.replaceWith(lineElements.code);
@@ -826,6 +826,19 @@ export class Renderer {
     public getEndLine(): AnycodeLine | null {
         const lines = this.getLines();
         return lines.length > 0 ? lines[lines.length - 1] : null;
+    }
+
+    public renderWordHighlight(state: EditorState) {
+        if (!this.codeContent) return;
+        this.codeContent.querySelectorAll('span.wh')
+            .forEach(el => el.classList.remove('wh'));
+
+        const wh = state.wordHighlight;
+        if (!wh?.text || !wh.token) return;
+
+        this.codeContent
+            .querySelectorAll(`span[class~="${wh.token}"]`)
+            .forEach(el => el.textContent === wh.text && el.classList.add('wh'));
     }
 
     public focus(state: EditorState, focusLine: number | null = null): boolean {

@@ -10,7 +10,7 @@ import {
 import Parser from 'web-tree-sitter';
 import History from './history';
 import { Selection } from './selection';
-import { getWasmPath } from './utils';
+import { getGraphemeAt, getNextGraphemeIndex, getPrevGraphemeIndex, getWasmPath, isWordGrapheme } from './utils';
 import type { Lang } from './lang';
 
 import javascript from './langs/javascript';
@@ -59,6 +59,20 @@ export type Change = {
 export type Position = {
     line: number;
     column: number;
+}
+
+export type WordHighlight = {
+    text: string;
+    token: string | null;
+};
+
+export function areWordHighlightsEqual(
+    a: WordHighlight | null,
+    b: WordHighlight | null
+): boolean {
+    if (a === b) return true;
+    if (!a || !b) return false;
+    return a.text === b.text && a.token === b.token;
 }
 
 
@@ -975,6 +989,82 @@ export class Code {
         }
 
         return columns;
+    }
+
+    public getWordAtOffset(offset: number): WordHighlight | null {
+        if (offset < 0 || offset > this.length()) {
+            return null;
+        }
+        const pos = this.getPosition(offset);
+        return this.getWordAtPosition(pos.line, pos.column);
+    }
+
+    public getWordAtPosition(lineIndex: number, columnIndex: number): WordHighlight | null {
+        if (lineIndex < 0 || lineIndex >= this.linesLength()) {
+            return null;
+        }
+        const lineText = this.line(lineIndex);
+        if (columnIndex < 0 || columnIndex > lineText.length) {
+            return null;
+        }
+
+        // Anchor: grapheme under cursor, otherwise grapheme on the left.
+        let anchor = -1;
+        if (columnIndex < lineText.length && isWordGrapheme(getGraphemeAt(lineText, columnIndex))) {
+            anchor = columnIndex;
+        } else if (columnIndex > 0) {
+            const prev = getPrevGraphemeIndex(lineText, columnIndex);
+            if (isWordGrapheme(getGraphemeAt(lineText, prev))) {
+                anchor = prev;
+            }
+        }
+        if (anchor === -1) {
+            return null;
+        }
+
+        // Expand to the left by grapheme clusters.
+        let start = anchor;
+        while (start > 0) {
+            const prev = getPrevGraphemeIndex(lineText, start);
+            if (prev === start || !isWordGrapheme(getGraphemeAt(lineText, prev))) {
+                break;
+            }
+            start = prev;
+        }
+
+        // Expand to the right by grapheme clusters.
+        let end = getNextGraphemeIndex(lineText, anchor);
+        while (end < lineText.length) {
+            if (!isWordGrapheme(getGraphemeAt(lineText, end))) {
+                break;
+            }
+            const next = getNextGraphemeIndex(lineText, end);
+            if (next === end) {
+                break;
+            }
+            end = next;
+        }
+
+        if (start === end) {
+            return null;
+        }
+
+        const text = lineText.slice(start, end);
+
+        // Find the class (name) of the token at the cursor position
+        let classs: string | null = null;
+        const nodes = this.getLineNodes(lineIndex);
+        let currentCharCount = 0;
+        for (const node of nodes) {
+            const nextCharCount = currentCharCount + node.text.length;
+            if (start >= currentCharCount && start < nextCharCount) {
+                classs = node.name;
+                break;
+            }
+            currentCharCount = nextCharCount;
+        }
+
+        return { text, token: classs };
     }
 
     clone() {
