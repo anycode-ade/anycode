@@ -1,5 +1,13 @@
 import { HighlighedNode, WordHighlight } from "../code";
-import { AnycodeLine, objectHash } from "../utils";
+import {
+    AnycodeLine,
+    ButtonColumnElement,
+    FoldColumnElement,
+    FoldElement,
+    GutterElement,
+    RealRowElements,
+} from "../types";
+import { objectHash } from "../utils";
 import { EditorSettings } from "../editor";
 import { DiffInfo } from "../diff";
 import { DiagnosticRenderer } from "./DiagnosticRenderer";
@@ -30,7 +38,6 @@ export class LineRenderer {
 
         wrapper.lineNumber = lineNumber;
         wrapper.className = "line";
-        wrapper.style.lineHeight = `${settings.lineHeight}px`;
 
         // Add hash for change tracking
         const hash = objectHash(nodes).toString();
@@ -98,12 +105,11 @@ export class LineRenderer {
         lineNumber: number,
         settings: EditorSettings,
         diffs?: Map<number, DiffInfo>
-    ): HTMLDivElement {
-        const div = document.createElement('div');
+    ): GutterElement {
+        const div = document.createElement('div') as GutterElement;
         div.className = "ln";
+        div.lineNumber = lineNumber;
         div.textContent = (lineNumber + 1).toString();
-        div.style.height = `${settings.lineHeight}px`;
-        div.setAttribute('data-line', lineNumber.toString());
 
         if (diffs) {
             const diffInfo = diffs.get(lineNumber + 1);
@@ -127,11 +133,10 @@ export class LineRenderer {
         runLines: number[],
         errorLines: Map<number, string>,
         settings: EditorSettings
-    ): HTMLDivElement {
-        const div = document.createElement('div');
+    ): ButtonColumnElement {
+        const div = document.createElement('div') as ButtonColumnElement;
         div.className = "bt";
-        div.style.height = `${settings.lineHeight}px`;
-        div.setAttribute('data-line', lineNumber.toString());
+        div.lineNumber = lineNumber;
 
         const isRun = runLines.includes(lineNumber);
 
@@ -158,21 +163,20 @@ export class LineRenderer {
         runLines: number[],
         foldIndicator: { canFold: boolean; collapsed: boolean },
         wordHighlight?: WordHighlight | null,
-    ): { code: AnycodeLine; gutter: HTMLDivElement; btn: HTMLDivElement; fold: HTMLDivElement } {
+    ): RealRowElements {
         const code = this.createLineWrapper(lineNumber, nodes, errorLines, settings, diffs, wordHighlight);
         const gutter = this.createLineNumber(lineNumber, settings, diffs);
         const btn = this.createLineButtons(lineNumber, runLines, errorLines, settings);
-        const fold = document.createElement('div');
+        const fold = document.createElement('div') as FoldColumnElement;
         fold.className = 'fd';
-        fold.style.height = `${settings.lineHeight}px`;
-        fold.setAttribute('data-line', lineNumber.toString());
+        fold.lineNumber = lineNumber;
 
         if (foldIndicator.canFold) {
-            const toggle = document.createElement('button');
+            const toggle = document.createElement('button') as FoldElement;
             toggle.className = `fold-toggle ${foldIndicator.collapsed ? 'collapsed' : 'expanded'}`;
-            toggle.setAttribute('data-line', lineNumber.toString());
-            toggle.setAttribute('type', 'button');
-            toggle.setAttribute('aria-label', foldIndicator.collapsed ? 'Expand folded block' : 'Collapse block');
+            toggle.lineNumber = lineNumber;
+            toggle.type = 'button';
+            toggle.ariaLabel = foldIndicator.collapsed ? 'Expand folded block' : 'Collapse block';
             fold.appendChild(toggle);
         }
 

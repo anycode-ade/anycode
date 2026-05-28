@@ -1,4 +1,4 @@
-import { AnycodeLine } from "../utils";
+import { AnycodeLine } from "../types";
 import { EditorState } from "../editor";
 import { Search } from "../search";
 

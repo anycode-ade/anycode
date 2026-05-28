@@ -1,4 +1,5 @@
-import { AnycodeLine, isDiagnosticElement } from './utils';
+import { AnycodeLine } from './types';
+import { isDiagnosticElement } from './utils';
 
 export function removeCursor() {
     const sel = window.getSelection();

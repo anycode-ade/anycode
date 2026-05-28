@@ -1,5 +1,6 @@
-import { Code } from "../code";
-import { AnycodeLine, objectHash } from "../utils";
+import { Code, HighlighedNode } from "../code";
+import { AnycodeLine, ButtonColumnElement, FoldColumnElement, GutterElement, RealRowElements, RowElements } from "../types";
+import { isGhostElement, objectHash } from "../utils";
 import { moveCursor, removeCursor } from "../cursor";
 import { EditorState, EditorSettings } from "../editor";
 import { DiffInfo } from "../diff";
@@ -12,7 +13,6 @@ import { DiffRenderer } from "./DiffRenderer";
 import { CompletionRenderer } from "./CompletionRenderer";
 import { HoverRenderer } from "./HoverRenderer";
 import { DiagnosticRenderer } from "./DiagnosticRenderer";
-
 
 /**
  * A real line from the code
@@ -34,7 +34,7 @@ export interface GhostRow {
 
 export interface SeparatorRow {
     kind: 'separator';
-    hiddenStart: number; // inclusive, 0-indexed real line 
+    hiddenStart: number; // inclusive, 0-indexed real line
     hiddenEnd: number;   // inclusive, 0-indexed real line
     hiddenCount: number;
 }
@@ -53,13 +53,12 @@ export class Renderer {
     private diffRenderer: DiffRenderer;
     private completionRenderer: CompletionRenderer;
     private hoverRenderer: HoverRenderer;
-    
     private visualRows: VisualRow[] = [];
+    private visualIndexByElement = new WeakMap<HTMLElement, number>();
     private lastCollapsedMap: Map<number, number> = new Map();
     private lastFoldableStarts: Map<number, number> = new Map();
     private lastHiddenLines: Set<number> = new Set();
     private codeFoldingEnabled: boolean = true;
-    
     private maxWidth: number = 0;
     private charWidth: number = 0;
 
@@ -109,21 +108,21 @@ export class Renderer {
         this.diffRenderer.setFocusedDiffMode(enabled, contextLines);
     }
 
-    public render(state: EditorState, search?: Search) {
-        const { code, offset, selection, runLines, errorLines, settings, diffs, readOnly } = state;
+    public render(state: EditorState) {
+        const { code, offset, selection, settings, diffs, readOnly, search } = state;
         this.codeFoldingEnabled = state.codeFoldingEnabled ?? true;
         this.updateFoldableStarts(state);
         this.updateCollapsedMap(state);
 
         // Build unified visual rows model (real lines + ghost lines)
         const totalRealLines = code.linesLength();
-        this.visualRows = this.diffEnabled 
+        this.visualRows = this.diffEnabled
             ? this.buildVisualRows(totalRealLines, diffs)
             : this.buildRealOnlyRows(totalRealLines);
 
         const totalVisualRows = this.visualRows.length;
-        const { startIndex, endIndex } = this.getVisibleRangeByVisualIndex(totalVisualRows, settings);
-        
+        const { startIndex, endIndex } = this.getVisibleRange(totalVisualRows, settings);
+
         const itemHeight = settings.lineHeight;
         const paddingTop = startIndex * itemHeight;
         const paddingBottom = (totalVisualRows - endIndex) * itemHeight;
@@ -163,7 +162,7 @@ export class Renderer {
         this.codeContent.replaceChildren(codeFrag);
 
         // Render cursor or selection
-        if (!readOnly && (!search || !search.isActive() || !search.isFocused())) {
+        if (!readOnly && (!search.isActive() || !search.isFocused())) {
             if (!selection || selection.isEmpty()) {
                 const { line, column } = code.getPosition(offset);
                 this.renderCursor(line, column, false);
@@ -173,10 +172,10 @@ export class Renderer {
         }
 
         // Render search highlights
-        if (!readOnly && search && search.isActive()) {
+        if (!readOnly && search.isActive()) {
             this.searchRenderer.updateSearchHighlights(search);
         }
-        
+
         this.updateMaxWidth(code);
     }
 
@@ -206,14 +205,14 @@ export class Renderer {
 
         // Collect ghost info by anchor line for efficient lookup
         const ghostsByAnchor = new Map<number, { hunkId: number; oldLineNumbers: number[] }[]>();
-        
+
         if (diffs) {
             for (const [lineNumber, diffInfo] of diffs) {
                 if (!diffInfo.oldLineNumbers || diffInfo.oldLineNumbers.length === 0) continue;
                 if (diffInfo.changeType !== 'modified' && diffInfo.changeType !== 'deleted') continue;
-                
+
                 const anchorLine = diffInfo.ghostAnchorLine ?? lineNumber;
-                
+
                 if (!ghostsByAnchor.has(anchorLine)) {
                     ghostsByAnchor.set(anchorLine, []);
                 }
@@ -227,14 +226,13 @@ export class Renderer {
         // Build visual rows: iterate through lines and insert ghosts before their anchors
         for (let i = 0; i < totalLines; i++) {
             const lineNumber = i + 1; // 1-indexed for diffs
-            
             // Check for ghost lines anchored before this line
             const ghostsHere = ghostsByAnchor.get(lineNumber);
             if (ghostsHere && !this.isHiddenByFold(i)) {
                 for (const ghostGroup of ghostsHere) {
                     if (processedHunks.has(ghostGroup.hunkId)) continue;
                     processedHunks.add(ghostGroup.hunkId);
-                    
+
                     for (let ghostIndex = 0; ghostIndex < ghostGroup.oldLineNumbers.length; ghostIndex++) {
                         const originalLineNumber = ghostGroup.oldLineNumbers[ghostIndex];
                         if (originalLineNumber < 1) continue;
@@ -247,7 +245,7 @@ export class Renderer {
                     }
                 }
             }
-            
+
             // Add real lines based on focused mode visibility
             if (!visibleRealLines || visibleRealLines.has(i)) {
                 if (this.isHiddenByFold(i)) continue;
@@ -263,7 +261,7 @@ export class Renderer {
             for (const ghostGroup of eofGhosts) {
                 if (processedHunks.has(ghostGroup.hunkId)) continue;
                 processedHunks.add(ghostGroup.hunkId);
-                
+
                 for (let ghostIndex = 0; ghostIndex < ghostGroup.oldLineNumbers.length; ghostIndex++) {
                     const originalLineNumber = ghostGroup.oldLineNumbers[ghostIndex];
                     if (originalLineNumber < 1) continue;
@@ -329,11 +327,11 @@ export class Renderer {
         }
         return lines;
     }
-    
+
     /**
      * Get visible range based on visual row indices
      */
-    private getVisibleRangeByVisualIndex(totalVisualRows: number, settings: EditorSettings) {
+    private getVisibleRange(totalVisualRows: number, settings: EditorSettings) {
         const scrollTop = this.container.scrollTop;
         const viewHeight = this.container.clientHeight;
 
@@ -355,23 +353,21 @@ export class Renderer {
         return { startIndex, endIndex };
     }
 
-    public renderScroll(state: EditorState, search?: Search) {
-        // console.log("renderScroll");
-
-        const { code, offset, selection, settings, diffs, runLines, errorLines } = state;
+    public renderScroll(state: EditorState) {
+        const { code, offset, selection, settings, diffs, search } = state;
         this.updateFoldableStarts(state);
         this.updateCollapsedMap(state);
         const lineHeight = settings.lineHeight;
         const buffer = settings.buffer;
-        
+
         // Rebuild visual rows if diffs changed (otherwise use cached)
         const totalRealLines = code.linesLength();
-        this.visualRows = this.diffEnabled 
+        this.visualRows = this.diffEnabled
             ? this.buildVisualRows(totalRealLines, diffs)
             : this.buildRealOnlyRows(totalRealLines);
 
         const totalVisualRows = this.visualRows.length;
-        const { startIndex, endIndex } = this.getVisibleRangeByVisualIndex(totalVisualRows, settings);
+        const { startIndex, endIndex } = this.getVisibleRange(totalVisualRows, settings);
 
         this.ensureSpacers(this.codeContent);
         this.ensureSpacers(this.gutter);
@@ -389,14 +385,9 @@ export class Renderer {
         const foldsTopSpacer = this.foldsColumn.firstChild as HTMLElement;
         const foldsBottomSpacer = this.foldsColumn.lastChild as HTMLElement;
 
-        // Get current rendered range by checking first/last visual index attributes
-        const renderedElements = this.getRenderedElements();
-        let currentStartIndex = renderedElements.length > 0 
-            ? parseInt(renderedElements[0].getAttribute('data-visual-index') || '-1', 10) 
-            : -1;
-        let currentEndIndex = renderedElements.length > 0 
-            ? parseInt(renderedElements[renderedElements.length - 1].getAttribute('data-visual-index') || '-1', 10) + 1 
-            : -1;
+        const renderedRange = this.getRenderedRange();
+        let currentStartIndex = renderedRange?.startIndex ?? -1;
+        let currentEndIndex = renderedRange?.endIndex ?? -1;
 
         // Check if full re-render is needed
         const needFullRerender =
@@ -407,7 +398,7 @@ export class Renderer {
             Math.abs(endIndex - currentEndIndex) > buffer * 2;
 
         if (needFullRerender) {
-            this.render(state, search);
+            this.render(state);
             return;
         }
 
@@ -475,7 +466,7 @@ export class Renderer {
         }
 
         // Render cursor or selection
-        if (!search || !search.isActive() || !search.isFocused()) {
+        if (!search.isActive() || !search.isFocused()) {
             if (!selection || selection.isEmpty()) {
                 const { line, column } = code.getPosition(offset);
                 this.renderCursor(line, column, false);
@@ -485,7 +476,7 @@ export class Renderer {
         }
 
         // Render search highlights
-        if (search && search.isActive()) {
+        if (search.isActive()) {
             this.searchRenderer.updateSearchHighlights(search);
         }
 
@@ -511,14 +502,13 @@ export class Renderer {
      * Create DOM elements for a visual row (real or ghost)
      */
     private createRowElements(
-        row: VisualRow, 
-        visualIndex: number, 
+        row: VisualRow,
+        visualIndex: number,
         state: EditorState
-    ): { code: HTMLElement; gutter: HTMLElement; btn: HTMLElement; fold: HTMLElement } {
+    ): RowElements {
         const { code, settings, diffs, runLines, errorLines } = state;
-        const visualIndexAttr = String(visualIndex);
-        let elements: { code: HTMLElement; gutter: HTMLElement; btn: HTMLElement; fold: HTMLElement };
-        
+        let elements: RowElements;
+
         if (row.kind === 'real') {
             const syntaxNodes = code.getLineNodes(row.lineIndex);
             elements = this.lineRenderer.createLineElements(
@@ -535,144 +525,134 @@ export class Renderer {
             elements = this.diffRenderer.createGapRowElements(row, settings);
         }
 
-        elements.code.setAttribute('data-visual-index', visualIndexAttr);
-        elements.gutter.setAttribute('data-visual-index', visualIndexAttr);
-        elements.btn.setAttribute('data-visual-index', visualIndexAttr);
-        elements.fold.setAttribute('data-visual-index', visualIndexAttr);
-        return elements;
-    }
-    /**
-     * Get all rendered elements (excluding spacers)
-     */
-    private getRenderedElements(): HTMLElement[] {
-        return Array.from(this.codeContent.children)
-            .filter((child) => !child.classList.contains('spacer')) as HTMLElement[];
+        return this.applyVisualIndex(elements, visualIndex);
     }
 
-    public renderChanges(state: EditorState, search?: Search) {
-        const { code, offset, selection, errorLines, settings, diffs, runLines } = state;
+    private applyVisualIndex(elements: RowElements, visualIndex: number): RowElements {
+        this.visualIndexByElement.set(elements.code, visualIndex);
+        this.visualIndexByElement.set(elements.gutter, visualIndex);
+        this.visualIndexByElement.set(elements.btn, visualIndex);
+        this.visualIndexByElement.set(elements.fold, visualIndex);
+        return elements;
+    }
+
+    private getRenderedElements(): HTMLElement[] {
+        return Array.from(this.codeContent.children)
+            .filter((child): child is HTMLElement =>
+                !child.classList.contains('spacer') &&
+                this.visualIndexByElement.has(child as HTMLElement)
+            );
+    }
+
+    private getRenderedRange(): { startIndex: number; endIndex: number } | null {
+        const renderedElements = this.getRenderedElements();
+        if (renderedElements.length === 0) return null;
+
+        return {
+            startIndex: this.getVisualIndex(renderedElements[0]),
+            endIndex: this.getVisualIndex(renderedElements[renderedElements.length - 1]) + 1,
+        };
+    }
+
+    private getVisualIndex(element: HTMLElement): number {
+        return this.visualIndexByElement.get(element) ?? -1;
+    }
+
+    public renderChanges(state: EditorState) {
+        const { code, offset, selection, settings, diffs, search, errorLines, runLines } = state;
         this.codeFoldingEnabled = state.codeFoldingEnabled ?? true;
         this.updateFoldableStarts(state);
         this.updateCollapsedMap(state);
 
         // Rebuild visual rows - structure may have changed
         const totalRealLines = code.linesLength();
-        const newVisualRows = this.diffEnabled 
+        const newVisualRows = this.diffEnabled
             ? this.buildVisualRows(totalRealLines, diffs)
             : this.buildRealOnlyRows(totalRealLines);
 
-        // If visual rows structure changed (different length or diff structure changed), do full render
         if (newVisualRows.length !== this.visualRows.length) {
-            this.render(state, search);
+            // Fallback to full render
+            this.render(state);
             return;
         }
 
         // Update visualRows
         this.visualRows = newVisualRows;
 
+        const lines = this.getLinesByNumber();
+        if (lines.size === 0) {
+            // Fallback to full render
+            this.render(state);
+            return;
+        }
+
+        const renderedRange = this.getRenderedRange();
+        if (!renderedRange) {
+            // Fallback to full render
+            this.render(state);
+            return;
+        }
+
         const totalVisualRows = this.visualRows.length;
-        const { startIndex, endIndex } = this.getVisibleRangeByVisualIndex(totalVisualRows, settings);
-
-        const lines = this.getLines();
-
-        if (lines.length === 0) {
-            this.render(state, search);
-            return;
-        }
-
-        // Get current rendered range
-        const renderedElements = this.getRenderedElements();
-        if (renderedElements.length === 0) {
-            this.render(state, search);
-            return;
-        }
-
-        const currentStartIndex = parseInt(renderedElements[0].getAttribute('data-visual-index') || '-1', 10);
-        const currentEndIndex = parseInt(renderedElements[renderedElements.length - 1].getAttribute('data-visual-index') || '-1', 10) + 1;
-
+        const visible = this.getVisibleRange(totalVisualRows, settings);
+        
         // If viewport changed, do full render
-        if (currentStartIndex !== startIndex || currentEndIndex !== endIndex) {
-            this.render(state, search);
+        if (renderedRange.startIndex !== visible.startIndex ||
+            renderedRange.endIndex !== visible.endIndex) {
+            this.render(state);
             return;
         }
 
         // Update only changed real lines
-        for (let i = startIndex; i < endIndex; i++) {
+        for (let i = visible.startIndex; i < visible.endIndex; i++) {
             const row = this.visualRows[i];
             if (row.kind !== 'real') continue;
 
             const lineIndex = row.lineIndex;
             const nodes = code.getLineNodes(lineIndex);
             const newHash = objectHash(nodes).toString();
-
-            const existingLine = lines.find(line => line.lineNumber === lineIndex);
+            const existingLine = lines.get(lineIndex);
 
             if (existingLine) {
-                const existingHash = existingLine.hash;
-                if (existingHash !== newHash) {
-                    const visualIndexAttr = String(i);
+                if (existingLine.hash !== newHash) {
                     const lineElements = this.lineRenderer.createLineElements(
-                        lineIndex, nodes, errorLines, settings,
-                        diffs, runLines, this.getFoldIndicator(lineIndex), state.wordHighlight
+                        lineIndex, nodes, errorLines, settings, diffs,
+                        runLines, this.getFoldIndicator(lineIndex), state.wordHighlight
                     );
-                    lineElements.code.setAttribute('data-visual-index', visualIndexAttr);
+
+                    this.applyVisualIndex(lineElements, i);
                     existingLine.replaceWith(lineElements.code);
 
-                    // Replace the line number (gutter) to reflect changes
-                    const oldGutterLine = this.gutter.querySelector(`.ln[data-line="${lineIndex}"]`) as HTMLElement;
-                    if (oldGutterLine) {
-                        lineElements.gutter.setAttribute('data-visual-index', visualIndexAttr);
+                    const childIndex = i - renderedRange.startIndex + 1;
+                    const oldGutterLine = this.gutter.children[childIndex] as GutterElement | undefined;
+                    if (oldGutterLine && !oldGutterLine.isEqualNode(lineElements.gutter)) {
                         this.gutter.replaceChild(lineElements.gutter, oldGutterLine);
                     }
 
-                    const oldFoldLine = this.foldsColumn.querySelector(`.fd[data-line="${lineIndex}"]`) as HTMLElement;
-                    if (oldFoldLine) {
-                        lineElements.fold.setAttribute('data-visual-index', visualIndexAttr);
+                    const oldButtonLine = this.buttonsColumn.children[childIndex] as ButtonColumnElement | undefined;
+                    if (oldButtonLine && !oldButtonLine.isEqualNode(lineElements.btn)) {
+                        this.buttonsColumn.replaceChild(lineElements.btn, oldButtonLine);
+                    }
+
+                    const oldFoldLine = this.foldsColumn.children[childIndex] as FoldColumnElement | undefined;
+                    if (oldFoldLine && !oldFoldLine.isEqualNode(lineElements.fold)) {
                         this.foldsColumn.replaceChild(lineElements.fold, oldFoldLine);
                     }
                 }
             } else {
                 // Fallback to full render if line is missing
-                this.render(state, search);
+                this.render(state);
                 return;
             }
         }
 
-        // Update gutter for all visible lines to ensure diff classes are correct
-        if (diffs) {
-            for (let i = startIndex; i < endIndex; i++) {
-                const row = this.visualRows[i];
-                if (row.kind !== 'real') continue;
-
-                const lineIndex = row.lineIndex;
-                const oldGutterLine = this.gutter.querySelector(`.ln[data-line="${lineIndex}"]`) as HTMLElement;
-                if (oldGutterLine) {
-                    const hasDiffClass = oldGutterLine.classList.contains('diff-changed') ||
-                        oldGutterLine.classList.contains('diff-added') ||
-                        oldGutterLine.classList.contains('diff-deleted');
-                    const diffInfo = diffs.get(lineIndex + 1);
-
-                    if (hasDiffClass || diffInfo) {
-                        const expectedClass = diffInfo ? this.diffRenderer.getDiffClass(diffInfo.changeType) : '';
-                        const hasCorrectClass = expectedClass ? oldGutterLine.classList.contains(expectedClass) : !hasDiffClass;
-
-                        if (!hasCorrectClass) {
-                            const newGutterLine = this.lineRenderer.createLineNumber(lineIndex, settings, diffs);
-                            newGutterLine.setAttribute('data-visual-index', i.toString());
-                            this.gutter.replaceChild(newGutterLine, oldGutterLine);
-                        }
-                    }
-                }
-            }
-        }
-
         // Render search highlights
-        if (search && search.isActive()) {
+        if (search.isActive()) {
             this.searchRenderer.updateSearchHighlights(search);
         }
 
         // Render cursor or selection
-        if (!search || !search.isActive() || !search.isFocused()) {
+        if (!search.isActive() || !search.isFocused()) {
             if (!selection || selection.isEmpty()) {
                 const { line, column } = code.getPosition(offset);
                 this.renderCursor(line, column, true);
@@ -680,7 +660,7 @@ export class Renderer {
                 this.renderSelection(code, selection!);
             }
         }
-        
+
         this.updateMaxWidth(code);
     }
 
@@ -797,17 +777,25 @@ export class Renderer {
         return Array.from(this.codeContent.children)
             .filter((child) =>
                 !child.classList.contains('spacer')
-                && !child.hasAttribute('data-ghost')
+                && !isGhostElement(child)
                 && child.classList.contains('line')
                 && typeof (child as AnycodeLine).lineNumber === 'number'
             ) as AnycodeLine[];
+    }
+
+    private getLinesByNumber(): Map<number, AnycodeLine> {
+        const linesByNumber = new Map<number, AnycodeLine>();
+        for (const line of this.getLines()) {
+            linesByNumber.set(line.lineNumber, line);
+        }
+        return linesByNumber;
     }
 
     public getLine(lineNumber: number): AnycodeLine | null {
         // Iterate through children, skipping spacers and ghost lines
         for (let i = 0; i < this.codeContent.children.length; i++) {
             const child = this.codeContent.children[i];
-            if (child.classList.contains('spacer') || child.hasAttribute('data-ghost')) {
+            if (child.classList.contains('spacer') || isGhostElement(child)) {
                 continue;
             }
             const line = child as AnycodeLine;
@@ -816,16 +804,6 @@ export class Renderer {
             }
         }
         return null;
-    }
-
-    public getStartLine(): AnycodeLine | null {
-        const lines = this.getLines();
-        return lines.length > 0 ? lines[0] : null;
-    }
-
-    public getEndLine(): AnycodeLine | null {
-        const lines = this.getLines();
-        return lines.length > 0 ? lines[lines.length - 1] : null;
     }
 
     public renderWordHighlight(state: EditorState) {

@@ -1,5 +1,6 @@
 import { Code } from "../code";
-import { AnycodeLine, findNodeAndOffset, findPrevWord } from "../utils";
+import { AnycodeLine } from "../types";
+import { findNodeAndOffset, findPrevWord } from "../utils";
 import { Completion, completionKindMap } from "../lsp";
 
 /**

@@ -18,7 +18,7 @@ import {
     generateCssClasses, addCssToDocument,
     findPrevWord, findNextWord,
     getCompletionRange, scoreMatches,
-    isInsideDiagnostic
+    isFoldElement, isInsideDiagnostic
 } from './utils';
 
 import './styles.css';
@@ -57,6 +57,7 @@ export interface EditorState {
     codeFoldingEnabled: boolean;
     wordHighlightEnabled: boolean;
     wordHighlight: WordHighlight | null;
+    search: Search;
 }
 
 export class AnycodeEditor {
@@ -145,6 +146,7 @@ export class AnycodeEditor {
     private createDomElements() {
         this.container = document.createElement('div');
         this.container.className = 'anyeditor';
+        this.container.style.setProperty('--anycode-line-height', `${this.settings.lineHeight}px`);
 
         this.buttonsColumn = document.createElement('div');
         this.buttonsColumn.className = 'buttons';
@@ -157,10 +159,10 @@ export class AnycodeEditor {
 
         this.codeContent = document.createElement('div');
         this.codeContent.className = 'code';
-        this.codeContent.setAttribute("contentEditable", this.readOnly ? "false" : "true");
-        this.codeContent.setAttribute("spellcheck", "false");
-        this.codeContent.setAttribute("autocorrect", "off");
-        this.codeContent.setAttribute("autocapitalize", "off");
+        this.codeContent.contentEditable = this.readOnly ? "false" : "true";
+        this.codeContent.spellcheck = false;
+        (this.codeContent as any).autocorrect = "off";
+        this.codeContent.autocapitalize = "off";
         if (this.readOnly) {
             this.container.classList.add('readonly');
         }
@@ -248,7 +250,7 @@ export class AnycodeEditor {
             this.search.setMatches(matches);
         }
 
-        this.renderer.renderChanges(this.getEditorState(), this.search);
+        this.renderer.renderChanges(this.getEditorState());
         this.verifyDiffRendering();
     }
 
@@ -529,7 +531,7 @@ export class AnycodeEditor {
         requestAnimationFrame(() => {
             if (scrollTop !== this.lastScrollTop) {
                 let state = this.getEditorState();
-                this.renderer.renderScroll(state, this.search);
+                this.renderer.renderScroll(state);
                 this.lastScrollTop = scrollTop;
             }
             this.needFocus = false
@@ -547,7 +549,7 @@ export class AnycodeEditor {
     public onAttach() {
         this.restoreScroll();
         const state = this.getEditorState();
-        this.renderer.renderScroll(state, this.search);
+        this.renderer.renderScroll(state);
         this.renderer.renderCursorOrSelection(state);
     }
 
@@ -570,6 +572,7 @@ export class AnycodeEditor {
             codeFoldingEnabled: this.codeFoldingEnabled,
             wordHighlightEnabled: this.wordHighlightEnabled,
             wordHighlight: this.wordHighlight,
+            search: this.search,
         };
     }
 
@@ -582,7 +585,7 @@ export class AnycodeEditor {
     }
 
     public render() {
-        this.renderer.render(this.getEditorState(), this.search);
+        this.renderer.render(this.getEditorState());
     }
 
     public renderCursorOrSelection() {
@@ -618,7 +621,7 @@ export class AnycodeEditor {
             gapData.expandDirection,
         );
         if (expanded) {
-            this.renderer.render(this.getEditorState(), this.search);
+            this.renderer.render(this.getEditorState());
             this.container.scrollTop = prevScrollTop;
             if (!this.readOnly) {
                 this.codeContent.focus({ preventScroll: true });
@@ -637,19 +640,7 @@ export class AnycodeEditor {
             return;
         }
 
-        const foldToggle = this.codeFoldingEnabled ? (e.target as HTMLElement | null)?.closest('.fold-toggle') as HTMLElement | null : null;
-        if (foldToggle) {
-            const line = Number.parseInt(foldToggle.dataset.line ?? '-1', 10);
-            if (line >= 0) {
-                e.preventDefault();
-                e.stopPropagation();
-                this.toggleFoldAtLine(line);
-                this.renderer.render(this.getEditorState(), this.search);
-                if (!this.readOnly) {
-                    this.codeContent.focus({ preventScroll: true });
-                    this.renderer.renderCursorOrSelection(this.getEditorState(), false);
-                }
-            }
+        if (this.handleFoldToggleClick(e)) {
             return;
         }
 
@@ -690,6 +681,29 @@ export class AnycodeEditor {
         if (e.metaKey || e.ctrlKey) {
             this.goToDefinition(pos.row, pos.col).catch(console.error);
         }
+    }
+
+    private handleFoldToggleClick(e: MouseEvent): boolean {
+        if (!this.codeFoldingEnabled || !(e.target instanceof HTMLElement)) {
+            return false;
+        }
+
+        const foldToggle = e.target.closest('.fold-toggle');
+        if (!isFoldElement(foldToggle)) {
+            return false;
+        }
+
+        e.preventDefault();
+        e.stopPropagation();
+        this.toggleFoldAtLine(foldToggle.lineNumber);
+        this.renderer.render(this.getEditorState());
+
+        if (!this.readOnly) {
+            this.codeContent.focus({ preventScroll: true });
+            this.renderer.renderCursorOrSelection(this.getEditorState(), false);
+        }
+
+        return true;
     }
 
     private async goToDefinition(row: number, col: number): Promise<void> {
@@ -1252,7 +1266,7 @@ export class AnycodeEditor {
                 let matches = this.code.search(this.search.getPattern());
                 this.search.setMatches(matches);
             }
-            this.renderer.renderChanges(state, this.search);
+            this.renderer.renderChanges(state);
             let focused = this.renderer.focus(state);
             this.verifyDiffRendering();
         } else if (offsetChanged || selectionChanged) {
@@ -1399,7 +1413,7 @@ export class AnycodeEditor {
 
         this.renderer.closeCompletion();
         this.isCompletionOpen = false;
-        this.renderer.renderChanges(this.getEditorState(), this.search);
+        this.renderer.renderChanges(this.getEditorState());
     }
 
     private handleCompletionKey(event: KeyboardEvent): boolean {
@@ -1613,7 +1627,7 @@ export class AnycodeEditor {
 
         this.recomputeDiffs();
 
-        this.renderer.renderChanges(this.getEditorState(), this.search);
+        this.renderer.renderChanges(this.getEditorState());
         this.verifyDiffRendering();
     }
 
@@ -1626,7 +1640,7 @@ export class AnycodeEditor {
             void this.initOriginalCode(baseline).then((updated) => {
                 if (!this.diffEnabled || !updated) return;
                 this.recomputeDiffs();
-                this.renderer.render(this.getEditorState(), this.search);
+                this.renderer.render(this.getEditorState());
                 this.verifyDiffRendering();
             });
         }
@@ -1635,9 +1649,9 @@ export class AnycodeEditor {
 
         if (!enabled) {
             this.renderer.clearAllDiffs();
-            this.renderer.render(this.getEditorState(), this.search);
+            this.renderer.render(this.getEditorState());
         } else {
-            this.renderer.render(this.getEditorState(), this.search);
+            this.renderer.render(this.getEditorState());
             this.verifyDiffRendering();
         }
     }
@@ -1646,7 +1660,7 @@ export class AnycodeEditor {
         this.focusedDiffEnabled = enabled;
         this.focusedDiffContextLines = Math.max(0, contextLines);
         this.renderer.setFocusedDiffMode(this.focusedDiffEnabled, this.focusedDiffContextLines);
-        this.renderer.render(this.getEditorState(), this.search);
+        this.renderer.render(this.getEditorState());
         if (this.diffEnabled) {
             this.verifyDiffRendering();
         }
@@ -1656,7 +1670,7 @@ export class AnycodeEditor {
         void this.initOriginalCode(content).then((updated) => {
             if (!this.diffEnabled || !updated) return;
             this.recomputeDiffs();
-            this.renderer.render(this.getEditorState(), this.search);
+            this.renderer.render(this.getEditorState());
             this.verifyDiffRendering();
         });
     }

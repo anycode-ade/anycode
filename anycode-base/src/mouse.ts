@@ -1,4 +1,5 @@
-import { AnycodeLine, Pos, getLineTextLength, isDiagnosticElement, isInsideDiagnostic } from "./utils";
+import { AnycodeLine, Pos } from "./types";
+import { getLineTextLength, isDiagnosticElement, isInsideDiagnostic, isSideLineElement } from "./utils";
 
 export function getPosFromMouse(e: MouseEvent): Pos | null {
 
@@ -30,12 +31,8 @@ function resolvePosition(node: Node, nodeOffset: number): Pos | null {
         ? node.closest(".bt, .ln, .fd")
         : node.parentElement?.closest(".bt, .ln, .fd");
 
-    if (sideElement && sideElement instanceof HTMLElement) {
-        const lineStr = sideElement.getAttribute("data-line");
-        if (lineStr) {
-            const row = parseInt(lineStr, 10);
-            return { row, col: 0 };
-        }
+    if (isSideLineElement(sideElement)) {
+        return { row: sideElement.lineNumber, col: 0 };
     }
 
     // corner case, whole row selected

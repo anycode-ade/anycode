@@ -1,4 +1,5 @@
-import { AnycodeLine, minimize } from "../utils";
+import { AnycodeLine } from "../types";
+import { minimize } from "../utils";
 
 export class DiagnosticRenderer {
     private getDiagnosticSpan(line: AnycodeLine): HTMLSpanElement | null {
@@ -46,8 +47,7 @@ export class DiagnosticRenderer {
         const span = document.createElement('span');
         span.className = 'diagnostic';
         span.textContent = "\u200B" + text;
-        span.setAttribute('data-diagnostic', 'true');
-        span.setAttribute('contentEditable', 'false');
+        span.contentEditable = 'false';
 
         const anchor = this.getInsertAnchor(line);
         if (anchor) {

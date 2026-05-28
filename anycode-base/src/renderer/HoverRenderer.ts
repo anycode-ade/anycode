@@ -1,5 +1,6 @@
 import { Code } from "../code";
-import { AnycodeLine, findNodeAndOffset } from "../utils";
+import { AnycodeLine } from "../types";
+import { findNodeAndOffset } from "../utils";
 
 /**
  * HoverRenderer is responsible for hover tooltip UI.

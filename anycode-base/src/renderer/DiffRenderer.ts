@@ -1,4 +1,5 @@
-import { AnycodeLine } from "../utils";
+import { AnycodeLine, GhostElement, GutterElement } from "../types";
+import { isGhostElement } from "../utils";
 import { EditorSettings } from "../editor";
 import { DiffInfo, ChangeType } from "../diff";
 import { HighlighedNode, WordHighlight } from "../code";
@@ -24,10 +25,10 @@ export const getGapElementData = (el: HTMLElement): GapElementData | undefined =
 };
 
 export interface GhostLine {
-    code: HTMLElement;
-    gutter: HTMLElement;
-    btn: HTMLElement;
-    fold: HTMLElement;
+    code: GhostElement;
+    gutter: GhostElement;
+    btn: GhostElement;
+    fold: GhostElement;
 }
 
 /**
@@ -64,7 +65,7 @@ export class DiffRenderer {
     private getLine(lineNumber: number): AnycodeLine | null {
         for (let i = 0; i < this.codeContent.children.length; i++) {
             const child = this.codeContent.children[i];
-            if (child.classList.contains('spacer') || child.hasAttribute('data-ghost')) {
+            if (child.classList.contains('spacer') || isGhostElement(child)) {
                 continue;
             }
             const line = child as AnycodeLine;
@@ -83,12 +84,11 @@ export class DiffRenderer {
         hunkId: number,
         nodes?: HighlighedNode[],
         wordHighlight?: WordHighlight | null
-    ): HTMLDivElement {
-        const ghostLine = document.createElement('div');
+    ): HTMLDivElement & GhostElement {
+        const ghostLine = document.createElement('div') as HTMLDivElement & GhostElement;
         ghostLine.className = "line line-deleted-ghost";
-        ghostLine.style.lineHeight = `${settings.lineHeight}px`;
-        ghostLine.setAttribute('data-ghost', 'true');
-        ghostLine.setAttribute('data-hunk-id', hunkId.toString());
+        ghostLine.isGhost = true;
+        ghostLine.hunkId = hunkId;
 
         if (nodes && nodes.length > 0) {
             for (const { name, text: nodeText } of nodes) {
@@ -145,47 +145,35 @@ export class DiffRenderer {
             wordHighlight
         );
 
-        const emptyGutter = document.createElement('div');
+        const emptyGutter = document.createElement('div') as HTMLDivElement & GhostElement;
         emptyGutter.className = 'ln';
-        emptyGutter.style.height = `${settings.lineHeight}px`;
-        emptyGutter.setAttribute('data-ghost', 'true');
-        emptyGutter.setAttribute('data-hunk-id', hunkId.toString());
+        emptyGutter.isGhost = true;
+        emptyGutter.hunkId = hunkId;
 
-        const emptyButton = document.createElement('div');
+        const emptyButton = document.createElement('div') as HTMLDivElement & GhostElement;
         emptyButton.className = 'bt';
-        emptyButton.style.height = `${settings.lineHeight}px`;
-        emptyButton.setAttribute('data-ghost', 'true');
-        emptyButton.setAttribute('data-hunk-id', hunkId.toString());
+        emptyButton.isGhost = true;
+        emptyButton.hunkId = hunkId;
 
-        const emptyFold = document.createElement('div');
+        const emptyFold = document.createElement('div') as HTMLDivElement & GhostElement;
         emptyFold.className = 'fd';
-        emptyFold.style.height = `${settings.lineHeight}px`;
-        emptyFold.setAttribute('data-ghost', 'true');
-        emptyFold.setAttribute('data-hunk-id', hunkId.toString());
+        emptyFold.isGhost = true;
+        emptyFold.hunkId = hunkId;
 
         return { code: ghostLine, gutter: emptyGutter, btn: emptyButton, fold: emptyFold };
     }
 
     public clearAllGhostLines(): void {
-        const ghostLines = this.codeContent.querySelectorAll('[data-ghost="true"]');
-        ghostLines.forEach((ghostLine) => {
-            ghostLine.remove();
-        });
+        this.removeGhostChildren(this.codeContent);
+        this.removeGhostChildren(this.gutter);
+        this.removeGhostChildren(this.buttonsColumn);
+        this.removeGhostChildren(this.foldsColumn);
+    }
 
-        const gutterGhosts = this.gutter.querySelectorAll('[data-ghost="true"]');
-        gutterGhosts.forEach((ghost) => {
-            ghost.remove();
-        });
-
-        const btnGhosts = this.buttonsColumn.querySelectorAll('[data-ghost="true"]');
-        btnGhosts.forEach((ghost) => {
-            ghost.remove();
-        });
-
-        const foldGhosts = this.foldsColumn.querySelectorAll('[data-ghost="true"]');
-        foldGhosts.forEach((ghost) => {
-            ghost.remove();
-        });
+    private removeGhostChildren(container: HTMLElement): void {
+        Array.from(container.children)
+            .filter((child): child is GhostElement => isGhostElement(child))
+            .forEach((child) => child.remove());
     }
 
     // ========== Focused Diff Model ==========
@@ -375,7 +363,7 @@ export class DiffRenderer {
 
         const gutterLines = this.gutter.querySelectorAll('.ln');
         gutterLines.forEach((gutterLine) => {
-            const lineIndex = parseInt(gutterLine.getAttribute('data-line') || '-1', 10);
+            const lineIndex = (gutterLine as GutterElement).lineNumber ?? -1;
             if (lineIndex < 0) return;
 
             const lineNumber = lineIndex + 1;
@@ -432,7 +420,7 @@ export class DiffRenderer {
     }
 
     public addDiffGutter(lineIndex: number, changeType: ChangeType): void {
-        const gutterLine = this.gutter.querySelector(`.ln[data-line="${lineIndex}"]`) as HTMLElement | null;
+        const gutterLine = this.getGutterLine(lineIndex);
         if (!gutterLine) {
             return;
         }
@@ -446,7 +434,7 @@ export class DiffRenderer {
     }
 
     private removeDiffGutter(lineIndex: number): void {
-        const gutterLine = this.gutter.querySelector(`.ln[data-line="${lineIndex}"]`) as HTMLElement | null;
+        const gutterLine = this.getGutterLine(lineIndex);
         if (!gutterLine) {
             return;
         }
@@ -476,6 +464,15 @@ export class DiffRenderer {
         this.clearAllGhostLines();
     }
 
+    private getGutterLine(lineNumber: number): GutterElement | null {
+        for (const child of Array.from(this.gutter.children)) {
+            if (!child.classList.contains('ln') || isGhostElement(child)) continue;
+            const line = child as GutterElement;
+            if (line.lineNumber === lineNumber) return line;
+        }
+        return null;
+    }
+
     // ========== Gap Row (Separator) Rendering ==========
 
     public createGapRowElements(
@@ -484,8 +481,6 @@ export class DiffRenderer {
     ): { code: HTMLElement; gutter: HTMLElement; btn: HTMLElement; fold: HTMLElement } {
         const code = document.createElement('div');
         code.className = 'line diff-gap';
-        code.style.lineHeight = `${settings.lineHeight}px`;
-        code.style.height = `${settings.lineHeight}px`;
         setGapElementData(code, {
             hiddenStart: row.hiddenStart,
             hiddenEnd: row.hiddenEnd,
@@ -507,12 +502,11 @@ export class DiffRenderer {
 
         const gutter = document.createElement('div');
         gutter.className = 'ln diff-gap-gutter';
-        gutter.style.height = `${settings.lineHeight}px`;
 
         const upBtn = document.createElement('button');
         upBtn.className = 'diff-gap-expand-btn diff-gap-gutter-btn diff-gap-gutter-btn-up';
         upBtn.type = 'button';
-        upBtn.setAttribute('aria-label', 'Expand hidden lines up');
+        upBtn.ariaLabel = 'Expand hidden lines up';
         setGapElementData(upBtn, {
             hiddenStart: row.hiddenStart,
             hiddenEnd: row.hiddenEnd,
@@ -524,7 +518,7 @@ export class DiffRenderer {
         const downBtn = document.createElement('button');
         downBtn.className = 'diff-gap-expand-btn diff-gap-gutter-btn diff-gap-gutter-btn-down';
         downBtn.type = 'button';
-        downBtn.setAttribute('aria-label', 'Expand hidden lines down');
+        downBtn.ariaLabel = 'Expand hidden lines down';
         setGapElementData(downBtn, {
             hiddenStart: row.hiddenStart,
             hiddenEnd: row.hiddenEnd,
@@ -535,11 +529,9 @@ export class DiffRenderer {
 
         const btn = document.createElement('div');
         btn.className = 'bt diff-gap-btn';
-        btn.style.height = `${settings.lineHeight}px`;
 
         const fold = document.createElement('div');
         fold.className = 'fd fold-gap-cell';
-        fold.style.height = `${settings.lineHeight}px`;
 
         return { code, gutter, btn, fold };
     }

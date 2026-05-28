@@ -1,4 +1,5 @@
-import { AnycodeLine, Pos, getLineTextLength, isDiagnosticElement, isInsideDiagnostic } from "./utils";
+import { AnycodeLine, Pos } from "./types";
+import { getLineTextLength, isDiagnosticElement, isInsideDiagnostic } from "./utils";
 import { Code } from "./code";
 
 export class Selection {

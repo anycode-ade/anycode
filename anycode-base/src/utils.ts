@@ -1,10 +1,6 @@
-export interface AnycodeLine extends HTMLDivElement {
-    lineNumber: number;
-    offset: number;
-    hash: string;
-}
+import { AnycodeLine, FoldElement, GhostElement, SideLineElement } from "./types";
 
-export type Pos = { row: number; col: number };
+export type { AnycodeLine, ButtonColumnElement, FoldColumnElement, FoldElement, GhostElement, GutterElement, Pos, RealRowElements, RowElements, SideLineElement } from "./types";
 
 export function generateCssClasses(theme: any) {
     let css = '';
@@ -42,6 +38,26 @@ export function isInsideDiagnostic(node: Node | null): boolean {
         return !!node.closest('.diagnostic');
     }
     return !!node.parentElement?.closest('.diagnostic');
+}
+
+export function isSideLineElement(node: Element | null | undefined): node is SideLineElement {
+    return !!node
+        && node instanceof HTMLDivElement
+        && typeof (node as SideLineElement).lineNumber === 'number';
+}
+
+export function isFoldElement(node: Element | null | undefined): node is FoldElement {
+    return !!node
+        && node instanceof HTMLButtonElement
+        && node.classList.contains('fold-toggle')
+        && typeof (node as FoldElement).lineNumber === 'number';
+}
+
+export function isGhostElement(node: Element | null | undefined): node is GhostElement {
+    return !!node
+        && node instanceof HTMLElement
+        && (node as GhostElement).isGhost === true
+        && typeof (node as GhostElement).hunkId === 'number';
 }
 
 export function getLineTextLength(lineDiv: AnycodeLine): number {
