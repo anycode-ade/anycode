@@ -62,6 +62,10 @@ jobs:
           ls -la dist | head -10
           echo "Total files: $(find dist -type f | wc -l)"
       
+      - name: Run core library tests
+        working-directory: ./anycode-base
+        run: pnpm test -- --run
+      
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -80,6 +84,10 @@ jobs:
         with:
           workspaces: |
             anycode-backend -> target
+      
+      - name: Run Rust backend tests
+        working-directory: ./anycode-backend
+        run: cargo test
       
       - name: Build Linux x86_64 musl binary (test)
         working-directory: ./anycode-backend

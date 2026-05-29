@@ -744,9 +744,19 @@ export class Code {
         };
         
         for (; column < lineText.length;) {
-            const capture = captures.find(
-                c => c.node.startIndex <= bytesCounter && bytesCounter < c.node.endIndex
-            );    
+            // Pick the narrowest capture range that contains current byte position.
+            // This preserves nested/specific highlight precedence without sorting in the hot path.
+            let capture: Parser.QueryCapture | undefined;
+            let captureLen = 0;
+            for (const c of captures) {
+                if (c.node.startIndex <= bytesCounter && bytesCounter < c.node.endIndex) {
+                    const len = c.node.endIndex - c.node.startIndex;
+                    if (!capture || len < captureLen) {
+                        capture = c;
+                        captureLen = len;
+                    }
+                }
+            }
             if (capture?.name.startsWith("injection.content.")) {
                 // --- CASE 1: Injection ---
                 const injectionData = injectionCapturesArray.find(
