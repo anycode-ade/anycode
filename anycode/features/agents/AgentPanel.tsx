@@ -24,7 +24,6 @@ type AgentPanelProps = {
         fetchAvailableSessions: (agent: AcpAgent) => Promise<AcpSessionSummary[]>;
         sendPrompt: (...args: any[]) => void;
         cancelPrompt: (...args: any[]) => void;
-        sendPermissionResponse: (...args: any[]) => void;
         undoPrompt: (...args: any[]) => void;
         setSessionModel: (...args: any[]) => void;
         setSessionReasoning: (...args: any[]) => void;
@@ -133,7 +132,6 @@ const AgentPanelComponent = ({
                     onFocusPane={() => {}}
                     onSendPrompt={agents.sendPrompt}
                     onCancelPrompt={agents.cancelPrompt}
-                    onPermissionResponse={agents.sendPermissionResponse}
                     onUndoPrompt={agents.undoPrompt}
                     onCloseAgent={agents.closeAgent}
                     onSelectModel={agents.setSessionModel}

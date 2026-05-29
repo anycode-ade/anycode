@@ -49,6 +49,8 @@ export const LANGUAGE_EXTENSIONS: { [key: string]: string } = {
     'yml': 'yaml'
 };
 
+export const EDITOR_SUPPORTED_LANGUAGES = new Set(Object.values(LANGUAGE_EXTENSIONS));
+
 export const getLanguageFromFileName = (fileName: string): string => {
     const ext = fileName.split('.').pop()?.toLowerCase();
     return LANGUAGE_EXTENSIONS[ext || ''] || 'javascript';

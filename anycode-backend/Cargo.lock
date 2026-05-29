@@ -87,6 +87,7 @@ dependencies = [
  "async-trait",
  "axum",
  "axum_static",
+ "base64 0.22.1",
  "chrono",
  "detect-lang",
  "dirs",

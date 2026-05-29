@@ -64,9 +64,7 @@ async fn is_file_opened(
         .any(|data| data.opened_files.contains(path_str))
 }
 
-async fn is_file_cached(
-    path_str: &str, file2code: &Arc<Mutex<HashMap<String, Code>>>
-) -> bool {
+async fn is_file_cached(path_str: &str, file2code: &Arc<Mutex<HashMap<String, Code>>>) -> bool {
     let f2c = file2code.lock().await;
     f2c.contains_key(path_str)
 }
@@ -110,8 +108,10 @@ pub async fn handle_watch_event(
         let mut states = file_states.lock().await;
         let entry = states.entry(path_str.clone()).or_insert_with(|| {
             let (tx, _) = watch::channel(());
-            FileWatchState { 
-                state: FileState::DoesNotExist, sender: tx, pending: false,
+            FileWatchState {
+                state: FileState::DoesNotExist,
+                sender: tx,
+                pending: false,
             }
         });
 
@@ -126,7 +126,9 @@ pub async fn handle_watch_event(
         }
     };
 
-    if !should_spawn { return; }
+    if !should_spawn {
+        return;
+    }
 
     // Spawn a single debounce task for this file
     let mut rx = rx.unwrap();
@@ -146,7 +148,8 @@ pub async fn handle_watch_event(
             // Mark as seen so we wait for *new* changes
             let _ = rx.borrow_and_update();
             match tokio::time::timeout(DEBOUNCE, rx.changed()).await {
-                Ok(_) => continue, Err(_) => break,
+                Ok(_) => continue,
+                Err(_) => break,
             }
         }
 
@@ -193,7 +196,7 @@ async fn process_watch_event(
         states
             .get(path_str)
             .map(|s| s.state.clone())
-            .unwrap_or(FileState::DoesNotExist) 
+            .unwrap_or(FileState::DoesNotExist)
     };
     let is_opened_file = is_file_opened(path_str, socket2data).await;
     let is_cached_in_file2code = is_file_cached(path_str, file2code).await;
@@ -227,14 +230,9 @@ async fn process_watch_event(
         }
         WatchAction::Modify => {
             if is_opened_file || is_cached_in_file2code {
-                let _ = handle_file_modification(
-                    path,
-                    socket,
-                    file2code,
-                    lsp_manager,
-                    is_opened_file,
-                )
-                .await;
+                let _ =
+                    handle_file_modification(path, socket, file2code, lsp_manager, is_opened_file)
+                        .await;
             }
         }
         WatchAction::Ignore => {}
@@ -252,7 +250,7 @@ async fn process_watch_event(
 async fn handle_search_update(
     path: &Path,
     socket: &Arc<socketioxide::SocketIo>,
-    socket2data: &Arc<Mutex<HashMap<String, SocketData>>>
+    socket2data: &Arc<Mutex<HashMap<String, SocketData>>>,
 ) {
     if path.exists() && !path.is_file() {
         return;
@@ -290,7 +288,7 @@ async fn handle_search_update(
 async fn handle_changes_update(
     path: &Path,
     socket: &Arc<socketioxide::SocketIo>,
-    git_manager: &Arc<Mutex<crate::git::GitManager>>
+    git_manager: &Arc<Mutex<crate::git::GitManager>>,
 ) {
     let update = {
         let mut git = git_manager.lock().await;

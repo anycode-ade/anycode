@@ -112,6 +112,13 @@ export interface AcpPromptStateMessage {
     is_processing: boolean;
 }
 
+export interface AcpPromptAttachment {
+    name: string;
+    mime_type: string;
+    data_base64: string;
+    size?: number;
+}
+
 export interface AcpSelectOption {
     config_id: string;
     value: string;
@@ -148,9 +155,17 @@ export interface AcpOpenFileMessage {
     line?: number;
 }
 
+export interface AcpRawUpdateMessage {
+    role: 'raw_update';
+    agent_id: string;
+    ts: string;
+    update: unknown;
+}
+
 export type AcpMessage =
     | AcpUserMessage
     | AcpAssistantMessage
+    | AcpMediaMessage
     | AcpThoughtMessage
     | AcpToolCallMessage
     | AcpToolResultMessage
@@ -159,21 +174,31 @@ export type AcpMessage =
     | AcpModelSelectorMessage
     | AcpReasoningSelectorMessage
     | AcpContextUsageMessage
-    | AcpPermissionRequestMessage
     | AcpErrorMessage
-    | AcpOpenFileMessage;
+    | AcpOpenFileMessage
+    | AcpRawUpdateMessage;
 
 export interface AcpUserMessage {
     role: 'user';
     content: string;
     is_chunk?: boolean;
     checkpoint_id?: string;
+    attachments?: AcpPromptAttachment[];
 }
 
 export interface AcpAssistantMessage {
     role: 'assistant';
     content: string;
     is_chunk?: boolean;
+}
+
+export interface AcpMediaMessage {
+    role: 'media';
+    media_type: 'image' | 'audio';
+    mime_type?: string;
+    data?: string;
+    uri?: string;
+    title?: string;
 }
 
 export interface AcpThoughtMessage {
@@ -251,24 +276,6 @@ export interface AcpToolUpdateMessage {
     role: 'tool_update';
     id: string;
     update: AcpToolCallProgressPayload | Record<string, unknown>;
-}
-
-export interface AcpPermissionOption {
-    id: string;
-    name: string;
-}
-
-export interface AcpPermissionRequestMessage {
-    role: 'permission_request';
-    id: string;
-    tool_call: {
-        id: string;
-        name: string;
-        command?: string;
-        arguments: any;
-        locations?: AcpLocation[];
-    };
-    options: AcpPermissionOption[];
 }
 
 export interface AcpToolCall {

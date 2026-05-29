@@ -9,6 +9,11 @@
     position: relative;
 }
 
+.acp-input-drag-over {
+    box-shadow: inset 0 0 0 1px var(--focus-border, #007acc);
+    background: color-mix(in srgb, var(--focus-border, #007acc) 8%, transparent);
+}
+
 .acp-input-minimized {
     padding: 0;
     border-top: none;
@@ -56,16 +61,49 @@
     gap: 8px;
 }
 
+.acp-input-attachments {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.acp-input-attachment-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    max-width: 100%;
+    border: 1px solid var(--border-color, #333);
+    border-radius: 999px;
+    padding: 2px 8px;
+    font-size: 11px;
+}
+
+.acp-input-attachment-name {
+    max-width: 280px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.acp-input-attachment-remove {
+    background: transparent;
+    border: none;
+    color: inherit;
+    cursor: pointer;
+    font-size: 14px;
+    line-height: 1;
+    padding: 0;
+}
+
 .acp-input-preview-text {
     flex: 1;
-
     font-size: 12px;
-
     color: var(--text-color-secondary, rgba(255, 255, 255, 0.7));
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
     user-select: none;
+    --webkit-user-select: none;
 }
 
 .acp-input-toggle-btn {
@@ -126,6 +164,9 @@
     color: var(--text-color, #fff);
     font-size: 11px;
     padding: 0 8px;
+    user-select: none;
+    --webkit-user-select: none;
+    cursor: pointer;
 }
 
 .acp-input-select {
@@ -176,6 +217,9 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    cursor: pointer;
+    user-select: none;
+    --webkit-user-select: none;
 }
 
 .acp-input textarea {
@@ -273,5 +317,89 @@
     .acp-input textarea,
     .acp-input-preview-text {
         font-size: 16px;
+    }
+}
+
+/* Recording Panel Styles */
+.acp-input-recording-panel {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    padding: 6px 8px;
+    background: rgba(255, 0, 0, 0.05);
+    border: 1px solid rgba(255, 0, 0, 0.2);
+    border-radius: 8px;
+    box-sizing: border-box;
+    min-height: 48px;
+}
+
+.acp-input-recording-indicator {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.acp-recording-dot {
+    width: 10px;
+    height: 10px;
+    background-color: #ff3b30;
+    border-radius: 50%;
+    display: inline-block;
+    animation: acp-pulse 1.5s infinite ease-in-out;
+}
+
+.acp-recording-text {
+    font-size: 13px;
+    color: var(--text-color, #fff);
+    font-weight: 500;
+}
+
+.acp-input-recording-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.acp-input-record-cancel-btn,
+.acp-input-record-stop-btn {
+    border: none;
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.acp-input-record-cancel-btn {
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--text-color, #fff);
+}
+
+.acp-input-record-cancel-btn:hover {
+    background: rgba(255, 255, 255, 0.15);
+}
+
+.acp-input-record-stop-btn {
+    background: #ff3b30;
+    color: #fff;
+}
+
+.acp-input-record-stop-btn:hover {
+    background: #e03026;
+}
+
+@keyframes acp-pulse {
+    0% {
+        transform: scale(0.9);
+        opacity: 0.6;
+    }
+    50% {
+        transform: scale(1.18);
+        opacity: 1;
+    }
+    100% {
+        transform: scale(0.9);
+        opacity: 0.6;
     }
 }

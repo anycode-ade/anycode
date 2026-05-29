@@ -44,7 +44,8 @@
     white-space: normal;
     line-height: 1.5;
     color: inherit;
-    overflow-wrap: anywhere;
+    overflow-wrap: break-word;
+    word-break: normal;
 }
 
 .acp-message-markdown * {
@@ -78,20 +79,20 @@
 .acp-message-markdown h4,
 .acp-message-markdown h5,
 .acp-message-markdown h6 {
-    margin: 0.75em 0 0.35em 0;
-    line-height: 1.2;
+    /*margin: 0.75em 0 0.35em 0;*/
+    /*line-height: 1.2;*/
 }
 
 .acp-message-markdown h1 {
-    font-size: 1.25em;
+    /*font-size: 1.25em;*/
 }
 
 .acp-message-markdown h2 {
-    font-size: 1.15em;
+    /*font-size: 1.15em;*/
 }
 
 .acp-message-markdown h3 {
-    font-size: 1.05em;
+    /*font-size: 1.05em;*/
 }
 
 .acp-message-markdown ul,
@@ -120,6 +121,8 @@
     background-color: rgba(127, 127, 127, 0.18);
     border: 1px solid var(--theme-border, var(--border-color, #333));
     color: inherit;
+    /*width: 100%;*/
+    overflow:scroll;
 }
 
 .acp-message-markdown pre {
@@ -237,6 +240,37 @@
 
 .acp-message-assistant .acp-message-content {
     color: var(--theme-foreground, var(--text-color, #e0e0e0));
+}
+
+.acp-message-attachments {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.acp-message-attachment-image {
+    width: 100%;
+    max-width: 320px;
+    height: auto;
+    border-radius: 8px;
+    display: block;
+}
+
+.acp-message-attachment-audio {
+    width: 100%;
+    max-width: 320px;
+}
+
+.acp-message-attachment-file {
+    border: 1px solid var(--border-color, #333);
+    border-radius: 8px;
+    padding: 6px 10px;
+    font-size: 12px;
+    max-width: 320px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .acp-message-thought .acp-message-content {
@@ -478,8 +512,7 @@
     display: block;
 }
 
-.acp-tool-call-toggle,
-.acp-permission-header {
+.acp-tool-call-toggle {
     display: flex;
     align-items: center;
     gap: 6px;
@@ -505,73 +538,6 @@
 
 .acp-thought-toggle-inline {
     margin-right: 6px;
-}
-
-/* Permission Request Styles */
-.acp-message-permission_request {
-    align-items: flex-start;
-}
-
-.acp-message-permission_request .acp-message-content {
-    background-color: var(--warning-bg, #3d3522);
-    border: 1px solid var(--warning-border, #665c3a);
-    max-width: 100%;
-    box-sizing: border-box;
-    overflow-x: hidden;
-}
-
-.acp-permission-header {
-    font-size: 12px;
-    font-weight: 600;
-    cursor: pointer;
-    user-select: none;
-}
-
-.acp-permission-header:hover {
-    color: var(--text-color, #ccc);
-}
-
-.acp-permission-buttons {
-    display: flex;
-    gap: 8px;
-    margin-top: 12px;
-    flex-wrap: wrap;
-}
-
-.acp-permission-button {
-    padding: 6px 16px;
-    border: none;
-    border-radius: 4px;
-    font-size: 12px;
-    font-weight: 500;
-    cursor: pointer;
-    transition: background-color 0.15s, transform 0.1s;
-}
-
-.acp-permission-button:hover {
-    transform: translateY(-1px);
-}
-
-.acp-permission-button:active {
-    transform: translateY(0);
-}
-
-.acp-permission-allow {
-    background-color: var(--success-bg, #2d5a3d);
-    color: var(--success-text, #8fdf9f);
-}
-
-.acp-permission-allow:hover {
-    background-color: var(--success-bg-hover, #3a7a4f);
-}
-
-.acp-permission-deny {
-    background-color: var(--error-bg, #5a2d2d);
-    color: var(--error-text, #df8f8f);
-}
-
-.acp-permission-deny:hover {
-    background-color: var(--error-bg-hover, #7a3a3a);
 }
 
 /* Error Message Styles */

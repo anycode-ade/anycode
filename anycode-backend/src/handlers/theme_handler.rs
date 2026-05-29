@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use serde_json::{self, json, Value};
+use serde_json::{self, Value, json};
 use socketioxide::extract::{AckSender, Data, SocketRef};
 use std::fs;
 use std::path::PathBuf;
@@ -43,10 +43,7 @@ fn get_themes_dir() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("themes"))
 }
 
-pub async fn handle_theme_list(
-    _socket: SocketRef,
-    ack: AckSender,
-) {
+pub async fn handle_theme_list(_socket: SocketRef, ack: AckSender) {
     info!("theme:list requested");
     let mut list = Vec::new();
     let themes_dir = get_themes_dir();
@@ -124,8 +121,11 @@ pub async fn handle_theme_get(
         Ok(c) => Some(c),
         Err(_) => {
             // Fallback to embedded theme asset
-            crate::config::Themes::get(&request.file_name)
-                .and_then(|file_data| std::str::from_utf8(file_data.data.as_ref()).ok().map(|s| s.to_string()))
+            crate::config::Themes::get(&request.file_name).and_then(|file_data| {
+                std::str::from_utf8(file_data.data.as_ref())
+                    .ok()
+                    .map(|s| s.to_string())
+            })
         }
     };
 
@@ -140,12 +140,18 @@ pub async fn handle_theme_get(
     let theme_file = match serde_json::from_str::<ThemeFile>(&content) {
         Ok(f) => f,
         Err(e) => {
-            let _ = ack.send(&json!({ "success": false, "error": format!("Failed to parse theme: {}", e) }));
+            let _ = ack.send(
+                &json!({ "success": false, "error": format!("Failed to parse theme: {}", e) }),
+            );
             return;
         }
     };
 
-    if let Some(theme_def) = theme_file.themes.into_iter().find(|t| t.name == request.theme_name) {
+    if let Some(theme_def) = theme_file
+        .themes
+        .into_iter()
+        .find(|t| t.name == request.theme_name)
+    {
         let _ = ack.send(&json!({
             "success": true,
             "theme": {

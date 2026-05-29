@@ -1,7 +1,7 @@
-use std::sync::Arc;
 use anyhow::Result;
 use lsp_types::PublishDiagnosticsParams;
 use socketioxide::SocketIo;
+use std::sync::Arc;
 use tokio::sync::mpsc;
 use tower::ServiceBuilder;
 use tower_http::cors::CorsLayer;
@@ -25,7 +25,7 @@ mod utils;
 
 use app_state::AppState;
 use handlers::connection_handler::handle_connect;
-use handlers::static_handler::static_handler;
+use handlers::static_handler::{local_image_handler, static_handler};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -52,6 +52,7 @@ async fn main() -> Result<()> {
     io.ns("/", handle_connect);
 
     let app = axum::Router::new()
+        .route("/api/local-image", axum::routing::get(local_image_handler))
         .fallback(static_handler)
         .with_state(io.clone())
         .layer(cors);

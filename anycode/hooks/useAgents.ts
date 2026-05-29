@@ -2,20 +2,247 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Socket } from 'socket.io-client';
 import {
     type AcpAgent,
+    type AcpAssistantMessage,
     type AcpContextUsageMessage,
+    type AcpMediaMessage,
     type AcpMessage,
     type AcpModelSelectorMessage,
     type AcpPromptStateMessage,
+    type AcpPromptAttachment,
+    type AcpRawUpdateMessage,
     type AcpReasoningSelectorMessage,
     type AcpSelectOption,
     type AcpSession,
     type AcpSessionSummary,
+    type AcpThoughtMessage,
+    type AcpToolCallMessage,
+    type AcpToolResultMessage,
+    type AcpToolUpdateMessage,
+    type AcpUserMessage,
 } from '../types';
+
+const MESSAGE_FLUSH_MS = 100;
 
 type UseAgentsParams = {
     wsRef: React.RefObject<Socket | null>;
     isConnected: boolean;
     onAgentStarted?: () => void;
+};
+type PendingAcpEvent = { agent_id: string; item: AcpMessage };
+
+const asRecord = (value: unknown): Record<string, unknown> | null => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+    return value as Record<string, unknown>;
+};
+
+const asString = (value: unknown): string | undefined => {
+    return typeof value === 'string' ? value : undefined;
+};
+
+const getAnyField = (record: Record<string, unknown> | null, ...keys: string[]): unknown => {
+    if (!record) return undefined;
+    for (const key of keys) {
+        if (key in record) return record[key];
+    }
+    return undefined;
+};
+
+const getVariant = (update: unknown): { kind: string; payload: unknown } | null => {
+    const record = asRecord(update);
+    if (!record) return null;
+
+    const taggedKind = asString(record.sessionUpdate) ?? asString(record.session_update);
+    if (taggedKind) {
+        return { kind: taggedKind, payload: record };
+    }
+
+    const entries = Object.entries(record);
+    if (entries.length !== 1) return null;
+    const [kind, payload] = entries[0];
+    return { kind, payload };
+};
+
+const normalizeToolStatus = (status: unknown): string | undefined => {
+    const s = asString(status);
+    return s ? s.toLowerCase() : undefined;
+};
+
+const normalizeVariantKind = (kind: string): string => {
+    const k = kind.trim();
+    if (!k) return k;
+    if (k.includes('_')) return k.toLowerCase();
+    return k.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase();
+};
+
+const contentBlockToMessages = (
+    content: unknown,
+    textRole: 'user' | 'assistant' | 'thought',
+): AcpMessage[] => {
+    const contentRecord = asRecord(content);
+    if (!contentRecord) return [];
+
+    const contentType = asString(contentRecord.type)?.toLowerCase();
+    if (contentType === 'text') {
+        const text = asString(contentRecord.text);
+        if (!text) return [];
+        if (textRole === 'user') {
+            return [{ role: 'user', content: text, is_chunk: true } satisfies AcpUserMessage];
+        }
+        if (textRole === 'thought') {
+            return [{ role: 'thought', content: text, is_chunk: true } satisfies AcpThoughtMessage];
+        }
+        return [{ role: 'assistant', content: text, is_chunk: true } satisfies AcpAssistantMessage];
+    }
+    if (contentType === 'image') {
+        const message: AcpMediaMessage = {
+            role: 'media',
+            media_type: 'image',
+            mime_type: asString(contentRecord.mime_type) ?? asString(contentRecord.mimeType),
+            data: asString(contentRecord.data) ?? asString(contentRecord.base64),
+            uri: asString(contentRecord.uri),
+            title: asString(contentRecord.title),
+        };
+        return [message];
+    }
+    if (contentType === 'audio') {
+        const message: AcpMediaMessage = {
+            role: 'media',
+            media_type: 'audio',
+            mime_type: asString(contentRecord.mime_type) ?? asString(contentRecord.mimeType),
+            data: asString(contentRecord.data) ?? asString(contentRecord.base64),
+            uri: asString(contentRecord.uri),
+            title: asString(contentRecord.title),
+        };
+        return [message];
+    }
+
+    if ('Text' in contentRecord) {
+        const text = asString(asRecord(contentRecord.Text)?.text);
+        if (!text) return [];
+        if (textRole === 'user') {
+            return [{ role: 'user', content: text, is_chunk: true } satisfies AcpUserMessage];
+        }
+        if (textRole === 'thought') {
+            return [{ role: 'thought', content: text, is_chunk: true } satisfies AcpThoughtMessage];
+        }
+        return [{ role: 'assistant', content: text, is_chunk: true } satisfies AcpAssistantMessage];
+    }
+
+    if ('Image' in contentRecord) {
+        const image = asRecord(contentRecord.Image);
+        if (!image) return [];
+        const message: AcpMediaMessage = {
+            role: 'media',
+            media_type: 'image',
+            mime_type: asString(image.mime_type) ?? asString(image.mimeType),
+            data: asString(image.data) ?? asString(image.base64),
+            uri: asString(image.uri),
+            title: asString(image.title),
+        };
+        return [message];
+    }
+
+    if ('Audio' in contentRecord) {
+        const audio = asRecord(contentRecord.Audio);
+        if (!audio) return [];
+        const message: AcpMediaMessage = {
+            role: 'media',
+            media_type: 'audio',
+            mime_type: asString(audio.mime_type) ?? asString(audio.mimeType),
+            data: asString(audio.data) ?? asString(audio.base64),
+            uri: asString(audio.uri),
+            title: asString(audio.title),
+        };
+        return [message];
+    }
+
+    if ('ResourceLink' in contentRecord) {
+        const link = asRecord(contentRecord.ResourceLink);
+        const uri = asString(link?.uri);
+        if (!uri) return [];
+        return [{ role: 'assistant', content: uri } satisfies AcpAssistantMessage];
+    }
+
+    return [];
+};
+
+const projectRawUpdate = (rawMessage: AcpRawUpdateMessage): AcpMessage[] => {
+    const variant = getVariant(rawMessage.update);
+    if (!variant) return [];
+    const kind = normalizeVariantKind(variant.kind);
+
+    const payload = asRecord(variant.payload);
+
+    if ((kind === 'agent_message_chunk') && payload) {
+        return contentBlockToMessages(payload.content, 'assistant');
+    }
+
+    if ((kind === 'user_message_chunk') && payload) {
+        return contentBlockToMessages(payload.content, 'user');
+    }
+
+    if ((kind === 'agent_thought_chunk') && payload) {
+        return contentBlockToMessages(payload.content, 'thought');
+    }
+
+    if ((kind === 'tool_call') && payload) {
+        const id = asString(getAnyField(payload, 'tool_call_id', 'toolCallId', 'id')) ?? crypto.randomUUID();
+        const title = asString(getAnyField(payload, 'title', 'name')) ?? 'tool';
+        const rawInput = asRecord(getAnyField(payload, 'raw_input', 'rawInput', 'input', 'arguments'));
+        const content = getAnyField(payload, 'content');
+        const locations = getAnyField(payload, 'locations');
+        const call: AcpToolCallMessage = {
+            role: 'tool_call',
+            id,
+            name: title,
+            title,
+            command: asString(rawInput?.cmd) ?? asString(rawInput?.command) ?? title,
+            arguments: payload,
+            kind: asString(getAnyField(payload, 'kind', 'tool_kind')),
+            status: normalizeToolStatus(getAnyField(payload, 'status')),
+            content: Array.isArray(content) ? content as any : undefined,
+            raw_input: rawInput ?? undefined,
+            raw_output: getAnyField(payload, 'raw_output', 'rawOutput', 'output'),
+            locations: Array.isArray(locations) ? locations as any : undefined,
+        };
+        return [call];
+    }
+
+    if ((kind === 'tool_call_update') && payload) {
+        const id = asString(getAnyField(payload, 'tool_call_id', 'toolCallId', 'id')) ?? '';
+        if (!id) return [];
+        const fields = asRecord(getAnyField(payload, 'fields'));
+        const status = normalizeToolStatus(getAnyField(fields, 'status') ?? getAnyField(payload, 'status'));
+        const basePayload = fields ?? payload;
+        const withId = { tool_call_id: id, ...basePayload };
+
+        if (status === 'completed') {
+            const result: AcpToolResultMessage = {
+                role: 'tool_result',
+                id,
+                result: withId,
+            };
+            return [result];
+        }
+
+        const update: AcpToolUpdateMessage = {
+            role: 'tool_update',
+            id,
+            update: withId,
+        };
+        return [update];
+    }
+
+    if ((kind === 'usage_update') && payload) {
+        const usage: AcpContextUsageMessage = {
+            role: 'context_usage',
+            used: Number(payload.used ?? 0),
+            size: Number(payload.size ?? 0),
+        };
+        return [usage];
+    }
+
+    return [];
 };
 
 export const useAgents = ({
@@ -23,22 +250,6 @@ export const useAgents = ({
     isConnected,
     onAgentStarted,
 }: UseAgentsParams) => {
-    const mergeConsecutiveErrors = (messages: AcpMessage[]): AcpMessage[] => {
-        const merged: AcpMessage[] = [];
-        for (const message of messages) {
-            const last = merged[merged.length - 1];
-            if (message.role === 'error' && last?.role === 'error') {
-                merged[merged.length - 1] = {
-                    ...last,
-                    message: `${last.message}\n${message.message}`,
-                };
-                continue;
-            }
-            merged.push(message);
-        }
-        return merged;
-    };
-
     const [acpSessions, setAcpSessions] = useState<Map<string, AcpSession>>(new Map());
     const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
     const [isAgentSettingsOpen, setIsAgentSettingsOpen] = useState<boolean>(false);
@@ -46,18 +257,10 @@ export const useAgents = ({
 
     const agentCounterRef = useRef<Map<string, number>>(new Map());
     const acpSessionsRef = useRef<Map<string, AcpSession>>(new Map());
+    const pendingEventsRef = useRef<PendingAcpEvent[]>([]);
+    const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     useEffect(() => { acpSessionsRef.current = acpSessions; }, [acpSessions]);
-
-    const sendPermissionResponse = useCallback((agentId: string, permissionId: string, optionId: string) => {
-        if (!wsRef.current || !isConnected) return;
-
-        wsRef.current.emit('acp:permission_response', {
-            agent_id: agentId,
-            permission_id: permissionId,
-            option_id: optionId,
-        });
-    }, [wsRef, isConnected]);
 
     const updateSession = useCallback((agentId: string, updater: (session: AcpSession | undefined) => AcpSession) => {
         setAcpSessions((prev) => {
@@ -112,8 +315,57 @@ export const useAgents = ({
             return newSessions;
         });
     }, []);
+    
+    const mergeChunkMessages = (messages: AcpMessage[]): AcpMessage[] => {
+        const merged: AcpMessage[] = [];
 
-    const handleAcpMessage = useCallback((data: { agent_id: string; item: AcpMessage }) => {
+        for (const item of messages) {
+            if (item.role === 'user' || item.role === 'assistant' || item.role === 'thought') {
+                const isChunk = Boolean(item.is_chunk);
+                const last = merged[merged.length - 1];
+
+                if (
+                    isChunk
+                    && last
+                    && last.role === item.role
+                    && (last.role === 'user' || last.role === 'assistant' || last.role === 'thought')
+                ) {
+                    merged[merged.length - 1] = {
+                        ...last,
+                        content: last.content + item.content,
+                    };
+                    continue;
+                }
+
+                if (isChunk) {
+                    merged.push({ ...item, is_chunk: undefined });
+                    continue;
+                }
+            }
+
+            merged.push(item);
+        }
+
+        return merged;
+    };
+
+    const mergeConsecutiveErrors = (messages: AcpMessage[]): AcpMessage[] => {
+        const merged: AcpMessage[] = [];
+        for (const message of messages) {
+            const last = merged[merged.length - 1];
+            if (message.role === 'error' && last?.role === 'error') {
+                merged[merged.length - 1] = {
+                    ...last,
+                    message: `${last.message}\n${message.message}`,
+                };
+                continue;
+            }
+            merged.push(message);
+        }
+        return merged;
+    };
+    
+    const handleAcpMessageImmediate = useCallback((data: { agent_id: string; item: AcpMessage }) => {
         if (data.item.role === 'prompt_state') {
             const promptState = data.item as AcpPromptStateMessage;
             updateSession(data.agent_id, (existing) => ({
@@ -207,7 +459,57 @@ export const useAgents = ({
             return;
         }
 
-        if (data.item.role === 'tool_call' || data.item.role === 'tool_result' || data.item.role === 'tool_update' || data.item.role === 'permission_request') {
+        if (data.item.role === 'raw_update') {
+            const projected = projectRawUpdate(data.item);
+            if (projected.length === 0) {
+                return;
+            }
+
+            updateSession(data.agent_id, (existing) => {
+                let messages = [...(existing?.messages ?? [])];
+                let contextUsage = existing?.contextUsage;
+
+                for (const projectedItem of projected) {
+                    if (projectedItem.role === 'context_usage') {
+                        contextUsage = {
+                            used: projectedItem.used,
+                            size: projectedItem.size,
+                        };
+                        continue;
+                    }
+
+                    if (projectedItem.role === 'error') {
+                        messages = mergeConsecutiveErrors([...messages, projectedItem]);
+                        continue;
+                    }
+
+                    messages.push(projectedItem);
+                }
+
+                messages = mergeChunkMessages(messages);
+
+                return {
+                    agentId: data.agent_id,
+                    agentName: existing?.agentName ?? '',
+                    messages,
+                    isActive: true,
+                    isProcessing: existing?.isProcessing,
+                    sessionId: existing?.sessionId,
+                    agentConfigId: existing?.agentConfigId,
+                    modelSelector: existing?.modelSelector,
+                    reasoningSelector: existing?.reasoningSelector,
+                    contextUsage,
+                };
+            });
+            return;
+        }
+
+        if (
+            data.item.role === 'tool_call'
+            || data.item.role === 'tool_result'
+            || data.item.role === 'tool_update'
+            || data.item.role === 'media'
+        ) {
             updateSession(data.agent_id, (existing) => ({
                 agentId: data.agent_id,
                 agentName: existing?.agentName ?? '',
@@ -267,15 +569,54 @@ export const useAgents = ({
         });
     }, [updateSession]);
 
+    const flushPendingAcpMessages = useCallback(() => {
+        if (flushTimerRef.current) {
+            clearTimeout(flushTimerRef.current);
+            flushTimerRef.current = null;
+        }
+
+        const pending = pendingEventsRef.current;
+        if (pending.length === 0) return;
+
+        pendingEventsRef.current = [];
+        for (const event of pending) {
+            handleAcpMessageImmediate(event);
+        }
+    }, [handleAcpMessageImmediate]);
+
+    const scheduleAcpFlush = useCallback(() => {
+        if (flushTimerRef.current) return;
+        flushTimerRef.current = setTimeout(() => {
+            flushPendingAcpMessages();
+        }, MESSAGE_FLUSH_MS);
+    }, [flushPendingAcpMessages]);
+
+    const handleAcpMessage = useCallback((data: { agent_id: string; item: AcpMessage }) => {
+        pendingEventsRef.current.push(data);
+        scheduleAcpFlush();
+    }, [scheduleAcpFlush]);
+
     const handleAcpHistory = useCallback((data: { agent_id: string; history: AcpMessage[] }) => {
-        const reversedHistory = [...data.history].reverse();
+        flushPendingAcpMessages();
+        const expandedHistory: AcpMessage[] = [];
+        for (const item of data.history) {
+            if (item.role === 'raw_update') {
+                expandedHistory.push(...projectRawUpdate(item));
+                continue;
+            }
+            expandedHistory.push(item);
+        }
+        const normalizedHistory = mergeChunkMessages(expandedHistory);
+
+        const reversedHistory = [...normalizedHistory].reverse();
         const modelSelector = reversedHistory.find((item): item is AcpModelSelectorMessage => item.role === 'session_model_selector');
         const reasoningSelector = reversedHistory.find((item): item is AcpReasoningSelectorMessage => item.role === 'session_reasoning_selector');
         const contextUsage = reversedHistory.find((item): item is AcpContextUsageMessage => item.role === 'context_usage');
-        const visibleMessages = data.history.filter((item) =>
+        const visibleMessages = normalizedHistory.filter((item) =>
             item.role !== 'session_model_selector'
             && item.role !== 'session_reasoning_selector'
-            && item.role !== 'context_usage',
+            && item.role !== 'context_usage'
+            && item.role !== 'raw_update',
         );
         const mergedVisibleMessages = mergeConsecutiveErrors(visibleMessages);
 
@@ -300,7 +641,7 @@ export const useAgents = ({
                 size: contextUsage.size,
             } : existing?.contextUsage,
         }));
-    }, [updateSession]);
+    }, [flushPendingAcpMessages, updateSession]);
 
     const setSessionModel = useCallback((agentId: string, option: AcpSelectOption) => {
         if (!wsRef.current || !isConnected) return;
@@ -449,10 +790,10 @@ export const useAgents = ({
         startAgent(agent, { resumeSessionId: sessionId });
     }, [startAgent]);
 
-    const sendPrompt = useCallback((agentId: string, prompt: string) => {
+    const sendPrompt = useCallback((agentId: string, prompt: string, attachments: AcpPromptAttachment[] = []) => {
         if (!wsRef.current || !isConnected) return;
 
-        wsRef.current.emit('acp:prompt', { agent_id: agentId, prompt }, (response: any) => {
+        wsRef.current.emit('acp:prompt', { agent_id: agentId, prompt, attachments }, (response: any) => {
             if (response.success) return;
 
             alert('Failed to send prompt: ' + response.error);
@@ -536,6 +877,16 @@ export const useAgents = ({
         }
     }, [acpSessions, selectedAgentId]);
 
+    useEffect(() => {
+        return () => {
+            if (flushTimerRef.current) {
+                clearTimeout(flushTimerRef.current);
+                flushTimerRef.current = null;
+            }
+            pendingEventsRef.current = [];
+        };
+    }, []);
+
     return {
         acpSessions,
         selectedAgentId,
@@ -552,7 +903,6 @@ export const useAgents = ({
         resumeSession,
         sendPrompt,
         undoPrompt,
-        sendPermissionResponse,
         setSessionModel,
         setSessionReasoning,
         cancelPrompt,

@@ -1,4 +1,4 @@
-use crate::acp::{AcpManager, AcpPermissionMode};
+use crate::acp::AcpManager;
 use crate::acp_fs;
 use crate::code::Code;
 use crate::config::Config;
@@ -13,7 +13,6 @@ use std::collections::hash_map::{Entry, HashMap};
 use std::{collections::VecDeque, sync::Arc};
 use tokio::sync::{Mutex, mpsc};
 use tokio_util::sync::CancellationToken;
-
 
 #[derive(Clone)]
 pub struct AppState {
@@ -47,12 +46,11 @@ impl AppState {
         acp_fs_tx: mpsc::Sender<acp_fs::AcpFsCommand>,
     ) -> Self {
         let config = crate::config::get();
-        let acp_permission_mode = AcpPermissionMode::from_env();
 
         let mut lsp_manager = LspManager::new(config.clone());
         lsp_manager.set_diagnostics_sender(diagnostic_tx);
 
-        let acp_manager = AcpManager::new(acp_permission_mode, acp_fs_tx);
+        let acp_manager = AcpManager::new(acp_fs_tx);
         let mut git_manager = GitManager::new(crate::utils::current_dir());
         let _ = git_manager.refresh_status_cache();
 
@@ -132,25 +130,6 @@ pub fn get_or_create_code<'a>(
             Ok(v.insert(c))
         }
     }
-}
-
-/// Get languages for files opened by a socket
-/// Returns None if socket was not found
-pub async fn get_socket_languages(
-    socket_id: &str,
-    state: &State<AppState>,
-) -> Option<HashSet<String>> {
-    let sockets_data = state.socket2data.lock().await;
-    let socket_data = sockets_data.get(socket_id)?;
-
-    let f2c = state.file2code.lock().await;
-    Some(
-        socket_data
-            .opened_files
-            .iter()
-            .filter_map(|path| f2c.get(path).map(|code| code.lang.clone()))
-            .collect::<HashSet<_>>(),
-    )
 }
 
 /// Check if a language has any opened files across all sockets

@@ -540,9 +540,7 @@ mod tests {
             None,
         )?;
 
-        let dir = std::env::current_dir()?
-            .to_string_lossy()
-            .into_owned();
+        let dir = std::env::current_dir()?.to_string_lossy().into_owned();
 
         lsp.init(&dir).await?;
 

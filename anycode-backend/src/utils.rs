@@ -189,14 +189,6 @@ pub fn is_search_ignored_dir(path: &std::path::Path) -> bool {
         .any(|p| SEARCH_IGNORE_DIRS.contains(&p.to_string_lossy().as_ref()))
 }
 
-pub fn hex_to_rgb(hex_color: &str) -> (u8, u8, u8) {
-    let hex = hex_color.trim_start_matches('#');
-    let r = u8::from_str_radix(&hex[0..2], 16).unwrap_or(0);
-    let g = u8::from_str_radix(&hex[2..4], 16).unwrap_or(0);
-    let b = u8::from_str_radix(&hex[4..6], 16).unwrap_or(0);
-    (r, g, b)
-}
-
 pub fn abs_file(input: &str) -> anyhow::Result<String> {
     let srcdir = std::path::PathBuf::from(input);
     let c = std::fs::canonicalize(&srcdir)?;
@@ -275,22 +267,6 @@ pub fn get_file_name(input: &str) -> String {
     let path_buf = std::path::PathBuf::from(input);
     let file_name = path_buf.file_name().unwrap().to_string_lossy().into_owned();
     file_name
-}
-
-pub fn offset_to_byte(o: usize, s: &str) -> usize {
-    let mut byte_index = 0;
-    let mut chars = s.chars();
-
-    for _ in 0..o {
-        if let Some(c) = chars.next() {
-            let l = c.len_utf8();
-            byte_index += l;
-        } else {
-            panic!("Out of bounds byte index");
-        }
-    }
-
-    byte_index
 }
 
 pub fn path_to_uri(path: &str) -> anyhow::Result<Uri> {

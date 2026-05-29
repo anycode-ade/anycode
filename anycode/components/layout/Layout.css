@@ -43,7 +43,7 @@
     --dv-separator-border: transparent;
     --dv-paneview-header-border-color: var(--theme-border, #3f3f3f);
     --dv-icon-hover-background-color: rgba(255, 255, 255, 0.08);
-    --dv-paneview-active-outline-color: var(--theme-accent-background, #4a4a4a);
+    --dv-paneview-active-outline-color: transparent;
 }
 
 .layout.dockview-theme-dark .dv-groupview,
@@ -55,6 +55,19 @@
 .layout .dv-groupview {
     margin: 0 !important;
     overflow: hidden !important;
+    outline: none !important;
+    box-shadow: none !important;
+}
+
+.layout .dv-groupview:focus,
+.layout .dv-groupview:focus-within,
+.layout .dv-groupview.dv-active-group,
+.layout .dv-groupview.dv-active,
+.layout .dv-groupview.dv-focused,
+.layout .dv-groupview[class*='active'],
+.layout .dv-groupview[class*='focus'] {
+    outline: none !important;
+    box-shadow: none !important;
 }
 
 .dv-scrollable {
@@ -155,7 +168,7 @@
 }
 
 .layout .dv-split-view-container .dv-view:has(> .dv-groupview) {
-    padding: 0.7px !important;
+    padding: 0 !important;
 }
 
 .layout .dv-split-view-container .dv-sash-container .dv-sash,
@@ -197,7 +210,7 @@
 .layout.dockview-theme-dark .dv-pane-container .dv-pane .dv-pane-header:focus-within:before,
 .layout.dockview-theme-dark .dv-pane-container .dv-pane .dv-pane-body:focus:before,
 .layout.dockview-theme-dark .dv-pane-container .dv-pane .dv-pane-body:focus-within:before {
-    outline-color: #4a4a4a !important;
+    outline-color: transparent !important;
 }
 
 .dv-groupview {

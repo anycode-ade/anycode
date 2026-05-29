@@ -1,5 +1,6 @@
-use crate::acp::AcpSelectOption;
 use crate::acp::AcpMessage;
+use crate::acp::AcpPromptAttachment;
+use crate::acp::AcpSelectOption;
 use crate::app_state::AppState;
 use crate::error_ack;
 use serde::{Deserialize, Serialize};
@@ -148,6 +149,80 @@ async fn send_agent_history(socket: &SocketRef, state: &State<AppState>, agent_i
 pub struct AcpPromptRequest {
     pub agent_id: String,
     pub prompt: String,
+    #[serde(default)]
+    pub attachments: Vec<AcpPromptAttachment>,
+}
+
+use std::path::{Path, PathBuf};
+
+fn get_mime_type(ext: &str) -> &'static str {
+    match ext.to_ascii_lowercase().as_str() {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "webm" => "audio/webm",
+        "wav" => "audio/wav",
+        "mp3" => "audio/mpeg",
+        "m4a" => "audio/mp4",
+        "txt" => "text/plain",
+        "md" => "text/markdown",
+        "json" => "application/json",
+        "rs" => "text/x-rust",
+        "js" => "text/javascript",
+        "ts" => "text/typescript",
+        "tsx" => "text/tsx",
+        _ => "application/octet-stream",
+    }
+}
+
+fn find_local_paths(text: &str) -> Vec<PathBuf> {
+    let mut paths = Vec::new();
+    let extensions = [
+        ".png", ".jpg", ".jpeg", ".gif", ".webp", ".webm", ".wav", ".mp3", ".m4a", ".txt", ".md",
+        ".json", ".rs", ".js", ".ts", ".tsx", ".toml", ".yml", ".yaml",
+    ];
+
+    let text_lower = text.to_lowercase();
+    for ext in extensions {
+        let mut start_idx = 0;
+        while let Some(idx) = text_lower[start_idx..].find(ext) {
+            let abs_idx = start_idx + idx;
+            let end_idx = abs_idx + ext.len();
+            start_idx = end_idx;
+
+            let mut best_path: Option<PathBuf> = None;
+            let min_back = if abs_idx > 512 { abs_idx - 512 } else { 0 };
+
+            for back_len in 4..=(abs_idx - min_back) {
+                let start = abs_idx - back_len;
+                let candidate = &text[start..end_idx];
+
+                let candidate_clean = candidate.strip_prefix("file://").unwrap_or(candidate);
+                let is_absolute = candidate_clean.starts_with('/')
+                    || (candidate_clean.len() >= 3
+                        && candidate_clean.chars().next().unwrap().is_alphabetic()
+                        && &candidate_clean[1..3] == ":\\")
+                    || (candidate_clean.len() >= 3
+                        && candidate_clean.chars().next().unwrap().is_alphabetic()
+                        && &candidate_clean[1..3] == ":/");
+
+                if is_absolute {
+                    let path = Path::new(candidate_clean);
+                    if path.is_file() {
+                        best_path = Some(path.to_path_buf());
+                    }
+                }
+            }
+
+            if let Some(p) = best_path {
+                if !paths.contains(&p) {
+                    paths.push(p);
+                }
+            }
+        }
+    }
+    paths
 }
 
 pub async fn handle_acp_prompt(
@@ -156,7 +231,40 @@ pub async fn handle_acp_prompt(
     state: State<AppState>,
 ) {
     info!("handle_acp_prompt {:?}", request);
-    let AcpPromptRequest { agent_id, prompt } = request;
+    let AcpPromptRequest {
+        agent_id,
+        prompt,
+        mut attachments,
+    } = request;
+
+    // Detect and load any local file paths mentioned in the prompt text
+    let detected_paths = find_local_paths(&prompt);
+    for path in detected_paths {
+        info!("Detected local file path in prompt: {:?}", path);
+        if let Ok(bytes) = std::fs::read(&path) {
+            use base64::Engine;
+            let data_base64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+            let name = path
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| "file".to_string());
+            let ext = path
+                .extension()
+                .map(|e| e.to_string_lossy().to_string())
+                .unwrap_or_default();
+            let mime_type = get_mime_type(&ext).to_string();
+            let size = Some(bytes.len() as u64);
+
+            if !attachments.iter().any(|att| att.name == name) {
+                attachments.push(AcpPromptAttachment {
+                    name,
+                    mime_type,
+                    data_base64,
+                    size,
+                });
+            }
+        }
+    }
 
     let mut acp_manager = state.acp_manager.lock().await;
 
@@ -167,7 +275,7 @@ pub async fn handle_acp_prompt(
         }
     };
 
-    match agent.send_prompt(prompt).await {
+    match agent.send_prompt(prompt, attachments).await {
         Ok(_) => {
             info!("ACP prompt sent for agent {}", agent_id);
             ack.send(&json!({ "success": true })).ok();
@@ -305,59 +413,6 @@ pub async fn handle_acp_sessions_list(
         Err(err) => {
             error!("Failed to list ACP sessions: {}", err);
             error_ack!(ack, &command, "Failed to list ACP sessions: {}", err);
-        }
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct AcpPermissionResponseRequest {
-    pub agent_id: String,
-    pub permission_id: String,
-    pub option_id: String,
-}
-
-pub async fn handle_acp_permission_response(
-    Data(request): Data<AcpPermissionResponseRequest>,
-    ack: AckSender,
-    state: State<AppState>,
-) {
-    info!("handle_acp_permission_response {:?}", request);
-    let AcpPermissionResponseRequest {
-        agent_id,
-        permission_id,
-        option_id,
-    } = request;
-
-    let mut acp_manager = state.acp_manager.lock().await;
-
-    let agent = match acp_manager.get_agent(&agent_id) {
-        Some(agent) => agent,
-        None => {
-            error_ack!(ack, &agent_id, "Agent {} not found", agent_id);
-        }
-    };
-
-    match agent
-        .send_permission_response(&permission_id, option_id)
-        .await
-    {
-        Ok(true) => {
-            info!(
-                "Permission response sent for agent {} permission {}",
-                agent_id, permission_id
-            );
-            ack.send(&json!({ "success": true })).ok();
-        }
-        Ok(false) => {
-            error!(
-                "Permission {} not found for agent {}",
-                permission_id, agent_id
-            );
-            error_ack!(ack, &agent_id, "Permission {} not found", permission_id);
-        }
-        Err(e) => {
-            error!("Permission response failed for agent {}: {}", agent_id, e);
-            error_ack!(ack, &agent_id, "Permission response failed: {}", e);
         }
     }
 }

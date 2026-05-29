@@ -4,7 +4,7 @@
 }
 
 .acp-work-group-header {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 6px;
   padding: 4px 0px;

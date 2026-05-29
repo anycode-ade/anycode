@@ -16,12 +16,9 @@ interface AcpMessagesProps {
   expandedToolCalls: Set<number>;
   expandedToolResults: Set<number>;
   expandedThoughts: Set<number>;
-  expandedPermissions: Set<number>;
   onToggleToolCall: (index: number) => void;
   onToggleToolResult: (index: number) => void;
   onToggleThought: (index: number) => void;
-  onTogglePermission: (index: number) => void;
-  onPermissionResponse: (permissionId: string, optionId: string) => void;
   onUndoMessage?: (message: AcpUserMessage) => void;
   onOpenFile?: (path: string, line?: number, column?: number) => void;
   onOpenFileDiff?: (path: string, line?: number, column?: number) => void;
@@ -33,12 +30,9 @@ const AcpMessagesComponent: React.FC<AcpMessagesProps> = ({
   expandedToolCalls,
   expandedToolResults,
   expandedThoughts,
-  expandedPermissions,
   onToggleToolCall,
   onToggleToolResult,
   onToggleThought,
-  onTogglePermission,
-  onPermissionResponse,
   onUndoMessage,
   onOpenFile,
   onOpenFileDiff,
@@ -177,9 +171,6 @@ const AcpMessagesComponent: React.FC<AcpMessagesProps> = ({
     } else if (message.role === 'thought') {
       isExpanded = expandedThoughts.has(index);
       onToggle = () => onToggleThought(index);
-    } else if (message.role === 'permission_request') {
-      isExpanded = expandedPermissions.has(index);
-      onToggle = () => onTogglePermission(index);
     }
 
     return (
@@ -190,7 +181,6 @@ const AcpMessagesComponent: React.FC<AcpMessagesProps> = ({
         onToggle={onToggle}
         toolResult={toolResult}
         toolUpdates={toolUpdates}
-        onPermissionResponse={onPermissionResponse}
         onOpenFile={onOpenFile}
         onOpenFileDiff={onOpenFileDiff}
         onUndo={

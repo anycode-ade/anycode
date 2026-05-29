@@ -5,13 +5,8 @@ use tracing::{error, info};
 
 use crate::app_state::{AppState, is_language_opened};
 use crate::handlers::{
-    acp_handler::*,
-    git_handler::*,
-    io_handler::*,
-    lsp_handler::*,
-    search_handler::*,
-    terminal_handler::*,
-    theme_handler::*,
+    acp_handler::*, git_handler::*, io_handler::*, lsp_handler::*, search_handler::*,
+    terminal_handler::*, theme_handler::*,
 };
 
 pub async fn handle_connect(socket: SocketRef, _state: State<AppState>) {
@@ -47,7 +42,6 @@ pub async fn handle_connect(socket: SocketRef, _state: State<AppState>) {
     socket.on("acp:list", handle_acp_list);
     socket.on("acp:sessions_list", handle_acp_sessions_list);
     socket.on("acp:reconnect", handle_acp_reconnect);
-    socket.on("acp:permission_response", handle_acp_permission_response);
     socket.on("acp:undo", handle_acp_undo);
 
     socket.on("git:status", handle_git_status);

@@ -12,62 +12,12 @@ import {
   AcpToolUpdateMessage,
   AcpUserMessage,
   AcpAssistantMessage,
+  AcpMediaMessage,
   AcpThoughtMessage,
-  AcpPermissionRequestMessage,
   AcpErrorMessage,
 } from '../../types';
+import { LANGUAGE_EXTENSIONS, EDITOR_SUPPORTED_LANGUAGES, getFileName } from '../../utils';
 import './AcpMessage.css';
-
-const SUPPORTED_LANGUAGES: Record<string, string> = {
-  javascript: 'javascript',
-  js: 'javascript',
-  jsx: 'javascript',
-  mjs: 'javascript',
-  cjs: 'javascript',
-  typescript: 'typescript',
-  ts: 'typescript',
-  tsx: 'typescript',
-  rust: 'rust',
-  rs: 'rust',
-  python: 'python',
-  py: 'python',
-  yaml: 'yaml',
-  yml: 'yaml',
-  json: 'json',
-  toml: 'toml',
-  html: 'html',
-  css: 'css',
-  go: 'go',
-  golang: 'go',
-  java: 'java',
-  kotlin: 'kotlin',
-  lua: 'lua',
-  bash: 'bash',
-  sh: 'bash',
-  shell: 'bash',
-  zsh: 'bash',
-  zig: 'zig',
-  csharp: 'csharp',
-  cs: 'csharp',
-  c: 'c',
-  cpp: 'cpp',
-  cc: 'cpp',
-  cxx: 'cpp',
-  hpp: 'cpp',
-  h: 'c',
-  md: 'markdown',
-  markdown: 'text',
-  diff: 'text',
-  text: 'text',
-  plain: 'text',
-};
-
-const EDITOR_SUPPORTED_LANGUAGES = new Set([
-  'javascript', 'typescript', 'rust',
-  'python', 'yaml', 'json', 'toml', 'html',
-  'css', 'go', 'java', 'kotlin', 'lua', 'bash',
-  'zig', 'csharp', 'c', 'cpp',
-]);
 
 let codeBlockIdCounter = 0;
 
@@ -77,7 +27,6 @@ interface AcpMessageProps {
   toolUpdates?: AcpToolUpdateMessage[];
   isExpanded?: boolean;
   onToggle?: () => void;
-  onPermissionResponse?: (permissionId: string, optionId: string) => void;
   onUndo?: () => void;
   onOpenFile?: (path: string, line?: number, column?: number) => void;
   onOpenFileDiff?: (path: string, line?: number, column?: number) => void;
@@ -153,7 +102,7 @@ const ToolCallMessage: React.FC<{
                         onClick={() => onOpenFileDiff?.(diffEntry.path)}
                         title={`Open ${diffEntry.path} in diff mode`}
                       >
-                        {getFileNameFromPath(diffEntry.path)}
+                        {getFileName(diffEntry.path)}
                       </button>
                       <DiffCodeBlock diff={diffEntry} />
                     </div>
@@ -358,20 +307,13 @@ const ToolUpdateMessage: React.FC<{
   </div>
 );
 
-const canRenderWithAnycodeEditor = (language: string): boolean => {
-  return EDITOR_SUPPORTED_LANGUAGES.has(language);
-};
 
 const getLanguageFromPath = (path?: string): string => {
   if (!path) return 'text';
-  const fileName = path.split('/').pop() ?? path;
+  const fileName = getFileName(path);
   const parts = fileName.toLowerCase().split('.');
   const extension = parts.length > 1 ? parts.pop() : undefined;
   return normalizeFenceLanguage(extension ?? 'text');
-};
-
-const getFileNameFromPath = (path: string): string => {
-  return path.split('/').pop() ?? path;
 };
 
 const formatToolCallLabel = (diffPaths: string[], fallbackLabel: string): string => {
@@ -380,10 +322,10 @@ const formatToolCallLabel = (diffPaths: string[], fallbackLabel: string): string
   }
 
   if (diffPaths.length === 1) {
-    return getFileNameFromPath(diffPaths[0]);
+    return getFileName(diffPaths[0]);
   }
 
-  const visibleNames = diffPaths.slice(0, 2).map(getFileNameFromPath);
+  const visibleNames = diffPaths.slice(0, 2).map(getFileName);
   const hiddenCount = diffPaths.length - visibleNames.length;
   return hiddenCount > 0
     ? `${visibleNames.join(', ')} +${hiddenCount}`
@@ -407,7 +349,7 @@ const getToolCallStats = (diffs: AcpDiffContent[]) => {
 };
 
 const getToolCallFileNames = (diffs: AcpDiffContent[]): string[] => {
-  return Array.from(new Set(diffs.map((diff) => getFileNameFromPath(diff.path))));
+  return Array.from(new Set(diffs.map((diff) => getFileName(diff.path))));
 };
 
 const asRecord = (value: unknown): Record<string, unknown> | undefined => {
@@ -648,6 +590,45 @@ const MarkdownInlineCode: React.FC<{
   );
 };
 
+const mapLocalImageSrc = (src?: string): string | undefined => {
+  if (!src) return src;
+  const trimmed = src.trim();
+  if (!trimmed) return trimmed;
+
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('data:')) {
+    return trimmed;
+  }
+
+  if (trimmed.startsWith('/')) {
+    let normalizedPath = trimmed;
+    try {
+      normalizedPath = decodeURIComponent(trimmed);
+    } catch {
+      normalizedPath = trimmed;
+    }
+    return `/api/local-image?path=${encodeURIComponent(normalizedPath)}`;
+  }
+
+  return trimmed;
+};
+
+const MarkdownImage: React.FC<React.ComponentProps<'img'>> = ({ src, alt, ...props }) => {
+  const mappedSrc = mapLocalImageSrc(typeof src === 'string' ? src : undefined);
+  if (!mappedSrc) {
+    return null;
+  }
+
+  return (
+    <img
+      {...props}
+      src={mappedSrc}
+      alt={alt}
+      loading="lazy"
+      style={{ width: '100%', maxWidth: 720, height: 'auto', borderRadius: 8 }}
+    />
+  );
+};
+
 type MarkdownPart =
   | { kind: 'text'; content: string }
   | { kind: 'code'; content: string; language: string; isOpen: boolean };
@@ -655,7 +636,7 @@ type MarkdownPart =
 const normalizeFenceLanguage = (rawLanguage: string): string => {
   const language = rawLanguage.trim().toLowerCase();
   if (!language) return 'text';
-  return SUPPORTED_LANGUAGES[language] ?? language;
+  return LANGUAGE_EXTENSIONS[language] ?? language;
 };
 
 const parseMarkdownParts = (content: string): MarkdownPart[] => {
@@ -732,6 +713,7 @@ const MarkdownTextBlock: React.FC<{
         />
       ),
       code: MarkdownInlineCode,
+      img: ({ node: _node, ...props }) => <MarkdownImage {...props} />,
     }}
   >
     {content}
@@ -746,7 +728,7 @@ const MarkdownCodeBlock: React.FC<{
   const [editor, setEditor] = React.useState<AnycodeEditor | null>(null);
   const blockIdRef = React.useRef<string | null>(null);
   const containerRef = React.useRef<HTMLDivElement | null>(null);
-  const useEditor = canRenderWithAnycodeEditor(language);
+  const useEditor = EDITOR_SUPPORTED_LANGUAGES.has(language);
 
   if (!blockIdRef.current) {
     codeBlockIdCounter += 1;
@@ -835,7 +817,7 @@ const DiffCodeBlock: React.FC<{
   const [editor, setEditor] = React.useState<AnycodeEditor | null>(null);
   const blockIdRef = React.useRef<string | null>(null);
   const language = getLanguageFromPath(diff.path);
-  const useEditor = canRenderWithAnycodeEditor(language);
+  const useEditor = EDITOR_SUPPORTED_LANGUAGES.has(language);
 
   if (!blockIdRef.current) {
     codeBlockIdCounter += 1;
@@ -955,6 +937,44 @@ const TextMessage: React.FC<{
         onOpenFile={onOpenFile}
         onOpenFileDiff={onOpenFileDiff}
       />
+      {message.role === 'user' && Array.isArray(message.attachments) && message.attachments.length > 0 && (
+        <div className="acp-message-attachments">
+          {message.attachments.map((attachment, index) => {
+            const src = `data:${attachment.mime_type};base64,${attachment.data_base64}`;
+            const isImage = attachment.mime_type.startsWith('image/');
+            const isAudio = attachment.mime_type.startsWith('audio/');
+            if (isImage) {
+              return (
+                <img
+                  key={`${attachment.name}-${index}`}
+                  src={src}
+                  alt={attachment.name}
+                  className="acp-message-attachment-image"
+                />
+              );
+            }
+            if (isAudio) {
+              return (
+                <audio
+                  key={`${attachment.name}-${index}`}
+                  controls
+                  src={src}
+                  className="acp-message-attachment-audio"
+                />
+              );
+            }
+            return (
+              <div
+                key={`${attachment.name}-${index}`}
+                className="acp-message-attachment-file"
+                title={attachment.mime_type}
+              >
+                {attachment.name}
+              </div>
+            );
+          })}
+        </div>
+      )}
       {message.role === 'user' && onUndo && (
         <div className="acp-message-actions">
           <button className="acp-undo-button" onClick={onUndo} title="Undo">
@@ -965,6 +985,34 @@ const TextMessage: React.FC<{
     </div>
   </div>
 );
+
+const MediaMessage: React.FC<{
+  message: AcpMediaMessage;
+}> = ({ message }) => {
+  const src = message.data
+    ? `data:${message.mime_type ?? (message.media_type === 'image' ? 'image/png' : 'audio/wav')};base64,${message.data}`
+    : message.uri;
+
+  if (!src) {
+    return null;
+  }
+
+  return (
+    <div className="acp-message acp-message-assistant">
+      <div className="acp-message-content">
+        {message.media_type === 'image' ? (
+          <img
+            src={src}
+            alt={message.title ?? 'ACP image'}
+            style={{ width: '100%', maxWidth: 720, height: 'auto', borderRadius: 8 }}
+          />
+        ) : (
+          <audio controls src={src} style={{ width: '100%' }} />
+        )}
+      </div>
+    </div>
+  );
+};
 
 const ThoughtMessage: React.FC<{
   message: AcpThoughtMessage;
@@ -993,12 +1041,7 @@ const ThoughtMessage: React.FC<{
             </span>
           )}
           {expanded ? (
-            message.content.trim().split('\n').map((line, i, allLines) => (
-              <React.Fragment key={i}>
-                {line}
-                {i < allLines.length - 1 && <br />}
-              </React.Fragment>
-            ))
+            message.content.trim()
           ) : (
             <>
               {previewLine}
@@ -1022,68 +1065,12 @@ const ErrorMessage: React.FC<{
   </div>
 );
 
-const PermissionRequestMessage: React.FC<{
-  message: AcpPermissionRequestMessage;
-  isExpanded: boolean;
-  onToggle: () => void;
-  onPermissionResponse: (permissionId: string, optionId: string) => void;
-}> = ({ message, isExpanded, onToggle, onPermissionResponse }) => {
-  const toolCall = message.tool_call;
-  const hasArguments = toolCall.arguments &&
-    JSON.stringify(toolCall.arguments) !== '{}' &&
-    JSON.stringify(toolCall.arguments) !== '[]';
-  const displayCommand = toolCall.command?.trim() || toolCall.name;
-
-  return (
-    <div className="acp-message acp-message-permission_request">
-      <div className="acp-message-content">
-        <div className="acp-permission-header" onClick={onToggle} style={{ cursor: 'pointer' }}>
-          <span className="acp-toggle-icon">{isExpanded ? '▼' : '▶'}</span>
-          <div className="acp-tool-call-name">{displayCommand}</div>
-        </div>
-
-        {isExpanded && (
-          <>
-            {toolCall.command && (
-              <div className="acp-tool-call-section">
-                <div className="acp-tool-call-label">Command:</div>
-                <pre className="acp-tool-call-command">{toolCall.command}</pre>
-              </div>
-            )}
-            {hasArguments && (
-              <div className="acp-tool-call-section">
-                <div className="acp-tool-call-label">Arguments:</div>
-                <pre className="acp-tool-call-args">
-                  {JSON.stringify(toolCall.arguments, null, 2)}
-                </pre>
-              </div>
-            )}
-          </>
-        )}
-
-        <div className="acp-permission-buttons">
-          {message.options.map((option) => (
-            <button
-              key={option.id}
-              className={`acp-permission-button ${option.name.toLowerCase().includes('allow') ? 'acp-permission-allow' : 'acp-permission-deny'}`}
-              onClick={() => onPermissionResponse(message.id, option.id)}
-            >
-              {option.name}
-            </button>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-};
-
 const AcpMessageComponent: React.FC<AcpMessageProps> = ({
   message,
   toolResult,
   toolUpdates,
   isExpanded = false,
   onToggle,
-  onPermissionResponse,
   onUndo,
   onOpenFile,
   onOpenFileDiff,
@@ -1136,6 +1123,8 @@ const AcpMessageComponent: React.FC<AcpMessageProps> = ({
           onOpenFileDiff={onOpenFileDiff}
         />
       );
+    case 'media':
+      return <MediaMessage message={message} />;
     case 'thought':
       if (!onToggle) return null;
       return (
@@ -1145,21 +1134,13 @@ const AcpMessageComponent: React.FC<AcpMessageProps> = ({
           onToggle={onToggle}
         />
       );
-    case 'permission_request':
-      if (!onToggle || !onPermissionResponse) return null;
-      return (
-        <PermissionRequestMessage
-          message={message}
-          isExpanded={isExpanded}
-          onToggle={onToggle}
-          onPermissionResponse={onPermissionResponse}
-        />
-      );
     case 'prompt_state':
       // Skip rendering prompt_state messages in the chat
       return null;
     case 'error':
       return <ErrorMessage message={message} />;
+    case 'raw_update':
+      return null;
     default:
       console.warn('Unknown message role:', message);
       return null;

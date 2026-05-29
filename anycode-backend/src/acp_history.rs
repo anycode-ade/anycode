@@ -338,49 +338,6 @@ impl AcpHistoryManager {
     pub fn get_all_checkpoints(&self) -> &[Checkpoint] {
         &self.checkpoints
     }
-
-    /// Get the latest checkpoint
-    pub fn get_latest_checkpoint(&self) -> Option<&Checkpoint> {
-        self.checkpoints.last()
-    }
-
-    /// Undo to the previous checkpoint (one step back)
-    pub fn undo(&self) -> Result<Option<&Checkpoint>> {
-        if self.checkpoints.len() < 2 {
-            return Ok(None);
-        }
-
-        let prev = &self.checkpoints[self.checkpoints.len() - 2];
-        self.restore_to_commit(&prev.commit_hash)?;
-
-        Ok(Some(prev))
-    }
-
-    /// Clear all history and reinitialize
-    pub fn clear_history(&mut self) -> Result<()> {
-        if self.history_dir.exists() {
-            std::fs::remove_dir_all(&self.history_dir)
-                .context("Failed to remove history directory")?;
-        }
-
-        self.checkpoints.clear();
-        self.initialized = false;
-
-        self.init()?;
-
-        info!("History cleared and reinitialized");
-        Ok(())
-    }
-
-    /// Get project root path
-    pub fn project_root(&self) -> &Path {
-        &self.project_root
-    }
-
-    /// Get history directory path
-    pub fn history_dir(&self) -> &Path {
-        &self.history_dir
-    }
 }
 
 #[cfg(test)]

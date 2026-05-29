@@ -6,6 +6,12 @@ export const AcpIcons = {
       <path d="M10 5V15M5 10H15" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
     </svg>
   ),
+  Mic: () => (
+    <svg width="16" height="16" viewBox="0 0 20 20" fill="none">
+      <path d="M10 3a3 3 0 0 0-3 3v4a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3Z" fill="currentColor"/>
+      <path d="M16 10a1 1 0 1 0-2 0 4 4 0 0 1-8 0 1 1 0 1 0-2 0 6 6 0 0 0 5.006 5.917V18a1 1 0 1 0 2 0v-2.083A6 6 0 0 0 16 10Z" fill="currentColor"/>
+    </svg>
+  ),
   SplitHorizontal: () => (
     <svg width="16" height="16" viewBox="0 0 20 20" fill="none">
       <rect x="3.5" y="4" width="13" height="12" rx="1.5" stroke="currentColor" strokeWidth="1.5" />

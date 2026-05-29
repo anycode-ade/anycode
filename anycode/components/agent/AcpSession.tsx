@@ -3,6 +3,7 @@ import {
   AcpMessage,
   type AcpContextUsageMessage,
   type AcpModelSelectorMessage,
+  type AcpPromptAttachment,
   type AcpReasoningSelectorMessage,
   type AcpSelectOption,
 } from '../../types';
@@ -23,6 +24,8 @@ const useAutoScroll = (messages: AcpMessage[], isProcessing: boolean) => {
   const lastTouchYRef = useRef<number | null>(null);
   const pointerScrollStartRef = useRef<number | null>(null);
   const userScrollUpIntentRef = useRef(false);
+  const isProgrammaticScrollRef = useRef(false);
+  const pendingAutoScrollRafRef = useRef<number | null>(null);
   const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
 
   const checkIfScrolledToBottom = (element: HTMLElement): boolean => (
@@ -34,15 +37,24 @@ const useAutoScroll = (messages: AcpMessage[], isProcessing: boolean) => {
     setAutoScrollEnabled((prev) => (prev === enabled ? prev : enabled));
   };
 
+  const disableAutoScrollImmediately = () => {
+    autoScrollEnabledRef.current = false;
+    setAutoScrollEnabled((prev) => (prev ? false : prev));
+  };
+
   const scrollToBottom = (behavior: ScrollBehavior = 'auto') => {
     const element = contentRef.current;
     if (!element) return;
 
+    isProgrammaticScrollRef.current = true;
     element.scrollTo({
       top: element.scrollHeight,
       behavior,
     });
-    lastScrollTopRef.current = element.scrollTop;
+    requestAnimationFrame(() => {
+      lastScrollTopRef.current = element.scrollTop;
+      isProgrammaticScrollRef.current = false;
+    });
   };
 
   useEffect(() => {
@@ -52,6 +64,7 @@ const useAutoScroll = (messages: AcpMessage[], isProcessing: boolean) => {
     const noteUserScrollIntent = (event: WheelEvent) => {
       if (event.deltaY < 0) {
         userScrollUpIntentRef.current = true;
+        disableAutoScrollImmediately();
       }
     };
 
@@ -67,6 +80,7 @@ const useAutoScroll = (messages: AcpMessage[], isProcessing: boolean) => {
 
       if (currentY !== undefined && previousY !== null && currentY > previousY) {
         userScrollUpIntentRef.current = true;
+        disableAutoScrollImmediately();
       }
     };
 
@@ -89,6 +103,7 @@ const useAutoScroll = (messages: AcpMessage[], isProcessing: boolean) => {
         event.key === 'Home'
       ) {
         userScrollUpIntentRef.current = true;
+        disableAutoScrollImmediately();
       }
     };
 
@@ -96,16 +111,22 @@ const useAutoScroll = (messages: AcpMessage[], isProcessing: boolean) => {
       const currentScrollTop = contentElement.scrollTop;
       const delta = currentScrollTop - lastScrollTopRef.current;
       const scrollDirection = delta < -1 ? 'up' : delta > 1 ? 'down' : 'none';
+      const isAtBottom = checkIfScrolledToBottom(contentElement);
 
       const pointerDraggedUp =
         pointerScrollStartRef.current !== null &&
         currentScrollTop < pointerScrollStartRef.current - 1;
 
-      if (scrollDirection === 'up' && (userScrollUpIntentRef.current || pointerDraggedUp)) {
-        setAutoScroll(false);
+      if (
+        !isProgrammaticScrollRef.current &&
+        !isAtBottom &&
+        scrollDirection === 'up' &&
+        (userScrollUpIntentRef.current || pointerDraggedUp || delta < -1)
+      ) {
+        disableAutoScrollImmediately();
       }
 
-      if (checkIfScrolledToBottom(contentElement)) {
+      if (isAtBottom) {
         setAutoScroll(true);
       }
 
@@ -133,8 +154,15 @@ const useAutoScroll = (messages: AcpMessage[], isProcessing: boolean) => {
   }, []);
 
   useEffect(() => {
-    if (autoScrollEnabledRef.current && contentRef.current) {
-      requestAnimationFrame(() => {
+    if (pendingAutoScrollRafRef.current !== null) {
+      cancelAnimationFrame(pendingAutoScrollRafRef.current);
+      pendingAutoScrollRafRef.current = null;
+    }
+
+    if (contentRef.current) {
+      pendingAutoScrollRafRef.current = requestAnimationFrame(() => {
+        pendingAutoScrollRafRef.current = null;
+        if (!autoScrollEnabledRef.current) return;
         scrollToBottom('auto');
       });
     }
@@ -148,6 +176,7 @@ const useAutoScroll = (messages: AcpMessage[], isProcessing: boolean) => {
       if (!autoScrollEnabledRef.current) return;
 
       requestAnimationFrame(() => {
+        if (!autoScrollEnabledRef.current) return;
         scrollToBottom('auto');
       });
     });
@@ -163,6 +192,13 @@ const useAutoScroll = (messages: AcpMessage[], isProcessing: boolean) => {
       scrollToBottom('auto');
     });
   };
+
+  useEffect(() => () => {
+    if (pendingAutoScrollRafRef.current !== null) {
+      cancelAnimationFrame(pendingAutoScrollRafRef.current);
+      pendingAutoScrollRafRef.current = null;
+    }
+  }, []);
 
   return { contentRef, innerRef, autoScrollEnabled, enableAutoScroll };
 };
@@ -191,9 +227,8 @@ interface AcpSessionProps {
   reasoningSelector?: Omit<AcpReasoningSelectorMessage, 'role'>;
   contextUsage?: Omit<AcpContextUsageMessage, 'role'>;
   onFocusPane: () => void;
-  onSendPrompt: (agentId: string, prompt: string) => void;
+  onSendPrompt: (agentId: string, prompt: string, attachments?: AcpPromptAttachment[]) => void;
   onCancelPrompt: (agentId: string) => void;
-  onPermissionResponse: (agentId: string, permissionId: string, optionId: string) => void;
   onUndoPrompt: (agentId: string, checkpointId?: string, prompt?: string) => void;
   onCloseAgent: (agentId: string) => void;
   onSelectModel?: (agentId: string, option: AcpSelectOption) => void;
@@ -214,7 +249,6 @@ const AcpSessionComponent: React.FC<AcpSessionProps> = ({
   onFocusPane,
   onSendPrompt,
   onCancelPrompt,
-  onPermissionResponse,
   onUndoPrompt,
   onCloseAgent,
   onSelectModel,
@@ -235,13 +269,7 @@ const AcpSessionComponent: React.FC<AcpSessionProps> = ({
   const { expanded: expandedToolCalls, toggle: toggleToolCall } = useExpandableItems();
   const { expanded: expandedToolResults, toggle: toggleToolResult } = useExpandableItems();
   const { expanded: expandedThoughts, toggle: toggleThought } = useExpandableItems();
-  const { expanded: expandedPermissions, toggle: togglePermission } = useExpandableItems();
   const { contentRef, innerRef, autoScrollEnabled, enableAutoScroll } = useAutoScroll(messages, isProcessing);
-
-  const handlePermissionResponse = useCallback(
-    (permissionId: string, optionId: string) => onPermissionResponse(agentId, permissionId, optionId),
-    [agentId, onPermissionResponse],
-  );
 
   const handleUndoMessage = useCallback(
     (message: AcpMessage) => {
@@ -273,9 +301,9 @@ const AcpSessionComponent: React.FC<AcpSessionProps> = ({
     });
   }, [agentId]);
 
-  const handleSend = () => {
-    if (inputValue.trim() && isConnected) {
-      onSendPrompt(agentId, inputValue.trim());
+  const handleSend = (attachments: AcpPromptAttachment[] = []) => {
+    if ((inputValue.trim() || attachments.length > 0) && isConnected) {
+      onSendPrompt(agentId, inputValue.trim(), attachments);
       setInputValues((prev) => {
         if ((prev[agentId] ?? '') === '') {
           return prev;
@@ -303,12 +331,9 @@ const AcpSessionComponent: React.FC<AcpSessionProps> = ({
               expandedToolCalls={expandedToolCalls}
               expandedToolResults={expandedToolResults}
               expandedThoughts={expandedThoughts}
-              expandedPermissions={expandedPermissions}
               onToggleToolCall={toggleToolCall}
               onToggleToolResult={toggleToolResult}
               onToggleThought={toggleThought}
-              onTogglePermission={togglePermission}
-              onPermissionResponse={handlePermissionResponse}
               onUndoMessage={handleUndoMessage}
               onOpenFile={onOpenFile}
               onOpenFileDiff={onOpenFileDiff}

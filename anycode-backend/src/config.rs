@@ -88,47 +88,6 @@ pub fn get() -> Config {
     config
 }
 
-pub fn get_file_content_env(file_name: &str) -> anyhow::Result<String> {
-    let home =
-        std::env::var("ANYCODE_HOME").map_err(|_| anyhow::anyhow!("ANYCODE_HOME not set"))?;
-    let file_path = Path::new(&home).join(file_name);
-    let file_content = std::fs::read_to_string(file_path)?;
-    log2::debug!(
-        "Read {} from ANYCODE_HOME environment successfully",
-        file_name
-    );
-    Ok(file_content)
-}
-
-pub fn get_file_content_home(file_name: &str) -> anyhow::Result<String> {
-    // get the file content from home directory
-    let home = dirs::home_dir().unwrap();
-    let file_path = Path::new(&home).join(".anycode").join(file_name);
-    let file_content = std::fs::read_to_string(file_path)?;
-    log2::debug!("Read {} from home directory successfully", file_name);
-    Ok(file_content)
-}
-
-pub fn get_file_content_assets(file_name: &str) -> anyhow::Result<String> {
-    // get the file content from assets
-    let config = Assets::get(file_name);
-    match config {
-        Some(config) => {
-            let config_str = std::str::from_utf8(config.data.as_ref())?;
-            log2::debug!("Read {} from assets successfully", file_name);
-            Ok(config_str.to_string())
-        }
-        None => anyhow::bail!("File not found: {}", file_name),
-    }
-}
-
-pub fn get_file_content(file_name: &str) -> anyhow::Result<String> {
-    // get the file content, priority: env > home > assets
-    get_file_content_env(file_name)
-        .or_else(|_| get_file_content_home(file_name))
-        .or_else(|_| get_file_content_assets(file_name))
-}
-
 pub fn read_assets_config() -> anyhow::Result<String> {
     let config = Assets::get("config.toml")
         .ok_or_else(|| anyhow::anyhow!("Missing embedded file: config.toml"))?;
