@@ -13,6 +13,13 @@ const query = `
 (string) @string
 (escape_sequence) @constant.character.escape
 (ERROR) @error
+
+[
+  "["
+  "]"
+  "{"
+  "}"
+] @punctuation.bracket
 `
 
 let indent = { width: 4, unit: " " };

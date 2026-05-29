@@ -70,6 +70,15 @@ const query = `
 
 ((program . (comment) @preproc)
  (#lua-match? @preproc "^#!/"))
+
+[
+  "("
+  ")"
+  "["
+  "]"
+  "{"
+  "}"
+] @punctuation.bracket
 `
 
 let indent = { width: 4, unit: " " };

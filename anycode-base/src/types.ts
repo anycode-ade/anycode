@@ -44,3 +44,8 @@ export interface GhostElement extends HTMLElement {
 }
 
 export type Pos = { row: number; col: number };
+
+export interface BracketMatch {
+    openOffset: number;
+    closeOffset: number;
+}

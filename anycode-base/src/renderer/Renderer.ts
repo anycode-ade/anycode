@@ -1,6 +1,6 @@
 import { Code, HighlighedNode } from "../code";
 import { AnycodeLine, ButtonColumnElement, FoldColumnElement, GutterElement, RealRowElements, RowElements } from "../types";
-import { isGhostElement, objectHash } from "../utils";
+import { isGhostElement, objectHash, isDiagnosticElement, getElementAtPosition } from "../utils";
 import { moveCursor, removeCursor } from "../cursor";
 import { EditorState, EditorSettings } from "../editor";
 import { DiffInfo } from "../diff";
@@ -595,7 +595,7 @@ export class Renderer {
 
         const totalVisualRows = this.visualRows.length;
         const visible = this.getVisibleRange(totalVisualRows, settings);
-        
+
         // If viewport changed, do full render
         if (renderedRange.startIndex !== visible.startIndex ||
             renderedRange.endIndex !== visible.endIndex) {
@@ -737,6 +737,7 @@ export class Renderer {
         } else {
             this.renderSelection(code, selection!);
         }
+        this.renderBracketMatch(state);
     }
 
     public renderCursor(line: number, column: number, focus: boolean = false) {
@@ -817,6 +818,53 @@ export class Renderer {
         this.codeContent
             .querySelectorAll(`span[class~="${wh.token}"]`)
             .forEach(el => el.textContent === wh.text && el.classList.add('wh'));
+    }
+
+    private clearBracketHighlights() {
+        this.codeContent.querySelectorAll('.bm')
+            .forEach(el => el.classList.remove('bm'));
+    }
+
+    public renderBracketMatch(state: EditorState) {
+        if (!this.codeContent) return;
+
+        const { code, offset, selection } = state;
+
+        const targets: Element[] = [];
+        if (!selection || selection.isEmpty()) {
+            const match = code.getMatchingBracket(offset);
+            if (match) {
+                const { openOffset, closeOffset } = match;
+
+                const openPos = code.getPosition(openOffset);
+                const closePos = code.getPosition(closeOffset);
+
+                const openLineDiv = this.getLine(openPos.line);
+                const closeLineDiv = this.getLine(closePos.line);
+
+                const openEl = openLineDiv ? getElementAtPosition(openLineDiv, openPos.column) : null;
+                const closeEl = closeLineDiv ? getElementAtPosition(closeLineDiv, closePos.column) : null;
+
+                if (openEl) targets.push(openEl);
+                if (closeEl) targets.push(closeEl);
+            }
+        }
+
+        const currentBm = Array.from(this.codeContent.querySelectorAll('.bm'));
+
+        // Remove highlights from elements that are no longer targets
+        for (const el of currentBm) {
+            if (!targets.includes(el)) {
+                el.classList.remove('bm');
+            }
+        }
+
+        // Add highlight to target elements if they don't have it already
+        for (const el of targets) {
+            if (!el.classList.contains('bm')) {
+                el.classList.add('bm');
+            }
+        }
     }
 
     public focus(state: EditorState, focusLine: number | null = null): boolean {

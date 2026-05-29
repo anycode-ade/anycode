@@ -298,6 +298,15 @@ const query = `
 ; Remaining Identifiers
 ; -------
 
+[
+  "("
+  ")"
+  "["
+  "]"
+  "{"
+  "}"
+] @punctuation.bracket
+
 "?" @special
 
 (type_identifier) @type

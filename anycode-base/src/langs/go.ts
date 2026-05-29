@@ -123,6 +123,15 @@ const query = `
     (iota)
 ] @constant.builtin
 
+[
+    "("
+    ")"
+    "["
+    "]"
+    "{"
+    "}"
+] @punctuation.bracket
+
 (comment) @comment
 `
 

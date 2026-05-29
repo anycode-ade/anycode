@@ -10,7 +10,8 @@ import {
 import Parser from 'web-tree-sitter';
 import History from './history';
 import { Selection } from './selection';
-import { getGraphemeAt, getNextGraphemeIndex, getPrevGraphemeIndex, getWasmPath, isWordGrapheme } from './utils';
+import { BracketMatch } from './types';
+import { getGraphemeAt, getNextGraphemeIndex, getPrevGraphemeIndex, getWasmPath, isWordGrapheme, BRACKET_PAIRS, OPEN_BRACKETS, CLOSE_BRACKETS } from './utils';
 import type { Lang } from './lang';
 
 import javascript from './langs/javascript';
@@ -728,7 +729,7 @@ export class Code {
         let bytesCounter = this.buffer.getOffsetAt(line + 1, 1);
     
         const appendNode = (name: string | null, text: string) => {
-            if (lastCapture && lastCapture.name === name) {
+            if (lastCapture && lastCapture.name === name && (!name || !name.includes('bracket'))) {
                 lastCapture.text += text;
             } else {
                 lastCapture = { name, text };
@@ -1065,6 +1066,159 @@ export class Code {
         }
 
         return { text, token: classs };
+    }
+
+    public getMatchingBracket(offset: number): BracketMatch | null {
+        const totalLines = this.linesLength();
+        if (totalLines === 0) return null;
+
+        const bracket = this.findBracketAtPosition(offset);
+        if (!bracket) return null;
+
+        const { line, column, char, offset: bracketOffset } = bracket;
+
+        if (this.isInIgnoredContext(bracketOffset)) {
+            return null;
+        }
+
+        const isOpening = OPEN_BRACKETS.has(char);
+        const openChar = isOpening ? char : BRACKET_PAIRS[char];
+        const closeChar = isOpening ? BRACKET_PAIRS[char] : char;
+
+        return isOpening
+            ? this.findMatchingClose(bracketOffset, line, column, openChar, closeChar)
+            : this.findMatchingOpen(bracketOffset, line, column, openChar, closeChar);
+    }
+
+    private findBracketAtPosition(offset: number): { 
+        line: number; 
+        column: number; 
+        char: string; 
+        offset: number;
+    } | null {
+        const pos = this.getPosition(offset);
+        const text = this.line(pos.line);
+
+        if (pos.column < text.length && BRACKET_PAIRS[text[pos.column]]) {
+            return {
+                line: pos.line,
+                column: pos.column,
+                char: text[pos.column],
+                offset: this.getOffset(pos.line, pos.column)
+            };
+        }
+
+        if (pos.column > 0 && BRACKET_PAIRS[text[pos.column - 1]]) {
+            return {
+                line: pos.line,
+                column: pos.column - 1,
+                char: text[pos.column - 1],
+                offset: this.getOffset(pos.line, pos.column - 1)
+            };
+        }
+
+        return null;
+    }
+
+    private isInIgnoredContext(offset: number): boolean {
+        if (!this.tree) return false;
+
+        try {
+            const node = this.tree.rootNode.descendantForIndex(offset);
+            let current: Parser.SyntaxNode | null = node;
+
+            while (current) {
+                const type = current.type.toLowerCase();
+                if (type.includes('comment') ||
+                    type.includes('string') ||
+                    type.includes('regex') ||
+                    type.includes('template')) {
+                    return true;
+                }
+                current = current.parent;
+            }
+        } catch (e) {
+            
+        }
+        return false;
+    }
+
+    private findMatchingClose(
+        openOffset: number,
+        startLine: number,
+        startColumn: number,
+        openChar: string,
+        closeChar: string
+    ): BracketMatch | null {
+        let count = 1;
+        let line = startLine;
+
+        while (line < this.linesLength()) {
+            const text = this.line(line);
+            const startCol = (line === startLine) ? startColumn + 1 : 0;
+            const lineStartOffset = this.getOffset(line, 0);
+
+            for (let col = startCol; col < text.length; col++) {
+                const char = text[col];
+
+                if (char !== openChar && char !== closeChar) continue;
+
+                const charOffset = lineStartOffset + col;
+                if (this.isInIgnoredContext(charOffset)) continue;
+
+                if (char === openChar) {
+                    count++;
+                } else {
+                    count--;
+                    if (count === 0) {
+                        return { openOffset, closeOffset: charOffset };
+                    }
+                }
+            }
+
+            line++;
+        }
+
+        return null;
+    }
+
+    private findMatchingOpen(
+        closeOffset: number,
+        startLine: number,
+        startColumn: number,
+        openChar: string,
+        closeChar: string
+    ): BracketMatch | null {
+        let count = 1;
+        let line = startLine;
+
+        while (line >= 0) {
+            const text = this.line(line);
+            const startCol = (line === startLine) ? startColumn - 1 : text.length - 1;
+            const lineStartOffset = this.getOffset(line, 0);
+
+            for (let col = startCol; col >= 0; col--) {
+                const char = text[col];
+
+                if (char !== openChar && char !== closeChar) continue;
+
+                const charOffset = lineStartOffset + col;
+                if (this.isInIgnoredContext(charOffset)) continue;
+
+                if (char === closeChar) {
+                    count++;
+                } else {
+                    count--;
+                    if (count === 0) {
+                        return { openOffset: charOffset, closeOffset };
+                    }
+                }
+            }
+
+            line--;
+        }
+
+        return null;
     }
 
     clone() {

@@ -378,3 +378,31 @@ export function getWasmPath(filename: string): string {
 export function setWasmBasePath(path: string) {
     wasmBasePath = path;
 }
+
+export const BRACKET_PAIRS: Record<string, string> = {
+    '(': ')',
+    '{': '}',
+    '[': ']',
+    ')': '(',
+    '}': '{',
+    ']': '['
+};
+
+export const OPEN_BRACKETS = new Set(['(', '{', '[']);
+export const CLOSE_BRACKETS = new Set([')', '}', ']']);
+
+export function getElementAtPosition(lineDiv: HTMLElement, column: number): Element | null {
+    const chunks = Array.from(lineDiv.children)
+        .filter((child) => !isDiagnosticElement(child));
+
+    let character = column;
+    for (const chunk of chunks) {
+        const text = chunk.textContent || "";
+        const chunkLength = text.length;
+        if (character < chunkLength) {
+            return chunk;
+        }
+        character -= chunkLength;
+    }
+    return null;
+}

@@ -328,7 +328,7 @@ export class AnycodeEditor {
         const offset = this.code.getOffset(line, column);
         this.offset = offset;
         this.updateWordHighlight();
-        this.renderer.renderCursor(line, column);
+        this.renderCursorOrSelection();
     }
 
     private updateWordHighlight() {
@@ -661,11 +661,12 @@ export class AnycodeEditor {
         this.offset = o;
         this.updateWordHighlight();
 
-        const { line, column } = this.code.getPosition(this.offset);
-        this.renderer.renderCursor(line, column);
+        this.renderCursorOrSelection();
 
         if (this.onCursorChangeCallback) {
-            this.onCursorChangeCallback({ line, column }, oldCursor);
+            this.onCursorChangeCallback(
+                this.code.getPosition(this.offset), oldCursor
+            );
         }
 
         if (this.isCompletionOpen) {

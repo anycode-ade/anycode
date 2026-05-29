@@ -164,6 +164,15 @@ const query = `
 
 (operator_name) @function
 "operator" @function
+
+[
+  "["
+  "]"
+  "{"
+  "}"
+  "("
+  ")"
+] @punctuation.bracket
 `
 
 let foldsQuery = `

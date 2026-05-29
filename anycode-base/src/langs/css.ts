@@ -38,6 +38,15 @@ const query = `
  (important)
  (to)
 ] @keyword
+
+[
+  "["
+  "]"
+  "{"
+  "}"
+  "("
+  ")"
+] @punctuation.bracket
 `
 
 let indent = { width: 4, unit: " " };

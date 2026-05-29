@@ -94,6 +94,15 @@ const query = `
 (identifier) @variable
 
 (comment) @comment
+
+[
+  "("
+  ")"
+  "["
+  "]"
+  "{"
+  "}"
+] @punctuation.bracket
 `
 
 let foldsQuery = `
