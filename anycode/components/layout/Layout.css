@@ -458,32 +458,89 @@
     min-width: 0;
 }
 
-.app-layout-split .dv-sash {
-    background-color: transparent;
+.layout,
+.dock-split {
+    /* Asymmetrical hit margins to prevent blocking clicks on the left side (e.g. file tree) */
+    --sash-hit-margin-left: 2px;
+    --sash-hit-margin-right: 2px;
 }
 
-.app-layout-split .dv-sash::after {
+@media (pointer: coarse) {
+    .layout,
+    .dock-split {
+        --sash-hit-margin-left: 4px;  /* Made smaller on the left to avoid blocking file explorer clicks */
+        --sash-hit-margin-right: 4px; /* Larger on the right side where it is safer to tap */
+    }
+}
+
+.layout .dv-sash,
+.dock-split .dv-sash {
+    background-color: transparent !important;
+}
+
+.layout .dv-sash::after,
+.dock-split .dv-sash::after {
     content: '';
     position: absolute;
     pointer-events: none;
+    transition: background-color 0.15s ease;
 }
 
-.app-layout-split .dv-vertical > .dv-sash-container > .dv-sash::after {
+/* Vertical sashes (separating panels horizontally) */
+.layout .dv-split-view-container.dv-horizontal > .dv-sash-container > .dv-sash::after,
+.dock-split .dv-split-view-container.dv-horizontal > .dv-sash-container > .dv-sash::after {
     left: 50%;
     top: 0;
     bottom: 0;
     width: 2px;
     transform: translateX(-50%);
-    background: linear-gradient(to bottom, transparent, #555, transparent);
+    background: linear-gradient(to bottom, transparent, var(--theme-border, #555), transparent);
 }
 
-.app-layout-split .dv-horizontal > .dv-sash-container > .dv-sash::after {
+/* Horizontal sashes (separating panels vertically) */
+.layout .dv-split-view-container.dv-vertical > .dv-sash-container > .dv-sash::after,
+.dock-split .dv-split-view-container.dv-vertical > .dv-sash-container > .dv-sash::after {
     left: 0;
     right: 0;
     top: 50%;
     height: 2px;
     transform: translateY(-50%);
-    background: linear-gradient(to right, transparent, #555, transparent);
+    background: linear-gradient(to right, transparent, var(--theme-border, #555), transparent);
+}
+
+/* Highlight active/dragging sashes */
+.layout .dv-sash:not(.disabled):active::after,
+.dock-split .dv-sash:not(.disabled):active::after,
+.layout .dv-sash:not(.disabled):hover::after,
+.dock-split .dv-sash:not(.disabled):hover::after {
+    background: var(--theme-accent-background, #007acc) !important;
+}
+
+/* Expanded hit area for sashes to make resizing easier, especially on touch devices */
+.layout .dv-sash::before,
+.dock-split .dv-sash::before {
+    content: '';
+    position: absolute;
+    z-index: 10;
+    background: transparent;
+}
+
+/* Vertical sashes hit area (separating panels horizontally) */
+.layout .dv-split-view-container.dv-horizontal > .dv-sash-container > .dv-sash::before,
+.dock-split .dv-split-view-container.dv-horizontal > .dv-sash-container > .dv-sash::before {
+    top: 0;
+    bottom: 0;
+    left: calc(-1 * var(--sash-hit-margin-left));
+    right: calc(-1 * var(--sash-hit-margin-right));
+}
+
+/* Horizontal sashes hit area (separating panels vertically) */
+.layout .dv-split-view-container.dv-vertical > .dv-sash-container > .dv-sash::before,
+.dock-split .dv-split-view-container.dv-vertical > .dv-sash-container > .dv-sash::before {
+    left: 0;
+    right: 0;
+    top: calc(-1 * var(--sash-hit-margin-left));
+    bottom: calc(-1 * var(--sash-hit-margin-right));
 }
 
 .layout .dv-tab-overflow-control,
