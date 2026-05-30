@@ -1130,6 +1130,27 @@ export const useEditors = ({ wsRef, isConnected, onFileClosed }: UseEditorsParam
         }
     }, []);
 
+    const handleGitUpdate = useCallback(() => {
+        if (!wsRef.current || !isConnected) return;
+
+        filesRef.current.forEach((file) => {
+            const path = file.id;
+            const editor = editorRefs.current.get(path);
+            if (!editor) return;
+
+            wsRef.current?.emit('git:file-original', { path }, (response: any) => {
+                if (response && response.success && response.content !== undefined) {
+                    editor.setOriginalCode(response.content);
+
+                    const request = editorOpenRequestsRef.current.get(path);
+                    if (request) {
+                        request.originalContent = response.content;
+                    }
+                }
+            });
+        });
+    }, [wsRef, isConnected]);
+
     const undoCursor = useCallback(() => {
         if (cursorHistory.current.undoStack.length === 0) return;
 
@@ -1206,6 +1227,7 @@ export const useEditors = ({ wsRef, isConnected, onFileClosed }: UseEditorsParam
         handleReferencesPeekKeyDown,
         handleDiagnostics,
         handleWatcherEdits,
+        handleGitUpdate,
         undoCursor,
         redoCursor,
         flushAllPendingChanges,
