@@ -18,7 +18,7 @@
     "wasm"
   ],
   "scripts": {
-    "build": "tsc -p . && cpy \"src/styles.css\" dist && cpy \"../anycode/public/tree-sitter*.wasm\" wasm",
+    "build": "tsc -p . && cpy \"src/styles.css\" dist && cpy \"../anycode/public/*.wasm\" wasm",
     "prepublishOnly": "npm run build"
   },
   "keywords": [
@@ -35,7 +35,7 @@
   "dependencies": {
     "diff": "^8.0.2",
     "vscode-textbuffer": "^1.0.0",
-    "web-tree-sitter": "^0.21.0"
+    "web-tree-sitter": "^0.26.9"
   },
   "devDependencies": {
     "cpy-cli": "^5.0.0",

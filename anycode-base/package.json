@@ -21,7 +21,7 @@
   "dependencies": {
     "diff": "^9.0.0",
     "vscode-textbuffer": "^1.0.0",
-    "web-tree-sitter": "^0.21.0"
+    "web-tree-sitter": "^0.26.9"
   },
   "devDependencies": {
     "typescript": "^6.0.2",

@@ -7,11 +7,20 @@ import {
     Range
 } from 'vscode-textbuffer/src/common/range';
 
-import Parser from 'web-tree-sitter';
+import {
+    Language, Tree, Query,
+    Parser as TreeSitterParser,
+    Node as SyntaxNode,
+    Edit as TreeSitterEdit, QueryCapture
+} from 'web-tree-sitter';
 import History from './history';
 import { Selection } from './selection';
 import { BracketMatch } from './types';
-import { getGraphemeAt, getNextGraphemeIndex, getPrevGraphemeIndex, getWasmPath, isWordGrapheme, BRACKET_PAIRS, OPEN_BRACKETS, CLOSE_BRACKETS } from './utils';
+import {
+    getGraphemeAt, getNextGraphemeIndex, getPrevGraphemeIndex,
+    getWasmPath, isWordGrapheme,
+    BRACKET_PAIRS, OPEN_BRACKETS, CLOSE_BRACKETS
+} from './utils';
 import type { Lang } from './lang';
 
 import javascript from './langs/javascript';
@@ -94,18 +103,18 @@ export interface FoldRange {
     kind: string;
 }
 
-var langsCache: Map<string, Parser.Language> = new Map();
-var pendingLangsCache: Map<string, Promise<Parser.Language>> = new Map();
+var langsCache: Map<string, Language> = new Map();
+var pendingLangsCache: Map<string, Promise<Language>> = new Map();
 
 export class Code {
     public filename: string
     private buffer: PieceTreeBase
     public language: string | undefined
-    private parser: Parser | undefined
-    private tree: Parser.Tree | undefined
-    private query: Parser.Query | undefined
-    private foldsQuery: Parser.Query | undefined
-    private runnablesQuery: Parser.Query | undefined
+    private parser: TreeSitterParser | undefined
+    private tree: Tree | undefined
+    private query: Query | undefined
+    private foldsQuery: Query | undefined
+    private runnablesQuery: Query | undefined
     private foldRanges: FoldRange[] = []
 
     public runnables: Map<number, any> = new Map()
@@ -120,8 +129,8 @@ export class Code {
 
     private onChange: ((t: Change) => void) | null = null
 
-    private injection_parsers: Map<string, Parser> = new Map()
-    private injection_queries: Map<string, Parser.Query> = new Map()
+    private injection_parsers: Map<string, TreeSitterParser> = new Map()
+    private injection_queries: Map<string, Query> = new Map()
     private injectionCache = new Map<string, {
         startIndex: number;
         endIndex: number;
@@ -150,18 +159,18 @@ export class Code {
             return;
         }
 
-        await Parser.init();
-        this.parser = new Parser();
+        await TreeSitterParser.init();
+        this.parser = new TreeSitterParser();
         const filename = `tree-sitter-${this.language}.wasm`;
         const wasmPath = getWasmPath(filename);
 
-        let lang: Parser.Language;
+        let lang: Language;
         if (langsCache.has(this.language)) {
             lang = langsCache.get(this.language)!;
         } else {
             let loadPromise = pendingLangsCache.get(this.language);
             if (!loadPromise) {
-                loadPromise = Parser.Language.load(wasmPath);
+                loadPromise = Language.load(wasmPath);
                 pendingLangsCache.set(this.language, loadPromise);
             }
             try {
@@ -178,9 +187,9 @@ export class Code {
 
         if (this.language) {
             let q = this.getQuery();
-            if (q) this.query = lang.query(q);
+            if (q) this.query = new Query(lang, q);
             const foldsQ = this.getFoldsQuery();
-            if (foldsQ) this.foldsQuery = lang.query(foldsQ);
+            if (foldsQ) this.foldsQuery = new Query(lang, foldsQ);
             this.updateFoldRanges();
             if (this.query) await this.initInjections();
             // let tq = this.getRunnablesQuery();
@@ -201,7 +210,7 @@ export class Code {
                     continue;
                 }
 
-                let parser = new Parser();
+                let parser = new TreeSitterParser();
 
                 let lang;
                 if (langsCache.has(language)) {
@@ -210,7 +219,7 @@ export class Code {
                     let loadPromise = pendingLangsCache.get(language);
                     if (!loadPromise) {
                         const injectionWasmPath = getWasmPath(`tree-sitter-${language}.wasm`);
-                        loadPromise = Parser.Language.load(injectionWasmPath);
+                        loadPromise = Language.load(injectionWasmPath);
                         pendingLangsCache.set(language, loadPromise);
                     }
                     try {
@@ -228,7 +237,7 @@ export class Code {
                     const l = this.getLang(language);
                     let query = l?.query;
                     if (query) {
-                        this.injection_queries.set(language, lang.query(query));
+                        this.injection_queries.set(language, new Query(lang, query));
                     } else {
                         console.error(`No query available for ${language}`);
                     }
@@ -268,6 +277,7 @@ export class Code {
             );
     
             const injectionTree = injectionParser.parse(injectionContent);
+            if (!injectionTree) continue;
             const injectionTreeCaptures = injectionQuery.captures(injectionTree.rootNode);
     
             const results = injectionTreeCaptures.map(ic => ({
@@ -458,14 +468,14 @@ export class Code {
         const oldEndPosition = startPosition;
         const newEndPosition = this.buffer.getPositionAt(offset + len);
 
-        let edit = {
+        let edit = new TreeSitterEdit({
             startIndex: offset,
             oldEndIndex: offset,
             newEndIndex: offset + len,
             startPosition: { row: startPosition.lineNumber, column: startPosition.column },
             oldEndPosition: { row: oldEndPosition.lineNumber, column: oldEndPosition.column },
             newEndPosition: { row: newEndPosition.lineNumber, column: newEndPosition.column },
-        };
+        });
 
         this.treeSitterApplyEdit(edit);
     }
@@ -475,19 +485,19 @@ export class Code {
         const oldEndPosition = this.buffer.getPositionAt(offset);
         const newEndPosition = startPosition;
 
-        let edit = {
+        let edit = new TreeSitterEdit({
             startIndex: offset - len,
             oldEndIndex: offset,
             newEndIndex: offset - len,
             startPosition: { row: startPosition.lineNumber, column: startPosition.column },
             oldEndPosition: { row: oldEndPosition.lineNumber, column: oldEndPosition.column },
             newEndPosition: { row: newEndPosition.lineNumber, column: newEndPosition.column },
-        };
+        });
 
         this.treeSitterApplyEdit(edit);
     }
 
-    treeSitterApplyEdit(edit: Parser.Edit) {
+    treeSitterApplyEdit(edit: TreeSitterEdit) {
         this.tree!.edit(edit);
         let old = this.tree!;
         const newTree = this.parser!.parse(this.input, old);
@@ -675,7 +685,7 @@ export class Code {
         return this.foldRanges;
     }
 
-    private foldRangeFromNode(node: Parser.SyntaxNode):
+    private foldRangeFromNode(node: SyntaxNode):
         { startLine: number; endLine: number } | null {
         const startLine = node.startPosition.row;
         const endLine = node.endPosition.row;
@@ -717,8 +727,10 @@ export class Code {
     
         const captures = this.query.captures(
             this.tree.rootNode,
-            { row: line, column: 0 },
-            { row: line + 1, column: 0 }
+            {
+                startPosition: { row: line, column: 0 },
+                endPosition: { row: line + 1, column: 0 }
+            }
         );
     
         const injectionCapturesArray = this.buildInjectionCaptures(captures);
@@ -746,7 +758,7 @@ export class Code {
         for (; column < lineText.length;) {
             // Pick the narrowest capture range that contains current byte position.
             // This preserves nested/specific highlight precedence without sorting in the hot path.
-            let capture: Parser.QueryCapture | undefined;
+            let capture: QueryCapture | undefined;
             let captureLen = 0;
             for (const c of captures) {
                 if (c.node.startIndex <= bytesCounter && bytesCounter < c.node.endIndex) {
@@ -1135,7 +1147,7 @@ export class Code {
 
         try {
             const node = this.tree.rootNode.descendantForIndex(offset);
-            let current: Parser.SyntaxNode | null = node;
+            let current: SyntaxNode | null = node;
 
             while (current) {
                 const type = current.type.toLowerCase();
