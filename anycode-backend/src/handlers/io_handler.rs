@@ -9,6 +9,7 @@ use crate::{
 use lsp_types::{Position, Range, TextDocumentContentChangeEvent};
 use serde::{Deserialize, Serialize};
 use serde_json::{self, json};
+use crate::handlers::git_handler::is_file_tracked;
 use socketioxide::extract::{AckSender, Data, SocketRef, State};
 use std::path::PathBuf;
 use tracing::{error, info, warn};
@@ -94,6 +95,14 @@ pub async fn handle_file_open(
         Ok(p) => p,
         Err(e) => error_ack!(ack, &request.path, "Failed to resolve file: {:?}", e),
     };
+
+    let file_exists = std::path::Path::new(&abs_path).exists();
+    if !file_exists && is_file_tracked(&abs_path, &state).await {
+        let mut f2c = state.file2code.lock().await;
+        f2c.entry(abs_path.clone()).or_insert_with(|| {
+            Code::new_empty(&abs_path, &state.config)
+        });
+    }
 
     let mut f2c = state.file2code.lock().await;
     let code = match get_or_create_code(&mut f2c, &abs_path, &state.config) {

@@ -163,3 +163,11 @@ pub async fn handle_git_unstage(
     };
     send_response(ack, result);
 }
+
+pub async fn is_file_tracked(abs_path: &str, state: &AppState) -> bool {
+    let git = state.git_manager.lock().await;
+    match git.file_original(abs_path) {
+        Ok(file) => !file.is_new,
+        Err(_) => false,
+    }
+}

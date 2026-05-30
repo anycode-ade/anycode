@@ -191,8 +191,17 @@ pub fn is_search_ignored_dir(path: &std::path::Path) -> bool {
 
 pub fn abs_file(input: &str) -> anyhow::Result<String> {
     let srcdir = std::path::PathBuf::from(input);
-    let c = std::fs::canonicalize(&srcdir)?;
-    Ok(c.to_string_lossy().to_string())
+    match std::fs::canonicalize(&srcdir) {
+        Ok(c) => Ok(c.to_string_lossy().to_string()),
+        Err(e) => {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                let normalized = normalize_watch_path(&srcdir);
+                Ok(normalized.to_string_lossy().to_string())
+            } else {
+                Err(anyhow::Error::new(e))
+            }
+        }
+    }
 }
 
 /// Normalize a path for watcher comparisons without requiring the file to exist.

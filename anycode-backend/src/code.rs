@@ -74,6 +74,22 @@ impl Code {
         code
     }
 
+    pub fn new_empty(path: &str, conf: &Config) -> Self {
+        let mut code = Self::new();
+        code.abs_path = utils::abs_file(path).unwrap_or_else(|_| path.to_string());
+        code.file_name = utils::get_file_name(path);
+        code.lang = detect_lang::from_path(path)
+            .map(|lang| lang.id().to_lowercase())
+            .unwrap_or_else(|| {
+                conf.language
+                    .iter()
+                    .find(|l| l.types.iter().any(|t| path.ends_with(t)))
+                    .map(|lang| lang.name.clone())
+                    .unwrap_or_else(|| "text".to_string())
+            });
+        code
+    }
+
     pub fn from_file(path: &str, conf: &Config) -> std::io::Result<Self> {
         let file = File::open(path)?;
         let text = Rope::from_reader(BufReader::new(file))?;
