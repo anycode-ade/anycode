@@ -173,12 +173,18 @@ mod tests {
     async fn test_terminal_echo() -> Result<()> {
         let (tx, mut rx) = mpsc::channel::<String>(10);
 
+        let shell = if cfg!(target_os = "windows") {
+            "cmd.exe".to_string()
+        } else {
+            "cat".to_string()
+        };
+
         let terminal = Terminal::new(
             "test".to_string(),
             "session1".to_string(),
             30,
             80,
-            Some("bash".to_string()),
+            Some(shell),
             None,
             tx,
         )
