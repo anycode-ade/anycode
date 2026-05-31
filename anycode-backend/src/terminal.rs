@@ -126,6 +126,7 @@ impl Terminal {
                         if let Err(e) = write!(writer, "{}", input) {
                             tracing::error!("PTY write error: {:?}", e);
                         }
+                        let _ = writer.flush();
                     }
                     Some((cols, rows)) = resize_rx.recv() => {
                         let _ = pair.master.resize(PtySize {
@@ -136,13 +137,13 @@ impl Terminal {
                         });
                     }
                     Some(_) = kill_rx.recv() => {
-                        let _ = child.kill();
-                        let _ = child.wait();
                         break;
                     }
                     else => break,
                 }
             }
+            let _ = child.kill();
+            let _ = child.wait();
         });
     }
 
