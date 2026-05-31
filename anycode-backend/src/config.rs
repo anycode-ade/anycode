@@ -18,6 +18,7 @@ pub struct Dist;
 pub struct Themes;
 
 #[derive(Debug, Deserialize, Clone)]
+#[allow(dead_code)]
 pub struct Config {
     pub theme: String,
     pub language: Vec<Language>,
@@ -25,6 +26,7 @@ pub struct Config {
 }
 
 impl Config {
+    #[allow(dead_code)]
     pub fn default() -> Self {
         Config {
             theme: "default".to_string(),
@@ -35,6 +37,7 @@ impl Config {
 }
 
 #[derive(Debug, Deserialize, Clone)]
+#[allow(dead_code)]
 pub struct Language {
     pub name: String,
     pub types: Vec<String>,
@@ -47,11 +50,13 @@ pub struct Language {
 }
 
 #[derive(Debug, Deserialize, Clone)]
+#[allow(dead_code)]
 pub struct IndentConfig {
     pub width: i32,
     pub unit: String,
 }
 
+#[cfg(test)]
 pub fn get_config(conf_path: &str) -> Config {
     let error_message = format!("Unable to read config.toml file from path {}", conf_path);
     let toml_str = std::fs::read_to_string(conf_path).expect(&error_message);
@@ -97,6 +102,7 @@ pub fn read_assets_config() -> anyhow::Result<String> {
 }
 
 #[derive(Debug, Deserialize, Clone)]
+#[allow(dead_code)]
 pub struct Terminal {
     pub command: String,
 }

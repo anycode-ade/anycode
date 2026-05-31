@@ -66,6 +66,7 @@ impl Code {
         self.text.to_string()
     }
 
+    #[allow(dead_code)]
     pub fn from_str(text: &str) -> Self {
         let mut code = Self::new();
         code.applying_history = false;
@@ -136,6 +137,7 @@ impl Code {
         self.file_name = file_name;
     }
 
+    #[allow(dead_code)]
     pub fn position(&self, offset: usize) -> (usize, usize) {
         let line_idx = self.text.char_to_line(offset);
         let line_char_index = self.text.line_to_char(line_idx);
@@ -146,6 +148,7 @@ impl Code {
         self.text.utf16_cu_to_char(utf16_offset)
     }
 
+    #[allow(dead_code)]
     pub fn char_to_utf16_offset(&self, char_offset: usize) -> usize {
         self.text.char_to_utf16_cu(char_offset)
     }

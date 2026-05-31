@@ -6,8 +6,6 @@ use std::path::{Path, PathBuf};
 use tokio::sync::mpsc;
 
 pub struct Terminal {
-    name: String,
-    session_id: String,
     pty_input_tx: mpsc::Sender<String>,
     pty_resize_tx: mpsc::Sender<(u16, u16)>,
     kill_tx: mpsc::Sender<()>,
@@ -15,8 +13,8 @@ pub struct Terminal {
 
 impl Terminal {
     pub async fn new(
-        name: String,
-        session_id: String,
+        _name: String,
+        _session_id: String,
         rows: u16,
         cols: u16,
         cmd: Option<String>,
@@ -53,8 +51,6 @@ impl Terminal {
         Self::spawn_terminal_task(child, writer, pair, pty_input_rx, pty_resize_rx, kill_rx);
 
         Ok(Self {
-            name,
-            session_id,
             pty_input_tx,
             pty_resize_tx,
             kill_tx,

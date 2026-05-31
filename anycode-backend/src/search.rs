@@ -303,6 +303,7 @@ pub async fn global_search(
     Ok(())
 }
 
+#[cfg(test)]
 pub mod search_exp {
     use super::*;
 

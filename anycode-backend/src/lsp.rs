@@ -296,10 +296,6 @@ impl Lsp {
         self.ready.load(Ordering::SeqCst)
     }
 
-    pub fn lsp_name(&self) -> Option<&str> {
-        self.lsp_name.as_deref()
-    }
-
     pub fn initialized(&mut self) {
         let params = InitializedParams {};
         self.send_notification::<Initialized>(params);
@@ -362,38 +358,13 @@ impl Lsp {
 
     pub async fn did_change(
         &mut self,
-        start_line: usize,
-        start_column: usize,
-        end_line: usize,
-        end_column: usize,
-        path: &str,
-        text: &str,
-    ) -> Result<()> {
-        self.did_change_multi(
-            path,
-            vec![TextDocumentContentChangeEvent {
-                range: Some(Range {
-                    start: Position::new(start_line as u32, start_column as u32),
-                    end: Position::new(end_line as u32, end_column as u32),
-                }),
-                range_length: None,
-                text: text.to_string(),
-            }],
-        )
-        .await
-    }
-
-    pub async fn did_change_multi(
-        &mut self,
         path: &str,
         content_changes: Vec<TextDocumentContentChangeEvent>,
     ) -> Result<()> {
         let uri = path_to_uri(path)?;
+        let version = self.get_next_version(path) as i32;
         let params = DidChangeTextDocumentParams {
-            text_document: VersionedTextDocumentIdentifier {
-                uri,
-                version: self.get_next_version(path) as i32,
-            },
+            text_document: VersionedTextDocumentIdentifier { uri, version },
             content_changes,
         };
 
@@ -576,7 +547,7 @@ mod tests {
         assert!(references_str.contains("fast.py"));
         assert!(references_str.contains("Position { line: 0, character: 30 }"));
 
-        lsp.stop().await;
+        let _ = lsp.stop().await;
         Ok(())
     }
 }
@@ -589,8 +560,6 @@ pub mod lsp_messages {
 
     #[derive(Deserialize)]
     pub struct LspRawResponse {
-        pub jsonrpc: String,
-        pub id: Value,
         pub result: Option<Value>,
         pub error: Option<Value>,
     }
@@ -723,6 +692,7 @@ pub mod lsp_messages {
             None
         };
 
+        #[allow(deprecated)]
         let params = InitializeParams {
             process_id: Some(std::process::id() as u32),
             root_path: Some(dir.to_string()),
@@ -811,26 +781,6 @@ impl LspManager {
         }
 
         self.lang2lsp.insert(lang, lsp);
-    }
-
-    pub fn notify_configuration_changed(&mut self, lang: &str, dir: &str) {
-        if let Some(lsp) = self.lang2lsp.get_mut(lang) {
-            if let Some(lsp_name) = lsp.lsp_name() {
-                if let Some(settings) = lsp_messages::read_vscode_settings(lsp_name, dir) {
-                    lsp.did_change_configuration(settings);
-                }
-            }
-        }
-    }
-
-    pub fn notify_all_configuration_changed(&mut self, dir: &str) {
-        for lsp in self.lang2lsp.values_mut() {
-            if let Some(lsp_name) = lsp.lsp_name() {
-                if let Some(settings) = lsp_messages::read_vscode_settings(lsp_name, dir) {
-                    lsp.did_change_configuration(settings);
-                }
-            }
-        }
     }
 
     pub async fn stop(&mut self, lang: &str) {

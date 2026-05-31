@@ -8,7 +8,6 @@ use tracing::{debug, info, warn};
 pub struct Checkpoint {
     pub commit_hash: String,
     pub prompt: String,
-    pub created_at: chrono::DateTime<chrono::Utc>,
 }
 
 /// AcpHistoryManager - manages undo/redo using a shadow git repository
@@ -221,8 +220,6 @@ impl AcpHistoryManager {
                 checkpoints.push(Checkpoint {
                     commit_hash: oid.to_string(),
                     prompt: prompt.clone(),
-                    created_at: chrono::DateTime::from_timestamp(commit.time().seconds(), 0)
-                        .unwrap_or_else(chrono::Utc::now),
                 });
             }
         }
@@ -287,7 +284,6 @@ impl AcpHistoryManager {
         let checkpoint = Checkpoint {
             commit_hash: hash.clone(),
             prompt: prompt.to_string(),
-            created_at: chrono::Utc::now(),
         };
 
         self.checkpoints.push(checkpoint);
@@ -335,6 +331,7 @@ impl AcpHistoryManager {
     }
 
     /// Get all checkpoints
+    #[allow(dead_code)]
     pub fn get_all_checkpoints(&self) -> &[Checkpoint] {
         &self.checkpoints
     }

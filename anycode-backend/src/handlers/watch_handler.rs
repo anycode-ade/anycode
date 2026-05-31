@@ -365,7 +365,7 @@ async fn handle_file_modification(
     if sync_lsp && !lsp_changes.is_empty() {
         let mut lsp = lsp_manager.lock().await;
         if let Some(lsp) = lsp.get(&lang).await {
-            if let Err(e) = lsp.did_change_multi(path_str, lsp_changes).await {
+            if let Err(e) = lsp.did_change(path_str, lsp_changes).await {
                 error!("Failed to notify LSP didChange for {}: {:?}", path_str, e);
             }
             if let Err(e) = lsp.did_save(path_str) {

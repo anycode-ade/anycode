@@ -1641,16 +1641,6 @@ impl AcpAgent {
         Ok(())
     }
 
-    /// Get all available checkpoints
-    pub async fn get_checkpoints(&self) -> Vec<String> {
-        let manager = self.history_manager.read().await;
-        manager
-            .get_all_checkpoints()
-            .iter()
-            .map(|cp| cp.prompt.clone())
-            .collect()
-    }
-
     pub async fn cancel_prompt(&self) -> Result<()> {
         let cancel_sender_guard = self.cancel_sender.lock().await;
         let cancel_tx = match cancel_sender_guard.as_ref() {
@@ -1845,15 +1835,5 @@ impl AcpManager {
             .ok_or_else(|| anyhow!("Agent {} not found", agent_id))?;
 
         agent.restore_to_checkpoint_id(checkpoint_id).await
-    }
-
-    /// Get all checkpoints for an agent. Returns Vec of prompts
-    pub async fn get_checkpoints(&self, agent_id: &str) -> Result<Vec<String>> {
-        let agent = self
-            .agents
-            .get(agent_id)
-            .ok_or_else(|| anyhow!("Agent {} not found", agent_id))?;
-
-        Ok(agent.get_checkpoints().await)
     }
 }

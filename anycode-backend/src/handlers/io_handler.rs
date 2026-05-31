@@ -370,7 +370,7 @@ pub async fn handle_file_change(
         let mut lsp_manager = state.lsp_manager.lock().await;
         if let Some(lsp) = lsp_manager.get(&lang).await {
             if !lsp_changes.is_empty() {
-                if let Err(e) = lsp.did_change_multi(&abs_path, lsp_changes).await {
+                if let Err(e) = lsp.did_change(&abs_path, lsp_changes).await {
                     error!("Failed to notify LSP didChange for {}: {:?}", abs_path, e);
                 }
             }

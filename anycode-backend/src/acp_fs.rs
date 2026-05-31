@@ -139,7 +139,7 @@ async fn handle_write(
         if !lsp_changes.is_empty() {
             let mut lsp = lsp_manager.lock().await;
             if let Some(lsp) = lsp.get(&lang).await {
-                if let Err(e) = lsp.did_change_multi(&abs_path, lsp_changes).await {
+                if let Err(e) = lsp.did_change(&abs_path, lsp_changes).await {
                     error!(
                         "ACP write: failed to notify LSP didChange for {}: {}",
                         abs_path, e
