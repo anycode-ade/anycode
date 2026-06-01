@@ -53,5 +53,5 @@ export const EDITOR_SUPPORTED_LANGUAGES = new Set(Object.values(LANGUAGE_EXTENSI
 
 export const getLanguageFromFileName = (fileName: string): string => {
     const ext = fileName.split('.').pop()?.toLowerCase();
-    return LANGUAGE_EXTENSIONS[ext || ''] || 'javascript';
+    return LANGUAGE_EXTENSIONS[ext || ''] || 'bash';
 };

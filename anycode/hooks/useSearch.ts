@@ -25,11 +25,11 @@ export const useSearch = ({ wsRef, isConnected }: UseSearchParams) => {
         }
     }, [searchInput]);
 
-    const startSearch = useCallback((pattern: string) => {
+    const startSearch = useCallback((pattern: string, preview?: boolean) => {
         if (!pattern) return;
         if (!wsRef.current || !isConnected) return;
 
-        wsRef.current.emit('search:start', { pattern });
+        wsRef.current.emit('search:start', { pattern, preview });
         setSearchResults([]);
         setSearchEnded(false);
     }, [wsRef, isConnected]);
@@ -41,17 +41,20 @@ export const useSearch = ({ wsRef, isConnected }: UseSearchParams) => {
         setSearchEnded(true);
     }, [wsRef, isConnected]);
 
-    const handleSearchResult = useCallback((message: SearchResult) => {
+    const handleSearchResult = useCallback((message: SearchResult | SearchResult[]) => {
+        const messages = Array.isArray(message) ? message : [message];
         setSearchResults((prevResults) => {
             const resultsMap = new Map(prevResults.map((result) => [result.file_path, result]));
-            const sortedMatches = [...message.matches].sort((a, b) => {
-                if (a.line !== b.line) return a.line - b.line;
-                return a.column - b.column;
-            });
-            if (message.matches.length === 0) {
-                resultsMap.delete(message.file_path);
-            } else {
-                resultsMap.set(message.file_path, { ...message, matches: sortedMatches });
+            for (const item of messages) {
+                const sortedMatches = [...item.matches].sort((a, b) => {
+                    if (a.line !== b.line) return a.line - b.line;
+                    return a.column - b.column;
+                });
+                if (item.matches.length === 0) {
+                    resultsMap.delete(item.file_path);
+                } else {
+                    resultsMap.set(item.file_path, { ...item, matches: sortedMatches });
+                }
             }
             return Array.from(resultsMap.values()).sort((a, b) => {
                 const countDelta = b.matches.length - a.matches.length;

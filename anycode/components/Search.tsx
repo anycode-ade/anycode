@@ -28,10 +28,11 @@ interface SearchPreviewProps {
 }
 
 const SearchPreview = ({ match, pattern, maxLength = 100 }: SearchPreviewProps) => {
-    const displayPreview = maxLength > 0 ? match.preview.slice(0, maxLength) : match.preview;
+    const previewText = match.preview || "";
+    const displayPreview = maxLength > 0 ? previewText.slice(0, maxLength) : previewText;
     
     if (!pattern.trim()) {
-        return <span className="search-preview" title={match.preview}>{displayPreview}</span>;
+        return <span className="search-preview" title={previewText}>{displayPreview}</span>;
     }
 
     // Preview is created as: chars[preview_start..preview_end] 
@@ -46,14 +47,14 @@ const SearchPreview = ({ match, pattern, maxLength = 100 }: SearchPreviewProps) 
         // Fallback: try to find pattern in preview
         const matchIndex = displayPreview.indexOf(pattern);
         if (matchIndex === -1) {
-            return <span className="search-preview" title={match.preview}>{displayPreview}</span>;
+            return <span className="search-preview" title={previewText}>{displayPreview}</span>;
         }
         const beforeMatch = displayPreview.slice(0, matchIndex);
         const matchText = displayPreview.slice(matchIndex, matchIndex + patternLength);
         const afterMatch = displayPreview.slice(matchIndex + patternLength);
         
         return (
-            <span className="search-preview" title={match.preview}>
+            <span className="search-preview" title={previewText}>
                 {beforeMatch}
                 <mark className="search-match">{matchText}</mark>
                 {afterMatch}
@@ -67,7 +68,7 @@ const SearchPreview = ({ match, pattern, maxLength = 100 }: SearchPreviewProps) 
     const afterMatch = displayPreview.slice(matchPositionInPreview + patternLength);
     
     return (
-        <span className="search-preview" title={match.preview}>
+        <span className="search-preview" title={previewText}>
             {beforeMatch}
             <mark className="search-match">{matchText}</mark>
             {afterMatch}
@@ -80,7 +81,7 @@ interface SearchProps {
     focusRequestToken?: number | null;
     inputValue: string;
     onInputValueChange: (value: string) => void;
-    onEnter: (data: { id: string; pattern: string }) => void;
+    onEnter: (data: { id: string; pattern: string; preview?: boolean }) => void;
     onInputChange?: () => void;
     onCancel: () => void;
     onClear?: () => void;
@@ -98,6 +99,10 @@ const Search = ({ id, focusRequestToken, inputValue, onInputValueChange, onEnter
     const [visibleMatches, setVisibleMatches] = useState<Record<string, Set<string> | undefined>>({});
     const [activeItemKey, setActiveItemKey] = useState<string | null>(null);
     const [elapsedTime, setElapsedTime] = useState<number>(0);
+    const [includePreview, setIncludePreview] = useState<boolean>(() => {
+        if (typeof window === 'undefined') return false;
+        return localStorage.getItem('searchIncludePreview') === 'true';
+    });
     const inputRef = useRef<HTMLTextAreaElement>(null);
     const startTimeRef = useRef<number | null>(null);
     const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -182,7 +187,7 @@ const Search = ({ id, focusRequestToken, inputValue, onInputValueChange, onEnter
             e.preventDefault();
             searchPatternRef.current = inputValue; // Save the pattern used for search
             if (onEnter) {
-                onEnter({ id: id, pattern: inputValue });
+                onEnter({ id: id, pattern: inputValue, preview: includePreview });
             }
         }
         // Shift+Enter allows default behavior (inserts \n)
@@ -444,7 +449,7 @@ const Search = ({ id, focusRequestToken, inputValue, onInputValueChange, onEnter
                                 className="search-button replay"
                                 onClick={() => {
                                     searchPatternRef.current = inputValue; // Save the pattern used for search
-                                    onEnter({ id: id, pattern: inputValue });
+                                    onEnter({ id: id, pattern: inputValue, preview: includePreview });
                                 }}
                                 title="Replay search"
                             >
@@ -489,6 +494,25 @@ const Search = ({ id, focusRequestToken, inputValue, onInputValueChange, onEnter
                 >
                     <Icons.ChevronUp />
                 </button>
+                </div>
+
+                <div className="search-options-group" style={{ marginLeft: "auto", display: "flex", alignItems: "center" }}>
+                    <label className="search-option-label" style={{ display: "flex", alignItems: "center", gap: "4px", fontSize: "12px", cursor: "pointer", color: "var(--theme-muted-foreground, #888)", userSelect: "none" }}>
+                        <input
+                            type="checkbox"
+                            checked={includePreview}
+                            style={{ margin: 0, cursor: "pointer" }}
+                            onChange={(e) => {
+                                const checked = e.target.checked;
+                                setIncludePreview(checked);
+                                localStorage.setItem('searchIncludePreview', String(checked));
+                                if (inputValue.trim()) {
+                                    onEnter({ id, pattern: inputValue, preview: checked });
+                                }
+                            }}
+                        />
+                        <span>Preview</span>
+                    </label>
                 </div>
             </div>
 

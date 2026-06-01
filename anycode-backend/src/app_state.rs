@@ -10,7 +10,7 @@ use lsp_types::PublishDiagnosticsParams;
 use socketioxide::extract::{SocketRef, State};
 use std::collections::HashSet;
 use std::collections::hash_map::{Entry, HashMap};
-use std::{collections::VecDeque, sync::Arc};
+use std::{collections::VecDeque, sync::Arc, path::PathBuf};
 use tokio::sync::{Mutex, mpsc};
 use tokio_util::sync::CancellationToken;
 
@@ -23,6 +23,9 @@ pub struct AppState {
     pub git_manager: Arc<Mutex<GitManager>>,
     pub socket2data: Arc<Mutex<HashMap<String, SocketData>>>,
     pub terminals: Arc<Mutex<HashMap<String, TerminalData>>>,
+    pub fff_picker: fff_search::SharedFilePicker,
+    pub fff_frecency: fff_search::SharedFrecency,
+    pub fff_query_tracker: fff_search::SharedQueryTracker,
 }
 
 #[derive(Clone, Default)]
@@ -54,6 +57,44 @@ impl AppState {
         let mut git_manager = GitManager::new(crate::utils::current_dir());
         let _ = git_manager.refresh_status_cache();
 
+        let fff_picker = fff_search::SharedFilePicker::default();
+        let fff_frecency = fff_search::SharedFrecency::default();
+        let fff_query_tracker = fff_search::SharedQueryTracker::default();
+
+        let anycode_home = std::env::var("ANYCODE_HOME")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| {
+                dirs::home_dir()
+                    .map(|h| h.join(".anycode"))
+                    .unwrap_or_else(|| PathBuf::from("./.anycode"))
+            });
+        let fff_db_dir = anycode_home.join("fff-db");
+        let _ = std::fs::create_dir_all(&fff_db_dir);
+
+        if let Ok(frecency) = fff_search::FrecencyTracker::open(fff_db_dir.join("frecency")) {
+            let _ = fff_frecency.init(frecency);
+        }
+        if let Ok(query_tracker) = fff_search::QueryTracker::open(fff_db_dir.join("queries")) {
+            let _ = fff_query_tracker.init(query_tracker);
+        }
+
+        let current_dir = crate::utils::current_dir();
+        if crate::config::use_fff_search() {
+            let _ = fff_search::file_picker::FilePicker::new_with_shared_state(
+                fff_picker.clone(),
+                fff_frecency.clone(),
+                fff_search::file_picker::FilePickerOptions {
+                    base_path: current_dir.to_string_lossy().to_string(),
+                    enable_mmap_cache: false,
+                    enable_content_indexing: true,
+                    mode: fff_search::FFFMode::Ai,
+                    watch: true,
+                    follow_symlinks: false,
+                    cache_budget: None,
+                },
+            );
+        }
+
         Self {
             config: Arc::new(config),
             file2code: Arc::new(Mutex::new(HashMap::new())),
@@ -62,6 +103,9 @@ impl AppState {
             git_manager: Arc::new(Mutex::new(git_manager)),
             socket2data: Arc::new(Mutex::new(HashMap::new())),
             terminals: Arc::new(Mutex::new(HashMap::new())),
+            fff_picker,
+            fff_frecency,
+            fff_query_tracker,
         }
     }
 

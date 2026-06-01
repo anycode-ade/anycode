@@ -135,9 +135,9 @@ const App: React.FC = () => {
         saveItem('terminals', terminals.terminals);
     }, [terminals.terminals]);
 
-    const handleSearch = ({ pattern }: { id: string; pattern: string }) => {
+    const handleSearch = ({ pattern, preview }: { id: string; pattern: string; preview?: boolean }) => {
         if (!isConnected) return;
-        search.startSearch(pattern);
+        search.startSearch(pattern, preview);
     };
 
     const resolveEditorPaneId = useEvent(() => {

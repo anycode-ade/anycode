@@ -319,7 +319,7 @@ export interface AcpSessionSummary {
 export interface SearchMatch {
     line: number;
     column: number;
-    preview: string;
+    preview?: string;
 }
 
 export interface SearchResult {

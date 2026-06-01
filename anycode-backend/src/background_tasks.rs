@@ -26,7 +26,7 @@ pub fn spawn_all(
 ) -> Result<notify::RecommendedWatcher> {
     spawn_acp_fs(state, io, acp_fs_rx);
     spawn_diagnostics(io, diagnostics_rx);
-    spawn_git_status_watcher(state, io);
+    // spawn_git_status_watcher(state, io);
     let watcher = spawn_file_watcher(state, io)?;
     Ok(watcher)
 }
@@ -36,7 +36,7 @@ fn spawn_git_status_watcher(state: &AppState, io: &Arc<SocketIo>) {
     let socket = io.clone();
 
     tokio::spawn(async move {
-        let mut ticker = time::interval(Duration::from_secs(1));
+        let mut ticker = time::interval(Duration::from_secs(30));
         loop {
             ticker.tick().await;
 

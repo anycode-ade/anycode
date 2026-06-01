@@ -77,6 +77,7 @@ pub const DEFAULT_IGNORE_FILES: &[&str] = &[
 ];
 
 // Directories that should be ignored during search (even if shown in tree)
+#[allow(dead_code)]
 pub const SEARCH_IGNORE_DIRS: &[&str] = &[
     // Build artifacts and output directories
     "target",
@@ -184,6 +185,7 @@ pub fn is_ignored_path(path: &std::path::Path) -> bool {
 }
 
 /// Checks if a directory should be ignored during search
+#[allow(dead_code)]
 pub fn is_search_ignored_dir(path: &std::path::Path) -> bool {
     path.iter()
         .any(|p| SEARCH_IGNORE_DIRS.contains(&p.to_string_lossy().as_ref()))

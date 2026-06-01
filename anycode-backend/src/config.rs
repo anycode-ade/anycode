@@ -4,6 +4,13 @@ use std::path::Path;
 
 use rust_embed::Embed;
 
+pub fn use_fff_search() -> bool {
+    match std::env::var("ANYCODE_USE_FFF_SEARCH") {
+        Ok(val) => val != "false" && val != "0",
+        Err(_) => true,
+    }
+}
+
 #[derive(Embed, Debug)]
 #[folder = ""]
 #[include = "config.toml"]

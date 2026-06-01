@@ -8,12 +8,14 @@ use tokio::sync::Semaphore;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
+#[allow(dead_code)]
 pub fn collect_files_recursively(dir_path: &Path) -> Result<Vec<PathBuf>> {
     let mut collected_files = Vec::new();
     collect_files_inner(dir_path, &mut collected_files)?;
     Ok(collected_files)
 }
 
+#[allow(dead_code)]
 fn collect_files_inner(dir_path: &Path, collected: &mut Vec<PathBuf>) -> Result<()> {
     // Use search-specific ignore for directories
     if is_search_ignored_dir(dir_path) {
@@ -69,7 +71,7 @@ pub fn line_search(line_content: &str, pattern: &str, line_number: usize) -> Vec
         results.push(SearchResult {
             line: line_number,
             column: symbol_column,
-            preview,
+            preview: Some(preview),
         });
 
         // Move forward in the line, search for the next match
@@ -110,8 +112,8 @@ pub fn multiline_search(content: &str, pattern: &str) -> Vec<SearchResult> {
 
         results.push(SearchResult {
             line: line_number,
-            column,
-            preview,
+            column: column,
+            preview: Some(preview),
         });
 
         // Move forward in the content, search for the next match
@@ -125,7 +127,7 @@ pub fn multiline_search(content: &str, pattern: &str) -> Vec<SearchResult> {
 pub struct SearchResult {
     pub line: usize,
     pub column: usize,
-    pub preview: String,
+    pub preview: Option<String>,
 }
 
 pub async fn file_search(
@@ -196,6 +198,7 @@ pub struct FileSearchResult {
     pub matches: Vec<SearchResult>,
 }
 
+#[allow(dead_code)]
 pub async fn search_file_result(
     path: &Path,
     pattern: &str,
@@ -230,6 +233,7 @@ pub async fn search_file_result(
     })
 }
 
+#[allow(dead_code)]
 pub async fn global_search(
     dir_path: &Path,
     pattern: &str,
@@ -318,15 +322,15 @@ pub mod search_exp {
         // First occurrence
         assert_eq!(results[0].line, 0);
         assert_eq!(results[0].column, 10);
-        assert!(results[0].preview.contains(pattern));
+        assert!(results[0].preview.as_deref().unwrap().contains(pattern));
 
         // Second occurrence
         assert_eq!(results[1].column, 28);
-        assert!(results[1].preview.contains(pattern));
+        assert!(results[1].preview.as_deref().unwrap().contains(pattern));
 
         // Third occurrence
         assert_eq!(results[2].column, 48);
-        assert!(results[2].preview.contains(pattern));
+        assert!(results[2].preview.as_deref().unwrap().contains(pattern));
     }
 
     #[test]
@@ -340,11 +344,11 @@ pub mod search_exp {
         // First occurrence
         assert_eq!(results[0].line, 0);
         assert_eq!(results[0].column, 16);
-        assert!(results[0].preview.contains(pattern));
+        assert!(results[0].preview.as_deref().unwrap().contains(pattern));
 
         // Second occurrence
         assert_eq!(results[1].column, 23);
-        assert!(results[1].preview.contains(pattern));
+        assert!(results[1].preview.as_deref().unwrap().contains(pattern));
     }
 
     #[test]
@@ -367,13 +371,13 @@ pub mod search_exp {
 
         assert_eq!(result.line, 0);
         assert_eq!(result.column, 100); // 100 'A's before pattern
-        assert!(result.preview.contains(pattern));
+        assert!(result.preview.as_deref().unwrap().contains(pattern));
 
         let expected_preview_len = 50 + pattern.len() + 50;
-        assert_eq!(result.preview.chars().count(), expected_preview_len);
+        assert_eq!(result.preview.as_ref().unwrap().chars().count(), expected_preview_len);
 
-        assert!(result.preview.starts_with(&"A".repeat(50)));
-        assert!(result.preview.ends_with(&"B".repeat(50)));
+        assert!(result.preview.as_ref().unwrap().starts_with(&"A".repeat(50)));
+        assert!(result.preview.as_ref().unwrap().ends_with(&"B".repeat(50)));
     }
 
     #[tokio::test]
@@ -402,9 +406,9 @@ pub mod search_exp {
 
         assert_eq!(results.len(), 2);
         assert_eq!(results[0].line, 1);
-        assert!(results[0].preview.contains(pattern));
+        assert!(results[0].preview.as_deref().unwrap().contains(pattern));
         assert_eq!(results[1].line, 3);
-        assert!(results[1].preview.contains(pattern));
+        assert!(results[1].preview.as_deref().unwrap().contains(pattern));
 
         Ok(())
     }
@@ -494,7 +498,7 @@ pub mod search_exp {
             for result in &file_result.matches {
                 println!(
                     "  Line {}:{} {}",
-                    result.line, result.column, result.preview
+                    result.line, result.column, result.preview.as_deref().unwrap_or("")
                 );
             }
             collected_results.push(file_result);
@@ -524,7 +528,7 @@ pub mod search_exp {
         // Check that all matches contain the search pattern in their preview
         for search_result in &file1_results.matches {
             assert!(
-                search_result.preview.contains(pattern),
+                search_result.preview.as_deref().unwrap().contains(pattern),
                 "Preview should contain the pattern"
             );
         }
@@ -540,7 +544,7 @@ pub mod search_exp {
 
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].line, 1); // line 2 is at index 1 (0-indexed)
-        assert!(results[0].preview.contains(pattern));
+        assert!(results[0].preview.as_deref().unwrap().contains(pattern));
     }
 
     #[tokio::test]
@@ -563,8 +567,8 @@ pub mod search_exp {
 
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].line, 1); // second line is at index 1
-        assert!(results[0].preview.contains("second line"));
-        assert!(results[0].preview.contains("third line"));
+        assert!(results[0].preview.as_deref().unwrap().contains("second line"));
+        assert!(results[0].preview.as_deref().unwrap().contains("third line"));
 
         Ok(())
     }
@@ -615,7 +619,7 @@ pub mod search_exp {
             for r in &file_result.matches {
                 println!(
                     "File: {}, Line: {}, Col: {}, preview: {}",
-                    file_result.file_path, r.line, r.column, r.preview
+                    file_result.file_path, r.line, r.column, r.preview.as_deref().unwrap_or("")
                 );
             }
         }

@@ -5,7 +5,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{Mutex, watch};
-use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
 
 use crate::app_state::SocketData;
@@ -14,7 +13,6 @@ use crate::diff::compute_text_edits;
 use crate::git::GitManager;
 use crate::handlers::io_handler::apply_edits_to_code;
 use crate::lsp::LspManager;
-use crate::search::search_file_result;
 use crate::utils::normalize_watch_path;
 
 const DEBOUNCE: Duration = Duration::from_millis(100);
@@ -248,41 +246,11 @@ async fn process_watch_event(
 }
 
 async fn handle_search_update(
-    path: &Path,
-    socket: &Arc<socketioxide::SocketIo>,
-    socket2data: &Arc<Mutex<HashMap<String, SocketData>>>,
+    _path: &Path,
+    _socket: &Arc<socketioxide::SocketIo>,
+    _socket2data: &Arc<Mutex<HashMap<String, SocketData>>>,
 ) {
-    if path.exists() && !path.is_file() {
-        return;
-    }
-    if !path.exists() && path.extension().is_none() {
-        return;
-    }
-
-    let searches = {
-        let sockets_data = socket2data.lock().await;
-        sockets_data
-            .iter()
-            .filter_map(|(sid, data)| {
-                let pattern = data.search_pattern.as_ref()?;
-                if pattern.trim().is_empty() {
-                    return None;
-                }
-                Some((sid.clone(), pattern.clone()))
-            })
-            .collect::<Vec<_>>()
-    };
-
-    if searches.is_empty() {
-        return;
-    }
-
-    for (_, pattern) in searches {
-        let cancel = CancellationToken::new();
-        if let Some(file_result) = search_file_result(path, &pattern, cancel).await {
-            let _ = socket.emit("search:result", &file_result).await;
-        }
-    }
+    // Disable manual substring search updates on file system events
 }
 
 async fn handle_changes_update(

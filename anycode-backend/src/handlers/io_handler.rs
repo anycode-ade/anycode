@@ -354,6 +354,7 @@ pub async fn handle_file_change(
         // Apply all edits to code and collect LSP changes
         let lsp_changes = apply_edits_to_code(code, &edits, apply_tx);
         let lang = code.lang.clone();
+        // let did_autosave = false;
         let did_autosave = match code.save_file() {
             Ok(()) => true,
             Err(e) => {

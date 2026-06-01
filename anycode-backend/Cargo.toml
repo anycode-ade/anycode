@@ -4,11 +4,11 @@ version = "0.0.18"
 edition = "2024"
 
 [profile.release]
-opt-level = 3
-strip = true
-lto = true
-codegen-units = 1
-panic = 'abort'
+# opt-level = 3
+# strip = true
+# lto = true
+# codegen-units = 1
+# panic = 'abort'
 
 [dependencies]
 openssl = { version = "0.10", features = ["vendored"] }
@@ -29,7 +29,7 @@ ropey = "1"
 rayon = "1"
 tokio-stream = "0.1"
 tempfile = "3"
-notify = "8"
+notify = "9.0.0-rc.4"
 portable-pty = "0.9"
 anyhow = "1"
 pathdiff = "0.2.3"
@@ -45,3 +45,5 @@ tokio-util = { version = "0.7", features = ["compat"] }
 unicode-segmentation = "1"
 git2 = "0.20"
 base64 = "0.22"
+fff-search = "0.8.4"
+
