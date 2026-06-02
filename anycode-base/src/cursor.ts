@@ -94,26 +94,22 @@ export function moveCursor(
     
     if (focus) {
         const scrollable = lineDiv?.parentElement?.parentElement;
-        scrollCursorIntoViewVertically(scrollable!, lineDiv);
-        
-        const buttonsDivs = scrollable!.querySelectorAll(".buttons div");
-        const gutters = scrollable!.querySelectorAll(".gutter .ln");
-        const codeElement = scrollable!.querySelector(".code") as HTMLElement | null;
-        
-        const buttonsWidth = buttonsDivs.length > 0 ? 
-            buttonsDivs[0].getBoundingClientRect().width : 0;
-        const gutterWidth = gutters.length > 0 ? 
-            gutters[0].getBoundingClientRect().width : 0;
-        const codePaddingLeft = codeElement ? 
-            parseFloat(getComputedStyle(codeElement).paddingLeft) : 0;
-        
-        const cursorNode = ch;
-        const cursorOffset = chunkOffset;
-    
-        scrollCursorIntoViewHorizontally(
-            scrollable!, cursorNode, cursorOffset, 
-            buttonsWidth + gutterWidth + codePaddingLeft
-        );
+        if (scrollable) {
+            scrollCursorIntoViewVertically(scrollable, lineDiv);
+            
+            let stickyWidth = (scrollable as any)._stickyWidth;
+            if (stickyWidth === undefined) {
+                const buttons = scrollable.querySelector('.buttons') as HTMLElement | null;
+                const gutter = scrollable.querySelector('.gutter') as HTMLElement | null;
+                const folds = scrollable.querySelector('.folds') as HTMLElement | null;
+                stickyWidth = (buttons?.offsetWidth ?? 0) +
+                    (gutter?.offsetWidth ?? 0) +
+                    (folds?.offsetWidth ?? 0);
+                (scrollable as any)._stickyWidth = stickyWidth;
+            }
+            
+            scrollCursorIntoViewHorizontally(scrollable, ch, chunkOffset, stickyWidth);
+        }
     }
 
     if (sel) {
@@ -147,12 +143,7 @@ function scrollCursorIntoViewHorizontally(
     leftPlus: number, 
 ) {
 
-    const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);    
-    if (isSafari) {
-        // Safari-specific multiple carets bug: 
-        // temporarily disable scrolling
-        return;
-    }
+    const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
     
     // Ensure we're working with the correct document context
     const doc = cursorNode.ownerDocument || document;
@@ -163,14 +154,42 @@ function scrollCursorIntoViewHorizontally(
     const cursorRect = range.getBoundingClientRect();
     const containerRect = container.getBoundingClientRect();
 
-    const leftVisible = containerRect.left + leftPlus;
-    const rightVisible = containerRect.right;
+    const padding = 20; // Padding in pixels to keep cursor away from the edges
+    const leftVisible = containerRect.left + leftPlus + padding;
+    const rightVisible = Math.max(leftVisible, containerRect.right - padding);
 
+    let scrolled = false;
     if (cursorRect.left < leftVisible) {
         const delta = leftVisible - cursorRect.left;
         container.scrollLeft -= delta;
+        scrolled = true;
     } else if (cursorRect.right > rightVisible) {
         const delta = cursorRect.right - rightVisible;
         container.scrollLeft += delta;
+        scrolled = true;
+    }
+
+    if (scrolled && isSafari) {
+        // Safari-specific multiple carets bug fix:
+        // Force repaint of the container and reset selection in the next animation frame.
+        // requestAnimationFrame(() => {
+            try {
+                // 1. Force WebKit repaint/reflow (Repaint Hack)
+                const prevOpacity = container.style.opacity;
+                container.style.opacity = '0.99';
+                container.offsetHeight; // Forces repaint
+                container.style.opacity = prevOpacity || '';
+
+                // 2. Re-apply selection to clean ghost carets
+                const sel = doc.defaultView?.getSelection() || window.getSelection();
+                if (sel && sel.rangeCount > 0) {
+                    const currentRange = sel.getRangeAt(0).cloneRange();
+                    sel.removeAllRanges();
+                    sel.addRange(currentRange);
+                }
+            } catch (e) {
+                console.warn('Failed to fix Safari caret repaint:', e);
+            }
+        // });
     }
 }

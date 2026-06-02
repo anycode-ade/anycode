@@ -80,6 +80,7 @@ export class AnycodeEditor {
     private lineSelectionAnchor: number = 0;
 
     private lastScrollTop = 0;
+    private scrollAnimationFrameId: number | null = null;
 
     private runLines: number[] = [];
     private errorLines: Map<number, string> = new Map();
@@ -132,7 +133,7 @@ export class AnycodeEditor {
             this.offset = 0;
         }
 
-        this.settings = { lineHeight: 20, buffer: 30 };
+        this.settings = { lineHeight: 20, buffer: 15 };
 
         if (options.theme) {
             const css = generateCssClasses(options.theme);
@@ -180,6 +181,10 @@ export class AnycodeEditor {
         this.removeEventListeners();
         this.clearPendingHover();
         this.closeHover();
+        if (this.scrollAnimationFrameId !== null) {
+            cancelAnimationFrame(this.scrollAnimationFrameId);
+            this.scrollAnimationFrameId = null;
+        }
         this.offset = 0;
         this.selection = null;
 
@@ -251,7 +256,6 @@ export class AnycodeEditor {
         }
 
         this.renderer.renderChanges(this.getEditorState());
-        this.verifyDiffRendering();
     }
 
     public getText(): string {
@@ -375,9 +379,9 @@ export class AnycodeEditor {
         this.updateWordHighlight();
 
         if (center) {
-            this.renderer.focusCenter(this.getEditorState());
+            this.renderer.revealCursorCenter(this.getEditorState());
         } else {
-            this.renderer.focus(this.getEditorState());
+            this.renderer.revealCursor(this.getEditorState());
         }
 
         const applySelection = () => {
@@ -403,8 +407,8 @@ export class AnycodeEditor {
             this.codeContent.focus();
         }
 
-        if (center) this.renderer.focusCenter(this.getEditorState());
-        else this.renderer.focus(this.getEditorState());
+        if (center) this.renderer.revealCursorCenter(this.getEditorState());
+        else this.renderer.revealCursor(this.getEditorState());
 
         this.renderer.renderCursorOrSelection(this.getEditorState());
     }
@@ -527,14 +531,19 @@ export class AnycodeEditor {
         this.clearPendingHover();
         this.closeHover();
 
-        const scrollTop = this.container.scrollTop;
-        requestAnimationFrame(() => {
+        if (this.scrollAnimationFrameId !== null) {
+            return;
+        }
+
+        this.scrollAnimationFrameId = requestAnimationFrame(() => {
+            this.scrollAnimationFrameId = null;
+            const scrollTop = this.container.scrollTop;
             if (scrollTop !== this.lastScrollTop) {
                 let state = this.getEditorState();
                 this.renderer.renderScroll(state);
                 this.lastScrollTop = scrollTop;
             }
-            this.needFocus = false
+            this.needFocus = false;
         });
     }
 
@@ -1268,12 +1277,15 @@ export class AnycodeEditor {
                 this.search.setMatches(matches);
             }
             this.renderer.renderChanges(state);
-            let focused = this.renderer.focus(state);
-            this.verifyDiffRendering();
+            this.renderer.revealCursor(state);
         } else if (offsetChanged || selectionChanged) {
-            this.renderer.renderCursorOrSelection(state);
-            let focused = this.renderer.focus(state);
-            this.verifyDiffRendering();
+            const didScrollToCursor = this.renderer.revealCursor(state);
+            if (didScrollToCursor) {
+                // Scroll event will render the cursor, avoid double render
+            } else {
+                // Render cursor immediately if no scroll occurred
+                this.renderer.renderCursorOrSelection(state, true);
+            }
         }
     }
 
@@ -1534,7 +1546,7 @@ export class AnycodeEditor {
             this.search.selectPrev();
             this.search.setFocused(true);
             this.search.setNeedsFocus(true);
-            this.renderer.focus(this.getEditorState(), this.search.getSelectedMatch()?.line);
+            this.renderer.revealCursor(this.getEditorState(), this.search.getSelectedMatch()?.line);
             this.renderer.updateSearchHighlights(this.search);
             this.renderer.focusSearchInput();
             return;
@@ -1549,7 +1561,7 @@ export class AnycodeEditor {
             this.search.selectNext();
             this.search.setFocused(true);
             this.search.setNeedsFocus(true);
-            this.renderer.focus(this.getEditorState(), this.search.getSelectedMatch()?.line);
+            this.renderer.revealCursor(this.getEditorState(), this.search.getSelectedMatch()?.line);
             this.renderer.updateSearchHighlights(this.search);
             this.renderer.focusSearchInput();
             return;
@@ -1568,7 +1580,7 @@ export class AnycodeEditor {
                 this.selection = new Selection(start, end);
                 this.search.clear();
                 this.container.focus();
-                let focused = this.renderer.focus(this.getEditorState(), selectedMatch.line);
+                let focused = this.renderer.revealCursor(this.getEditorState(), selectedMatch.line);
                 if (!focused) this.renderer.renderCursorOrSelection(this.getEditorState());
             }
             return;
@@ -1629,7 +1641,6 @@ export class AnycodeEditor {
         this.recomputeDiffs();
 
         this.renderer.renderChanges(this.getEditorState());
-        this.verifyDiffRendering();
     }
 
     public setDiffEnabled(enabled: boolean): void {
@@ -1642,7 +1653,6 @@ export class AnycodeEditor {
                 if (!this.diffEnabled || !updated) return;
                 this.recomputeDiffs();
                 this.renderer.render(this.getEditorState());
-                this.verifyDiffRendering();
             });
         }
 
@@ -1653,7 +1663,6 @@ export class AnycodeEditor {
             this.renderer.render(this.getEditorState());
         } else {
             this.renderer.render(this.getEditorState());
-            this.verifyDiffRendering();
         }
     }
 
@@ -1662,9 +1671,6 @@ export class AnycodeEditor {
         this.focusedDiffContextLines = Math.max(0, contextLines);
         this.renderer.setFocusedDiffMode(this.focusedDiffEnabled, this.focusedDiffContextLines);
         this.renderer.render(this.getEditorState());
-        if (this.diffEnabled) {
-            this.verifyDiffRendering();
-        }
     }
 
     public setOriginalCode(content: string): void {
@@ -1672,7 +1678,6 @@ export class AnycodeEditor {
             if (!this.diffEnabled || !updated) return;
             this.recomputeDiffs();
             this.renderer.render(this.getEditorState());
-            this.verifyDiffRendering();
         });
     }
 
@@ -1687,15 +1692,4 @@ export class AnycodeEditor {
         }
     }
 
-    private verifyDiffRendering(): void {
-        if (!this.diffEnabled || this.diffs === undefined) {
-            return;
-        }
-
-        if (this.diffs.size == 0) {
-            this.renderer.clearAllDiffs();
-        }
-
-        this.renderer.verifyDiffs(this.diffs);
-    }
 }

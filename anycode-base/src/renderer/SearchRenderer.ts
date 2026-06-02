@@ -13,16 +13,16 @@ export class SearchRenderer {
 
     // Dependencies
     private getLineFn: (lineNumber: number) => AnycodeLine | null;
-    private focusFn: (state: EditorState, focusLine: number | null) => boolean;
+    private revealCursorFn: (state: EditorState, focusLine: number | null) => boolean;
 
     constructor(
         container: HTMLDivElement,
         getLine: (lineNumber: number) => AnycodeLine | null,
-        focus: (state: EditorState, focusLine: number | null) => boolean
+        revealCursor: (state: EditorState, focusLine: number | null) => boolean
     ) {
         this.container = container;
         this.getLineFn = getLine;
-        this.focusFn = focus;
+        this.revealCursorFn = revealCursor;
     }
 
     // ========== Search UI ==========
@@ -107,7 +107,7 @@ export class SearchRenderer {
             if (matches.length === 0) return;
             this.removeSelectedHighlight(search);
             search.selectPrev();
-            this.focusFn(state, search.getSelectedMatch()?.line ?? null);
+            this.revealCursorFn(state, search.getSelectedMatch()?.line ?? null);
             this.updateSearchHighlights(search);
             search.setNeedsFocus(true);
             this.focusSearchInput();
@@ -118,7 +118,7 @@ export class SearchRenderer {
             if (matches.length === 0) return;
             this.removeSelectedHighlight(search);
             search.selectNext();
-            this.focusFn(state, search.getSelectedMatch()?.line ?? null);
+            this.revealCursorFn(state, search.getSelectedMatch()?.line ?? null);
             this.updateSearchHighlights(search);
             search.setNeedsFocus(true);
             this.focusSearchInput();

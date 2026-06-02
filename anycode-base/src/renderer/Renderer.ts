@@ -81,7 +81,7 @@ export class Renderer {
         this.searchRenderer = new SearchRenderer(
             container,
             (lineNumber) => this.getLine(lineNumber),
-            (state, focusLine) => this.focus(state, focusLine)
+            (state, focusLine) => this.revealCursor(state, focusLine)
         );
         this.diffRenderer = new DiffRenderer(
             codeContent,
@@ -537,21 +537,22 @@ export class Renderer {
         return elements;
     }
 
-    private getRenderedElements(): HTMLElement[] {
-        return Array.from(this.codeContent.children)
-            .filter((child): child is HTMLElement =>
-                !child.classList.contains('spacer') &&
-                this.visualIndexByElement.has(child as HTMLElement)
-            );
-    }
-
     private getRenderedRange(): { startIndex: number; endIndex: number } | null {
-        const renderedElements = this.getRenderedElements();
-        if (renderedElements.length === 0) return null;
+        const children = this.codeContent.children;
+        const length = children.length;
+        if (length <= 2) return null;
+
+        const firstElement = children[1] as HTMLElement;
+        const lastElement = children[length - 2] as HTMLElement;
+
+        const startIndex = this.getVisualIndex(firstElement);
+        const endIndex = this.getVisualIndex(lastElement);
+
+        if (startIndex === -1 || endIndex === -1) return null;
 
         return {
-            startIndex: this.getVisualIndex(renderedElements[0]),
-            endIndex: this.getVisualIndex(renderedElements[renderedElements.length - 1]) + 1,
+            startIndex,
+            endIndex: endIndex + 1,
         };
     }
 
@@ -671,15 +672,9 @@ export class Renderer {
         }
 
         // Render cursor or selection
-        if (!search.isActive() || !search.isFocused()) {
-            if (!selection || selection.isEmpty()) {
-                const { line, column } = code.getPosition(offset);
-                this.renderCursor(line, column, true);
-            } else {
-                this.renderSelection(code, selection!);
-            }
-        }
+        this.renderCursorOrSelection(state, true);
 
+        // Update max width
         this.updateMaxWidth(code);
     }
 
@@ -878,7 +873,7 @@ export class Renderer {
         }
     }
 
-    public focus(state: EditorState, focusLine: number | null = null): boolean {
+    public revealCursor(state: EditorState, focusLine: number | null = null): boolean {
         const { code, offset, settings } = state;
         if (!code) return false;
 
@@ -912,7 +907,7 @@ export class Renderer {
         return false;
     }
 
-    public focusCenter(state: EditorState): boolean {
+    public revealCursorCenter(state: EditorState): boolean {
         const { code, offset, settings } = state;
         if (!code) return false;
 
@@ -1024,9 +1019,7 @@ export class Renderer {
         this.searchRenderer.updateSearchLabel(text);
     }
 
-    public verifyDiffs(diffs: Map<number, DiffInfo>): void {
-        this.diffRenderer.verifyDiffs(diffs);
-    }
+
 
     public clearAllDiffs(): void {
         this.diffRenderer.clearAllDiffs();
