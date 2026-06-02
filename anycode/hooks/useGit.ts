@@ -21,11 +21,13 @@ type GitStatusFullUpdate = {
     kind?: 'full';
     files: ChangedFile[];
     branch: string;
+    head_hash?: string;
 };
 
 type GitStatusPatchUpdate = {
     kind: 'patch';
     branch: string;
+    head_hash?: string;
     files: GitPatchItem[];
 };
 

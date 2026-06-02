@@ -115,7 +115,7 @@ export class AnycodeEditor {
     constructor(
         initialText = '',
         filename: string = 'test.txt',
-        language: string = 'javascript',
+        language: string = '',
         options: EditorOptions = {}
     ) {
         this.code = new Code(initialText, filename, language);

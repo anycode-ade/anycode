@@ -37,8 +37,6 @@ export const LANGUAGE_EXTENSIONS: { [key: string]: string } = {
     'json': 'json',
     'rs': 'rust',
     'go': 'go',
-    'rb': 'ruby',
-    'php': 'php',
     'sh': 'bash',
     'kt': 'kotlin',
     'cs': 'csharp',
@@ -46,12 +44,13 @@ export const LANGUAGE_EXTENSIONS: { [key: string]: string } = {
     'zig': 'zig',
     'lua': 'lua',
     'yaml': 'yaml',
-    'yml': 'yaml'
+    'yml': 'yaml',
+    'toml': 'toml',
 };
 
 export const EDITOR_SUPPORTED_LANGUAGES = new Set(Object.values(LANGUAGE_EXTENSIONS));
 
 export const getLanguageFromFileName = (fileName: string): string => {
     const ext = fileName.split('.').pop()?.toLowerCase();
-    return LANGUAGE_EXTENSIONS[ext || ''] || 'javascript';
+    return LANGUAGE_EXTENSIONS[ext || ''] || '';
 };

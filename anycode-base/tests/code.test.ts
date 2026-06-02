@@ -486,4 +486,63 @@ pub fn main() void {
             expect(nodesLine3.some(n => n.name === 'constant' && n.text === '42')).toBe(true);
         });
     });
+
+    describe('Smart Cache Invalidation', () => {
+        it('should keep cache for lines above edit and clear lines at and below edit', async () => {
+            const jsCode = `// Line 0
+const a = 1;
+// Line 2
+const b = 2;
+// Line 4
+`;
+            const code = new Code(jsCode, 'test.js', 'javascript');
+            await code.init();
+
+            // Populate cache
+            code.getLineNodes(0);
+            code.getLineNodes(1);
+            code.getLineNodes(2);
+            code.getLineNodes(3);
+            code.getLineNodes(4);
+
+            const cache = (code as any).linesCache as Map<number, any>;
+            expect(cache.size).toBe(5);
+            expect(cache.has(0)).toBe(true);
+            expect(cache.has(1)).toBe(true);
+            expect(cache.has(2)).toBe(true);
+            expect(cache.has(3)).toBe(true);
+            expect(cache.has(4)).toBe(true);
+
+            // Edit on line 2: insert text at start of line 2 (offset 22)
+            // Pre-edit line 2 is '// Line 2'
+            const offsetLine2 = code.getOffset(2, 0);
+            code.insert('// edited ', offsetLine2);
+
+            // Verify cache status
+            expect(cache.has(0)).toBe(true);
+            expect(cache.has(1)).toBe(true);
+            expect(cache.has(2)).toBe(false);
+            expect(cache.has(3)).toBe(false);
+            expect(cache.has(4)).toBe(false);
+
+            // Re-populate cache
+            code.getLineNodes(0);
+            code.getLineNodes(1);
+            code.getLineNodes(2);
+            code.getLineNodes(3);
+            code.getLineNodes(4);
+            expect(cache.size).toBe(5);
+
+            // Edit on line 3: remove 5 chars from start of line 3 (offset of line 3)
+            const offsetLine3 = code.getOffset(3, 0);
+            code.remove(offsetLine3, 5);
+
+            // Verify cache status
+            expect(cache.has(0)).toBe(true);
+            expect(cache.has(1)).toBe(true);
+            expect(cache.has(2)).toBe(true);
+            expect(cache.has(3)).toBe(false);
+            expect(cache.has(4)).toBe(false);
+        });
+    });
 });

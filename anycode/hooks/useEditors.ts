@@ -1130,8 +1130,13 @@ export const useEditors = ({ wsRef, isConnected, onFileClosed }: UseEditorsParam
         }
     }, []);
 
-    const handleGitUpdate = useCallback(() => {
+    const handleGitUpdate = useCallback((data?: any) => {
         if (!wsRef.current || !isConnected) return;
+
+        // Only request git:file-original if it's a full status update (e.g. HEAD changed, branch changed)
+        if (data && data.kind !== 'full') {
+            return;
+        }
 
         filesRef.current.forEach((file) => {
             const path = file.id;

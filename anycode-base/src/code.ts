@@ -106,6 +106,30 @@ export interface FoldRange {
 var langsCache: Map<string, Language> = new Map();
 var pendingLangsCache: Map<string, Promise<Language>> = new Map();
 
+async function loadLanguage(language: string): Promise<Language> {
+    if (langsCache.has(language)) {
+        return langsCache.get(language)!;
+    }
+
+    let loadPromise = pendingLangsCache.get(language);
+    if (!loadPromise) {
+        const wasmPath = getWasmPath(`tree-sitter-${language}.wasm`);
+        loadPromise = Language.load(wasmPath);
+        pendingLangsCache.set(language, loadPromise);
+    }
+
+    try {
+        const lang = await loadPromise;
+        if (!lang) {
+            throw new Error(`Language.load returned ${String(lang)} for ${language}`);
+        }
+        langsCache.set(language, lang);
+        return lang;
+    } finally {
+        pendingLangsCache.delete(language);
+    }
+}
+
 export class Code {
     public filename: string
     private buffer: PieceTreeBase
@@ -147,40 +171,37 @@ export class Code {
         this.input = this.input.bind(this);
     }
 
+    private clearSyntaxState() {
+        this.parser = undefined;
+        this.tree = undefined;
+        this.query = undefined;
+        this.foldsQuery = undefined;
+        this.runnablesQuery = undefined;
+        this.foldRanges = [];
+        this.injection_parsers.clear();
+        this.injection_queries.clear();
+        this.injectionCache.clear();
+    }
+
     public async init() {
-        if (!this.language) {
+        if (!this.language || !this.getLang(this.language)) {
             this.language = undefined;
-            this.parser = undefined;
-            this.tree = undefined;
-            this.query = undefined;
-            this.foldsQuery = undefined;
-            this.runnablesQuery = undefined;
-            this.foldRanges = [];
+            this.clearSyntaxState();
             return;
         }
 
-        await TreeSitterParser.init();
-        this.parser = new TreeSitterParser();
-        const filename = `tree-sitter-${this.language}.wasm`;
-        const wasmPath = getWasmPath(filename);
-
         let lang: Language;
-        if (langsCache.has(this.language)) {
-            lang = langsCache.get(this.language)!;
-        } else {
-            let loadPromise = pendingLangsCache.get(this.language);
-            if (!loadPromise) {
-                loadPromise = Language.load(wasmPath);
-                pendingLangsCache.set(this.language, loadPromise);
-            }
-            try {
-                lang = await loadPromise;
-                langsCache.set(this.language, lang);
-            } finally {
-                pendingLangsCache.delete(this.language);
-            }
+        try {
+            await TreeSitterParser.init();
+            lang = await loadLanguage(this.language);
+        } catch (error) {
+            console.error(`Failed to initialize tree-sitter language "${this.language}"`, error);
+            this.language = undefined;
+            this.clearSyntaxState();
+            return;
         }
 
+        this.parser = new TreeSitterParser();
         this.parser.setLanguage(lang);
 
         this.tree = this.parser.parse(this.input) || undefined;
@@ -212,22 +233,16 @@ export class Code {
 
                 let parser = new TreeSitterParser();
 
-                let lang;
-                if (langsCache.has(language)) {
-                    lang = langsCache.get(language)!;
-                } else {
-                    let loadPromise = pendingLangsCache.get(language);
-                    if (!loadPromise) {
-                        const injectionWasmPath = getWasmPath(`tree-sitter-${language}.wasm`);
-                        loadPromise = Language.load(injectionWasmPath);
-                        pendingLangsCache.set(language, loadPromise);
-                    }
-                    try {
-                        lang = await loadPromise;
-                        langsCache.set(language, lang);
-                    } finally {
-                        pendingLangsCache.delete(language);
-                    }
+                if (!this.getLang(language)) {
+                    continue;
+                }
+
+                let lang: Language;
+                try {
+                    lang = await loadLanguage(language);
+                } catch (error) {
+                    console.error(`Failed to initialize injected tree-sitter language "${language}"`, error);
+                    continue;
                 }
 
                 parser.setLanguage(lang);
@@ -417,10 +432,12 @@ export class Code {
             this.changeEdits.push(edit);
         }
 
+        const pos = this.getPosition(offset);
+
         this.buffer.insert(offset, text);
         if (this.tree) this.treeSitterInsert(text, offset);
 
-        this.linesCache.clear();
+        this.invalidateCacheFrom(pos.line);
     }
 
     public removeText(
@@ -455,10 +472,20 @@ export class Code {
             this.changeEdits.push(edit);
         }
 
+        const pos = this.getPosition(offset);
+
         this.buffer.delete(offset, length);
         if (this.tree) this.treeSitterRemove(offset + length, length);
 
-        this.linesCache.clear();
+        this.invalidateCacheFrom(pos.line);
+    }
+
+    private invalidateCacheFrom(line: number) {
+        for (const key of Array.from(this.linesCache.keys())) {
+            if (key >= line) {
+                this.linesCache.delete(key);
+            }
+        }
     }
 
     treeSitterInsert(text: string, offset: number) {
@@ -715,6 +742,7 @@ export class Code {
     }
 
     getLineNodes(line: number): HighlighedNode[] {
+        // console.log('getLineNodes', line);
         if (this.linesCache.has(line)) {
             return this.linesCache.get(line)!;
         }

@@ -142,7 +142,7 @@ export class Renderer {
         // Render visible slice of visual rows
         for (let i = startIndex; i < endIndex; i++) {
             const row = this.visualRows[i];
-            const elements = this.createRowElements(row, i, state);
+            const elements = this.createRow(row, i, state);
             codeFrag.appendChild(elements.code);
             gutterFrag.appendChild(elements.gutter);
             btnFrag.appendChild(elements.btn);
@@ -441,7 +441,7 @@ export class Renderer {
         while (currentStartIndex > startIndex) {
             currentStartIndex--;
             const row = this.visualRows[currentStartIndex];
-            const elements = this.createRowElements(row, currentStartIndex, state);
+            const elements = this.createRow(row, currentStartIndex, state);
 
             this.codeContent.insertBefore(elements.code, this.codeContent.children[1]);
             this.gutter.insertBefore(elements.gutter, this.gutter.children[1]);
@@ -454,7 +454,7 @@ export class Renderer {
         // Add rows below
         while (currentEndIndex < endIndex) {
             const row = this.visualRows[currentEndIndex];
-            const elements = this.createRowElements(row, currentEndIndex, state);
+            const elements = this.createRow(row, currentEndIndex, state);
 
             this.codeContent.insertBefore(elements.code, bottomSpacer);
             this.gutter.insertBefore(elements.gutter, gutterBottomSpacer);
@@ -501,16 +501,17 @@ export class Renderer {
     /**
      * Create DOM elements for a visual row (real or ghost)
      */
-    private createRowElements(
+    private createRow(
         row: VisualRow,
         visualIndex: number,
-        state: EditorState
+        state: EditorState,
+        precomputedNodes?: HighlighedNode[]
     ): RowElements {
         const { code, settings, diffs, runLines, errorLines } = state;
         let elements: RowElements;
 
         if (row.kind === 'real') {
-            const syntaxNodes = code.getLineNodes(row.lineIndex);
+            const syntaxNodes = precomputedNodes || code.getLineNodes(row.lineIndex);
             elements = this.lineRenderer.createLineElements(
                 row.lineIndex, syntaxNodes, errorLines, settings,
                 diffs, runLines, this.getFoldIndicator(row.lineIndex), state.wordHighlight
@@ -559,10 +560,13 @@ export class Renderer {
     }
 
     public renderChanges(state: EditorState) {
-        const { code, offset, selection, settings, diffs, search, errorLines, runLines } = state;
+        const { code, offset, selection, settings, diffs, search } = state;
         this.codeFoldingEnabled = state.codeFoldingEnabled ?? true;
         this.updateFoldableStarts(state);
         this.updateCollapsedMap(state);
+
+        // Keep a reference to the old visual rows model to identify changes
+        const oldVisualRows = this.visualRows;
 
         // Rebuild visual rows - structure may have changed
         const totalRealLines = code.linesLength();
@@ -570,7 +574,7 @@ export class Renderer {
             ? this.buildVisualRows(totalRealLines, diffs)
             : this.buildRealOnlyRows(totalRealLines);
 
-        if (newVisualRows.length !== this.visualRows.length) {
+        if (newVisualRows.length !== oldVisualRows.length) {
             // Fallback to full render
             this.render(state);
             return;
@@ -578,13 +582,6 @@ export class Renderer {
 
         // Update visualRows
         this.visualRows = newVisualRows;
-
-        const lines = this.getLinesByNumber();
-        if (lines.size === 0) {
-            // Fallback to full render
-            this.render(state);
-            return;
-        }
 
         const renderedRange = this.getRenderedRange();
         if (!renderedRange) {
@@ -603,46 +600,68 @@ export class Renderer {
             return;
         }
 
-        // Update only changed real lines
+        // Update changed rows in viewport
         for (let i = visible.startIndex; i < visible.endIndex; i++) {
-            const row = this.visualRows[i];
-            if (row.kind !== 'real') continue;
+            const oldRow = oldVisualRows[i];
+            const newRow = this.visualRows[i];
+            const childIndex = i - renderedRange.startIndex + 1;
 
-            const lineIndex = row.lineIndex;
-            const nodes = code.getLineNodes(lineIndex);
-            const newHash = objectHash(nodes).toString();
-            const existingLine = lines.get(lineIndex);
+            let needsUpdate = false;
+            let precomputedNodes: HighlighedNode[] | undefined;
 
-            if (existingLine) {
-                if (existingLine.hash !== newHash) {
-                    const lineElements = this.lineRenderer.createLineElements(
-                        lineIndex, nodes, errorLines, settings, diffs,
-                        runLines, this.getFoldIndicator(lineIndex), state.wordHighlight
-                    );
-
-                    this.applyVisualIndex(lineElements, i);
-                    existingLine.replaceWith(lineElements.code);
-
-                    const childIndex = i - renderedRange.startIndex + 1;
-                    const oldGutterLine = this.gutter.children[childIndex] as GutterElement | undefined;
-                    if (oldGutterLine && !oldGutterLine.isEqualNode(lineElements.gutter)) {
-                        this.gutter.replaceChild(lineElements.gutter, oldGutterLine);
-                    }
-
-                    const oldButtonLine = this.buttonsColumn.children[childIndex] as ButtonColumnElement | undefined;
-                    if (oldButtonLine && !oldButtonLine.isEqualNode(lineElements.btn)) {
-                        this.buttonsColumn.replaceChild(lineElements.btn, oldButtonLine);
-                    }
-
-                    const oldFoldLine = this.foldsColumn.children[childIndex] as FoldColumnElement | undefined;
-                    if (oldFoldLine && !oldFoldLine.isEqualNode(lineElements.fold)) {
-                        this.foldsColumn.replaceChild(lineElements.fold, oldFoldLine);
+            if (!oldRow || oldRow.kind !== newRow.kind) {
+                needsUpdate = true;
+            } else if (newRow.kind === 'real') {
+                const oldReal = oldRow as RealRow;
+                if (oldReal.lineIndex !== newRow.lineIndex) {
+                    needsUpdate = true;
+                } else {
+                    const nodes = code.getLineNodes(newRow.lineIndex);
+                    const newHash = objectHash(nodes).toString();
+                    const existingLine = this.codeContent.children[childIndex] as AnycodeLine | undefined;
+                    
+                    if (!existingLine || existingLine.hash !== newHash) {
+                        needsUpdate = true;
+                        precomputedNodes = nodes;
                     }
                 }
-            } else {
-                // Fallback to full render if line is missing
-                this.render(state);
-                return;
+            } else if (newRow.kind === 'ghost') {
+                const oldGhost = oldRow as GhostRow;
+                if (oldGhost.originalLineIndex !== newRow.originalLineIndex ||
+                    oldGhost.hunkId !== newRow.hunkId ||
+                    oldGhost.anchorLine !== newRow.anchorLine) {
+                    needsUpdate = true;
+                }
+            } else if (newRow.kind === 'separator') {
+                const oldSep = oldRow as SeparatorRow;
+                if (oldSep.hiddenStart !== newRow.hiddenStart ||
+                    oldSep.hiddenEnd !== newRow.hiddenEnd) {
+                    needsUpdate = true;
+                }
+            }
+
+            if (needsUpdate) {
+                const row = this.createRow(newRow, i, state, precomputedNodes);
+
+                const oldCode = this.codeContent.children[childIndex];
+                if (oldCode) {
+                    this.codeContent.replaceChild(row.code, oldCode);
+                }
+
+                const oldGutter = this.gutter.children[childIndex];
+                if (oldGutter) {
+                    this.gutter.replaceChild(row.gutter, oldGutter);
+                }
+
+                const oldBtn = this.buttonsColumn.children[childIndex];
+                if (oldBtn) {
+                    this.buttonsColumn.replaceChild(row.btn, oldBtn);
+                }
+
+                const oldFold = this.foldsColumn.children[childIndex];
+                if (oldFold) {
+                    this.foldsColumn.replaceChild(row.fold, oldFold);
+                }
             }
         }
 
@@ -782,14 +801,6 @@ export class Renderer {
                 && child.classList.contains('line')
                 && typeof (child as AnycodeLine).lineNumber === 'number'
             ) as AnycodeLine[];
-    }
-
-    private getLinesByNumber(): Map<number, AnycodeLine> {
-        const linesByNumber = new Map<number, AnycodeLine>();
-        for (const line of this.getLines()) {
-            linesByNumber.set(line.lineNumber, line);
-        }
-        return linesByNumber;
     }
 
     public getLine(lineNumber: number): AnycodeLine | null {

@@ -31,6 +31,7 @@ pub struct GitFileStatus {
 pub struct GitStatus {
     pub files: Vec<GitFileStatus>,
     pub branch: String,
+    pub head_hash: String,
 }
 
 impl GitStatus {
@@ -38,7 +39,8 @@ impl GitStatus {
         json!({
             "kind": "full",
             "files": self.files,
-            "branch": self.branch
+            "branch": self.branch,
+            "head_hash": self.head_hash
         })
     }
 }
@@ -59,6 +61,7 @@ pub enum GitStatusUpdate {
     Full(GitStatus),
     Patch {
         branch: String,
+        head_hash: String,
         files: Vec<GitStatusPatchFile>,
     },
 }
@@ -67,9 +70,14 @@ impl GitStatusUpdate {
     pub fn to_json(&self) -> Value {
         match self {
             Self::Full(status) => status.to_json(),
-            Self::Patch { branch, files } => json!({
+            Self::Patch {
+                branch,
+                head_hash,
+                files,
+            } => json!({
                 "kind": "patch",
                 "branch": branch,
+                "head_hash": head_hash,
                 "files": files,
             }),
         }
@@ -107,9 +115,88 @@ pub struct GitBranchInfo {
     pub is_current: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct GitMetadataSnapshot {
+    index: Option<FileStamp>,
+    head: Option<FileStamp>,
+    current_ref: Option<FileStamp>,
+    packed_refs: Option<FileStamp>,
+    merge_head: Option<FileStamp>,
+    rebase_merge: Option<FileStamp>,
+    rebase_apply: Option<FileStamp>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct FileStamp {
+    modified: Option<std::time::SystemTime>,
+    len: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct NumstatCacheEntry {
+    head_sha1: Option<[u8; 20]>,
+    mtime_sec: u32,
+    mtime_nsec: u32,
+    file_size: u32,
+    added: usize,
+    removed: usize,
+}
+
+struct BoundedContentCache {
+    head_hash: String,
+    entries: HashMap<String, Option<String>>,
+    order: std::collections::VecDeque<String>,
+}
+
+impl BoundedContentCache {
+    fn new(head_hash: String) -> Self {
+        Self {
+            head_hash,
+            entries: HashMap::new(),
+            order: std::collections::VecDeque::new(),
+        }
+    }
+
+    fn get(&self, path: &str) -> Option<&Option<String>> {
+        self.entries.get(path)
+    }
+
+    fn insert(&mut self, path: String, content: Option<String>) {
+        if !self.entries.contains_key(&path) {
+            self.order.push_back(path.clone());
+            if self.order.len() > 100 {
+                if let Some(oldest) = self.order.pop_front() {
+                    self.entries.remove(&oldest);
+                }
+            }
+        }
+        self.entries.insert(path, content);
+    }
+}
+
 pub struct GitManager {
     workdir: PathBuf,
     status_cache: GitStatus,
+    last_git_snapshot: Option<GitMetadataSnapshot>,
+    index_cache: Option<(FileStamp, HashMap<String, IndexEntry>)>,
+    head_blob_cache: Option<(String, HashMap<String, Option<[u8; 20]>>)>,
+    numstat_cache: HashMap<String, NumstatCacheEntry>,
+    head_blob_content_cache: Option<BoundedContentCache>,
+    repo_cache: std::sync::OnceLock<Repository>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct IndexEntry {
+    mtime_sec: u32,
+    mtime_nsec: u32,
+    file_size: u32,
+    sha1: [u8; 20],
+    stage: u8,
+}
+
+enum IndexLookup {
+    Available(Option<IndexEntry>),
+    Unavailable,
 }
 
 impl GitManager {
@@ -117,11 +204,56 @@ impl GitManager {
         Self {
             workdir,
             status_cache: GitStatus::default(),
+            last_git_snapshot: None,
+            index_cache: None,
+            head_blob_cache: None,
+            numstat_cache: HashMap::new(),
+            head_blob_content_cache: None,
+            repo_cache: std::sync::OnceLock::new(),
         }
     }
 
-    fn repo(&self) -> Result<Repository> {
-        Repository::discover(&self.workdir).context("Failed to discover git repository")
+    fn repo(&self) -> Result<&Repository> {
+        if let Some(r) = self.repo_cache.get() {
+            return Ok(r);
+        }
+        let r = Repository::discover(&self.workdir).context("Failed to discover git repository")?;
+        let _ = self.repo_cache.set(r);
+        Ok(self.repo_cache.get().unwrap())
+    }
+
+    fn git_metadata_snapshot(&self) -> Result<GitMetadataSnapshot> {
+        let git_dir = self.git_dir()?;
+        let head_ref = Self::head_ref_path(&git_dir);
+
+        Ok(GitMetadataSnapshot {
+            index: Self::file_stamp(&git_dir.join("index")),
+            head: Self::file_stamp(&git_dir.join("HEAD")),
+            current_ref: head_ref.as_ref().and_then(|path| Self::file_stamp(path)),
+            packed_refs: Self::file_stamp(&git_dir.join("packed-refs")),
+            merge_head: Self::file_stamp(&git_dir.join("MERGE_HEAD")),
+            rebase_merge: Self::file_stamp(&git_dir.join("rebase-merge")),
+            rebase_apply: Self::file_stamp(&git_dir.join("rebase-apply")),
+        })
+    }
+
+    fn git_dir(&self) -> Result<PathBuf> {
+        let repo = self.repo()?;
+        Ok(repo.path().to_path_buf())
+    }
+
+    fn file_stamp(path: &Path) -> Option<FileStamp> {
+        let meta = std::fs::metadata(path).ok()?;
+        Some(FileStamp {
+            modified: meta.modified().ok(),
+            len: meta.len(),
+        })
+    }
+
+    fn head_ref_path(git_dir: &Path) -> Option<PathBuf> {
+        let head = std::fs::read_to_string(git_dir.join("HEAD")).ok()?;
+        let ref_name = head.strip_prefix("ref: ")?.trim();
+        Some(git_dir.join(ref_name))
     }
 
     fn sort_files(files: &mut [GitFileStatus]) {
@@ -246,11 +378,28 @@ impl GitManager {
 
         Self::sort_files(&mut files);
 
-        Ok(GitStatus { files, branch })
+        let head_hash = Self::head_hash_of(&repo);
+        Ok(GitStatus {
+            files,
+            branch,
+            head_hash,
+        })
     }
 
     /// Check if status changed, update cache, return new status if changed
     pub fn check_status_changed(&mut self) -> Option<GitStatus> {
+        let snapshot = self.git_metadata_snapshot().ok()?;
+
+        if self
+            .last_git_snapshot
+            .as_ref()
+            .is_some_and(|last| last == &snapshot)
+        {
+            return None;
+        }
+
+        self.last_git_snapshot = Some(snapshot);
+
         let new_status = match self.status() {
             Ok(s) => s,
             Err(_) => return None,
@@ -271,6 +420,7 @@ impl GitManager {
 
     pub fn refresh_status_cache(&mut self) -> Result<GitStatus> {
         let status = self.status()?;
+        self.last_git_snapshot = self.git_metadata_snapshot().ok();
         self.status_cache = status.clone();
         Ok(status)
     }
@@ -282,11 +432,20 @@ impl GitManager {
             return Some(GitStatusUpdate::Full(full));
         }
 
-        let repo = self.repo().ok()?;
-        let repo_root = repo.workdir().unwrap_or(Path::new("."));
-        let branch = Self::branch_name(&repo);
+        let repo_root;
+        let branch;
+        let head_hash;
+        {
+            let repo = self.repo().ok()?;
+            repo_root = repo
+                .workdir()
+                .map(|p| p.to_path_buf())
+                .unwrap_or_else(|| Path::new(".").to_path_buf());
+            branch = Self::branch_name(repo);
+            head_hash = Self::head_hash_of(repo);
+        }
 
-        if self.status_cache.branch != branch {
+        if self.status_cache.branch != branch || self.status_cache.head_hash != head_hash {
             let full = self.status().ok()?;
             if self.status_cache != full {
                 self.status_cache = full.clone();
@@ -298,7 +457,7 @@ impl GitManager {
         let mut patch_files: Vec<GitStatusPatchFile> = Vec::new();
 
         for path in paths {
-            let Some(relative_path) = self.to_repo_relative_path(path, repo_root) else {
+            let Some(relative_path) = self.to_repo_relative_path(path, &repo_root) else {
                 let full = self.status().ok()?;
                 if self.status_cache != full {
                     self.status_cache = full.clone();
@@ -311,7 +470,7 @@ impl GitManager {
             }
 
             let abs_path = repo_root.join(&relative_path).to_string_lossy().to_string();
-            let next_file = match self.status_for_relative_path(&repo, &relative_path) {
+            let next_file = match self.status_for_relative_path(&relative_path) {
                 Ok(file) => file,
                 Err(e) => {
                     tracing::warn!("Failed to get status for {}: {}", abs_path, e);
@@ -365,8 +524,10 @@ impl GitManager {
         }
 
         self.status_cache.branch = branch.clone();
+        self.status_cache.head_hash = head_hash.clone();
         Some(GitStatusUpdate::Patch {
             branch,
+            head_hash,
             files: patch_files,
         })
     }
@@ -648,7 +809,7 @@ impl GitManager {
 
         let sig = repo
             .signature()
-            .or_else(|_| git2::Signature::now("Anycode User", "user@anycode.dev"))?;
+            .context("Git user identity is not configured. Set user.name and user.email before creating a merge commit.")?;
 
         let local_commit = head.peel_to_commit()?;
         let remote_commit_obj = repo.find_commit(remote_commit.id())?;
@@ -709,6 +870,13 @@ impl GitManager {
         repo.head()
             .map(|h| h.shorthand().unwrap_or("HEAD").to_string())
             .unwrap_or_else(|_| "HEAD".to_string())
+    }
+
+    fn head_hash_of(repo: &Repository) -> String {
+        repo.head()
+            .and_then(|h| h.peel_to_commit())
+            .map(|c| c.id().to_string())
+            .unwrap_or_default()
     }
 
     fn status_from_entry(
@@ -790,62 +958,470 @@ impl GitManager {
             .map(|p| p.to_string_lossy().replace('\\', "/"))
     }
 
-    fn numstat_for_path(repo: &Repository, relative_path: &str) -> Result<(usize, usize)> {
-        let mut opts = git2::DiffOptions::new();
-        opts.include_untracked(true)
-            .recurse_untracked_dirs(true)
-            .include_typechange(true)
-            .pathspec(relative_path);
+    fn get_head_blob_content_raw(repo: &Repository, relative_path: &str) -> Option<String> {
+        let head = repo.head().ok()?;
+        let commit = head.peel_to_commit().ok()?;
+        let tree = commit.tree().ok()?;
+        let entry = tree.get_path(Path::new(relative_path)).ok()?;
+        let blob = repo.find_blob(entry.id()).ok()?;
+        let content = std::str::from_utf8(blob.content()).ok()?;
+        Some(content.to_string())
+    }
 
-        let head_tree = repo.head().ok().and_then(|head| head.peel_to_tree().ok());
-        let diff = repo.diff_tree_to_workdir_with_index(head_tree.as_ref(), Some(&mut opts))?;
+    fn cached_head_blob_content(&mut self, relative_path: &str) -> Option<String> {
+        let _ = self.repo().ok()?;
+        let repo = self.repo_cache.get()?;
+        let head_hash = Self::head_hash_of(repo);
+        if head_hash.is_empty() {
+            return Self::get_head_blob_content_raw(repo, relative_path);
+        }
 
-        let mut added = 0usize;
-        let mut removed = 0usize;
-        diff.foreach(
-            &mut |_delta, _progress| true,
-            None,
-            None,
-            Some(&mut |_delta, _hunk, line| {
-                match line.origin() {
-                    '+' => added += 1,
-                    '-' => removed += 1,
+        let cache_is_current = self
+            .head_blob_content_cache
+            .as_ref()
+            .is_some_and(|cache| cache.head_hash == head_hash);
+
+        if !cache_is_current {
+            self.head_blob_content_cache = Some(BoundedContentCache::new(head_hash));
+        }
+
+        let cache = self.head_blob_content_cache.as_mut()?;
+        if let Some(cached) = cache.get(relative_path) {
+            return cached.clone();
+        }
+
+        let content = Self::get_head_blob_content_raw(repo, relative_path);
+        cache.insert(relative_path.to_string(), content.clone());
+        content
+    }
+
+    fn numstat_in_memory(
+        &mut self,
+        relative_path: &str,
+        file_status: &FileStatus,
+    ) -> (usize, usize) {
+        let repo = match self.repo() {
+            Ok(r) => r,
+            Err(_) => return (0, 0),
+        };
+        if matches!(file_status, FileStatus::Deleted) {
+            if let Some(old_text) = self.cached_head_blob_content(relative_path) {
+                return (0, old_text.lines().count());
+            }
+            return (0, 0);
+        }
+
+        let abs_path = repo.workdir().unwrap_or(Path::new(".")).join(relative_path);
+        let new_text = match std::fs::read_to_string(&abs_path) {
+            Ok(content) => content,
+            Err(_) => return (0, 0),
+        };
+
+        if matches!(file_status, FileStatus::Added) {
+            let added = if new_text.is_empty() {
+                0
+            } else {
+                new_text.lines().count().max(1)
+            };
+            return (added, 0);
+        }
+
+        if let Some(old_text) = self.cached_head_blob_content(relative_path) {
+            if old_text == new_text {
+                return (0, 0);
+            }
+
+            let old_lines: Vec<&str> = old_text.lines().collect();
+            let new_lines: Vec<&str> = new_text.lines().collect();
+
+            let mut start = 0;
+            while start < old_lines.len()
+                && start < new_lines.len()
+                && old_lines[start] == new_lines[start]
+            {
+                start += 1;
+            }
+
+            let mut old_end = old_lines.len();
+            let mut new_end = new_lines.len();
+            while old_end > start
+                && new_end > start
+                && old_lines[old_end - 1] == new_lines[new_end - 1]
+            {
+                old_end -= 1;
+                new_end -= 1;
+            }
+
+            let old_trimmed = &old_lines[start..old_end];
+            let new_trimmed = &new_lines[start..new_end];
+
+            if old_trimmed.is_empty() {
+                return (new_trimmed.len(), 0);
+            }
+            if new_trimmed.is_empty() {
+                return (0, old_trimmed.len());
+            }
+
+            let changes =
+                similar::utils::diff_slices(similar::Algorithm::Myers, old_trimmed, new_trimmed);
+
+            let mut added = 0;
+            let mut removed = 0;
+            for (tag, slice) in changes {
+                match tag {
+                    similar::ChangeTag::Insert => added += slice.len(),
+                    similar::ChangeTag::Delete => removed += slice.len(),
                     _ => {}
                 }
-                true
-            }),
-        )?;
-        Ok((added, removed))
+            }
+            return (added, removed);
+        }
+
+        (0, 0)
     }
 
-    fn status_for_relative_path(
-        &self,
-        repo: &Repository,
-        relative_path: &str,
-    ) -> Result<Option<GitFileStatus>> {
-        let repo_root = repo.workdir().unwrap_or(Path::new("."));
-        let mut opts = StatusOptions::new();
-        opts.include_untracked(true)
-            .recurse_untracked_dirs(true)
-            .include_ignored(false)
-            .pathspec(relative_path);
+    fn get_head_blob_sha1(repo: &Repository, relative_path: &str) -> Option<[u8; 20]> {
+        let head = repo.head().ok()?;
+        let commit = head.peel_to_commit().ok()?;
+        let tree = commit.tree().ok()?;
+        let entry = tree.get_path(Path::new(relative_path)).ok()?;
+        let oid = entry.id();
+        Some(oid.as_bytes().try_into().ok()?)
+    }
 
-        let statuses = repo.statuses(Some(&mut opts))?;
-        let (added, removed) = Self::numstat_for_path(repo, relative_path).unwrap_or((0, 0));
+    fn cached_head_blob_sha1(&mut self, relative_path: &str) -> Option<[u8; 20]> {
+        let _ = self.repo().ok()?;
+        let repo = self.repo_cache.get()?;
+        let head_hash = Self::head_hash_of(repo);
+        if head_hash.is_empty() {
+            return Self::get_head_blob_sha1(repo, relative_path);
+        }
 
-        for entry in statuses.iter() {
-            let Some(entry_path) = entry.path() else {
-                continue;
-            };
-            if entry_path != relative_path {
-                continue;
+        let cache_is_current = self
+            .head_blob_cache
+            .as_ref()
+            .is_some_and(|(cached_head, _)| cached_head == &head_hash);
+
+        if !cache_is_current {
+            self.head_blob_cache = Some((head_hash, HashMap::new()));
+        }
+
+        let (_, cache) = self.head_blob_cache.as_mut()?;
+        if let Some(cached) = cache.get(relative_path) {
+            return *cached;
+        }
+
+        let blob_sha1 = Self::get_head_blob_sha1(repo, relative_path);
+        cache.insert(relative_path.to_string(), blob_sha1);
+        blob_sha1
+    }
+
+    fn parse_index(index_bytes: &[u8]) -> Option<HashMap<String, IndexEntry>> {
+        if index_bytes.len() < 12 || &index_bytes[0..4] != b"DIRC" {
+            return None;
+        }
+        let version = u32::from_be_bytes(index_bytes[4..8].try_into().ok()?);
+        let num_entries = u32::from_be_bytes(index_bytes[8..12].try_into().ok()?);
+
+        if version != 2 && version != 3 {
+            return None;
+        }
+
+        let mut entries = HashMap::with_capacity(num_entries as usize);
+        let mut offset = 12;
+        for _ in 0..num_entries {
+            if offset + 62 > index_bytes.len() {
+                break;
             }
-            if let Some(file) =
-                Self::status_from_entry(repo_root, entry_path, entry.status(), added, removed)
-            {
-                return Ok(Some(file));
+
+            let mtime_sec =
+                u32::from_be_bytes(index_bytes[offset + 8..offset + 12].try_into().ok()?);
+            let mtime_nsec =
+                u32::from_be_bytes(index_bytes[offset + 12..offset + 16].try_into().ok()?);
+            let file_size =
+                u32::from_be_bytes(index_bytes[offset + 36..offset + 40].try_into().ok()?);
+
+            let mut sha1 = [0u8; 20];
+            sha1.copy_from_slice(&index_bytes[offset + 40..offset + 60]);
+
+            let flags = u16::from_be_bytes(index_bytes[offset + 60..offset + 62].try_into().ok()?);
+            let is_extended = (flags & 0x4000) != 0;
+            let path_start = if is_extended && version == 3 {
+                offset + 64
+            } else {
+                offset + 62
+            };
+
+            let path_len_flag = (flags & 0x0FFF) as usize;
+            let path_len = if path_len_flag < 0x0FFF {
+                path_len_flag
+            } else {
+                let mut len = 0;
+                while path_start + len < index_bytes.len() && index_bytes[path_start + len] != 0 {
+                    len += 1;
+                }
+                len
+            };
+
+            if path_start + path_len > index_bytes.len() {
+                break;
+            }
+
+            let path_bytes = &index_bytes[path_start..path_start + path_len];
+            if let Ok(path) = std::str::from_utf8(path_bytes) {
+                let entry = IndexEntry {
+                    mtime_sec,
+                    mtime_nsec,
+                    file_size,
+                    sha1,
+                    stage: ((flags >> 12) & 3) as u8,
+                };
+
+                entries
+                    .entry(path.to_string())
+                    .and_modify(|existing: &mut IndexEntry| {
+                        if existing.stage == 0 && entry.stage > 0 {
+                            *existing = entry;
+                        }
+                    })
+                    .or_insert(entry);
+            }
+
+            let metadata_size = if is_extended && version == 3 { 64 } else { 62 };
+            offset += (metadata_size + path_len + 8) & !7usize;
+        }
+        Some(entries)
+    }
+
+    fn cached_index_entry(&mut self, relative_path: &str) -> Result<IndexLookup> {
+        let git_dir = self.git_dir()?;
+        let index_path = git_dir.join("index");
+        let Some(stamp) = Self::file_stamp(&index_path) else {
+            self.index_cache = None;
+            return Ok(IndexLookup::Unavailable);
+        };
+
+        let cache_is_current = self
+            .index_cache
+            .as_ref()
+            .is_some_and(|(cached_stamp, _)| cached_stamp == &stamp);
+
+        if !cache_is_current {
+            let index_bytes = std::fs::read(&index_path)?;
+            let Some(entries) = Self::parse_index(&index_bytes) else {
+                self.index_cache = None;
+                return Ok(IndexLookup::Unavailable);
+            };
+            self.index_cache = Some((stamp, entries));
+        }
+
+        Ok(IndexLookup::Available(self.index_cache.as_ref().and_then(
+            |(_, entries)| entries.get(relative_path).copied(),
+        )))
+    }
+
+    fn status_file_via_cli(&mut self, relative_path: &str) -> Result<Option<GitFileStatus>> {
+        let repo_root = {
+            let repo = self.repo()?;
+            repo.workdir()
+                .map(Path::to_path_buf)
+                .unwrap_or_else(|| self.workdir.clone())
+        };
+
+        let output = std::process::Command::new("git")
+            .arg("status")
+            .arg("--porcelain=v1")
+            .arg("--untracked-files=all")
+            .arg("--no-renames")
+            .arg("-z")
+            .arg("--")
+            .arg(relative_path)
+            .current_dir(&repo_root)
+            .output()?;
+
+        if !output.status.success() {
+            return Ok(None);
+        }
+
+        let stdout = output.stdout;
+        if stdout.is_empty() {
+            return Ok(None);
+        }
+
+        if stdout.len() < 3 {
+            return Ok(None);
+        }
+
+        let x_char = stdout[0] as char;
+        let y_char = stdout[1] as char;
+
+        let conflicted = x_char == 'U'
+            || y_char == 'U'
+            || (x_char == 'D' && y_char == 'D')
+            || (x_char == 'A' && y_char == 'A');
+        let staged = x_char != ' ' && x_char != '?' && x_char != '!' && !conflicted;
+        let unstaged = y_char != ' ' && y_char != '?' && y_char != '!' && !conflicted;
+
+        let file_status = if conflicted {
+            FileStatus::Conflict
+        } else if x_char == '?' || x_char == 'A' || y_char == 'A' {
+            FileStatus::Added
+        } else if x_char == 'D' || y_char == 'D' {
+            FileStatus::Deleted
+        } else if x_char == 'M' || y_char == 'M' {
+            FileStatus::Modified
+        } else {
+            return Ok(None);
+        };
+
+        let (mut added, removed) = self.numstat_in_memory(relative_path, &file_status);
+
+        if matches!(file_status, FileStatus::Added) && added == 0 {
+            let abs_path = repo_root.join(relative_path);
+            if let Ok(content) = std::fs::read_to_string(&abs_path) {
+                if !content.is_empty() {
+                    added = content.lines().count().max(1);
+                }
             }
         }
-        Ok(None)
+
+        let abs_path = repo_root.join(relative_path).to_string_lossy().to_string();
+
+        Ok(Some(GitFileStatus {
+            path: abs_path,
+            status: file_status,
+            staged,
+            unstaged,
+            conflicted,
+            added,
+            removed,
+        }))
+    }
+
+    fn status_file_custom(&mut self, relative_path: &str) -> Result<Option<GitFileStatus>> {
+        let index_entry = match self.cached_index_entry(relative_path)? {
+            IndexLookup::Available(Some(entry)) => entry,
+            IndexLookup::Available(None) => return self.status_file_via_cli(relative_path),
+            IndexLookup::Unavailable => return self.status_file_via_cli(relative_path),
+        };
+
+        let repo_root = {
+            let repo = self.repo()?;
+            repo.workdir()
+                .map(Path::to_path_buf)
+                .unwrap_or_else(|| self.workdir.clone())
+        };
+        let abs_path = repo_root.join(relative_path);
+        let metadata = std::fs::metadata(&abs_path).ok();
+
+        if metadata.is_none() {
+            let head_sha1 = self.cached_head_blob_sha1(relative_path);
+            let staged = head_sha1.map_or(true, |h| h != index_entry.sha1);
+            let unstaged = true;
+            let (_, removed) = self.numstat_in_memory(relative_path, &FileStatus::Deleted);
+
+            return Ok(Some(GitFileStatus {
+                path: abs_path.to_string_lossy().to_string(),
+                status: FileStatus::Deleted,
+                staged,
+                unstaged,
+                conflicted: index_entry.stage > 0,
+                added: 0,
+                removed,
+            }));
+        }
+
+        let metadata = metadata.unwrap();
+        let (file_mtime_sec, file_mtime_nsec) = metadata
+            .modified()
+            .ok()
+            .and_then(|t| t.duration_since(std::time::SystemTime::UNIX_EPOCH).ok())
+            .map(|d| (d.as_secs() as u32, d.subsec_nanos()))
+            .unwrap_or((0, 0));
+        let file_size = metadata.len() as u32;
+
+        let has_worktree_changes = index_entry.mtime_sec != file_mtime_sec
+            || index_entry.mtime_nsec != file_mtime_nsec
+            || index_entry.file_size != file_size;
+
+        let head_sha1 = self.cached_head_blob_sha1(relative_path);
+
+        let has_staged_changes = match head_sha1 {
+            Some(head_hash) => head_hash != index_entry.sha1,
+            None => true,
+        };
+
+        let is_conflicted = index_entry.stage > 0;
+
+        if !has_worktree_changes && !has_staged_changes && !is_conflicted {
+            return Ok(None);
+        }
+
+        let file_status = if is_conflicted {
+            FileStatus::Conflict
+        } else if head_sha1.is_none() {
+            FileStatus::Added
+        } else if has_worktree_changes || has_staged_changes {
+            FileStatus::Modified
+        } else {
+            return Ok(None);
+        };
+
+        let cache_key = relative_path.to_string();
+        let cache_hit = self.numstat_cache.get(&cache_key).and_then(|entry| {
+            if entry.head_sha1 == head_sha1
+                && entry.mtime_sec == file_mtime_sec
+                && entry.mtime_nsec == file_mtime_nsec
+                && entry.file_size == file_size
+            {
+                Some((entry.added, entry.removed))
+            } else {
+                None
+            }
+        });
+
+        let (added, removed) = match cache_hit {
+            Some(res) => res,
+            None => {
+                let (mut add, rem) = self.numstat_in_memory(relative_path, &file_status);
+                if matches!(file_status, FileStatus::Added) && add == 0 {
+                    if let Ok(content) = std::fs::read_to_string(&abs_path) {
+                        if !content.is_empty() {
+                            add = content.lines().count().max(1);
+                        }
+                    }
+                }
+                self.numstat_cache.insert(
+                    cache_key,
+                    NumstatCacheEntry {
+                        head_sha1,
+                        mtime_sec: file_mtime_sec,
+                        mtime_nsec: file_mtime_nsec,
+                        file_size,
+                        added: add,
+                        removed: rem,
+                    },
+                );
+                (add, rem)
+            }
+        };
+
+        Ok(Some(GitFileStatus {
+            path: abs_path.to_string_lossy().to_string(),
+            status: file_status,
+            staged: has_staged_changes,
+            unstaged: has_worktree_changes,
+            conflicted: is_conflicted,
+            added,
+            removed,
+        }))
+    }
+
+    fn status_for_relative_path(&mut self, relative_path: &str) -> Result<Option<GitFileStatus>> {
+        self.status_file_custom(relative_path)
     }
 }
+
+#[cfg(test)]
+#[path = "tests/git.rs"]
+mod tests;

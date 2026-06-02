@@ -121,7 +121,8 @@ struct AcpClientImpl {
 
 impl AcpClientImpl {
     async fn request_permission(
-        &self, args: RequestPermissionRequest,
+        &self,
+        args: RequestPermissionRequest,
     ) -> acp::Result<RequestPermissionResponse> {
         info!(
             "request_permission called for agent {}: {:?}",
@@ -161,7 +162,8 @@ impl AcpClientImpl {
     }
 
     async fn write_text_file(
-        &self, args: acp::WriteTextFileRequest,
+        &self,
+        args: acp::WriteTextFileRequest,
     ) -> acp::Result<acp::WriteTextFileResponse> {
         info!(
             "write_text_file called for agent {}: path={:?}, content_len={}",
@@ -219,7 +221,8 @@ impl AcpClientImpl {
     }
 
     async fn read_text_file(
-        &self, args: acp::ReadTextFileRequest,
+        &self,
+        args: acp::ReadTextFileRequest,
     ) -> acp::Result<acp::ReadTextFileResponse> {
         info!(
             "read_text_file called for agent {}: path={:?}",
@@ -274,7 +277,8 @@ impl AcpClientImpl {
     }
 
     async fn create_terminal(
-        &self, _args: acp::CreateTerminalRequest,
+        &self,
+        _args: acp::CreateTerminalRequest,
     ) -> acp::Result<acp::CreateTerminalResponse> {
         info!(
             "create_terminal called for agent {}: {:?}",
@@ -284,7 +288,8 @@ impl AcpClientImpl {
     }
 
     async fn terminal_output(
-        &self, _args: acp::TerminalOutputRequest,
+        &self,
+        _args: acp::TerminalOutputRequest,
     ) -> acp::Result<acp::TerminalOutputResponse> {
         info!(
             "terminal_output called for agent {}: {:?}",
@@ -294,7 +299,8 @@ impl AcpClientImpl {
     }
 
     async fn release_terminal(
-        &self,  _args: acp::ReleaseTerminalRequest,
+        &self,
+        _args: acp::ReleaseTerminalRequest,
     ) -> acp::Result<acp::ReleaseTerminalResponse> {
         info!(
             "release_terminal called for agent {}: {:?}",
@@ -304,7 +310,8 @@ impl AcpClientImpl {
     }
 
     async fn wait_for_terminal_exit(
-        &self, _args: acp::WaitForTerminalExitRequest,
+        &self,
+        _args: acp::WaitForTerminalExitRequest,
     ) -> acp::Result<acp::WaitForTerminalExitResponse> {
         info!(
             "wait_for_terminal_exit called for agent {}: {:?}",
@@ -314,7 +321,8 @@ impl AcpClientImpl {
     }
 
     async fn kill_terminal_command(
-        &self, _args: acp::KillTerminalRequest,
+        &self,
+        _args: acp::KillTerminalRequest,
     ) -> acp::Result<acp::KillTerminalResponse> {
         info!(
             "kill_terminal_command called for agent {}: {:?}",
@@ -323,9 +331,7 @@ impl AcpClientImpl {
         Err(acp::Error::method_not_found())
     }
 
-    async fn session_notification(
-        &self, args: acp::SessionNotification,
-    ) -> acp::Result<()> {
+    async fn session_notification(&self, args: acp::SessionNotification) -> acp::Result<()> {
         info!(
             "session_notification received for agent {}: {:?}",
             self.agent_id, args.update
@@ -347,7 +353,8 @@ impl AcpClientImpl {
     }
 
     fn append_to_previous_raw_chunk(
-        history: &mut [AcpMessage], update: &acp::SessionUpdate,
+        history: &mut [AcpMessage],
+        update: &acp::SessionUpdate,
     ) -> bool {
         let (expected_kind, chunk_text) = match update {
             acp::SessionUpdate::AgentMessageChunk(chunk) => {
@@ -384,9 +391,7 @@ impl AcpClientImpl {
         false
     }
 
-    fn append_or_push_error_message(
-        history: &mut Vec<AcpMessage>, text: &str,
-    ) -> AcpMessage {
+    fn append_or_push_error_message(history: &mut Vec<AcpMessage>, text: &str) -> AcpMessage {
         if let Some(last_idx) = history.len().checked_sub(1) {
             if let AcpMessage::Error(AcpError { message }) = &history[last_idx] {
                 let mut merged = message.clone();

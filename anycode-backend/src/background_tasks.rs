@@ -36,7 +36,9 @@ fn spawn_git_status_watcher(state: &AppState, io: &Arc<SocketIo>) {
     let socket = io.clone();
 
     tokio::spawn(async move {
-        let mut ticker = time::interval(Duration::from_secs(1));
+        let mut ticker = time::interval(Duration::from_secs(2));
+        ticker.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
+
         loop {
             ticker.tick().await;
 
@@ -55,11 +57,7 @@ fn spawn_git_status_watcher(state: &AppState, io: &Arc<SocketIo>) {
     });
 }
 
-fn spawn_acp_fs(
-    state: &AppState,
-    io: &Arc<SocketIo>,
-    acp_fs_rx: Receiver<acp_fs::AcpFsCommand>,
-) {
+fn spawn_acp_fs(state: &AppState, io: &Arc<SocketIo>, acp_fs_rx: Receiver<acp_fs::AcpFsCommand>) {
     let file2code = state.file2code.clone();
     let lsp_manager = state.lsp_manager.clone();
     let config = state.config.as_ref().clone();
@@ -74,10 +72,7 @@ fn spawn_acp_fs(
     ));
 }
 
-fn spawn_diagnostics(
-    io: &Arc<SocketIo>,
-    mut diagnostics_rx: Receiver<PublishDiagnosticsParams>,
-) {
+fn spawn_diagnostics(io: &Arc<SocketIo>, mut diagnostics_rx: Receiver<PublishDiagnosticsParams>) {
     let socket = io.clone();
     tokio::spawn(async move {
         while let Some(diagnostic_message) = diagnostics_rx.recv().await {
@@ -89,10 +84,7 @@ fn spawn_diagnostics(
     });
 }
 
-fn spawn_file_watcher(
-    state: &AppState,
-    io: &Arc<SocketIo>,
-) -> Result<notify::RecommendedWatcher> {
+fn spawn_file_watcher(state: &AppState, io: &Arc<SocketIo>) -> Result<notify::RecommendedWatcher> {
     let file2code = state.file2code.clone();
     let socket2data = state.socket2data.clone();
     let git_manager = state.git_manager.clone();

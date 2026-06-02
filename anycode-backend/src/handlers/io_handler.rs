@@ -1,6 +1,7 @@
 use crate::app_state::*;
 use crate::code::{Edit, Operation};
 use crate::error_ack;
+use crate::handlers::git_handler::is_file_tracked;
 use crate::utils::{abs_file, is_ignored_path};
 use crate::{
     app_state::{AppState, SocketData},
@@ -9,7 +10,6 @@ use crate::{
 use lsp_types::{Position, Range, TextDocumentContentChangeEvent};
 use serde::{Deserialize, Serialize};
 use serde_json::{self, json};
-use crate::handlers::git_handler::is_file_tracked;
 use socketioxide::extract::{AckSender, Data, SocketRef, State};
 use std::path::PathBuf;
 use tracing::{error, info, warn};
@@ -99,9 +99,8 @@ pub async fn handle_file_open(
     let file_exists = std::path::Path::new(&abs_path).exists();
     if !file_exists && is_file_tracked(&abs_path, &state).await {
         let mut f2c = state.file2code.lock().await;
-        f2c.entry(abs_path.clone()).or_insert_with(|| {
-            Code::new_empty(&abs_path, &state.config)
-        });
+        f2c.entry(abs_path.clone())
+            .or_insert_with(|| Code::new_empty(&abs_path, &state.config));
     }
 
     let mut f2c = state.file2code.lock().await;
@@ -130,7 +129,10 @@ pub async fn handle_file_open(
                 }
             }
             Err(err) => {
-                warn!("Failed to resolve original content for {}: {}", abs_path, err);
+                warn!(
+                    "Failed to resolve original content for {}: {}",
+                    abs_path, err
+                );
                 FileOriginalPayload {
                     content: String::new(),
                     is_new: false,

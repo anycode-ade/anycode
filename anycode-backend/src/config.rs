@@ -232,7 +232,8 @@ mod congif_tests {
     #[test]
     fn test_themes() {
         assert!(Themes::iter().count() > 0);
-        let default_theme = Themes::get("default-theme.json").expect("default-theme.json should be embedded");
+        let default_theme =
+            Themes::get("default-theme.json").expect("default-theme.json should be embedded");
         let content = std::str::from_utf8(default_theme.data.as_ref()).unwrap();
         assert!(content.contains("themes"));
     }
