@@ -286,7 +286,7 @@
 }
 
 .acp-message-tool_call .acp-message-content {
-    background-color: rgba(127, 127, 127, 0.18);
+    background-color: rgba(127, 127, 127, 0.08);
      color: var(--text-color, #ccc); 
     /* border: 1px solid var(--border-color, #333); */
     max-width: 100%;

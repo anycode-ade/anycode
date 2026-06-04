@@ -76,7 +76,7 @@
 
 .layout.dockview-theme-dark .dv-groupview > .dv-tabs-and-actions-container {
     background-color: var(--background-color, #242424) !important;
-    border: 1px solid var(--theme-border, #4a4a4a) !important;
+    /*border: 1px solid var(--theme-border, #4a4a4a) !important;*/
     border-bottom: none !important;
     border-top-left-radius: 8px !important;
     border-top-right-radius: 8px !important;
@@ -225,7 +225,7 @@
     min-height: 0;
     display: flex;
     flex-direction: column;
-    border: 1px solid var(--theme-border, #4a4a4a);
+    /*border: 1px solid var(--theme-border, #4a4a4a);*/
     border-top: none;
     border-radius: 0 0 8px 8px;
     box-sizing: border-box;
@@ -236,15 +236,21 @@
 .layout-header-actions {
     display: inline-flex;
     align-items: center;
+    justify-content: flex-end;
     gap: 2px;
     height: 100%;
+    width: 35px;
+    overflow: hidden;
 }
 
-.layout-header-actions:hover {
+.layout-header-actions:hover,
+.layout-header-actions:focus-within {
     background-color: var(--background-color, #242424);
+    width: max-content;
 }
 
-.layout .dv-tabs-and-actions-container .dv-right-actions-container:hover {
+.layout .dv-tabs-and-actions-container .dv-right-actions-container:has(.layout-header-actions:hover),
+.layout .dv-tabs-and-actions-container .dv-right-actions-container:has(.layout-header-actions:focus-within) {
     background-color: var(--background-color, #242424) !important;
     border-radius: 8px;
 }
@@ -281,8 +287,8 @@
     box-shadow: none;
 }
 
-.layout .dv-tabs-and-actions-container .dv-right-actions-container:hover .layout-header-action-btn,
-.layout .dv-tabs-and-actions-container .dv-right-actions-container:focus-within .layout-header-action-btn,
+.layout-header-actions:hover .layout-header-action-btn,
+.layout-header-actions:focus-within .layout-header-action-btn,
 .layout-header-action-btn:focus-visible {
     opacity: 1;
     pointer-events: auto;
@@ -439,8 +445,8 @@
     width: 100%;
     min-width: 0;
     overflow: hidden;
-    border: 1px solid var(--theme-border, #4a4a4a);
-    border-radius: 8px;
+    /*border-top: 1px solid var(--theme-border, #4a4a4a);*/
+    /*border-rad    ius: 8px;*/
     background: var(--background-color, #242424);
     box-sizing: border-box;
 }

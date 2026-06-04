@@ -33,7 +33,7 @@
 .acp-scroll-to-bottom-btn {
     position: absolute;
     right: 16px;
-    bottom: 60px;
+    bottom: 160px;
     width: 36px;
     height: 36px;
     border: none;
@@ -46,7 +46,7 @@
     background: rgba(45, 45, 45, 0.25);
     backdrop-filter: blur(2px);
     -webkit-backdrop-filter: blur(2px);
-    z-index: 1;
+    z-index: 11;
 }
 
 .acp-scroll-to-bottom-btn:focus,
@@ -62,6 +62,6 @@
 @media (max-width: 768px) {
     .acp-scroll-to-bottom-btn {
         right: 12px;
-        bottom: 56px;
+        bottom: 160px;
     }
 }

@@ -2,24 +2,35 @@
     display: flex;
     flex-direction: column;
     padding: 8px 12px;
-    border-top: 1px solid var(--border-color, #333);
+    border: 1px solid #8f8f8f2e;
     align-items: stretch;
-    border-radius: 14px;
-    transition: padding 0.15s ease-in-out;
-    position: relative;
+    border-radius: 24px;
+    transition: transform 0.2s ease-in-out, opacity 0.2s ease-in-out, visibility 0.2s ease-in-out, background-color 0.15s, border-color 0.15s, box-shadow 0.15s;
+    position: absolute;
+    bottom: 7px;
+    left: 12px;
+    right: 12px;
+    z-index: 10;
+    background: rgba(30, 30, 30, 0.75);
+    background: color-mix(in srgb, var(--theme-background, #242424) 75%, transparent);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    /*box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);*/
+    transform: translateY(0);
+    opacity: 1;
+    visibility: visible;
 }
 
 .acp-input-drag-over {
-    box-shadow: inset 0 0 0 1px var(--focus-border, #007acc);
-    background: color-mix(in srgb, var(--focus-border, #007acc) 8%, transparent);
+    box-shadow: inset 0 0 0 1px var(--focus-border, #007acc), 0 4px 20px rgba(0, 0, 0, 0.25);
+    background: color-mix(in srgb, var(--focus-border, #007acc) 8%, color-mix(in srgb, var(--theme-background, #242424) 75%, transparent));
 }
 
 .acp-input-minimized {
-    padding: 0;
-    border-top: none;
-    height: 0;
-    min-height: 0;
-    overflow: visible;
+    transform: translateY(20px);
+    opacity: 0;
+    pointer-events: none;
+    visibility: hidden;
 }
 
 .acp-input-preview-container {
@@ -40,17 +51,8 @@
 }
 
 .acp-input-full-container {
-    display: grid;
-    grid-template-rows: 1fr;
-    transition: grid-template-rows 0.15s ease-in-out, opacity 0.15s ease-in-out;
-    opacity: 1;
-    pointer-events: auto;
-}
-
-.acp-input-minimized .acp-input-full-container {
-    grid-template-rows: 0fr;
-    opacity: 0;
-    pointer-events: none;
+    display: flex;
+    flex-direction: column;
 }
 
 .acp-input-full-content {
@@ -301,6 +303,9 @@
 @media (max-width: 768px) {
     .acp-input {
         gap: 7px;
+        bottom: 8px;
+        left: 8px;
+        right: 8px;
     }
 
     .acp-input-floating-expand-btn {

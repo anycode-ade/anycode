@@ -290,7 +290,8 @@ export const AcpInput: React.FC<AcpInputProps> = ({
   };
 
   return (
-    <div
+    <>
+      <div
       className={`acp-input ${isMinimized ? 'acp-input-minimized' : ''} ${isDragOver ? 'acp-input-drag-over' : ''}`}
       onDragOver={(event) => {
         event.preventDefault();
@@ -433,6 +434,7 @@ export const AcpInput: React.FC<AcpInputProps> = ({
           </div>
         </div>
       </div>
+      </div>
 
       {isMinimized && (
         <button
@@ -444,6 +446,6 @@ export const AcpInput: React.FC<AcpInputProps> = ({
           <AcpIcons.ChevronUp />
         </button>
       )}
-    </div>
+    </>
   );
 };

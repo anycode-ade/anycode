@@ -689,13 +689,22 @@ const addPanel = (
         component: 'layoutPanel',
         title: definition.title,
         params: { panelId, panelKey, content },
-        minimumWidth: 0,
-        minimumHeight: 0,
+        minimumWidth: panelId === 'agent' ? 200 : 0,
+        minimumHeight: panelId === 'agent' ? 200 : 0,
         position: getDefaultPanelPosition(api, panelId),
         //@ts-ignore
         disableClose: definition.disableClose,
     });
-    panel.group.api.setConstraints(PANEL_CONSTRAINTS);
+    if (panelId === 'agent') {
+        panel.group.api.setConstraints({
+            minimumWidth: 200,
+            minimumHeight: 200,
+        });
+        // @ts-ignore
+        panel.group._snap = true;
+    } else {
+        panel.group.api.setConstraints(PANEL_CONSTRAINTS);
+    }
     return panel;
 };
 
@@ -996,7 +1005,16 @@ export const Layout: React.FC<LayoutProps> = ({
                 continue;
             }
 
-            panel.group.api.setConstraints(PANEL_CONSTRAINTS);
+            if (panelId === 'agent') {
+                panel.group.api.setConstraints({
+                    minimumWidth: 200,
+                    minimumHeight: 200,
+                });
+                // @ts-ignore
+                panel.group._snap = true;
+            } else {
+                panel.group.api.setConstraints(PANEL_CONSTRAINTS);
+            }
             panel.api.updateParameters({
                 panelId,
                 panelKey: panel.id,
@@ -1030,8 +1048,8 @@ export const Layout: React.FC<LayoutProps> = ({
                 panelKey: targetPanelKey,
                 content: resolvePanelContent(panelId, targetPanelKey),
             },
-            minimumWidth: 0,
-            minimumHeight: 0,
+            minimumWidth: panelId === 'agent' ? 200 : 0,
+            minimumHeight: panelId === 'agent' ? 200 : 0,
             position: {
                 referenceGroup: pickerPanel.group,
                 direction: 'within',
@@ -1039,7 +1057,16 @@ export const Layout: React.FC<LayoutProps> = ({
             //@ts-ignore
             disableClose: definition.disableClose,
         });
-        targetPanel.group.api.setConstraints(PANEL_CONSTRAINTS);
+        if (panelId === 'agent') {
+            targetPanel.group.api.setConstraints({
+                minimumWidth: 200,
+                minimumHeight: 200,
+            });
+            // @ts-ignore
+            targetPanel.group._snap = true;
+        } else {
+            targetPanel.group.api.setConstraints(PANEL_CONSTRAINTS);
+        }
 
         if (existingPanel) {
             targetPanel.api.moveTo({
