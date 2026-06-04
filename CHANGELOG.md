@@ -2,6 +2,37 @@
 
 All notable changes are documented here by release tag.
 
+## v0.0.19 - 2026-06-05
+
+### Highlights
+- Refactored ACP support with prompt attachments, permission auto-approval, session resume/close support, usage reporting, and smoother streaming updates.
+- Added bracket pair highlighting and restored syntax highlighting around syntax errors, backed by new editor tests.
+- Improved Git workflows with cached status updates, deleted-file diff previews, refreshed diff markers, and expanded backend Git tests.
+- Optimized editor and search rendering, including scroll performance, Safari caret fixes, and faster search/change updates.
+- Upgraded Tree-Sitter WASM assets, major frontend dependencies, GitHub Actions, and the Rust 1.96.0 toolchain.
+- Polished agent input/message styling, layout constraints, and mobile panel resize handles.
+- Fixed terminal echo test hangs and cleaned up backend warnings and unused code.
+
+### Commits
+- `2790046` style(agent): refine ACP input/message styles and update layout panel constraints
+- `decf248` Optimize search and git change updates
+- `6cd689d` perf: optimize scroll rendering, rename focus methods, and resolve Safari caret bugs
+- `79d52c1` perf(git): cache status updates and optimize editor refresh
+- `f301257` ci: upgrade github actions to versions targeting Node 24
+- `da2a03e` refactor: resolve backend warnings and clean up unused code
+- `8087d2a` test(terminal): use cat instead of bash for test_terminal_echo to avoid CI job control hangs
+- `d1f4ee9` fix(terminal): fix test_terminal_echo hang by flushing PTY writer and killing child process on loop exit
+- `e393b5c` fix(git): support diff preview for deleted files tracked in Git
+- `fe76a02` fix(git): update editor original content on git status update to clear diff markers
+- `e3436fd` upgrade web-tree-sitter to 0.26.9 and refresh wasm assets
+- `b5e19ab` build: upgrade frontend dependencies to latest major versions (xterm v6, dockview v6, diff v9, cpy-cli v7)
+- `59832a9` chore: upgrade Rust toolchain to 1.96.0 and cleanup Cargo.toml dependencies
+- `996306d` fix: restore syntax highlighting inside/after syntax errors, add tests, configure CI
+- `9d21b58` feat(anycode-base): add bracket pair highlighting
+- `b9f44ab` feat(layout): optimize panel resize handles for mobile touch devices
+- `959e30b` feat: refactor ACP, add prompt attachments, auto-approve permissions and optimize streaming
+- `31a8360` refactor renderer dom typing and line-height handling
+
 ## v0.0.18 - 2026-05-27
 
 ### Commits
