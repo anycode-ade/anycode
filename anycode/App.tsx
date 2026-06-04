@@ -66,7 +66,7 @@ const App: React.FC = () => {
             ['git:update', editors.handleGitUpdate],
             ['acp:message', agents.handleAcpMessage],
             ['acp:history', agents.handleAcpHistory],
-            ['search:result', search.handleSearchResult],
+            ['search:results', search.handleSearchResults],
             ['search:end', search.handleSearchEnd],
         ] as const;
 
@@ -85,7 +85,7 @@ const App: React.FC = () => {
         git.handleGitStatusUpdate,
         agents.handleAcpMessage,
         agents.handleAcpHistory,
-        search.handleSearchResult,
+        search.handleSearchResults,
         search.handleSearchEnd,
     ]);
 
@@ -228,7 +228,7 @@ const App: React.FC = () => {
                 return;
             }
     
-            if (e.metaKey && e.key === 'f') {
+            if (e.metaKey && !e.shiftKey && e.key.toLowerCase() === 'f') {
                 e.preventDefault();
             }
     

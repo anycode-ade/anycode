@@ -268,7 +268,11 @@ async fn handle_search_update(
                 if pattern.trim().is_empty() {
                     return None;
                 }
-                Some((sid.clone(), pattern.clone()))
+                Some((
+                    sid.clone(),
+                    pattern.clone(),
+                    data.search_last_file_result.clone(),
+                ))
             })
             .collect::<Vec<_>>()
     };
@@ -277,10 +281,23 @@ async fn handle_search_update(
         return;
     }
 
-    for (_, pattern) in searches {
+    for (sid, pattern, last_file_result) in searches {
         let cancel = CancellationToken::new();
         if let Some(file_result) = search_file_result(path, &pattern, cancel).await {
-            let _ = socket.emit("search:result", &file_result).await;
+            if last_file_result.as_ref() == Some(&file_result) {
+                continue;
+            }
+
+            {
+                let mut sockets_data = socket2data.lock().await;
+                if let Some(data) = sockets_data.get_mut(&sid) {
+                    data.search_last_file_result = Some(file_result.clone());
+                }
+            }
+
+            let _ = socket
+                .emit("search:results", &json!({ "results": [file_result] }))
+                .await;
         }
     }
 }

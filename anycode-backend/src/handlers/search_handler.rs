@@ -4,12 +4,20 @@ use serde::{Deserialize, Serialize};
 use serde_json::{self, json};
 use socketioxide::extract::{Data, SocketRef, State};
 use tokio::sync::mpsc;
+use tokio::time::{self, Duration, MissedTickBehavior};
 use tokio_util::sync::CancellationToken;
 use tracing::info;
+
+const SEARCH_RESULT_BATCH_INTERVAL: Duration = Duration::from_millis(200);
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct SearchRequest {
     pub pattern: String,
+}
+
+#[derive(Debug, Serialize)]
+struct SearchResultsBatch {
+    results: Vec<FileSearchResult>,
 }
 
 pub async fn handle_search(
@@ -37,6 +45,7 @@ pub async fn handle_search(
     // Save the cancel in the socket data
     data.search_cancel = Some(cancel.clone());
     data.search_pattern = Some(search_request.pattern.clone());
+    data.search_last_file_result = None;
 
     // Prepare search, get the current directory and create channel to collect results
     let current_dir = std::env::current_dir().unwrap();
@@ -63,10 +72,35 @@ pub async fn handle_search(
     // Collect results and send them to the socket
     tokio::spawn(async move {
         let mut matches = 0;
+        let mut batch = Vec::new();
+        let mut batch_interval = time::interval(SEARCH_RESULT_BATCH_INTERVAL);
+        batch_interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
+        batch_interval.tick().await;
+
         // In cancel case, the loop will be ended automatically
-        while let Some(file_result) = result_rx.recv().await {
-            let _ = socket.emit("search:result", &file_result);
-            matches += file_result.matches.len();
+        loop {
+            tokio::select! {
+                maybe_file_result = result_rx.recv() => {
+                    match maybe_file_result {
+                        Some(file_result) => {
+                            matches += file_result.matches.len();
+                            batch.push(file_result);
+                        }
+                        None => break,
+                    }
+                }
+                _ = batch_interval.tick() => {
+                    if !batch.is_empty() {
+                        let results = std::mem::take(&mut batch);
+                        let _ = socket.emit("search:results", &SearchResultsBatch { results });
+                    }
+                }
+            }
+        }
+
+        if !batch.is_empty() {
+            let results = std::mem::take(&mut batch);
+            let _ = socket.emit("search:results", &SearchResultsBatch { results });
         }
 
         let _ = socket.emit(
@@ -95,5 +129,6 @@ pub async fn handle_search_cancel(socket: SocketRef, state: State<AppState>) {
         // Clear the cancel token
         data.search_cancel = None;
         data.search_pattern = None;
+        data.search_last_file_result = None;
     }
 }

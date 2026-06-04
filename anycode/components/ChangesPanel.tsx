@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react';
 import { Icons } from './Icons';
 import './ChangesPanel.css';
 
@@ -45,6 +45,61 @@ const getDisplayName = (path: string): string => {
     return parts[parts.length - 1] || path;
 };
 
+const areChangedFileEqual = (prev: ChangedFile, next: ChangedFile): boolean => (
+    prev.path === next.path
+    && prev.status === next.status
+    && !!prev.staged === !!next.staged
+    && !!prev.unstaged === !!next.unstaged
+    && !!prev.conflicted === !!next.conflicted
+    && (prev.added ?? 0) === (next.added ?? 0)
+    && (prev.removed ?? 0) === (next.removed ?? 0)
+);
+
+const areChangedFileStructureEqual = (prev: ChangedFile, next: ChangedFile): boolean => (
+    prev.path === next.path
+    && prev.status === next.status
+    && !!prev.staged === !!next.staged
+    && !!prev.unstaged === !!next.unstaged
+    && !!prev.conflicted === !!next.conflicted
+);
+
+const updateStatsElement = (
+    element: HTMLSpanElement | undefined,
+    added: number,
+    removed: number,
+) => {
+    if (!element) {
+        return;
+    }
+
+    element.style.display = added > 0 || removed > 0 ? '' : 'none';
+
+    const addedElement = element.querySelector<HTMLElement>('[data-stat="added"]');
+    if (addedElement) {
+        addedElement.textContent = added > 0 ? `+${added}` : '';
+        addedElement.style.display = added > 0 ? '' : 'none';
+    }
+
+    const removedElement = element.querySelector<HTMLElement>('[data-stat="removed"]');
+    if (removedElement) {
+        removedElement.textContent = removed > 0 ? `-${removed}` : '';
+        removedElement.style.display = removed > 0 ? '' : 'none';
+    }
+};
+
+const statsElementsByPath = new Map<string, Set<HTMLSpanElement>>();
+
+export const updateChangesFileStats = (path: string, added: number, removed: number) => {
+    const elements = statsElementsByPath.get(path);
+    if (!elements) {
+        return;
+    }
+
+    for (const element of elements) {
+        updateStatsElement(element, added, removed);
+    }
+};
+
 interface ChangesPanelItemProps {
     rowId: string;
     file: ChangedFile;
@@ -56,7 +111,27 @@ interface ChangesPanelItemProps {
     onStage: (path: string) => void;
     onUnstage: (path: string) => void;
     setItemRef: (rowId: string, element: HTMLDivElement | null) => void;
+    setStatsRef: (path: string, element: HTMLSpanElement | null) => void;
 }
+
+interface ChangesFileStatsProps {
+    path: string;
+    setStatsRef: (path: string, element: HTMLSpanElement | null) => void;
+}
+
+const ChangesFileStats = React.memo(({ path, setStatsRef }: ChangesFileStatsProps) => {
+    const refCallback = useCallback((element: HTMLSpanElement | null) => {
+        setStatsRef(path, element);
+    }, [path, setStatsRef]);
+
+    return (
+        <span className="changes-file-stats" ref={refCallback} style={{ display: 'none' }}>
+            <span className="changes-stat-added" data-stat="added" />
+            <span className="changes-stat-removed" data-stat="removed" />
+        </span>
+    );
+});
+ChangesFileStats.displayName = 'ChangesFileStats';
 
 const ChangesPanelItemImpl: React.FC<ChangesPanelItemProps> = ({
     rowId,
@@ -69,6 +144,7 @@ const ChangesPanelItemImpl: React.FC<ChangesPanelItemProps> = ({
     onStage,
     onUnstage,
     setItemRef,
+    setStatsRef,
 }) => {
     const handleRevert = useCallback((e: React.MouseEvent) => {
         e.stopPropagation();
@@ -132,22 +208,30 @@ const ChangesPanelItemImpl: React.FC<ChangesPanelItemProps> = ({
                         {stageButtonLabel}
                     </button>
                 </div>
-                {(file.added ?? 0) > 0 || (file.removed ?? 0) > 0 ? (
-                    <span className="changes-file-stats">
-                        {(file.added ?? 0) > 0 && (
-                            <span className="changes-stat-added">+{file.added}</span>
-                        )}
-                        {(file.removed ?? 0) > 0 && (
-                            <span className="changes-stat-removed">-{file.removed}</span>
-                        )}
-                    </span>
-                ) : null}
+                <ChangesFileStats path={file.path} setStatsRef={setStatsRef} />
             </div>
         </div>
     );
 };
 
-const ChangesPanelItem = React.memo(ChangesPanelItemImpl);
+const areChangesPanelItemsEqual = (
+    prev: ChangesPanelItemProps,
+    next: ChangesPanelItemProps,
+): boolean => (
+    prev.rowId === next.rowId
+    && prev.mode === next.mode
+    && prev.isActive === next.isActive
+    && prev.isSelected === next.isSelected
+    && prev.onClick === next.onClick
+    && prev.onRevert === next.onRevert
+    && prev.onStage === next.onStage
+    && prev.onUnstage === next.onUnstage
+    && prev.setItemRef === next.setItemRef
+    && prev.setStatsRef === next.setStatsRef
+    && areChangedFileStructureEqual(prev.file, next.file)
+);
+
+const ChangesPanelItem = React.memo(ChangesPanelItemImpl, areChangesPanelItemsEqual);
 
 const ChangesPanelImpl: React.FC<ChangesPanelProps> = ({
     files,
@@ -183,6 +267,30 @@ const ChangesPanelImpl: React.FC<ChangesPanelProps> = ({
         itemRefs.current.delete(rowId);
     }, []);
 
+    const setStatsRef = useCallback((path: string, element: HTMLSpanElement | null) => {
+        const elements = statsElementsByPath.get(path);
+        if (!element) {
+            elements?.forEach((existingElement) => {
+                if (!existingElement.isConnected) {
+                    elements.delete(existingElement);
+                }
+            });
+            if (elements?.size === 0) {
+                statsElementsByPath.delete(path);
+            }
+            return;
+        }
+
+        if (!elements) {
+            statsElementsByPath.set(path, new Set([element]));
+            return;
+        }
+
+        if (element) {
+            elements.add(element);
+        }
+    }, []);
+
     const conflictingFiles = useMemo(
         () => files.filter((file) => file.conflicted || file.status === 'conflict'),
         [files],
@@ -214,6 +322,16 @@ const ChangesPanelImpl: React.FC<ChangesPanelProps> = ({
     const mergeStats = useMemo(() => countGroupStats(conflictingFiles), [conflictingFiles, countGroupStats]);
     const stagedStats = useMemo(() => countGroupStats(stagedFiles), [countGroupStats, stagedFiles]);
     const changedStats = useMemo(() => countGroupStats(changedFiles), [changedFiles, countGroupStats]);
+
+    useLayoutEffect(() => {
+        for (const row of displayedRows) {
+            updateChangesFileStats(
+                row.file.path,
+                row.file.added ?? 0,
+                row.file.removed ?? 0,
+            );
+        }
+    }, [displayedRows]);
 
     useEffect(() => {
         if (typeof window === 'undefined') return;
@@ -406,9 +524,10 @@ const ChangesPanelImpl: React.FC<ChangesPanelProps> = ({
                 onStage={onStage}
                 onUnstage={onUnstage}
                 setItemRef={setItemRef}
+                setStatsRef={setStatsRef}
             />
         ))
-    ), [activeFilePath, handleItemClick, onRevert, onStage, onUnstage, selectedRowId, setItemRef]);
+    ), [activeFilePath, handleItemClick, onRevert, onStage, onUnstage, selectedRowId, setItemRef, setStatsRef]);
 
     return (
         <div className="changes-panel">
@@ -627,15 +746,7 @@ const areChangedFilesEqual = (prev: ChangedFile[], next: ChangedFile[]): boolean
     for (let i = 0; i < prev.length; i += 1) {
         const a = prev[i];
         const b = next[i];
-        if (
-            a.path !== b.path
-            || a.status !== b.status
-            || !!a.staged !== !!b.staged
-            || !!a.unstaged !== !!b.unstaged
-            || !!a.conflicted !== !!b.conflicted
-            || (a.added ?? 0) !== (b.added ?? 0)
-            || (a.removed ?? 0) !== (b.removed ?? 0)
-        ) {
+        if (!areChangedFileEqual(a, b)) {
             return false;
         }
     }

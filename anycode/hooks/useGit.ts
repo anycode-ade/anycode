@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react';
 import type { Socket } from 'socket.io-client';
 import type { ChangedFile } from '../components';
+import { updateChangesFileStats } from '../components/ChangesPanel';
 
 type UseGitParams = {
     wsRef: React.RefObject<Socket | null>;
@@ -36,6 +37,30 @@ type GitStatusUpdate = GitStatusFullUpdate | GitStatusPatchUpdate;
 type GitBranch = {
     name: string;
     is_current: boolean;
+};
+
+const areChangedFilesEqual = (prev: ChangedFile, next: ChangedFile): boolean => (
+    prev.path === next.path
+    && prev.status === next.status
+    && prev.staged === next.staged
+    && prev.unstaged === next.unstaged
+    && prev.conflicted === next.conflicted
+    && prev.added === next.added
+    && prev.removed === next.removed
+);
+
+const areChangedFilesStructureEqual = (prev: ChangedFile, next: Omit<GitPatchItem, 'status'> & { status: ChangedFile['status'] }): boolean => (
+    prev.path === next.path
+    && prev.status === next.status
+    && prev.staged === next.staged
+    && prev.unstaged === next.unstaged
+    && prev.conflicted === next.conflicted
+);
+
+const updateFileStatsInPlace = (file: ChangedFile, added?: number, removed?: number) => {
+    file.added = added;
+    file.removed = removed;
+    updateChangesFileStats(file.path, added ?? 0, removed ?? 0);
 };
 
 export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
@@ -84,15 +109,22 @@ export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
                         }
                     } else {
                         const existing = next.get(item.path);
-                        if (
-                            !existing ||
-                            existing.status !== item.status ||
-                            existing.staged !== item.staged ||
-                            existing.unstaged !== item.unstaged ||
-                            existing.conflicted !== item.conflicted ||
-                            existing.added !== item.added ||
-                            existing.removed !== item.removed
-                        ) {
+                        if (!existing) {
+                            next.set(item.path, {
+                                path: item.path,
+                                status: item.status,
+                                staged: item.staged,
+                                unstaged: item.unstaged,
+                                conflicted: item.conflicted,
+                                added: item.added,
+                                removed: item.removed,
+                            });
+                            structurallyChanged = true;
+                        } else if (areChangedFilesStructureEqual(existing, item)) {
+                            if (existing.added !== item.added || existing.removed !== item.removed) {
+                                updateFileStatsInPlace(existing, item.added, item.removed);
+                            }
+                        } else {
                             next.set(item.path, {
                                 path: item.path,
                                 status: item.status,
@@ -115,33 +147,37 @@ export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
         }
 
         setGitBranch(data.branch || '');
-        setChangedFiles((prev) => {
-            const nextFiles = data.files || [];
-            if (prev.length !== nextFiles.length) {
-                return nextFiles;
-            }
-            let isDifferent = false;
-            for (let i = 0; i < prev.length; i++) {
-                const a = prev[i];
-                const b = nextFiles[i];
-                if (
-                    a.path !== b.path ||
-                    a.status !== b.status ||
-                    a.staged !== b.staged ||
-                    a.unstaged !== b.unstaged ||
-                    a.conflicted !== b.conflicted ||
-                    a.added !== b.added ||
-                    a.removed !== b.removed
-                ) {
-                    isDifferent = true;
-                    break;
+            setChangedFiles((prev) => {
+                const nextFiles = data.files || [];
+                if (prev.length !== nextFiles.length) {
+                    const prevByPath = new Map(prev.map((file) => [file.path, file]));
+                    return nextFiles.map((file) => {
+                        const previousFile = prevByPath.get(file.path);
+                        return previousFile && areChangedFilesEqual(previousFile, file)
+                            ? previousFile
+                            : file;
+                    });
                 }
-            }
-            if (isDifferent) {
-                return nextFiles;
-            }
-            return prev;
-        });
+                let isDifferent = false;
+                const reusedFiles = new Array<ChangedFile>(nextFiles.length);
+                for (let i = 0; i < prev.length; i++) {
+                    const a = prev[i];
+                    const b = nextFiles[i];
+                    if (areChangedFilesEqual(a, b)) {
+                        reusedFiles[i] = a;
+                    } else if (areChangedFilesStructureEqual(a, b)) {
+                        updateFileStatsInPlace(a, b.added, b.removed);
+                        reusedFiles[i] = a;
+                    } else {
+                        reusedFiles[i] = b;
+                        isDifferent = true;
+                    }
+                }
+                if (isDifferent) {
+                    return reusedFiles;
+                }
+                return prev;
+            });
     }, []);
 
     const commit = useCallback((message: string): Promise<boolean> => {

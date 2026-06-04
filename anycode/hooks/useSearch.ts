@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Socket } from 'socket.io-client';
-import type { SearchEnd, SearchResult } from '../types';
+import type { SearchEnd, SearchResult, SearchResultsBatch } from '../types';
 
 type UseSearchParams = {
     wsRef: React.RefObject<Socket | null>;
@@ -15,6 +15,45 @@ export const useSearch = ({ wsRef, isConnected }: UseSearchParams) => {
         if (typeof window === 'undefined') return '';
         return localStorage.getItem(SEARCH_INPUT_STORAGE_KEY) ?? '';
     });
+    const pendingResultsRef = useRef<Map<string, SearchResult>>(new Map());
+    const flushFrameRef = useRef<number | null>(null);
+
+    const applySearchResultUpdate = (resultsMap: Map<string, SearchResult>, result: SearchResult) => {
+        if (result.matches.length === 0) {
+            resultsMap.delete(result.file_path);
+            return;
+        }
+
+        resultsMap.set(result.file_path, result);
+    };
+
+    const flushPendingResults = useCallback(() => {
+        flushFrameRef.current = null;
+
+        setSearchResults((prevResults) => {
+            if (pendingResultsRef.current.size === 0) {
+                return prevResults;
+            }
+
+            const pendingResults = pendingResultsRef.current;
+            pendingResultsRef.current = new Map();
+
+            const resultsMap = new Map(prevResults.map((result) => [result.file_path, result]));
+            for (const result of pendingResults.values()) {
+                applySearchResultUpdate(resultsMap, result);
+            }
+
+            return Array.from(resultsMap.values());
+        });
+    }, []);
+
+    const scheduleResultsFlush = useCallback(() => {
+        if (flushFrameRef.current !== null) {
+            return;
+        }
+
+        flushFrameRef.current = window.requestAnimationFrame(flushPendingResults);
+    }, [flushPendingResults]);
 
     useEffect(() => {
         if (typeof window === 'undefined') return;
@@ -29,6 +68,11 @@ export const useSearch = ({ wsRef, isConnected }: UseSearchParams) => {
         if (!pattern) return;
         if (!wsRef.current || !isConnected) return;
 
+        pendingResultsRef.current.clear();
+        if (flushFrameRef.current !== null) {
+            window.cancelAnimationFrame(flushFrameRef.current);
+            flushFrameRef.current = null;
+        }
         wsRef.current.emit('search:start', { pattern });
         setSearchResults([]);
         setSearchEnded(false);
@@ -41,38 +85,38 @@ export const useSearch = ({ wsRef, isConnected }: UseSearchParams) => {
         setSearchEnded(true);
     }, [wsRef, isConnected]);
 
-    const handleSearchResult = useCallback((message: SearchResult) => {
-        setSearchResults((prevResults) => {
-            const resultsMap = new Map(prevResults.map((result) => [result.file_path, result]));
-            const sortedMatches = [...message.matches].sort((a, b) => {
-                if (a.line !== b.line) return a.line - b.line;
-                return a.column - b.column;
-            });
-            if (message.matches.length === 0) {
-                resultsMap.delete(message.file_path);
-            } else {
-                resultsMap.set(message.file_path, { ...message, matches: sortedMatches });
-            }
-            return Array.from(resultsMap.values()).sort((a, b) => {
-                const countDelta = b.matches.length - a.matches.length;
-                if (countDelta !== 0) return countDelta;
-
-                const depthA = a.display_path.split('/').length;
-                const depthB = b.display_path.split('/').length;
-                if (depthA !== depthB) return depthA - depthB;
-
-                return a.display_path.localeCompare(b.display_path);
-            });
-        });
-    }, []);
+    const handleSearchResults = useCallback((message: SearchResultsBatch) => {
+        for (const result of message.results) {
+            pendingResultsRef.current.set(result.file_path, result);
+        }
+        scheduleResultsFlush();
+    }, [scheduleResultsFlush]);
 
     const handleSearchEnd = useCallback((_result: SearchEnd) => {
+        if (flushFrameRef.current !== null) {
+            window.cancelAnimationFrame(flushFrameRef.current);
+            flushFrameRef.current = null;
+        }
+        flushPendingResults();
+        setSearchEnded(true);
+    }, [flushPendingResults]);
+
+    const clearResults = useCallback(() => {
+        pendingResultsRef.current.clear();
+        if (flushFrameRef.current !== null) {
+            window.cancelAnimationFrame(flushFrameRef.current);
+            flushFrameRef.current = null;
+        }
+        setSearchResults([]);
         setSearchEnded(true);
     }, []);
 
-    const clearResults = useCallback(() => {
-        setSearchResults([]);
-        setSearchEnded(true);
+    useEffect(() => {
+        return () => {
+            if (flushFrameRef.current !== null) {
+                window.cancelAnimationFrame(flushFrameRef.current);
+            }
+        };
     }, []);
 
     return {
@@ -83,7 +127,7 @@ export const useSearch = ({ wsRef, isConnected }: UseSearchParams) => {
         startSearch,
         cancelSearch,
         clearResults,
-        handleSearchResult,
+        handleSearchResults,
         handleSearchEnd,
     };
 };

@@ -4,6 +4,7 @@ use crate::code::Code;
 use crate::config::Config;
 use crate::git::GitManager;
 use crate::lsp::LspManager;
+use crate::search::FileSearchResult;
 use crate::terminal::Terminal;
 use anyhow::{Result, anyhow};
 use lsp_types::PublishDiagnosticsParams;
@@ -31,6 +32,7 @@ pub struct SocketData {
     pub opened_dirs: HashSet<String>,
     pub search_cancel: Option<CancellationToken>,
     pub search_pattern: Option<String>,
+    pub search_last_file_result: Option<FileSearchResult>,
 }
 
 #[derive(Clone)]

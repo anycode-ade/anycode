@@ -1406,6 +1406,10 @@ impl GitManager {
             }
         };
 
+        if !has_staged_changes && !is_conflicted && added == 0 && removed == 0 {
+            return Ok(None);
+        }
+
         Ok(Some(GitFileStatus {
             path: abs_path.to_string_lossy().to_string(),
             status: file_status,

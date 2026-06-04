@@ -328,6 +328,10 @@ export interface SearchResult {
     matches: SearchMatch[];
 }
 
+export interface SearchResultsBatch {
+    results: SearchResult[];
+}
+
 export interface SearchEnd {
     elapsed: number;
     matches: number;

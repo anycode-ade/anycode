@@ -1064,7 +1064,7 @@ export class AnycodeEditor {
             return;
         }
 
-        if (event.metaKey && event.key === "f" || this.search.isFocused()) {
+        if ((event.metaKey && !event.shiftKey && event.key.toLowerCase() === "f") || this.search.isFocused()) {
             event.preventDefault();
             this.handleSearchKey(event);
             return;
@@ -1466,7 +1466,7 @@ export class AnycodeEditor {
         const { key, altKey, ctrlKey, metaKey, shiftKey } = event;
         let isSearch = false;
 
-        if (metaKey && key.toLowerCase() == 'f') {
+        if (metaKey && !shiftKey && key.toLowerCase() == 'f') {
             this.renderer.removeAllHighlights(this.search);
 
             this.search.setActive(true);
@@ -1521,7 +1521,7 @@ export class AnycodeEditor {
         const patternLines = pattern.split(/\r?\n/);
         const isMultiline = patternLines.length > 1;
 
-        if (event.metaKey && event.key === 'f') {
+        if (event.metaKey && !event.shiftKey && event.key.toLowerCase() === 'f') {
             event.preventDefault();
             event.stopPropagation();
             // ignore search  

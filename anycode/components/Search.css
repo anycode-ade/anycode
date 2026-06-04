@@ -2,12 +2,28 @@
     display: flex;
     flex-direction: column;
     height: 100%;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
 }
 
 .search-results {
     height: 100%;
     overflow-y: scroll;
     padding: 4px;
+}
+
+.search-virtual-spacer {
+    position: relative;
+    min-height: 100%;
+}
+
+.search-virtual-window {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    will-change: transform;
 }
 
 .search-results:focus,
@@ -117,6 +133,9 @@
     color: var(--theme-foreground, var(--foreground-color, #e0e0e0));
     overflow-y: auto;
     grid-area: 1 / 1 / 2 / 2;
+    user-select: text;
+    -webkit-user-select: text;
+    -webkit-touch-callout: default;
 }
 
 .search-actions {
@@ -226,8 +245,8 @@
 }
 
 .file-path[data-active='true'] .file-match-badge {
-    background-color: var(--theme-accent-foreground, #fff) !important;
-    color: var(--theme-accent-background, #3c3c3c) !important;
+    /*background-color: var(--theme-accent-foreground, #fff) !important;*/
+    /*color: var(--theme-accent-background, #3c3c3c) !important;*/
 }
 
 .search-results:focus .file-path[data-active='true'],
@@ -261,6 +280,8 @@
     white-space: nowrap;
     color: var(--theme-foreground, var(--text-color, #e0e0e0));
     user-select: none;
+    min-height: 28px;
+    box-sizing: border-box;
 }
 
 .file-path-label {
@@ -273,8 +294,8 @@
 
 .file-match-badge {
     flex-shrink: 0;
-    color: var(--theme-muted-foreground, var(--text-color-secondary, #b9b9b9));
-    background-color: var(--hover-bg, rgba(255, 255, 255, 0.08));
+    color: #b9b9b9;
+    /*background-color: var(--hover-bg, rgba(255, 255, 255, 0.08));*/
     border-radius: 999px;
     padding: 1px 7px;
     font-size: 12px;
@@ -288,6 +309,9 @@
 .search-item {
     padding-left: 24px; 
     font-size: 14px;
+    line-height: 22px;
+    min-height: 22px;
+    box-sizing: border-box;
     cursor: pointer;
     user-select: none;
     overflow: hidden;
@@ -302,7 +326,7 @@
 }
 
 .search-preview mark.search-match {
-    background-color: color-mix(in srgb, var(--theme-accent-background, #007acc) 35%, transparent);
+    background-color: color-mix(in srgb, var(--theme-accent-background, #007acc) 20%, transparent);
     color: inherit;
     padding: 0 2px;
     border-radius: 2px;

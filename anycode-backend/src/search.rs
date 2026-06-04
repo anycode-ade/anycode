@@ -121,7 +121,7 @@ pub fn multiline_search(content: &str, pattern: &str) -> Vec<SearchResult> {
     results
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct SearchResult {
     pub line: usize,
     pub column: usize,
@@ -189,7 +189,7 @@ pub async fn file_search(
     Ok(results)
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct FileSearchResult {
     pub file_path: String,
     pub display_path: String,
@@ -236,17 +236,7 @@ pub async fn global_search(
     cancel: CancellationToken,
     result_tx: mpsc::Sender<FileSearchResult>,
 ) -> Result<()> {
-    let mut files = collect_files_recursively(dir_path)?;
-
-    // Sort files by depth
-    files.sort_by(|a, b| {
-        let depth_a = a.components().count();
-        let depth_b = b.components().count();
-        match depth_a.cmp(&depth_b) {
-            std::cmp::Ordering::Equal => a.cmp(b),
-            other => other,
-        }
-    });
+    let files = collect_files_recursively(dir_path)?;
 
     let semaphore = Arc::new(Semaphore::new(8));
     let mut handles = Vec::new();
