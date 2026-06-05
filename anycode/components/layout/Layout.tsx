@@ -55,6 +55,29 @@ type PaneParams = {
 };
 
 type SplitDirection = 'row' | 'column';
+type DockviewGridNode = DockviewLayout['grid']['root'];
+type DockviewLeafNode = {
+    type: 'leaf';
+    data: {
+        id: string;
+        views: string[];
+        activeView?: string;
+    };
+};
+type DockviewBranchNode = {
+    type: 'branch';
+    data: DockviewGridNode[];
+};
+
+type LayoutSiblingNode = {
+    groupIds: string[];
+};
+
+type LayoutSiblingInfo = {
+    direction: 'horizontal' | 'vertical';
+    siblings: LayoutSiblingNode[];
+    targetIndex: number;
+};
 
 type SplitProps = {
     direction: SplitDirection;
@@ -75,6 +98,62 @@ const splitComponents = {
 const splitOrientation = (direction: SplitDirection): Orientation => (
     direction === 'column' ? Orientation.VERTICAL : Orientation.HORIZONTAL
 );
+
+const getNextLayoutDirection = (direction: 'horizontal' | 'vertical'): 'horizontal' | 'vertical' => (
+    direction === 'horizontal' ? 'vertical' : 'horizontal'
+);
+
+const getLayoutDirection = (orientation: Orientation): 'horizontal' | 'vertical' => (
+    orientation === Orientation.HORIZONTAL ? 'horizontal' : 'vertical'
+);
+
+const isDockviewLeafNode = (node: DockviewGridNode): node is DockviewLeafNode => (
+    node.type === 'leaf'
+);
+
+const getLeafGroupIds = (node: DockviewGridNode): string[] => {
+    if (isDockviewLeafNode(node)) {
+        return [node.data.id];
+    }
+
+    const branch = node as unknown as DockviewBranchNode;
+    return branch.data.flatMap(getLeafGroupIds);
+};
+
+const findLayoutSiblings = (
+    node: DockviewGridNode,
+    targetGroupId: string,
+    direction: 'horizontal' | 'vertical',
+): LayoutSiblingInfo | null => {
+    if (isDockviewLeafNode(node)) {
+        return null;
+    }
+
+    const branch = node as unknown as DockviewBranchNode;
+    const directTargetIndex = branch.data.findIndex((child) => (
+        isDockviewLeafNode(child) && child.data.id === targetGroupId
+    ));
+
+    if (directTargetIndex !== -1) {
+        return {
+            direction,
+            siblings: branch.data.map((child) => ({
+                groupIds: getLeafGroupIds(child),
+            })),
+            targetIndex: directTargetIndex,
+        };
+    }
+
+    const nextDirection = getNextLayoutDirection(direction);
+    for (const child of branch.data) {
+        const nested = findLayoutSiblings(child, targetGroupId, nextDirection);
+        if (nested) {
+            return nested;
+        }
+    }
+
+    return null;
+};
 
 export const Split: React.FC<SplitProps> = ({ direction, panes, className }) => {
     const apiRef = useRef<SplitviewApi | null>(null);
@@ -483,7 +562,7 @@ const shouldUseSavedLayout = (layoutState: ReturnType<typeof loadLayoutState>): 
 
     return Object.keys(layout.panels).some((panelKey) => {
         const layoutPanelId = getLayoutPanelId(panelKey);
-        return layoutPanelId !== null && layoutPanelId !== 'toolbar';
+        return layoutPanelId !== null && layoutPanelId !== 'toolbar' && layoutPanelId !== 'picker';
     });
 };
 
@@ -741,6 +820,7 @@ export const Layout: React.FC<LayoutProps> = ({
     const apiRef = useRef<DockviewApi | null>(null);
     const [visibility, setVisibility] = useState<PanelVisibility>(loadPanelVisibility);
     const listenersRef = useRef<Array<{ dispose: () => void }>>([]);
+    const parentGroupMap = useRef<Map<string, string>>(new Map(Object.entries(loadItem<Record<string, string>>('layoutParentGroups') ?? {})));
     const layoutSaveTimerRef = useRef<number | null>(null);
     const emptyPaneRestoreTimerRef = useRef<number | null>(null);
     const isRestoringLayoutRef = useRef<boolean>(false);
@@ -940,6 +1020,20 @@ export const Layout: React.FC<LayoutProps> = ({
         }
         layoutSaveTimerRef.current = window.setTimeout(() => {
             layoutSaveTimerRef.current = null;
+
+            // Keep parentGroupMap clean by only keeping entries for groups that still exist
+            const currentGroupIds = new Set(api.groups.map(g => g.id));
+            let mapChanged = false;
+            for (const key of parentGroupMap.current.keys()) {
+                if (!currentGroupIds.has(key)) {
+                    parentGroupMap.current.delete(key);
+                    mapChanged = true;
+                }
+            }
+            if (mapChanged) {
+                saveItem('layoutParentGroups', Object.fromEntries(parentGroupMap.current.entries()));
+            }
+
             const snapshot = getLayoutSnapshot(api);
             if (snapshot === lastLayoutSnapshotRef.current) {
                 return;
@@ -1114,6 +1208,11 @@ export const Layout: React.FC<LayoutProps> = ({
         });
         pickerPanel.group.api.setConstraints(PANEL_CONSTRAINTS);
   
+        if (direction === 'right' || direction === 'below') {
+            parentGroupMap.current.set(pickerPanel.group.id, referencePanel.group.id);
+            saveItem('layoutParentGroups', Object.fromEntries(parentGroupMap.current.entries()));
+        }
+
         if (splitSize.width !== undefined || splitSize.height !== undefined) {
             window.requestAnimationFrame(() => {
                 referencePanel.group.api.setSize(splitSize);
@@ -1157,7 +1256,96 @@ export const Layout: React.FC<LayoutProps> = ({
             addPickerPanel(api, panel.id, 'within');
         }
 
+        const group = panel.group;
+        const shouldRestoreProportions = group && group.panels.length === 1;
+
+        interface SiblingGroupSize {
+            id: string;
+            width: number;
+            height: number;
+        }
+
+        let siblingSizes: SiblingGroupSize[] = [];
+        let layoutSiblingInfo: LayoutSiblingInfo | null = null;
+        let absorberGroupIds: string[] = [];
+        let closedGroupSize = 0;
+
+        if (shouldRestoreProportions) {
+            const layout = api.toJSON();
+            layoutSiblingInfo = findLayoutSiblings(
+                layout.grid.root,
+                group.id,
+                getLayoutDirection(layout.grid.orientation),
+            );
+
+            if (layoutSiblingInfo) {
+                closedGroupSize = layoutSiblingInfo.direction === 'horizontal'
+                    ? group.api.width
+                    : group.api.height;
+
+                const siblingGroupIds = layoutSiblingInfo.siblings
+                    .flatMap((sibling) => sibling.groupIds)
+                    .filter((id) => id !== group.id);
+
+                siblingSizes = siblingGroupIds
+                    .map((id) => {
+                        const siblingGroup = api.groups.find((g) => g.id === id);
+                        return siblingGroup
+                            ? {
+                                id,
+                                width: siblingGroup.api.width,
+                                height: siblingGroup.api.height,
+                            }
+                            : null;
+                    })
+                    .filter((size): size is SiblingGroupSize => size !== null);
+            }
+        }
+
+        const parentGroupId = group ? parentGroupMap.current.get(group.id) : undefined;
+
+        if (layoutSiblingInfo) {
+            const parentSibling = parentGroupId
+                ? layoutSiblingInfo.siblings.find((sibling) => sibling.groupIds.includes(parentGroupId))
+                : undefined;
+            const adjacentSibling = layoutSiblingInfo.siblings[
+                layoutSiblingInfo.targetIndex > 0
+                    ? layoutSiblingInfo.targetIndex - 1
+                    : layoutSiblingInfo.targetIndex + 1
+            ];
+            absorberGroupIds = (parentSibling ?? adjacentSibling)?.groupIds ?? [];
+        }
+
+        if (group) {
+            parentGroupMap.current.delete(group.id);
+            saveItem('layoutParentGroups', Object.fromEntries(parentGroupMap.current.entries()));
+        }
+
         panel.api.close();
+
+        if (layoutSiblingInfo && siblingSizes.length > 0 && absorberGroupIds.length > 0) {
+            window.requestAnimationFrame(() => {
+                siblingSizes.forEach((sibling) => {
+                    const remainingGroup = api.groups.find((g) => g.id === sibling.id);
+                    if (!remainingGroup) return;
+
+                    const isAbsorber = absorberGroupIds.includes(sibling.id);
+                    const targetSize: { width?: number; height?: number } = {};
+
+                    if (layoutSiblingInfo.direction === 'horizontal') {
+                        targetSize.width = isAbsorber
+                            ? sibling.width + closedGroupSize
+                            : sibling.width;
+                    } else {
+                        targetSize.height = isAbsorber
+                            ? sibling.height + closedGroupSize
+                            : sibling.height;
+                    }
+
+                    remainingGroup.api.setSize(targetSize);
+                });
+            });
+        }
     }, [addPickerPanel]);
 
     useEffect(() => {
@@ -1294,6 +1482,10 @@ export const Layout: React.FC<LayoutProps> = ({
             }
         } finally {
             isRestoringLayoutRef.current = false;
+        }
+
+        if (api.totalPanels === 0) {
+            addRootPickerPanel(api, handleSelectPanelFromPicker).api.setActive();
         }
 
         if (!restoredSavedLayout) {

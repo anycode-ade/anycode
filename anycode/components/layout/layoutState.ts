@@ -17,6 +17,7 @@ export type LayoutNode = LayoutGroup | LayoutContainer;
 
 export type LayoutGroup = {
     type: 'group';
+    id?: string;
     panels: LayoutPanel[];
     activePanelKey?: string;
 };
@@ -39,6 +40,7 @@ type DockviewGridNode = DockviewLayout['grid']['root'];
 type DockviewLeafNode = {
     type: 'leaf';
     data: {
+        id: string;
         views: string[];
         activeView?: string;
     };
@@ -83,6 +85,7 @@ const createLayoutNode = (
         const group = (node as unknown as DockviewLeafNode).data;
         return {
             type: 'group',
+            id: group.id,
             panels: group.views
                 .map((key: string) => {
                     const id = getPanelId(key);
@@ -147,7 +150,7 @@ const createDockviewNode = (
 ): DockviewGridNode => {
     if (node.type === 'group') {
         const views = node.panels.map((panel) => panel.key);
-        const groupId = nextGroupId();
+        const groupId = node.id || nextGroupId();
 
         node.panels.forEach((panel) => {
             panels[panel.key] = {

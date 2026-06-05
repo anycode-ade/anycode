@@ -70,16 +70,9 @@
     box-shadow: none !important;
 }
 
-.dv-scrollable {
-    border-radius: 8px !important;
-}
 
 .layout.dockview-theme-dark .dv-groupview > .dv-tabs-and-actions-container {
     background-color: var(--background-color, #242424) !important;
-    /*border: 1px solid var(--theme-border, #4a4a4a) !important;*/
-    border-bottom: none !important;
-    border-top-left-radius: 8px !important;
-    border-top-right-radius: 8px !important;
     margin: 0 !important;
     user-select: none;
     -webkit-user-select: none;
@@ -140,15 +133,10 @@
     width: 14px;
 }
 
-.layout .dv-groupview > .dv-content-container {
-    border-bottom-left-radius: 8px !important;
-    border-bottom-right-radius: 8px !important;
-}
 
 .layout.dockview-theme-dark .dv-tab.dv-active-tab {
     background-color: #2a2a2a00 !important;
     color: var(--theme-tab-active-foreground, #f0f0f0) !important;
-    border-radius: 8px !important;
 }
 
 .layout.dockview-theme-dark .dv-tab.dv-inactive-tab {
@@ -215,7 +203,6 @@
 
 .dv-groupview {
     border: none !important;
-    border-radius: 8px !important;
 }
 
 .layout-dock-panel {
@@ -225,9 +212,6 @@
     min-height: 0;
     display: flex;
     flex-direction: column;
-    /*border: 1px solid var(--theme-border, #4a4a4a);*/
-    border-top: none;
-    border-radius: 0 0 8px 8px;
     box-sizing: border-box;
     overflow: hidden;
     background-color: var(--background-color, #242424);
@@ -252,13 +236,11 @@
 .layout .dv-tabs-and-actions-container .dv-right-actions-container:has(.layout-header-actions:hover),
 .layout .dv-tabs-and-actions-container .dv-right-actions-container:has(.layout-header-actions:focus-within) {
     background-color: var(--background-color, #242424) !important;
-    border-radius: 8px;
 }
 
 .layout-header-action-btn {
     background: transparent;
     color: #9a9a9a;
-    border-radius: 6px;
     line-height: 1;
     width: 22px;
     height: 22px;
@@ -396,7 +378,6 @@
     border: 1px solid var(--theme-border, #4a4a4a);
     background: var(--theme-tab-background, var(--theme-background, var(--background-color, #242424)));
     color: var(--theme-tab-foreground, #b2b2b2);
-    border-radius: 8px;
     padding: 8px 10px;
     text-align: center;
     cursor: pointer;
