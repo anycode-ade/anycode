@@ -43,29 +43,6 @@ export let darcula = {
     "accent_color2": "#F6C87B"
 }
 
-export let material = {
-    "identifier": "#F1FEFF",
-    "field_identifier": "#F1FEFF",
-    "property_identifier": "#F1FEFF",
-    "property": "#F1FEFF",
-    "string": "#BDF5A0",
-    "keyword": "#83d2fa",
-    "constant": "#f78c6c",
-    "number": "#f78c6c",
-    "integer": "#f78c6c",
-    "float": "#f78c6c",
-    "variable": "#F1FEFF",
-    "variable.builtin": "#83d2fa",
-    "function": "#8AA9F9",
-    "function.call": "#8AA9F9",
-    "function.macro": "#8AA9F9",
-    "method": "#8AA9F9",
-    "comment": "#767676",
-    "namespace": "#ffcb6b",
-    "type": "#ffcb6b",
-    "tag.attribute": "#F1FEFF",
-}
-
 export let edgo = {
     "identifier": "#A5FCB6",
     "field_identifier": "#A5FCB6",

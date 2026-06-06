@@ -17,6 +17,7 @@ type FilesPanelProps = {
         onLoadFolder: (path: string) => void;
         onFocusEditor?: () => void;
     }) => boolean;
+    fileIconsStyle?: 'colored' | 'monochrome' | 'disabled';
 };
 
 export const FilesPanel = ({
@@ -30,6 +31,7 @@ export const FilesPanel = ({
     onLoadFolder,
     onFocusEditor,
     onNavigateByKey,
+    fileIconsStyle,
 }: FilesPanelProps) => {
     const treeRef = useRef<HTMLDivElement | null>(null);
     const treeNodeRefs = useRef<Map<string, HTMLDivElement>>(new Map());
@@ -112,6 +114,7 @@ export const FilesPanel = ({
                                 key={node.id}
                                 node={node}
                                 activeNodeId={activeNodeId}
+                                fileIconsStyle={fileIconsStyle}
                                 onNodeRef={handleNodeRef}
                                 onActivate={onActivateNode}
                                 onToggle={onToggle}

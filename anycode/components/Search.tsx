@@ -1,5 +1,6 @@
 import { memo, useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { Icons } from "./Icons";
+import { FileIcon } from "./FileIcon";
 import "./Search.css";
 import type { SearchResult, SearchMatch } from "../types";
 
@@ -91,6 +92,7 @@ interface SearchProps {
     onMatchClick: (filePath: string, match: SearchMatch) => void;
     results: SearchResult[];
     searchEnded: boolean;
+    fileIconsStyle?: 'colored' | 'monochrome' | 'disabled';
 }
 
 type SearchNavItem =
@@ -105,6 +107,7 @@ interface SearchFileRowProps {
     itemRefs: React.MutableRefObject<Map<string, HTMLDivElement>>;
     onToggleFile: (filePath: string) => void;
     onActivate: (itemKey: string | null) => void;
+    fileIconsStyle?: 'colored' | 'monochrome' | 'disabled';
 }
 
 const SearchFileRow = memo(({
@@ -115,6 +118,7 @@ const SearchFileRow = memo(({
     itemRefs,
     onToggleFile,
     onActivate,
+    fileIconsStyle,
 }: SearchFileRowProps) => {
     return (
         <div
@@ -135,6 +139,11 @@ const SearchFileRow = memo(({
             data-active={activeItemKey === fileKey ? 'true' : 'false'}
         >
             <span className={`file-arrow ${isExpanded ? 'expanded' : ''}`}>▶</span>
+            <FileIcon
+                path={fileResult.file_path}
+                styleType={fileIconsStyle}
+                className="search-file-icon"
+            />
             <span className="file-path-label" title={fileResult.display_path}>{fileResult.display_path}</span>
             <span className="file-match-badge">{fileResult.matches.length}</span>
         </div>
@@ -188,7 +197,7 @@ const SearchMatchRow = memo(({
 });
 SearchMatchRow.displayName = "SearchMatchRow";
 
-const Search = ({ id, focusRequestToken, inputValue, onInputValueChange, onEnter, onInputChange, onCancel, onClear, onMatchClick, results, searchEnded }: SearchProps) => {
+const Search = ({ id, focusRequestToken, inputValue, onInputValueChange, onEnter, onInputChange, onCancel, onClear, onMatchClick, results, searchEnded, fileIconsStyle }: SearchProps) => {
     const searchPatternRef = useRef("");
     const [visibleMatches, setVisibleMatches] = useState<Record<string, Set<string> | undefined>>({});
     const [activeItemKey, setActiveItemKey] = useState<string | null>(null);
@@ -718,6 +727,7 @@ const Search = ({ id, focusRequestToken, inputValue, onInputValueChange, onEnter
                                             itemRefs={itemRefs}
                                             onToggleFile={handleFileClick}
                                             onActivate={setActiveItemKey}
+                                            fileIconsStyle={fileIconsStyle}
                                         />
                                     );
                                 }

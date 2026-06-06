@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { FileIcon } from './FileIcon';
 import './SettingsPanel.css';
 
 export interface ThemeItem {
@@ -13,6 +14,10 @@ interface SettingsPanelProps {
     isConnected: boolean;
     currentThemeId: string | null;
     onThemeChange: (themeId: string, fileName: string, themeName: string) => void;
+    fileIconsStyle?: 'colored' | 'monochrome' | 'disabled';
+    onFileIconsStyleChange?: (style: 'colored' | 'monochrome' | 'disabled') => void;
+    fileIconsOpacity?: number;
+    onFileIconsOpacityChange?: (opacity: number) => void;
 }
 
 interface ThemeCardProps {
@@ -42,11 +47,65 @@ const ThemeCard = React.memo(({ theme, isActive, onSelectTheme }: ThemeCardProps
 });
 ThemeCard.displayName = 'ThemeCard';
 
+interface FileIconsStyleCardProps {
+    styleId: 'colored' | 'monochrome' | 'disabled';
+    name: string;
+    description: string;
+    badge: string;
+    isActive: boolean;
+    onSelect: (style: 'colored' | 'monochrome' | 'disabled') => void;
+}
+
+const FileIconsStyleCard = React.memo(({
+    styleId,
+    name,
+    description,
+    badge,
+    isActive,
+    onSelect,
+}: FileIconsStyleCardProps) => {
+    return (
+        <button
+            className={`theme-card icon-style-card ${isActive ? 'active' : ''}`}
+            onClick={() => onSelect(styleId)}
+            type="button"
+        >
+            <div className="icon-style-card-content">
+                <div className="theme-card-header">
+                    <span className="theme-card-name">{name}</span>
+                    <span className={`theme-card-badge ${isActive ? 'dark' : 'light'} icon-style-badge`}>
+                        {badge}
+                    </span>
+                </div>
+                <div className="theme-card-file icon-style-desc">
+                    {description}
+                </div>
+            </div>
+            {styleId !== 'disabled' ? (
+                <div className="icon-style-preview">
+                    <FileIcon path="App.tsx" styleType={styleId} />
+                    <FileIcon path="package.json" styleType={styleId} />
+                    <FileIcon path="src" isDirectory={true} isExpanded={false} styleType={styleId} />
+                </div>
+            ) : (
+                <div className="icon-style-empty">
+                    No icons
+                </div>
+            )}
+        </button>
+    );
+});
+FileIconsStyleCard.displayName = 'FileIconsStyleCard';
+
 const SettingsPanelComponent: React.FC<SettingsPanelProps> = ({
     wsRef,
     isConnected,
     currentThemeId,
     onThemeChange,
+    fileIconsStyle = 'colored',
+    onFileIconsStyleChange,
+    fileIconsOpacity = 0.85,
+    onFileIconsOpacityChange,
 }) => {
     const [themes, setThemes] = useState<ThemeItem[]>([]);
     const [isLoading, setIsLoading] = useState(false);
@@ -90,6 +149,57 @@ const SettingsPanelComponent: React.FC<SettingsPanelProps> = ({
                     </div>
                 )}
             </div>
+
+            <div className="settings-section">
+                <h3 className="settings-section-title">File Icons Style</h3>
+                <div className="themes-grid">
+                    <FileIconsStyleCard
+                        styleId="colored"
+                        name="Colored"
+                        badge="Default"
+                        description="Vibrant colors for easy identification."
+                        isActive={fileIconsStyle === 'colored'}
+                        onSelect={onFileIconsStyleChange || (() => {})}
+                    />
+                    <FileIconsStyleCard
+                        styleId="monochrome"
+                        name="Monochrome"
+                        badge="Muted"
+                        description="Muted icons inheriting the text color."
+                        isActive={fileIconsStyle === 'monochrome'}
+                        onSelect={onFileIconsStyleChange || (() => {})}
+                    />
+                    <FileIconsStyleCard
+                        styleId="disabled"
+                        name="Disabled"
+                        badge="Clean"
+                        description="Hide all file explorer and tab icons."
+                        isActive={fileIconsStyle === 'disabled'}
+                        onSelect={onFileIconsStyleChange || (() => {})}
+                    />
+                </div>
+            </div>
+
+            {fileIconsStyle !== 'disabled' && (
+                <div className="settings-section">
+                    <h3 className="settings-section-title">File Icons Opacity</h3>
+                    <div className="settings-slider-container">
+                        <input
+                            type="range"
+                            min="0.01"
+                            max="1.0"
+                            step="0.01"
+                            value={fileIconsOpacity}
+                            onChange={(e) => onFileIconsOpacityChange?.(parseFloat(e.target.value))}
+                            className="settings-slider"
+                            id="file-icons-opacity-slider"
+                        />
+                        <span className="settings-slider-value">
+                            {Math.round(fileIconsOpacity * 100)}%
+                        </span>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

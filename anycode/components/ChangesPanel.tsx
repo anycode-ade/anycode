@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react';
 import { Icons } from './Icons';
+import { FileIcon } from './FileIcon';
 import './ChangesPanel.css';
 
 const COMMIT_MESSAGE_STORAGE_KEY = 'commitMessage';
@@ -20,6 +21,7 @@ interface ChangesPanelProps {
     branch: string;
     branches: { name: string; is_current: boolean }[];
     isSwitchingBranch: boolean;
+    fileIconsStyle?: 'colored' | 'monochrome' | 'disabled';
     onFileClick: (path: string) => void;
     onRefresh: () => void;
     onBranchChange: (branch: string) => Promise<boolean>;
@@ -106,6 +108,7 @@ interface ChangesPanelItemProps {
     mode: 'merge' | 'staged' | 'changed' | 'flat';
     isActive: boolean;
     isSelected: boolean;
+    fileIconsStyle?: 'colored' | 'monochrome' | 'disabled';
     onClick: (rowId: string, path: string) => void;
     onRevert: (path: string) => void;
     onStage: (path: string) => void;
@@ -139,6 +142,7 @@ const ChangesPanelItemImpl: React.FC<ChangesPanelItemProps> = ({
     mode,
     isActive,
     isSelected,
+    fileIconsStyle = 'colored',
     onClick,
     onRevert,
     onStage,
@@ -182,6 +186,7 @@ const ChangesPanelItemImpl: React.FC<ChangesPanelItemProps> = ({
         >
             <div className="changes-file-info">
                 <div className="changes-file-main">
+                    <FileIcon path={file.path} styleType={fileIconsStyle} className="changes-file-icon" />
                     <span
                         className={`changes-filename ${statusTextColors[file.status]}`}
                         title={file.path}
@@ -222,6 +227,7 @@ const areChangesPanelItemsEqual = (
     && prev.mode === next.mode
     && prev.isActive === next.isActive
     && prev.isSelected === next.isSelected
+    && prev.fileIconsStyle === next.fileIconsStyle
     && prev.onClick === next.onClick
     && prev.onRevert === next.onRevert
     && prev.onStage === next.onStage
@@ -239,6 +245,7 @@ const ChangesPanelImpl: React.FC<ChangesPanelProps> = ({
     branch,
     branches,
     isSwitchingBranch,
+    fileIconsStyle = 'colored',
     onFileClick,
     onRefresh,
     onBranchChange,
@@ -519,6 +526,7 @@ const ChangesPanelImpl: React.FC<ChangesPanelProps> = ({
                 mode={mode}
                 isActive={activeFilePath === file.path}
                 isSelected={selectedRowId === `${mode}::${file.path}`}
+                fileIconsStyle={fileIconsStyle}
                 onClick={handleItemClick}
                 onRevert={onRevert}
                 onStage={onStage}
@@ -527,7 +535,7 @@ const ChangesPanelImpl: React.FC<ChangesPanelProps> = ({
                 setStatsRef={setStatsRef}
             />
         ))
-    ), [activeFilePath, handleItemClick, onRevert, onStage, onUnstage, selectedRowId, setItemRef, setStatsRef]);
+    ), [activeFilePath, handleItemClick, onRevert, onStage, onUnstage, selectedRowId, setItemRef, setStatsRef, fileIconsStyle]);
 
     return (
         <div className="changes-panel">
@@ -774,6 +782,10 @@ const areBranchesEqual = (
 };
 
 const areEqual = (prev: ChangesPanelProps, next: ChangesPanelProps): boolean => {
+    if (prev.fileIconsStyle !== next.fileIconsStyle) {
+        return false;
+    }
+
     if (prev.branch !== next.branch || prev.isSwitchingBranch !== next.isSwitchingBranch) {
         return false;
     }

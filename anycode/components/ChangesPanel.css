@@ -538,6 +538,11 @@
     width: 100%;
 }
 
+.changes-file-icon {
+    margin-right: 6px;
+    flex-shrink: 0;
+}
+
 .changes-filename {
     color: var(--theme-foreground, var(--foreground-color, #e0e0e0));
     white-space: nowrap;

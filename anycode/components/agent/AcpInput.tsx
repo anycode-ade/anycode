@@ -1,6 +1,7 @@
 import React from 'react';
 import './AcpInput.css';
 import { AcpIcons } from './AcpIcons';
+import { AgentIcon } from './AgentIcon';
 import type {
   AcpContextUsageMessage,
   AcpModelSelectorMessage,
@@ -392,6 +393,7 @@ export const AcpInput: React.FC<AcpInputProps> = ({
           <div className="acp-input-controls-row">
             {agentLabel && (
               <div className="acp-input-agent-chip" title={agentLabel}>
+                <AgentIcon name={agentLabel} size={12} className="acp-input-agent-chip-icon" />
                 <span className="acp-input-agent-chip-label">{agentLabel}</span>
               </div>
             )}

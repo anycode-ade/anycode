@@ -213,6 +213,11 @@
     max-width: 220px;
 }
 
+.acp-input-agent-chip-icon {
+    flex-shrink: 0;
+    display: block;
+}
+
 .acp-input-agent-chip-label {
     font-size: 11px;
     line-height: 1.2;

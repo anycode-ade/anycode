@@ -15,8 +15,34 @@
 }
 
 .tab.active {
-    color: var(--theme-tab-active-foreground, #ffffff);
-    border-bottom-color: var(--theme-accent-background, #7ec8ff);
+    color: var(--theme-accent-background, #007acc);
+    border-bottom-color: var(--theme-accent-background, #007acc);
+}
+
+.tab-icon-container {
+    position: relative;
+    width: 16px;
+    height: 16px;
+    margin-left: 6px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.tab-icon-container + .tab-filename {
+    padding-left: 4px;
+}
+
+.tab-file-icon,
+.tab-agent-icon,
+.tab-terminal-icon {
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .tab-filename {
@@ -28,8 +54,45 @@
     -webkit-user-select: none;
 }
 
-.tab:hover .tab-close-button {
-    opacity: 1;
+.tab-close-button {
+    display: none;
+    position: absolute;
+    top: 0;
+    left: 0;
+    align-items: center;
+    justify-content: center;
+    background: none;
+    border: none;
+    color: var(--theme-tab-foreground, #888888);
+    cursor: pointer;
+    padding: 0;
+    width: 16px;
+    height: 16px;
+    border-radius: 4px;
+    flex-shrink: 0;
+    outline: none;
+    transition: background 0.15s ease, color 0.15s ease;
+    z-index: 1;
+}
+
+.tab-close-button:hover {
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--theme-tab-active-foreground, #ffffff);
+}
+
+.tab-close-button svg {
+    display: block;
+}
+
+/* On hover of the icon container in an unpinned tab, show close button and hide file/agent/terminal icon */
+.tab:not(.tab-pinned) .tab-icon-container:hover .tab-close-button {
+    display: flex;
+}
+
+.tab:not(.tab-pinned) .tab-icon-container:hover .tab-file-icon,
+.tab:not(.tab-pinned) .tab-icon-container:hover .tab-agent-icon,
+.tab:not(.tab-pinned) .tab-icon-container:hover .tab-terminal-icon {
+    display: none;
 }
 
 .toolbar {
@@ -138,4 +201,14 @@
     /*border-bottom-style: dashed;*/
     /*border-bottom-color: var(--theme-accent-background, #7ec8ff);*/
     /*background: rgba(255, 255, 255, 0.03);*/
+}
+
+.tab-group-separator {
+    width: 1px;
+    height: 14px;
+    background-color: var(--theme-border, rgba(255, 255, 255, 0.15));
+    margin-left: 8px;
+    margin-right: 2px;
+    align-self: center;
+    flex-shrink: 0;
 }

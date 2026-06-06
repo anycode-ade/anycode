@@ -616,25 +616,43 @@ const panelPickerOrder: PanelId[] = panelDefinitions
     .filter((definition) => definition.pickerVisible)
     .map((definition) => definition.id);
 
+const pickerIconMap: Record<PanelId, React.ComponentType | undefined> = {
+    files: Icons.Files,
+    search: Icons.Search,
+    changes: Icons.Git,
+    editor: Icons.Editor,
+    agent: Icons.Agent,
+    terminal: Icons.Terminal,
+    browser: Icons.Browser,
+    settings: Icons.Settings,
+    toolbar: undefined,
+};
+
 const PanelPicker: React.FC<IDockviewPanelProps<PanelPickerParams>> = ({ params }) => (
     <div className="layout-dock-panel layout-dock-panel--picker">
         <div className="layout-panel-picker">
-            <div className="layout-panel-picker-title">Empty Pane</div>
+            <div className="layout-panel-picker-header">
+                <div className="layout-panel-picker-title">Empty Pane</div>
+            </div>
             <div className="layout-panel-picker-list">
-                {panelPickerOrder.map((panelId) => (
-                    <button
-                        key={panelId}
-                        className="layout-panel-picker-item"
-                        onClick={() => {
-                            if (typeof params.onSelectPanel === 'function') {
-                                params.onSelectPanel(panelId, params.pickerPanelId);
-                            }
-                        }}
-                        type="button"
-                    >
-                        {panelTitles[panelId]}
-                    </button>
-                ))}
+                {panelPickerOrder.map((panelId) => {
+                    const Icon = pickerIconMap[panelId];
+                    return (
+                        <button
+                            key={panelId}
+                            className="layout-panel-picker-item"
+                            onClick={() => {
+                                if (typeof params.onSelectPanel === 'function') {
+                                    params.onSelectPanel(panelId, params.pickerPanelId);
+                                }
+                            }}
+                            type="button"
+                        >
+                            {Icon && <Icon />}
+                            <span>{panelTitles[panelId]}</span>
+                        </button>
+                    );
+                })}
             </div>
         </div>
     </div>

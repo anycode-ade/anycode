@@ -22,6 +22,7 @@ interface ToolbarProps {
     activeTerminalId: string | null;
     agentSessions: AcpSession[];
     activeAgentId: string | null;
+    fileIconsStyle?: 'colored' | 'monochrome' | 'disabled';
     onSelectFile: (fileId: string) => void;
     onCloseFile: (fileId: string) => void;
     onSelectTerminal: (terminalId: string) => void;
@@ -41,6 +42,7 @@ export const Toolbar = ({
     activeTerminalId,
     agentSessions,
     activeAgentId,
+    fileIconsStyle = 'colored',
     onSelectFile,
     onCloseFile,
     onSelectTerminal,
@@ -423,6 +425,8 @@ export const Toolbar = ({
                         active={activeFileId === file.id}
                         label={file.name}
                         title={file.id}
+                        filePath={file.id}
+                        fileIconsStyle={fileIconsStyle}
                         pinned={pinnedFileIds.includes(file.id)}
                         onUnpin={() => togglePinFile(file.id)}
                         onSelect={() => onSelectFile(file.id)}
@@ -436,6 +440,9 @@ export const Toolbar = ({
                         onDrop={handleDrop}
                     />
                 ))}
+                {sortedFiles.length > 0 && sortedTerminals.length > 0 && (
+                    <div className="tab-group-separator" />
+                )}
                 {sortedTerminals.map((terminal) => (
                     <ToolbarTab
                         key={`toolbar-terminal-${terminal.id}`}
@@ -455,6 +462,9 @@ export const Toolbar = ({
                         onDrop={handleDrop}
                     />
                 ))}
+                {sortedAgentSessions.length > 0 && (sortedFiles.length > 0 || sortedTerminals.length > 0) && (
+                    <div className="tab-group-separator" />
+                )}
                 {sortedAgentSessions.map((session) => (
                     <ToolbarTab
                         key={`toolbar-agent-${session.agentId}`}

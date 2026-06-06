@@ -32,20 +32,6 @@
     color: #ffffff;
 }
 
-.tab-close-button {
-    background: none;
-    border: none;
-    color: #888;
-    cursor: pointer;
-    padding: 0;
-    /* margin-left: 8px; */
-    border-radius: 3px;
-    opacity: 0;
-    transition: opacity 0.2s ease;
-    font-size: 1.5rem;
-    outline: none;
-}
-
 .tab-close-button:focus {
     outline: none;
     border: none;

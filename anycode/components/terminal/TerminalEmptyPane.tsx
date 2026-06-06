@@ -1,5 +1,6 @@
 import React from 'react';
 import { type Terminal } from '../../types';
+import { Icons } from '../Icons';
 import './TerminalEmptyPane.css';
 
 interface TerminalEmptyPaneProps {
@@ -24,17 +25,6 @@ export const TerminalEmptyPane: React.FC<TerminalEmptyPaneProps> = ({
             {terminals.map((terminal) => (
               <div key={terminal.id} className="terminal-pane-opened-item">
                 <button
-                  className="terminal-pane-action terminal-pane-opened-action"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onSelectTerminal(terminal.id);
-                  }}
-                  title={terminal.name}
-                  type="button"
-                >
-                  term:{terminal.name}
-                </button>
-                <button
                   className="tab-close-button terminal-pane-close-button"
                   onClick={(event) => {
                     event.stopPropagation();
@@ -43,7 +33,19 @@ export const TerminalEmptyPane: React.FC<TerminalEmptyPaneProps> = ({
                   title={`Close ${terminal.name}`}
                   type="button"
                 >
-                  ×
+                  <Icons.Close size={8} />
+                </button>
+                <button
+                  className="terminal-pane-opened-action"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onSelectTerminal(terminal.id);
+                  }}
+                  title={terminal.name}
+                  type="button"
+                >
+                  <Icons.Terminal />
+                  <span>term: {terminal.name}</span>
                 </button>
               </div>
             ))}
@@ -62,7 +64,8 @@ export const TerminalEmptyPane: React.FC<TerminalEmptyPaneProps> = ({
             }}
             type="button"
           >
-            + New Terminal
+            <Icons.Terminal />
+            <span>New Terminal</span>
           </button>
         </div>
       </div>

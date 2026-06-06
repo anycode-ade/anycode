@@ -1,11 +1,13 @@
 import React, { memo } from 'react';
 import { TreeNode } from '../types';
+import { FileIcon } from './FileIcon';
 import './TreeNodeComponent.css';
 
 interface TreeNodeComponentProps {
     node: TreeNode;
     level?: number;
     activeNodeId: string | null;
+    fileIconsStyle?: 'colored' | 'monochrome' | 'disabled';
     onNodeRef: (nodeId: string, element: HTMLDivElement | null) => void;
     onActivate: (nodeId: string) => void;
     onToggle: (nodeId: string) => void;
@@ -30,6 +32,7 @@ const TreeNodeComponentImpl: React.FC<TreeNodeComponentProps> = ({
     node,
     level = 0,
     activeNodeId,
+    fileIconsStyle = 'colored',
     onNodeRef,
     onActivate,
     onToggle,
@@ -92,17 +95,20 @@ const TreeNodeComponentImpl: React.FC<TreeNodeComponentProps> = ({
                 className={`tree-item-content ${node.type} ${isSelected ? 'selected' : ''} ${isActive ? 'active' : ''}`}
                 ref={(element) => onNodeRef(node.id, element)}
                 onMouseDown={handleActivateOnly}
+                onClick={handleNameClick}
+                style={{ cursor: 'pointer' }}
             >
-                <div className="tree-indent" style={{ width: level * 20 }}></div>
+                <div className="tree-indent" style={{ width: level * 16 }}></div>
 
-                <div
-                    className={`tree-toggle ${hasChildren ? (isExpanded ? 'expanded' : 'collapsed') : 'leaf'}`}
-                    onClick={handleToggle}
-                >
-                    {hasChildren ? '▶' : ''}
-                </div>
+                <FileIcon
+                    path={node.path}
+                    isDirectory={node.type === 'directory'}
+                    isExpanded={isExpanded}
+                    styleType={fileIconsStyle}
+                    className="tree-file-icon"
+                />
 
-                <span className="tree-name" title={title} onClick={handleNameClick} onMouseDown={(e) => e.stopPropagation()}>
+                <span className="tree-name" title={title} onMouseDown={(e) => e.stopPropagation()}>
                     {node.name}
                 </span>
             </div>
@@ -115,6 +121,7 @@ const TreeNodeComponentImpl: React.FC<TreeNodeComponentProps> = ({
                             node={child}
                             level={level + 1}
                             activeNodeId={activeNodeId}
+                            fileIconsStyle={fileIconsStyle}
                             onNodeRef={onNodeRef}
                             onActivate={onActivate}
                             onToggle={onToggle}
@@ -130,6 +137,10 @@ const TreeNodeComponentImpl: React.FC<TreeNodeComponentProps> = ({
 };
 
 const areEqual = (prev: TreeNodeComponentProps, next: TreeNodeComponentProps): boolean => {
+    if (prev.fileIconsStyle !== next.fileIconsStyle) {
+        return false;
+    }
+
     if (prev.node !== next.node) {
         return false;
     }

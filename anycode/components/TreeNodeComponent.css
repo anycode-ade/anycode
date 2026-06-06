@@ -11,10 +11,11 @@
 .tree-item-content {
     display: flex;
     align-items: center;
-    cursor: default;
+    cursor: pointer;
     border-radius: 6px;
-    min-height: 20px;
+    min-height: 22px;
     position: relative;
+    padding-left: 6px;
 }
 .file-tree {
     height: 100%;
@@ -45,42 +46,23 @@
     transition: none;
 }
 
-.tree-item-content.selected .tree-name,
-.tree-item-content.selected .tree-toggle {
+.tree-item-content.selected .tree-name {
     color: var(--theme-accent-foreground, #fff) !important;
-}
-
-.tree-toggle {
-    width: 16px;
-    height: 16px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    /* margin-right: 4px; */
-    color: var(--text-color-secondary, #888);
-    font-size: 12px;
-    transition: transform 0.2s ease;
-    cursor: pointer;
-    user-select: none;
-}
-
-.tree-toggle.expanded {
-    transform: rotate(90deg);
-}
-
-.tree-toggle.collapsed {
-    transform: rotate(0deg);
-}
-
-.tree-toggle.leaf {
-    color: transparent;
-    cursor: default;
 }
 
 .tree-indent {
     width: 20px;
     height: 100%;
     position: relative;
+}
+
+.tree-file-icon {
+    margin-right: 2px;
+    margin-left: 2px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .tree-name {
@@ -98,8 +80,7 @@
     color: var(--text-color, #e0e0e0);
 }
 
-.tree-item-content.directory .tree-name,
-.tree-item-content.directory .tree-toggle {
+.tree-item-content.directory .tree-name {
     color: var(--theme-muted-foreground, #888888);
 }
 

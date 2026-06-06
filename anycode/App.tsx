@@ -38,6 +38,17 @@ import { normalizePath } from './utils';
 const App: React.FC = () => {
     const { wsRef, isConnected } = useSocket({});
 
+    const [fileIconsStyle, setFileIconsStyle] = React.useState<'colored' | 'monochrome' | 'disabled'>(() => {
+        if (typeof window === 'undefined') return 'colored';
+        return (localStorage.getItem('fileIconsStyle') as any) || 'colored';
+    });
+
+    const [fileIconsOpacity, setFileIconsOpacity] = React.useState<number>(() => {
+        if (typeof window === 'undefined') return 0.85;
+        const saved = localStorage.getItem('fileIconsOpacity');
+        return saved !== null ? parseFloat(saved) : 0.85;
+    });
+
     const fileTree = useFileTree({ wsRef, isConnected });
     const editors = useEditors({ wsRef, isConnected });
     const terminals = useTerminals({ wsRef, isConnected });
@@ -291,6 +302,16 @@ const App: React.FC = () => {
         agents.setAgentsVersion((prev) => prev + 1);
     }, [agents.setAgentsVersion]);
 
+    const handleFileIconsStyleChange = useCallback((style: 'colored' | 'monochrome' | 'disabled') => {
+        localStorage.setItem('fileIconsStyle', style);
+        setFileIconsStyle(style);
+    }, []);
+
+    const handleFileIconsOpacityChange = useCallback((opacity: number) => {
+        localStorage.setItem('fileIconsOpacity', opacity.toString());
+        setFileIconsOpacity(opacity);
+    }, []);
+
     const activeTerminalId = useMemo(() => {
         const paneId = terminalPanes.activePaneId || 'terminal';
         return terminalPanes.getSelectedId(paneId);
@@ -324,6 +345,7 @@ const App: React.FC = () => {
                         onLoadFolder={fileTree.openFolder}
                         onFocusEditor={() => editors.focusEditorInPane(editors.activeEditorPaneId)}
                         onNavigateByKey={fileTree.navigateByKey}
+                        fileIconsStyle={fileIconsStyle}
                     />
                 );
             case 'search':
@@ -340,6 +362,7 @@ const App: React.FC = () => {
                         results={search.searchResults}
                         searchEnded={search.searchEnded}
                         onMatchClick={handleSearchResultClick}
+                        fileIconsStyle={fileIconsStyle}
                     />
                 );
             case 'changes':
@@ -359,6 +382,7 @@ const App: React.FC = () => {
                         onRevert={git.revert}
                         onStage={git.stage}
                         onUnstage={git.unstage}
+                        fileIconsStyle={fileIconsStyle}
                     />
                 );
             case 'editor':
@@ -415,6 +439,7 @@ const App: React.FC = () => {
                         onCloseTerminal={handleTerminalTabClose}
                         onSelectAgent={agentPanes.selectFromToolbar}
                         onCloseAgent={agents.closeAgent}
+                        fileIconsStyle={fileIconsStyle}
                     />
                 );
             case 'settings':
@@ -424,6 +449,10 @@ const App: React.FC = () => {
                         isConnected={isConnected}
                         currentThemeId={currentThemeId}
                         onThemeChange={handleThemeChange}
+                        fileIconsStyle={fileIconsStyle}
+                        onFileIconsStyleChange={handleFileIconsStyleChange}
+                        fileIconsOpacity={fileIconsOpacity}
+                        onFileIconsOpacityChange={handleFileIconsOpacityChange}
                     />
                 );
             default:
@@ -497,7 +526,10 @@ const App: React.FC = () => {
     });
 
     return (
-        <div className="app-container toolbar-header-compact">
+        <div
+            className="app-container toolbar-header-compact"
+            style={{ '--file-icon-opacity': fileIconsOpacity } as React.CSSProperties}
+        >
             <div className="main-content" style={{ flex: 1, display: 'flex' }}>
                 <Layout
                     renderPanel={renderPanel}

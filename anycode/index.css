@@ -90,3 +90,12 @@ button:focus-visible {
   -ms-user-select: none;
   user-select: none;
 }
+
+/* File Icons Opacity */
+.tree-file-icon,
+.changes-file-icon,
+.tab-file-icon,
+.search-file-icon {
+  opacity: var(--file-icon-opacity, 1.0);
+  transition: opacity 0.15s ease;
+}
