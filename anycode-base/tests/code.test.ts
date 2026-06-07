@@ -487,6 +487,220 @@ pub fn main() void {
         });
     });
 
+    describe('Markdown Parsing', () => {
+        it('should highlight block, inline, fenced code, and embedded HTML syntax', async () => {
+            const markdownCode = `# Anycode
+
+Use **bold**, \`code\`, and [docs](https://example.com).
+
+\`\`\`js
+const answer = 42;
+\`\`\`
+
+<table>
+  <tr><td class="value">Cell</td></tr>
+</table>
+`;
+            const code = new Code(markdownCode, 'README.md', 'markdown');
+            await code.init();
+
+            const heading = code.getLineNodes(0);
+            expect(heading.some(n => n.name === 'type' && n.text.includes('Anycode'))).toBe(true);
+
+            const inline = code.getLineNodes(2);
+            expect(inline.some(n => n.name === 'type' && n.text.includes('bold'))).toBe(true);
+            expect(inline.some(n => n.name === 'string' && n.text.includes('code'))).toBe(true);
+            expect(inline.some(n => n.name === 'string.special' && n.text.includes('https://example.com'))).toBe(true);
+
+            const javascript = code.getLineNodes(5);
+            expect(javascript.some(n => n.name === 'keyword' && n.text === 'const')).toBe(true);
+            expect(javascript.some(n => n.name === 'number' && n.text === '42')).toBe(true);
+
+            const html = code.getLineNodes(9);
+            expect(html.some(n => n.name === 'type' && n.text === 'td')).toBe(true);
+            expect(html.some(n => n.name === 'variable' && n.text === 'class')).toBe(true);
+            expect(html.some(n => n.name === 'string' && n.text === 'value')).toBe(true);
+        });
+    });
+
+    describe('PHP Parsing', () => {
+        it('should highlight PHP and embedded HTML syntax', async () => {
+            const phpCode = `<h1><?= $title ?></h1>
+<?php
+class Greeter {
+    public function hello(string $name): string {
+        return "Hello, {$name}";
+    }
+}
+`;
+            const code = new Code(phpCode, 'index.php', 'php');
+            await code.init();
+
+            const html = code.getLineNodes(0);
+            expect(html.some(n => n.name === 'type' && n.text === 'h1')).toBe(true);
+            expect(html.some(n => n.name === 'operator' && n.text === '$')).toBe(true);
+            expect(html.some(n => n.name === 'variable' && n.text === 'title')).toBe(true);
+
+            const method = code.getLineNodes(3);
+            expect(method.some(n => n.name === 'keyword' && n.text === 'public')).toBe(true);
+            expect(method.some(n => n.name === 'keyword' && n.text === 'function')).toBe(true);
+            expect(method.some(n => n.name === 'function.method' && n.text === 'hello')).toBe(true);
+            expect(method.some(n => n.name === 'type.builtin' && n.text === 'string')).toBe(true);
+
+            const returnStatement = code.getLineNodes(4);
+            expect(returnStatement.some(n => n.name === 'keyword' && n.text === 'return')).toBe(true);
+            expect(returnStatement.some(n => n.name === 'string' && n.text.includes('Hello'))).toBe(true);
+        });
+    });
+
+    describe('Ruby Parsing', () => {
+        it('should correctly parse and highlight Ruby structures', async () => {
+            const rubyCode = `class Greeter
+  def greet(name)
+    message = "Hello, #{name}"
+    puts message
+  end
+end
+
+%w[Alice Bob].each do |name|
+  Greeter.new.greet(name)
+end
+`;
+            const code = new Code(rubyCode, 'greeter.rb', 'ruby');
+            await code.init();
+
+            const classLine = code.getLineNodes(0);
+            expect(classLine.some(n => n.name === 'keyword' && n.text === 'class')).toBe(true);
+            expect(classLine.some(n => n.name === 'constructor' && n.text === 'Greeter')).toBe(true);
+
+            const methodLine = code.getLineNodes(1);
+            expect(methodLine.some(n => n.name === 'keyword' && n.text === 'def')).toBe(true);
+            expect(methodLine.some(n => n.name === 'function.method' && n.text === 'greet')).toBe(true);
+            expect(methodLine.some(n => n.name === 'variable.parameter' && n.text === 'name')).toBe(true);
+
+            const stringLine = code.getLineNodes(2);
+            expect(stringLine.some(n => n.name === 'string' && n.text.includes('Hello'))).toBe(true);
+
+            const blockLine = code.getLineNodes(7);
+            expect(blockLine.some(n => n.name === 'function.method' && n.text === 'each')).toBe(true);
+            expect(blockLine.some(n => n.name === 'keyword' && n.text === 'do')).toBe(true);
+            expect(blockLine.some(n => n.name === 'variable.parameter' && n.text === 'name')).toBe(true);
+        });
+    });
+
+    describe('Vue Parsing', () => {
+        it('should highlight template, TypeScript, and CSS sections', async () => {
+            const vueCode = `<template>
+  <button class="primary" @click="count++">{{ count }}</button>
+</template>
+
+<script setup lang="ts">
+import { ref } from 'vue'
+const count = ref<number>(0)
+</script>
+
+<style scoped>
+.primary { color: red; }
+</style>
+`;
+            const code = new Code(vueCode, 'Counter.vue', 'vue');
+            await code.init();
+
+            const template = code.getLineNodes(1);
+            expect(template.some(n => n.name === 'tag' && n.text === 'button')).toBe(true);
+            expect(template.some(n => n.name === 'property' && n.text === 'click')).toBe(true);
+            expect(template.some(n => n.name === 'operator' && n.text === '++')).toBe(true);
+            expect(template.some(n => n.name === 'variable' && n.text === 'count')).toBe(true);
+
+            const script = code.getLineNodes(6);
+            expect(script.some(n => n.name === 'keyword' && n.text === 'const')).toBe(true);
+            expect(script.some(n => n.name === 'function' && n.text === 'ref')).toBe(true);
+            expect(script.some(n => n.name === 'type' && n.text === 'number')).toBe(true);
+            expect(script.some(n => n.name === 'number' && n.text === '0')).toBe(true);
+
+            const style = code.getLineNodes(10);
+            expect(style.some(n => n.name === 'identifier' && n.text === 'primary')).toBe(true);
+            expect(style.some(n => n.name === 'constant' && n.text === 'red')).toBe(true);
+
+            expect(code.getFoldRanges()).toEqual([
+                { startLine: 0, endLine: 2, kind: 'template_element' },
+                { startLine: 4, endLine: 7, kind: 'script_element' },
+                { startLine: 9, endLine: 11, kind: 'style_element' },
+            ]);
+        });
+    });
+
+    describe('Dockerfile Parsing', () => {
+        it('should highlight Dockerfile instructions and shell commands', async () => {
+            const dockerfile = `FROM node:22-alpine AS build
+ARG APP_ENV=production
+RUN corepack enable && pnpm install --frozen-lockfile
+ENV NODE_ENV=\${APP_ENV}
+CMD ["node", "server.js"]
+`;
+            const code = new Code(dockerfile, 'Dockerfile', 'dockerfile');
+            await code.init();
+
+            const from = code.getLineNodes(0);
+            expect(from.some(n => n.name === 'keyword' && n.text === 'FROM')).toBe(true);
+            expect(from.some(n => n.name === 'type' && n.text === 'node')).toBe(true);
+            expect(from.some(n => n.name === 'constant' && n.text === '22-alpine')).toBe(true);
+            expect(from.some(n => n.name === 'keyword' && n.text === 'AS')).toBe(true);
+
+            const run = code.getLineNodes(2);
+            expect(run.some(n => n.name === 'keyword' && n.text === 'RUN')).toBe(true);
+            expect(run.some(n => n.name === 'function.call' && n.text === 'corepack')).toBe(true);
+            expect(run.some(n => n.name === 'function.call' && n.text === 'pnpm')).toBe(true);
+
+            const env = code.getLineNodes(3);
+            expect(env.some(n => n.name === 'variable' && n.text === 'APP_ENV')).toBe(true);
+
+            const cmd = code.getLineNodes(4);
+            expect(cmd.some(n => n.name === 'string' && n.text === '"node"')).toBe(true);
+            expect(cmd.some(n => n.name === 'string' && n.text === '"server.js"')).toBe(true);
+        });
+    });
+
+    describe('SQL Parsing', () => {
+        it('should highlight queries, joins, functions, and schema objects', async () => {
+            const sql = `WITH active_users AS (
+  SELECT id, email FROM users WHERE active = true
+)
+SELECT u.email, COUNT(o.id) AS orders
+FROM active_users u
+LEFT JOIN orders o ON o.user_id = u.id
+GROUP BY u.email
+ORDER BY orders DESC;
+`;
+            const code = new Code(sql, 'report.sql', 'sql');
+            await code.init();
+
+            const cteQuery = code.getLineNodes(1);
+            expect(cteQuery.some(n => n.name === 'keyword' && n.text === 'SELECT')).toBe(true);
+            expect(cteQuery.some(n => n.name === 'type' && n.text === 'users')).toBe(true);
+            expect(cteQuery.some(n => n.name === 'property' && n.text === 'email')).toBe(true);
+            expect(cteQuery.some(n => n.name === 'constant.builtin' && n.text === 'true')).toBe(true);
+
+            const select = code.getLineNodes(3);
+            expect(select.some(n => n.name === 'function.call' && n.text === 'COUNT')).toBe(true);
+            expect(select.some(n => n.name === 'variable' && n.text === 'orders')).toBe(true);
+
+            const join = code.getLineNodes(5);
+            expect(join.some(n => n.name === 'keyword' && n.text === 'LEFT')).toBe(true);
+            expect(join.some(n => n.name === 'keyword' && n.text === 'JOIN')).toBe(true);
+            expect(join.some(n => n.name === 'operator' && n.text === '=')).toBe(true);
+
+            const order = code.getLineNodes(7);
+            expect(order.some(n => n.name === 'keyword' && n.text === 'DESC')).toBe(true);
+
+            expect(code.getFoldRanges()).toContainEqual({
+                startLine: 0,
+                endLine: 2,
+                kind: 'cte',
+            });
+        });
+    });
+
     describe('Smart Cache Invalidation', () => {
         it('should keep cache for lines above edit and clear lines at and below edit', async () => {
             const jsCode = `// Line 0

@@ -41,6 +41,13 @@ import zig from './langs/zig';
 import csharp from './langs/csharp';
 import c from './langs/c';
 import cpp from './langs/cpp';
+import markdown from './langs/markdown';
+import markdownInline from './langs/markdown_inline';
+import php from './langs/php';
+import ruby from './langs/ruby';
+import vue from './langs/vue';
+import dockerfile from './langs/dockerfile';
+import sql from './langs/sql';
 
 export enum Operation {
     Insert = "insert",
@@ -651,6 +658,13 @@ export class Code {
         if (lang === 'csharp') return csharp
         if (lang === 'c') return c
         if (lang === 'cpp') return cpp
+        if (lang === 'markdown') return markdown
+        if (lang === 'markdown_inline') return markdownInline
+        if (lang === 'php') return php
+        if (lang === 'ruby') return ruby
+        if (lang === 'vue') return vue
+        if (lang === 'dockerfile') return dockerfile
+        if (lang === 'sql') return sql
         return null
     }
 

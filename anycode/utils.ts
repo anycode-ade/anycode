@@ -46,11 +46,23 @@ export const LANGUAGE_EXTENSIONS: { [key: string]: string } = {
     'yaml': 'yaml',
     'yml': 'yaml',
     'toml': 'toml',
+    'md': 'markdown',
+    'markdown': 'markdown',
+    'php': 'php',
+    'rb': 'ruby',
+    'vue': 'vue',
+    'dockerfile': 'dockerfile',
+    'sql': 'sql',
 };
 
 export const EDITOR_SUPPORTED_LANGUAGES = new Set(Object.values(LANGUAGE_EXTENSIONS));
 
 export const getLanguageFromFileName = (fileName: string): string => {
-    const ext = fileName.split('.').pop()?.toLowerCase();
+    const normalizedName = fileName.toLowerCase();
+    if (normalizedName === 'dockerfile' || normalizedName.startsWith('dockerfile.')) {
+        return 'dockerfile';
+    }
+
+    const ext = normalizedName.split('.').pop();
     return LANGUAGE_EXTENSIONS[ext || ''] || '';
 };
