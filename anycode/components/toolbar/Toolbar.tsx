@@ -279,6 +279,14 @@ export const Toolbar = ({
         });
     };
 
+    const handleCloseOtherFiles = (fileId: string) => {
+        files.forEach((f) => {
+            if (f.id !== fileId && !pinnedFileIds.includes(f.id)) {
+                onCloseFile(f.id);
+            }
+        });
+    };
+
     const handleCloseAllFiles = () => {
         files.forEach((f) => {
             if (!pinnedFileIds.includes(f.id)) {
@@ -299,6 +307,15 @@ export const Toolbar = ({
         }
     };
 
+    const handleCloseOtherTerminals = (terminalId: string) => {
+        for (let i = terminals.length - 1; i >= 0; i -= 1) {
+            const t = terminals[i];
+            if (t.id !== terminalId && !pinnedTerminalIds.includes(t.id)) {
+                onCloseTerminal(t.id);
+            }
+        }
+    };
+
     const handleCloseAllTerminals = () => {
         for (let i = terminals.length - 1; i >= 0; i -= 1) {
             const t = terminals[i];
@@ -306,6 +323,14 @@ export const Toolbar = ({
                 onCloseTerminal(t.id);
             }
         }
+    };
+
+    const handleCloseOtherAgents = (agentId: string) => {
+        agentSessions.forEach((s) => {
+            if (s.agentId !== agentId && !pinnedAgentIds.includes(s.agentId)) {
+                onCloseAgent(s.agentId);
+            }
+        });
     };
 
     const handleCloseAllAgents = () => {
@@ -340,13 +365,21 @@ export const Toolbar = ({
                 const isPinned = pinnedFileIds.includes(file.id);
                 const fileIndexSorted = sortedFiles.findIndex((f) => f.id === file.id);
                 const hasRight = fileIndexSorted >= 0 && sortedFiles.length > fileIndexSorted + 1;
+                const hasOtherClosable = files.some((f) => f.id !== file.id && !pinnedFileIds.includes(f.id));
                 return [
                     [
                         { key: 'copy-path', label: 'Copy path', onClick: () => copyText(file.id) },
+                        { key: 'copy-name', label: 'Copy name', onClick: () => copyText(file.name) },
                         { key: 'pin-file', label: isPinned ? 'Unpin' : 'Pin', onClick: () => togglePinFile(file.id) },
                     ],
                     [
                         { key: 'close', label: 'Close', onClick: () => onCloseFile(file.id) },
+                        {
+                            key: 'close-others',
+                            label: 'Close others',
+                            disabled: !hasOtherClosable,
+                            onClick: () => handleCloseOtherFiles(file.id),
+                        },
                         {
                             key: 'close-right',
                             label: 'Close right',
@@ -368,6 +401,9 @@ export const Toolbar = ({
                 const isPinned = pinnedTerminalIds.includes(terminal.id);
                 const terminalIndexSorted = sortedTerminals.findIndex((t) => t.id === terminal.id);
                 const hasRight = sortedTerminals.length > terminalIndexSorted + 1;
+                const hasOtherClosable = terminals.some(
+                    (t) => t.id !== terminal.id && !pinnedTerminalIds.includes(t.id),
+                );
                 return [
                     [
                         { key: 'copy-terminal-name', label: 'Copy terminal name', onClick: () => copyText(terminal.name) },
@@ -375,6 +411,12 @@ export const Toolbar = ({
                     ],
                     [
                         { key: 'close-terminal', label: 'Close', onClick: () => onCloseTerminal(terminal.id) },
+                        {
+                            key: 'close-other-terminals',
+                            label: 'Close others',
+                            disabled: !hasOtherClosable,
+                            onClick: () => handleCloseOtherTerminals(terminal.id),
+                        },
                         {
                             key: 'close-right-terminals',
                             label: 'Close right',
@@ -393,6 +435,9 @@ export const Toolbar = ({
                 const agent = agentSessions.find((s) => s.agentId === tabMenu.targetId);
                 if (!agent) return [];
                 const isPinned = pinnedAgentIds.includes(agent.agentId);
+                const hasOtherClosable = agentSessions.some(
+                    (s) => s.agentId !== agent.agentId && !pinnedAgentIds.includes(s.agentId),
+                );
                 return [
                     [
                         { key: 'copy-agent-id', label: 'Copy agent id', onClick: () => copyText(agent.agentId) },
@@ -405,6 +450,12 @@ export const Toolbar = ({
                     ],
                     [
                         { key: 'close-agent', label: 'Close', onClick: () => onCloseAgent(agent.agentId) },
+                        {
+                            key: 'close-other-agents',
+                            label: 'Close others',
+                            disabled: !hasOtherClosable,
+                            onClick: () => handleCloseOtherAgents(agent.agentId),
+                        },
                         {
                             key: 'close-all-agents',
                             label: 'Close all',
