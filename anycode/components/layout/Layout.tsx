@@ -299,6 +299,8 @@ type LayoutProps = {
     isEditorDiffEnabled?: (panelKey: string) => boolean;
     getEditorDiffMode?: (panelKey: string) => DiffMode;
     onActionsReady?: (actions: LayoutActions | null) => void;
+    canResetPanel?: (panelKey: string, panelId: PanelId) => boolean;
+    onResetPanel?: (panelKey: string, panelId: PanelId) => void;
 };
 
 export type LayoutActions = {
@@ -666,6 +668,8 @@ const LayoutHeaderActions: React.FC<IDockviewHeaderActionsProps & {
     onCycleEditorDiffMode?: (panelKey: string) => void;
     isEditorDiffEnabled?: (panelKey: string) => boolean;
     getEditorDiffMode?: (panelKey: string) => DiffMode;
+    canResetPanel?: (panelKey: string, panelId: PanelId) => boolean;
+    onResetPanel?: (panelKey: string, panelId: PanelId) => void;
 }> = ({
     containerApi,
     activePanel,
@@ -676,6 +680,8 @@ const LayoutHeaderActions: React.FC<IDockviewHeaderActionsProps & {
     onCycleEditorDiffMode,
     isEditorDiffEnabled,
     getEditorDiffMode,
+    canResetPanel,
+    onResetPanel,
 }) => {
     if (!activePanel) {
         return null;
@@ -687,9 +693,22 @@ const LayoutHeaderActions: React.FC<IDockviewHeaderActionsProps & {
     const diffMode = getEditorDiffMode?.(activePanel.id) ?? fallbackMode;
     const nextDiffMode = getNextDiffMode(diffMode);
     const canClosePanel = activePanel.id !== 'toolbar' && (containerApi.totalPanels > 1 || !isPickerPanel(activePanel.id));
+    const showResetButton = activePanelBaseId && (activePanelBaseId === 'terminal' || activePanelBaseId === 'agent') && canResetPanel?.(activePanel.id, activePanelBaseId);
 
     return (
         <div className="layout-header-actions">
+            {showResetButton ? (
+                <button
+                    className="layout-header-action-btn layout-header-action-btn--back"
+                    onClick={() => onResetPanel?.(activePanel.id, activePanelBaseId)}
+                    type="button"
+                    title={`Back to Empty ${activePanelBaseId === 'terminal' ? 'Terminal' : 'Agent'}`}
+                    aria-label={`Back to Empty ${activePanelBaseId === 'terminal' ? 'Terminal' : 'Agent'}`}
+                >
+                    <Icons.ArrowLeft />
+                </button>
+            ) : null}
+
             <button
                 className="layout-header-action-btn layout-header-action-btn--plus"
                 onClick={() => onAddTab(containerApi, activePanel.id)}
@@ -834,6 +853,8 @@ export const Layout: React.FC<LayoutProps> = ({
     isEditorDiffEnabled,
     getEditorDiffMode,
     onActionsReady,
+    canResetPanel,
+    onResetPanel,
 }) => {
     const apiRef = useRef<DockviewApi | null>(null);
     const [visibility, setVisibility] = useState<PanelVisibility>(loadPanelVisibility);
@@ -1383,8 +1404,10 @@ export const Layout: React.FC<LayoutProps> = ({
             onCycleEditorDiffMode={onCycleEditorDiffMode}
             isEditorDiffEnabled={isEditorDiffEnabled}
             getEditorDiffMode={getEditorDiffMode}
+            canResetPanel={canResetPanel}
+            onResetPanel={onResetPanel}
         />
-    ), [getEditorDiffMode, isEditorDiffEnabled, onCycleEditorDiffMode]);
+    ), [getEditorDiffMode, isEditorDiffEnabled, onCycleEditorDiffMode, canResetPanel, onResetPanel]);
 
     useEffect(() => () => {
         if (layoutSaveTimerRef.current !== null) {

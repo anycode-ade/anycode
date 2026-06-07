@@ -525,6 +525,24 @@ const App: React.FC = () => {
         }
     });
 
+    const canResetPanel = useCallback((panelKey: string, panelId: PanelId) => {
+        if (panelId === 'terminal') {
+            return terminalPanes.getSelectedId(panelKey) !== null;
+        }
+        if (panelId === 'agent') {
+            return agentPanes.getSelectedId(panelKey) !== null;
+        }
+        return false;
+    }, [terminalPanes, agentPanes]);
+
+    const handleResetPanel = useCallback((panelKey: string, panelId: PanelId) => {
+        if (panelId === 'terminal') {
+            terminalPanes.setSelectedForPane(panelKey, null);
+        } else if (panelId === 'agent') {
+            agentPanes.selectForPane(panelKey, null);
+        }
+    }, [terminalPanes, agentPanes]);
+
     return (
         <div
             className="app-container toolbar-header-compact"
@@ -542,6 +560,8 @@ const App: React.FC = () => {
                     onActionsReady={(actions) => {
                         layoutActionsRef.current = actions;
                     }}
+                    canResetPanel={canResetPanel}
+                    onResetPanel={handleResetPanel}
                 />
             </div>
         </div>

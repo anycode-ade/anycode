@@ -15,7 +15,7 @@ type AgentPanelProps = {
     agentPanes: {
         activePaneId: string;
         getSelectedId: (paneKey: string) => string | null;
-        selectForPane: (paneKey: string, agentId: string) => void;
+        selectForPane: (paneKey: string, agentId: string | null) => void;
     };
     agents: {
         acpSessions: Map<string, AcpSessionState>;

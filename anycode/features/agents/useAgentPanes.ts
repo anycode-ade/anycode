@@ -83,7 +83,7 @@ export const useAgentPanes = ({
         return null;
     }, [selectedAgentId, selectedByPane]);
 
-    const selectForPane = useCallback((paneKey: string, agentId: string) => {
+    const selectForPane = useCallback((paneKey: string, agentId: string | null) => {
         setSelectedByPane((prev) => {
             if (prev[paneKey] === agentId) {
                 return prev;
