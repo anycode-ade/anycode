@@ -50,7 +50,6 @@ pub const DEFAULT_IGNORE_FILES: &[&str] = &[
     "*.bmp",
     "*.tiff",
     "*.webp",
-    "*.svg",
     "*.ico",
     "*.mp4",
     "*.mov",
