@@ -94,6 +94,7 @@ jobs:
           files: anycode-backend/anycode-linux-x86_64-musl.tar.gz
           tag_name: ${{ github.ref_name }}
           name: Release ${{ github.ref_name }}
+          body_path: .github/release-notes/${{ github.ref_name }}.md
 
   build-linux-arm64:
     name: Build for Linux ARM64
@@ -160,6 +161,7 @@ jobs:
           files: anycode-backend/anycode-linux-aarch64-musl.tar.gz
           tag_name: ${{ github.ref_name }}
           name: Release ${{ github.ref_name }}
+          body_path: .github/release-notes/${{ github.ref_name }}.md
 
   build-macos:
     name: Build for macOS Universal
@@ -244,3 +246,4 @@ jobs:
           files: anycode-backend/anycode-universal-apple-darwin.tar.gz
           tag_name: ${{ github.ref_name }}
           name: Release ${{ github.ref_name }}
+          body_path: .github/release-notes/${{ github.ref_name }}.md

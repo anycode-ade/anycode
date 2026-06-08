@@ -2,6 +2,32 @@
 
 All notable changes are documented here by release tag.
 
+## v0.0.20 - 2026-06-08
+
+### Highlights
+- Expanded the file explorer with create-file, create-folder, rename, delete, copy-path, and refresh actions. The new context menus work for both files and folders, file operations are handled by the backend, and open editor tabs stay synchronized when paths are renamed or deleted.
+- Added a live backend connection indicator to the toolbar so connection loss and recovery are visible without opening developer tools.
+- Added language-aware file and folder icons throughout the explorer, tabs, search, changes, and settings UI. File icons can be displayed in colored, monochrome, or disabled mode.
+- Added Tree-Sitter syntax highlighting, folding queries, language detection, and bundled WASM parsers for Markdown, Markdown Inline, PHP, Ruby, Vue, Dockerfile, and SQL. Markdown fenced code blocks now support embedded highlighting for common languages.
+- Added tab context-menu actions to close all other tabs and copy a file name, complementing the existing close, close-right, copy-path, and pin controls.
+- Added reset actions for agent and terminal panes and fixed layout restoration after closing panes, including stale saved-layout state.
+- Refreshed the file tree, toolbar, settings, search, agent, terminal, and panel styling with improved empty states, spacing, controls, and responsive behavior.
+- Fixed SVG files being hidden from the file explorer, fixed delayed/stale Git changes panel updates, and corrected the file-tree context menu backdrop blur.
+- Added editor language-detection tests and backend Git/file-operation coverage for the new behavior.
+- Added a Dockerfile for building the frontend and a statically linked Anycode backend release image.
+
+### Commits
+- `ee5c81a` Fix file tree context menu backdrop blur
+- `4aa9edb` Fix changes panel updates
+- `00f1a77` remove stray syntax test files
+- `b29a96a` add file tree actions and connection status
+- `e03d28b` fix: stop ignoring svg files in the file explorer (resolves #20)
+- `8c22295` feat(toolbar): add close other tabs action and copy name option
+- `e4cf6e8` Add syntax highlighting for web and data languages
+- `9c1dbe6` Add reset action for agent and terminal panes
+- `11cb8bb` add file icons and refresh panel UI
+- `52066aa` Fix layout close restore behavior
+
 ## v0.0.19 - 2026-06-05
 
 ### Highlights
