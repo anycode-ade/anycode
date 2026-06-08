@@ -1254,17 +1254,19 @@ impl GitManager {
 
         let x_char = stdout[0] as char;
         let y_char = stdout[1] as char;
+        let untracked = x_char == '?' && y_char == '?';
 
         let conflicted = x_char == 'U'
             || y_char == 'U'
             || (x_char == 'D' && y_char == 'D')
             || (x_char == 'A' && y_char == 'A');
         let staged = x_char != ' ' && x_char != '?' && x_char != '!' && !conflicted;
-        let unstaged = y_char != ' ' && y_char != '?' && y_char != '!' && !conflicted;
+        let unstaged =
+            untracked || (y_char != ' ' && y_char != '?' && y_char != '!' && !conflicted);
 
         let file_status = if conflicted {
             FileStatus::Conflict
-        } else if x_char == '?' || x_char == 'A' || y_char == 'A' {
+        } else if untracked || x_char == 'A' || y_char == 'A' {
             FileStatus::Added
         } else if x_char == 'D' || y_char == 'D' {
             FileStatus::Deleted

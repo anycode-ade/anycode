@@ -96,6 +96,25 @@ fn path_status_uses_repo_root_when_workdir_is_subdirectory() {
 }
 
 #[test]
+fn untracked_file_is_reported_as_unstaged_by_path_status() {
+    let temp_dir = tempfile::TempDir::new().unwrap();
+    Repository::init(temp_dir.path()).unwrap();
+
+    let file_path = temp_dir.path().join("new.txt");
+    std::fs::write(&file_path, "new line\n").unwrap();
+
+    let mut manager = GitManager::new(temp_dir.path().to_path_buf());
+    let status = manager
+        .status_file_custom("new.txt")
+        .unwrap()
+        .expect("untracked file should be reported");
+
+    assert_eq!(status.status, FileStatus::Added);
+    assert!(!status.staged);
+    assert!(status.unstaged);
+}
+
+#[test]
 fn deleted_file_numstat_counts_lines_not_bytes() {
     let temp_dir = tempfile::TempDir::new().unwrap();
     let repo = Repository::init(temp_dir.path()).unwrap();

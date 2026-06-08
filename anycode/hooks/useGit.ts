@@ -1,7 +1,6 @@
 import { useCallback, useState } from 'react';
 import type { Socket } from 'socket.io-client';
 import type { ChangedFile } from '../components';
-import { updateChangesFileStats } from '../components/ChangesPanel';
 
 type UseGitParams = {
     wsRef: React.RefObject<Socket | null>;
@@ -48,20 +47,6 @@ const areChangedFilesEqual = (prev: ChangedFile, next: ChangedFile): boolean => 
     && prev.added === next.added
     && prev.removed === next.removed
 );
-
-const areChangedFilesStructureEqual = (prev: ChangedFile, next: Omit<GitPatchItem, 'status'> & { status: ChangedFile['status'] }): boolean => (
-    prev.path === next.path
-    && prev.status === next.status
-    && prev.staged === next.staged
-    && prev.unstaged === next.unstaged
-    && prev.conflicted === next.conflicted
-);
-
-const updateFileStatsInPlace = (file: ChangedFile, added?: number, removed?: number) => {
-    file.added = added;
-    file.removed = removed;
-    updateChangesFileStats(file.path, added ?? 0, removed ?? 0);
-};
 
 export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
     const [changedFiles, setChangedFiles] = useState<ChangedFile[]>([]);
@@ -120,12 +105,8 @@ export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
                                 removed: item.removed,
                             });
                             structurallyChanged = true;
-                        } else if (areChangedFilesStructureEqual(existing, item)) {
-                            if (existing.added !== item.added || existing.removed !== item.removed) {
-                                updateFileStatsInPlace(existing, item.added, item.removed);
-                            }
                         } else {
-                            next.set(item.path, {
+                            const updated: ChangedFile = {
                                 path: item.path,
                                 status: item.status,
                                 staged: item.staged,
@@ -133,8 +114,11 @@ export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
                                 conflicted: item.conflicted,
                                 added: item.added,
                                 removed: item.removed,
-                            });
-                            structurallyChanged = true;
+                            };
+                            if (!areChangedFilesEqual(existing, updated)) {
+                                next.set(item.path, updated);
+                                structurallyChanged = true;
+                            }
                         }
                     }
                 }
@@ -164,9 +148,6 @@ export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
                     const a = prev[i];
                     const b = nextFiles[i];
                     if (areChangedFilesEqual(a, b)) {
-                        reusedFiles[i] = a;
-                    } else if (areChangedFilesStructureEqual(a, b)) {
-                        updateFileStatsInPlace(a, b.added, b.removed);
                         reusedFiles[i] = a;
                     } else {
                         reusedFiles[i] = b;

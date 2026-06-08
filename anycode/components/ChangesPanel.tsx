@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Icons } from './Icons';
 import { FileIcon } from './FileIcon';
 import './ChangesPanel.css';
@@ -57,51 +57,6 @@ const areChangedFileEqual = (prev: ChangedFile, next: ChangedFile): boolean => (
     && (prev.removed ?? 0) === (next.removed ?? 0)
 );
 
-const areChangedFileStructureEqual = (prev: ChangedFile, next: ChangedFile): boolean => (
-    prev.path === next.path
-    && prev.status === next.status
-    && !!prev.staged === !!next.staged
-    && !!prev.unstaged === !!next.unstaged
-    && !!prev.conflicted === !!next.conflicted
-);
-
-const updateStatsElement = (
-    element: HTMLSpanElement | undefined,
-    added: number,
-    removed: number,
-) => {
-    if (!element) {
-        return;
-    }
-
-    element.style.display = added > 0 || removed > 0 ? '' : 'none';
-
-    const addedElement = element.querySelector<HTMLElement>('[data-stat="added"]');
-    if (addedElement) {
-        addedElement.textContent = added > 0 ? `+${added}` : '';
-        addedElement.style.display = added > 0 ? '' : 'none';
-    }
-
-    const removedElement = element.querySelector<HTMLElement>('[data-stat="removed"]');
-    if (removedElement) {
-        removedElement.textContent = removed > 0 ? `-${removed}` : '';
-        removedElement.style.display = removed > 0 ? '' : 'none';
-    }
-};
-
-const statsElementsByPath = new Map<string, Set<HTMLSpanElement>>();
-
-export const updateChangesFileStats = (path: string, added: number, removed: number) => {
-    const elements = statsElementsByPath.get(path);
-    if (!elements) {
-        return;
-    }
-
-    for (const element of elements) {
-        updateStatsElement(element, added, removed);
-    }
-};
-
 interface ChangesPanelItemProps {
     rowId: string;
     file: ChangedFile;
@@ -114,23 +69,21 @@ interface ChangesPanelItemProps {
     onStage: (path: string) => void;
     onUnstage: (path: string) => void;
     setItemRef: (rowId: string, element: HTMLDivElement | null) => void;
-    setStatsRef: (path: string, element: HTMLSpanElement | null) => void;
 }
 
 interface ChangesFileStatsProps {
-    path: string;
-    setStatsRef: (path: string, element: HTMLSpanElement | null) => void;
+    added: number;
+    removed: number;
 }
 
-const ChangesFileStats = React.memo(({ path, setStatsRef }: ChangesFileStatsProps) => {
-    const refCallback = useCallback((element: HTMLSpanElement | null) => {
-        setStatsRef(path, element);
-    }, [path, setStatsRef]);
-
+const ChangesFileStats = React.memo(({ added, removed }: ChangesFileStatsProps) => {
+    if (added === 0 && removed === 0) {
+        return null;
+    }
     return (
-        <span className="changes-file-stats" ref={refCallback} style={{ display: 'none' }}>
-            <span className="changes-stat-added" data-stat="added" />
-            <span className="changes-stat-removed" data-stat="removed" />
+        <span className="changes-file-stats">
+            {added > 0 && <span className="changes-stat-added">+{added}</span>}
+            {removed > 0 && <span className="changes-stat-removed">-{removed}</span>}
         </span>
     );
 });
@@ -148,7 +101,6 @@ const ChangesPanelItemImpl: React.FC<ChangesPanelItemProps> = ({
     onStage,
     onUnstage,
     setItemRef,
-    setStatsRef,
 }) => {
     const handleRevert = useCallback((e: React.MouseEvent) => {
         e.stopPropagation();
@@ -213,7 +165,7 @@ const ChangesPanelItemImpl: React.FC<ChangesPanelItemProps> = ({
                         {stageButtonLabel}
                     </button>
                 </div>
-                <ChangesFileStats path={file.path} setStatsRef={setStatsRef} />
+                <ChangesFileStats added={file.added ?? 0} removed={file.removed ?? 0} />
             </div>
         </div>
     );
@@ -233,8 +185,7 @@ const areChangesPanelItemsEqual = (
     && prev.onStage === next.onStage
     && prev.onUnstage === next.onUnstage
     && prev.setItemRef === next.setItemRef
-    && prev.setStatsRef === next.setStatsRef
-    && areChangedFileStructureEqual(prev.file, next.file)
+    && areChangedFileEqual(prev.file, next.file)
 );
 
 const ChangesPanelItem = React.memo(ChangesPanelItemImpl, areChangesPanelItemsEqual);
@@ -274,30 +225,6 @@ const ChangesPanelImpl: React.FC<ChangesPanelProps> = ({
         itemRefs.current.delete(rowId);
     }, []);
 
-    const setStatsRef = useCallback((path: string, element: HTMLSpanElement | null) => {
-        const elements = statsElementsByPath.get(path);
-        if (!element) {
-            elements?.forEach((existingElement) => {
-                if (!existingElement.isConnected) {
-                    elements.delete(existingElement);
-                }
-            });
-            if (elements?.size === 0) {
-                statsElementsByPath.delete(path);
-            }
-            return;
-        }
-
-        if (!elements) {
-            statsElementsByPath.set(path, new Set([element]));
-            return;
-        }
-
-        if (element) {
-            elements.add(element);
-        }
-    }, []);
-
     const conflictingFiles = useMemo(
         () => files.filter((file) => file.conflicted || file.status === 'conflict'),
         [files],
@@ -329,16 +256,6 @@ const ChangesPanelImpl: React.FC<ChangesPanelProps> = ({
     const mergeStats = useMemo(() => countGroupStats(conflictingFiles), [conflictingFiles, countGroupStats]);
     const stagedStats = useMemo(() => countGroupStats(stagedFiles), [countGroupStats, stagedFiles]);
     const changedStats = useMemo(() => countGroupStats(changedFiles), [changedFiles, countGroupStats]);
-
-    useLayoutEffect(() => {
-        for (const row of displayedRows) {
-            updateChangesFileStats(
-                row.file.path,
-                row.file.added ?? 0,
-                row.file.removed ?? 0,
-            );
-        }
-    }, [displayedRows]);
 
     useEffect(() => {
         if (typeof window === 'undefined') return;
@@ -532,10 +449,9 @@ const ChangesPanelImpl: React.FC<ChangesPanelProps> = ({
                 onStage={onStage}
                 onUnstage={onUnstage}
                 setItemRef={setItemRef}
-                setStatsRef={setStatsRef}
             />
         ))
-    ), [activeFilePath, handleItemClick, onRevert, onStage, onUnstage, selectedRowId, setItemRef, setStatsRef, fileIconsStyle]);
+    ), [activeFilePath, handleItemClick, onRevert, onStage, onUnstage, selectedRowId, setItemRef, fileIconsStyle]);
 
     return (
         <div className="changes-panel">
