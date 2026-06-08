@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
+import { createPortal } from 'react-dom';
 import { TreeNodeComponent } from '../../components';
 import type { TreeNode } from '../../types';
 import { Icons } from '../../components/Icons';
@@ -354,7 +355,7 @@ export const FilesPanel = ({
                 )}
             </div>
 
-            {contextMenu && (
+            {contextMenu && createPortal(
                 <div
                     className="tree-context-menu"
                     style={{
@@ -397,7 +398,8 @@ export const FilesPanel = ({
                             </button>
                         </>
                     )}
-                </div>
+                </div>,
+                document.body,
             )}
         </div>
     );
