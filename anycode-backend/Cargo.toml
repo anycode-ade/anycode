@@ -4,11 +4,11 @@ version = "0.0.20"
 edition = "2024"
 
 [profile.release]
-# opt-level = 3
-# strip = true
-# lto = true
-# codegen-units = 1
-# panic = 'abort'
+opt-level = 3
+strip = true
+lto = true
+codegen-units = 1
+panic = 'abort'
 
 [dependencies]
 openssl = { version = "0.10", features = ["vendored"] }
