@@ -76,7 +76,7 @@
     margin: 0 !important;
     user-select: none;
     -webkit-user-select: none;
-    min-height: var(--dv-tabs-and-actions-container-height, 35px);
+    min-height: 30px;
     align-items: stretch;
     position: relative;
 }
@@ -468,8 +468,8 @@
 }
 
 .layout-toolbar {
-    flex: 0 0 44px;
-    min-height: 44px;
+    flex: 0 0 30px;
+    min-height: 30px;
     width: 100%;
     min-width: 0;
     overflow: hidden;

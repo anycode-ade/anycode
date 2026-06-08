@@ -448,8 +448,91 @@ export const useFileTree = ({ wsRef, isConnected }: UseFileTreeParams) => {
         setActiveNodeId((prev) => (prev === path ? null : prev));
     }, []);
 
+    const deleteNode = useCallback((path: string) => {
+        if (!wsRef.current || !isConnected) return;
+        wsRef.current.emit('file:delete', { path }, (response: any) => {
+            if (response && response.error) {
+                console.error('Failed to delete file/folder:', response.error);
+            }
+        });
+    }, [wsRef, isConnected]);
+
+    const renameNodeOnDisk = useCallback((oldPath: string, newPath: string) => {
+        if (!wsRef.current || !isConnected) return;
+        wsRef.current.emit('file:rename', { old_path: oldPath, new_path: newPath }, (response: any) => {
+            if (response && response.error) {
+                console.error('Failed to rename file/folder:', response.error);
+            }
+        });
+    }, [wsRef, isConnected]);
+
+    const createNodeOnDisk = useCallback((parentPath: string, name: string, isFile: boolean, onCreated?: (path: string) => void) => {
+        if (!wsRef.current || !isConnected) return;
+        wsRef.current.emit('file:create', { parent_path: parentPath, name, is_file: isFile }, (response: any) => {
+            if (response && response.success) {
+                const createdPath = isFile ? response.file : response.dir;
+                if (createdPath) {
+                    handleWatcherCreate({ path: createdPath, isFile });
+                    onCreated?.(createdPath);
+                }
+            } else if (response && response.error) {
+                console.error('Failed to create file/folder:', response.error);
+            }
+        });
+    }, [wsRef, isConnected, handleWatcherCreate]);
+
+    const handleFileRenamed = useCallback((data: { old: string; new: string }) => {
+        const { old: oldPath, new: newPath } = data;
+        const fileName = getFileName(newPath);
+        const oldPrefix = oldPath + '/';
+        const newPrefix = newPath + '/';
+
+        setFileTree((prevTree) => {
+            const renameInNodes = (nodes: TreeNode[]): TreeNode[] => {
+                return nodes.map((node) => {
+                    if (node.path === oldPath) {
+                        return {
+                            ...node,
+                            id: newPath,
+                            name: fileName,
+                            path: newPath,
+                            children: node.children ? renameInNodes(node.children) : undefined,
+                        };
+                    }
+                    if (node.path.startsWith(oldPrefix)) {
+                        const relative = node.path.substring(oldPrefix.length);
+                        const nextPath = newPrefix + relative;
+                        return {
+                            ...node,
+                            id: nextPath,
+                            path: nextPath,
+                            children: node.children ? renameInNodes(node.children) : undefined,
+                        };
+                    }
+                    if (node.children) {
+                        return { ...node, children: renameInNodes(node.children) };
+                    }
+                    return node;
+                });
+            };
+            return renameInNodes(prevTree);
+        });
+
+        setActiveNodeId((prev) => {
+            if (prev === oldPath) return newPath;
+            if (prev?.startsWith(oldPrefix)) {
+                return newPrefix + prev.substring(oldPrefix.length);
+            }
+            return prev;
+        });
+    }, []);
+
     return {
         fileTree,
+        deleteNode,
+        renameNodeOnDisk,
+        createNodeOnDisk,
+        handleFileRenamed,
         activeNodeId,
         setActiveNode,
         openFolder,

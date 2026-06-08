@@ -11,7 +11,7 @@ use lsp_types::{Position, Range, TextDocumentContentChangeEvent};
 use serde::{Deserialize, Serialize};
 use serde_json::{self, json};
 use socketioxide::extract::{AckSender, Data, SocketRef, State};
-use std::path::PathBuf;
+use std::path::{Component, Path, PathBuf};
 use tracing::{error, info, warn};
 
 /// Apply edits to a Code instance and return LSP change events.
@@ -448,6 +448,14 @@ pub async fn handle_create(
     let name = &request.name;
     let is_file = request.is_file;
 
+    let mut name_components = Path::new(name).components();
+    if name.is_empty()
+        || !matches!(name_components.next(), Some(Component::Normal(_)))
+        || name_components.next().is_some()
+    {
+        error_ack!(ack, &request.name, "Name must be a single path component");
+    }
+
     // Build path using PathBuf for cross-platform compatibility
     let full_path = if parent_path.is_empty() || parent_path == "." || parent_path == "./" {
         PathBuf::from(name)
@@ -465,6 +473,9 @@ pub async fn handle_create(
     };
 
     let full_path_str = full_path.to_string_lossy().to_string();
+    if full_path.exists() {
+        error_ack!(ack, &request.name, "Destination path already exists");
+    }
 
     // Create parent directories if they don't exist
     if let Some(parent) = full_path.parent() {
@@ -484,10 +495,8 @@ pub async fn handle_create(
             Ok(_) => {
                 info!("File created successfully: {}", full_path_str);
                 let mut f2c = state.file2code.lock().await;
-                let code = f2c
-                    .entry(full_path_str.clone())
-                    .or_insert_with(|| Code::new());
-                code.set_file_name(full_path_str.clone());
+                f2c.entry(full_path_str.clone())
+                    .or_insert_with(|| Code::new_empty(&full_path_str, &state.config));
 
                 socket
                     .broadcast()
@@ -517,6 +526,230 @@ pub async fn handle_create(
             Err(e) => {
                 error_ack!(ack, &request.name, "Failed to create directory: {:?}", e);
             }
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct DeleteRequest {
+    pub path: String,
+}
+
+pub async fn handle_delete(
+    socket: SocketRef,
+    Data(request): Data<DeleteRequest>,
+    state: State<AppState>,
+    ack: AckSender,
+) {
+    info!("Received delete request: {:?}", request);
+
+    let abs_path = match abs_file(&request.path) {
+        Ok(p) => p,
+        Err(e) => error_ack!(ack, &request.path, "Failed to resolve path: {:?}", e),
+    };
+
+    let path = std::path::Path::new(&abs_path);
+    if !path.exists() {
+        error_ack!(ack, &request.path, "Path does not exist");
+    }
+
+    let result = if path.is_file() {
+        std::fs::remove_file(path)
+    } else {
+        std::fs::remove_dir_all(path)
+    };
+
+    match result {
+        Ok(_) => {
+            info!("Deleted successfully: {}", abs_path);
+
+            let prefix = format!("{}/", abs_path);
+
+            let files_to_close: Vec<(String, String)> = {
+                let f2c = state.file2code.lock().await;
+                f2c.iter()
+                    .filter(|(k, _)| **k == abs_path || k.starts_with(&prefix))
+                    .map(|(k, code)| (k.clone(), code.lang.clone()))
+                    .collect()
+            };
+
+            if !files_to_close.is_empty() {
+                let mut lsp_manager = state.lsp_manager.lock().await;
+                for (file_path, lang) in &files_to_close {
+                    if let Some(lsp) = lsp_manager.get(lang).await {
+                        if let Err(e) = lsp.did_close(file_path) {
+                            error!(
+                                "Failed to notify LSP didClose for deleted file {}: {:?}",
+                                file_path, e
+                            );
+                        }
+                    }
+                }
+            }
+
+            {
+                let mut f2c = state.file2code.lock().await;
+                f2c.retain(|k, _| k != &abs_path && !k.starts_with(&prefix));
+            }
+
+            {
+                let mut sockets_data = state.socket2data.lock().await;
+                for data in sockets_data.values_mut() {
+                    data.opened_files
+                        .retain(|k| k != &abs_path && !k.starts_with(&prefix));
+                }
+            }
+
+            socket.broadcast().emit("file:deleted", &abs_path).await.ok();
+            ack.send(&json!({ "success": true, "path": abs_path })).ok();
+        }
+        Err(e) => {
+            error_ack!(ack, &request.path, "Failed to delete: {:?}", e);
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct RenameRequest {
+    pub old_path: String,
+    pub new_path: String,
+}
+
+pub async fn handle_rename(
+    socket: SocketRef,
+    Data(request): Data<RenameRequest>,
+    state: State<AppState>,
+    ack: AckSender,
+) {
+    info!("Received rename request: {:?}", request);
+
+    let old_abs_path = match abs_file(&request.old_path) {
+        Ok(p) => p,
+        Err(e) => error_ack!(
+            ack,
+            &request.old_path,
+            "Failed to resolve old path: {:?}",
+            e
+        ),
+    };
+
+    let new_abs_path = match abs_file(&request.new_path) {
+        Ok(p) => p,
+        Err(e) => error_ack!(
+            ack,
+            &request.new_path,
+            "Failed to resolve new path: {:?}",
+            e
+        ),
+    };
+
+    let old_path = std::path::Path::new(&old_abs_path);
+    if !old_path.exists() {
+        error_ack!(ack, &request.old_path, "Old path does not exist");
+    }
+    if old_abs_path == new_abs_path {
+        ack.send(&json!({ "success": true, "old": old_abs_path, "new": new_abs_path }))
+            .ok();
+        return;
+    }
+    if std::path::Path::new(&new_abs_path).exists() {
+        error_ack!(ack, &request.new_path, "Destination path already exists");
+    }
+
+    let result = std::fs::rename(&old_abs_path, &new_abs_path);
+
+    match result {
+        Ok(_) => {
+            info!("Renamed successfully: {} -> {}", old_abs_path, new_abs_path);
+
+            let old_prefix = format!("{}/", old_abs_path);
+            let new_prefix = format!("{}/", new_abs_path);
+
+            let mut files_to_rename = Vec::new();
+            {
+                let f2c = state.file2code.lock().await;
+                for (k, code) in f2c.iter() {
+                    if *k == old_abs_path {
+                        let new_lang = Code::new_empty(&new_abs_path, &state.config).lang;
+                        files_to_rename.push((
+                            k.clone(),
+                            new_abs_path.clone(),
+                            code.lang.clone(),
+                            new_lang,
+                            code.get_content(),
+                        ));
+                    } else if k.starts_with(&old_prefix) {
+                        let sub_path = k.strip_prefix(&old_prefix).unwrap();
+                        let new_sub_path = format!("{}{}", new_prefix, sub_path);
+                        let new_lang = Code::new_empty(&new_sub_path, &state.config).lang;
+                        files_to_rename.push((
+                            k.clone(),
+                            new_sub_path,
+                            code.lang.clone(),
+                            new_lang,
+                            code.get_content(),
+                        ));
+                    }
+                }
+            }
+
+            if !files_to_rename.is_empty() {
+                let mut lsp_manager = state.lsp_manager.lock().await;
+
+                for (old_path, _, old_lang, _, _) in &files_to_rename {
+                    if let Some(lsp) = lsp_manager.get(old_lang).await {
+                        let _ = lsp.did_close(old_path);
+                    }
+                }
+
+                {
+                    let mut f2c = state.file2code.lock().await;
+                    for (old_path, new_path, _, new_lang, _) in &files_to_rename {
+                        if let Some(mut code) = f2c.remove(old_path) {
+                            code.abs_path = new_path.clone();
+                            code.file_name = crate::utils::file_name(new_path);
+                            code.lang = new_lang.clone();
+                            f2c.insert(new_path.clone(), code);
+                        }
+                    }
+                }
+
+                {
+                    let mut sockets_data = state.socket2data.lock().await;
+                    for data in sockets_data.values_mut() {
+                        for (old_path, new_path, _, _, _) in &files_to_rename {
+                            if data.opened_files.remove(old_path) {
+                                data.opened_files.insert(new_path.clone());
+                            }
+                        }
+                    }
+                }
+
+                for (_, new_path, _, new_lang, content) in &files_to_rename {
+                    if let Some(lsp) = lsp_manager.get(new_lang).await {
+                        let _ = lsp.did_open(new_lang, new_path, content);
+                    }
+                }
+            }
+
+            let _ = socket.emit(
+                "file:renamed",
+                &json!({ "old": old_abs_path, "new": new_abs_path }),
+            );
+
+            socket
+                .broadcast()
+                .emit(
+                    "file:renamed",
+                    &json!({ "old": old_abs_path, "new": new_abs_path }),
+                )
+                .await
+                .ok();
+            ack.send(&json!({ "success": true, "old": old_abs_path, "new": new_abs_path }))
+                .ok();
+        }
+        Err(e) => {
+            error_ack!(ack, &request.old_path, "Failed to rename: {:?}", e);
         }
     }
 }

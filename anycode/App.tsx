@@ -36,7 +36,8 @@ import { type DiffMode } from './types/diffMode';
 import { normalizePath } from './utils';
 
 const App: React.FC = () => {
-    const { wsRef, isConnected } = useSocket({});
+    const { wsRef, isConnected, connectionStatus } = useSocket({});
+    const [showConnectionBanner, setShowConnectionBanner] = React.useState(false);
 
     const [fileIconsStyle, setFileIconsStyle] = React.useState<'colored' | 'monochrome' | 'disabled'>(() => {
         if (typeof window === 'undefined') return 'colored';
@@ -65,6 +66,30 @@ const App: React.FC = () => {
     const layoutActionsRef = useRef<LayoutActions | null>(null);
 
     useEffect(() => {
+        if (connectionStatus === 'connected') {
+            setShowConnectionBanner(false);
+            return;
+        }
+
+        const timeout = window.setTimeout(() => {
+            setShowConnectionBanner(true);
+        }, 750);
+
+        return () => window.clearTimeout(timeout);
+    }, [connectionStatus]);
+
+    const handleWatcherRemove = useEvent((data: { path: string; isFile: boolean }) => {
+        fileTree.handleWatcherRemove(data);
+        if (data.isFile) editors.closeFile(data.path);
+        else editors.closeFilesUnderPath(data.path);
+    });
+
+    const handleFileRenamed = useEvent((data: { old: string; new: string }) => {
+        fileTree.handleFileRenamed(data);
+        editors.renameFilesUnderPath(data.old, data.new);
+    });
+
+    useEffect(() => {
         const ws = wsRef.current;
         if (!ws || !isConnected) return;
 
@@ -72,7 +97,8 @@ const App: React.FC = () => {
             ['lsp:diagnostics', editors.handleDiagnostics],
             ['watcher:edits', editors.handleWatcherEdits],
             ['watcher:create', fileTree.handleWatcherCreate],
-            ['watcher:remove', fileTree.handleWatcherRemove],
+            ['watcher:remove', handleWatcherRemove],
+            ['file:renamed', handleFileRenamed],
             ['git:update', git.handleGitStatusUpdate],
             ['git:update', editors.handleGitUpdate],
             ['acp:message', agents.handleAcpMessage],
@@ -92,7 +118,8 @@ const App: React.FC = () => {
         editors.handleWatcherEdits,
         editors.handleGitUpdate,
         fileTree.handleWatcherCreate,
-        fileTree.handleWatcherRemove,
+        handleWatcherRemove,
+        handleFileRenamed,
         git.handleGitStatusUpdate,
         agents.handleAcpMessage,
         agents.handleAcpHistory,
@@ -346,6 +373,9 @@ const App: React.FC = () => {
                         onFocusEditor={() => editors.focusEditorInPane(editors.activeEditorPaneId)}
                         onNavigateByKey={fileTree.navigateByKey}
                         fileIconsStyle={fileIconsStyle}
+                        onDeleteNode={fileTree.deleteNode}
+                        onRenameNode={fileTree.renameNodeOnDisk}
+                        onCreateNode={fileTree.createNodeOnDisk}
                     />
                 );
             case 'search':
@@ -440,6 +470,8 @@ const App: React.FC = () => {
                         onSelectAgent={agentPanes.selectFromToolbar}
                         onCloseAgent={agents.closeAgent}
                         fileIconsStyle={fileIconsStyle}
+                        showConnectionStatus={showConnectionBanner}
+                        connectionStatus={connectionStatus}
                     />
                 );
             case 'settings':

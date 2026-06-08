@@ -9,6 +9,8 @@ type UseSocketParams = {
     onError?: (data: { message: string }) => void;
 };
 
+export type ConnectionStatus = 'connecting' | 'connected' | 'reconnecting';
+
 export const useSocket = ({ onConnect, onDisconnect, onConnectError, onError }: UseSocketParams) => {
     const wsRef = useRef<Socket | null>(null);
     const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -16,6 +18,7 @@ export const useSocket = ({ onConnect, onDisconnect, onConnectError, onError }: 
     const reconnectDelay = 1000;
 
     const [isConnected, setIsConnected] = useState<boolean>(false);
+    const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('connecting');
     const [connectionError, setConnectionError] = useState<string | null>(null);
 
     const connectToBackend = useCallback(() => {
@@ -30,6 +33,7 @@ export const useSocket = ({ onConnect, onDisconnect, onConnectError, onError }: 
 
             ws.on('connect', () => {
                 setIsConnected(true);
+                setConnectionStatus('connected');
                 setConnectionError(null);
                 reconnectAttemptsRef.current = 0;
                 onConnect?.();
@@ -37,6 +41,8 @@ export const useSocket = ({ onConnect, onDisconnect, onConnectError, onError }: 
 
             ws.on('disconnect', (reason) => {
                 setIsConnected(false);
+                setConnectionStatus('reconnecting');
+                setConnectionError('Connection to backend lost');
                 onDisconnect?.(reason);
                 reconnectAttemptsRef.current += 1;
                 reconnectTimeoutRef.current = setTimeout(() => {
@@ -46,6 +52,7 @@ export const useSocket = ({ onConnect, onDisconnect, onConnectError, onError }: 
 
             ws.on('connect_error', (error) => {
                 setIsConnected(false);
+                setConnectionStatus('reconnecting');
                 setConnectionError('Failed to connect to backend');
                 onConnectError?.(error);
             });
@@ -74,6 +81,7 @@ export const useSocket = ({ onConnect, onDisconnect, onConnectError, onError }: 
         }
 
         setIsConnected(false);
+        setConnectionStatus('reconnecting');
     }, []);
 
     useEffect(() => {
@@ -86,6 +94,7 @@ export const useSocket = ({ onConnect, onDisconnect, onConnectError, onError }: 
     return {
         wsRef,
         isConnected,
+        connectionStatus,
         connectionError,
         connectToBackend,
         disconnectFromBackend,

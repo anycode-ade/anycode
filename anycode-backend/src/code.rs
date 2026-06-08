@@ -133,6 +133,7 @@ impl Code {
         saved
     }
 
+    #[allow(dead_code)]
     pub fn set_file_name(&mut self, file_name: String) {
         self.file_name = file_name;
     }

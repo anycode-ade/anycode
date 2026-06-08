@@ -14,6 +14,10 @@ interface TreeNodeComponentProps {
     onSelect: (nodeId: string) => void;
     onOpenFile: (path: string) => void;
     onLoadFolder: (path: string) => void;
+    onContextMenu: (e: React.MouseEvent, node: TreeNode) => void;
+    editingNodeId: string | null;
+    onRename?: (path: string, newName: string) => void;
+    onCancelRename?: () => void;
 }
 
 const isPathWithinNode = (nodePath: string, activeNodeId: string | null): boolean => {
@@ -39,14 +43,75 @@ const TreeNodeComponentImpl: React.FC<TreeNodeComponentProps> = ({
     onSelect,
     onOpenFile,
     onLoadFolder,
+    onContextMenu,
+    editingNodeId,
+    onRename,
+    onCancelRename,
 }) => {
     const hasChildren = node.type === 'directory';
     const isExpanded = Boolean(node.isExpanded);
     const isSelected = Boolean(node.isSelected);
     const isActive = activeNodeId === node.id;
+    const isEditing = editingNodeId === node.id;
+
+    const [renameValue, setRenameValue] = React.useState(node.name);
+    const inputRef = React.useRef<HTMLInputElement>(null);
+    const hasSubmittedRef = React.useRef(false);
+
+    React.useEffect(() => {
+        if (isEditing) {
+            setRenameValue(node.name);
+            hasSubmittedRef.current = false;
+        }
+    }, [isEditing, node.name]);
+
+    React.useEffect(() => {
+        if (isEditing && inputRef.current) {
+            inputRef.current.focus();
+            const lastDot = node.name.lastIndexOf('.');
+            if (lastDot > 0 && node.type === 'file') {
+                inputRef.current.setSelectionRange(0, lastDot);
+            } else {
+                inputRef.current.select();
+            }
+        }
+    }, [isEditing, node.name, node.type]);
+
+    const submitRename = () => {
+        if (hasSubmittedRef.current) return;
+
+        const trimmed = renameValue.trim();
+        if (trimmed && trimmed !== node.name) {
+            hasSubmittedRef.current = true;
+            onRename?.(node.path, trimmed);
+        } else {
+            hasSubmittedRef.current = true;
+            onCancelRename?.();
+        }
+    };
+
+    const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            submitRename();
+        } else if (e.key === 'Escape') {
+            e.preventDefault();
+            hasSubmittedRef.current = true;
+            onCancelRename?.();
+        }
+    };
+
+    const handleBlur = () => {
+        submitRename();
+    };
+
+    const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        setRenameValue(e.target.value.replace(/\//g, ''));
+    };
 
     const handleToggle = (e: React.MouseEvent) => {
         e.stopPropagation();
+        if (isEditing) return;
         onActivate(node.id);
 
         if (!hasChildren) {
@@ -62,6 +127,7 @@ const TreeNodeComponentImpl: React.FC<TreeNodeComponentProps> = ({
 
     const handleNameClick = (e: React.MouseEvent) => {
         e.stopPropagation();
+        if (isEditing) return;
         onActivate(node.id);
 
         if (node.type === 'file') {
@@ -86,6 +152,7 @@ const TreeNodeComponentImpl: React.FC<TreeNodeComponentProps> = ({
         if (e.button !== 0) {
             return;
         }
+        if (isEditing) return;
         onActivate(node.id);
     };
 
@@ -96,6 +163,7 @@ const TreeNodeComponentImpl: React.FC<TreeNodeComponentProps> = ({
                 ref={(element) => onNodeRef(node.id, element)}
                 onMouseDown={handleActivateOnly}
                 onClick={handleNameClick}
+                onContextMenu={(e) => onContextMenu(e, node)}
                 style={{ cursor: 'pointer' }}
             >
                 <div className="tree-indent" style={{ width: level * 16 }}></div>
@@ -108,9 +176,22 @@ const TreeNodeComponentImpl: React.FC<TreeNodeComponentProps> = ({
                     className="tree-file-icon"
                 />
 
-                <span className="tree-name" title={title} onMouseDown={(e) => e.stopPropagation()}>
-                    {node.name}
-                </span>
+                {isEditing ? (
+                    <input
+                        ref={inputRef}
+                        className="tree-rename-input"
+                        value={renameValue}
+                        onChange={handleChange}
+                        onKeyDown={handleKeyDown}
+                        onBlur={handleBlur}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onClick={(e) => e.stopPropagation()}
+                    />
+                ) : (
+                    <span className="tree-name" title={title} onMouseDown={(e) => e.stopPropagation()}>
+                        {node.name}
+                    </span>
+                )}
             </div>
 
             {hasChildren && isExpanded && node.children && node.children.length > 0 && (
@@ -128,6 +209,10 @@ const TreeNodeComponentImpl: React.FC<TreeNodeComponentProps> = ({
                             onSelect={onSelect}
                             onOpenFile={onOpenFile}
                             onLoadFolder={onLoadFolder}
+                            onContextMenu={onContextMenu}
+                            editingNodeId={editingNodeId}
+                            onRename={onRename}
+                            onCancelRename={onCancelRename}
                         />
                     ))}
                 </div>
@@ -150,12 +235,21 @@ const areEqual = (prev: TreeNodeComponentProps, next: TreeNodeComponentProps): b
     }
 
     if (
+        prev.editingNodeId !== next.editingNodeId
+        || prev.onRename !== next.onRename
+        || prev.onCancelRename !== next.onCancelRename
+    ) {
+        return false;
+    }
+
+    if (
         prev.onNodeRef !== next.onNodeRef
         || prev.onActivate !== next.onActivate
         || prev.onToggle !== next.onToggle
         || prev.onSelect !== next.onSelect
         || prev.onOpenFile !== next.onOpenFile
         || prev.onLoadFolder !== next.onLoadFolder
+        || prev.onContextMenu !== next.onContextMenu
     ) {
         return false;
     }

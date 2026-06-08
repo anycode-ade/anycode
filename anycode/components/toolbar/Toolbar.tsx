@@ -6,6 +6,7 @@ import type { TabMenuAction } from './TabContextMenu';
 import { ToolbarTab } from './ToolbarTab';
 import { useTabContextMenu } from './useTabContextMenu';
 import './Toolbar.css';
+import type { ConnectionStatus } from '../../hooks/useSocket';
 
 const PINNED_FILES_KEY = 'pinnedFiles';
 const PINNED_TERMINALS_KEY = 'pinnedTerminals';
@@ -29,6 +30,8 @@ interface ToolbarProps {
     onCloseTerminal: (terminalId: string) => void;
     onSelectAgent: (agentId: string) => void;
     onCloseAgent: (agentId: string) => void;
+    showConnectionStatus?: boolean;
+    connectionStatus?: ConnectionStatus;
 }
 
 const copyText = (text: string) => {
@@ -49,6 +52,8 @@ export const Toolbar = ({
     onCloseTerminal,
     onSelectAgent,
     onCloseAgent,
+    showConnectionStatus = false,
+    connectionStatus = 'connected',
 }: ToolbarProps) => {
     const { closeMenu, menuRef, openMenu, tabMenu } = useTabContextMenu();
 
@@ -469,73 +474,83 @@ export const Toolbar = ({
 
     return (
         <div className="toolbar">
-            <div className="toolbar-tabs" onWheel={handleTabsWheel}>
-                {sortedFiles.map((file) => (
-                    <ToolbarTab
-                        key={file.id}
-                        active={activeFileId === file.id}
-                        label={file.name}
-                        title={file.id}
-                        filePath={file.id}
-                        fileIconsStyle={fileIconsStyle}
-                        pinned={pinnedFileIds.includes(file.id)}
-                        onUnpin={() => togglePinFile(file.id)}
-                        onSelect={() => onSelectFile(file.id)}
-                        onClose={() => onCloseFile(file.id)}
-                        onContextMenu={(event) => openMenu(event, 'file', file.id)}
-                        draggable={true}
-                        dragging={draggedItem?.type === 'file' && draggedItem?.id === file.id}
-                        onDragStart={(event) => handleDragStart(event, 'file', file.id)}
-                        onDragEnd={handleDragEnd}
-                        onDragOver={(event) => handleDragOver(event, 'file', file.id)}
-                        onDrop={handleDrop}
-                    />
-                ))}
-                {sortedFiles.length > 0 && sortedTerminals.length > 0 && (
-                    <div className="tab-group-separator" />
-                )}
-                {sortedTerminals.map((terminal) => (
-                    <ToolbarTab
-                        key={`toolbar-terminal-${terminal.id}`}
-                        active={activeTerminalId === terminal.id}
-                        label={`term:${terminal.name}`}
-                        variant="terminal"
-                        pinned={pinnedTerminalIds.includes(terminal.id)}
-                        onUnpin={() => togglePinTerminal(terminal.id)}
-                        onSelect={() => onSelectTerminal(terminal.id)}
-                        onClose={() => onCloseTerminal(terminal.id)}
-                        onContextMenu={(event) => openMenu(event, 'terminal', terminal.id)}
-                        draggable={true}
-                        dragging={draggedItem?.type === 'terminal' && draggedItem?.id === terminal.id}
-                        onDragStart={(event) => handleDragStart(event, 'terminal', terminal.id)}
-                        onDragEnd={handleDragEnd}
-                        onDragOver={(event) => handleDragOver(event, 'terminal', terminal.id)}
-                        onDrop={handleDrop}
-                    />
-                ))}
-                {sortedAgentSessions.length > 0 && (sortedFiles.length > 0 || sortedTerminals.length > 0) && (
-                    <div className="tab-group-separator" />
-                )}
-                {sortedAgentSessions.map((session) => (
-                    <ToolbarTab
-                        key={`toolbar-agent-${session.agentId}`}
-                        active={activeAgentId === session.agentId}
-                        label={session.agentName || session.agentId}
-                        variant="agent"
-                        pinned={pinnedAgentIds.includes(session.agentId)}
-                        onUnpin={() => togglePinAgent(session.agentId)}
-                        onSelect={() => onSelectAgent(session.agentId)}
-                        onClose={() => onCloseAgent(session.agentId)}
-                        onContextMenu={(event) => openMenu(event, 'agent', session.agentId)}
-                        draggable={true}
-                        dragging={draggedItem?.type === 'agent' && draggedItem?.id === session.agentId}
-                        onDragStart={(event) => handleDragStart(event, 'agent', session.agentId)}
-                        onDragEnd={handleDragEnd}
-                        onDragOver={(event) => handleDragOver(event, 'agent', session.agentId)}
-                        onDrop={handleDrop}
-                    />
-                ))}
-            </div>
+            {showConnectionStatus ? (
+                <div className="toolbar-connection-status" role="status" aria-live="polite">
+                    <span className="toolbar-connection-dot" aria-hidden="true" />
+                    <span>Disconnected</span>
+                    <span className="toolbar-connection-detail">
+                        {connectionStatus === 'connecting' ? 'Connecting...' : 'Reconnecting...'}
+                    </span>
+                </div>
+            ) : (
+                <div className="toolbar-tabs" onWheel={handleTabsWheel}>
+                    {sortedFiles.map((file) => (
+                        <ToolbarTab
+                            key={file.id}
+                            active={activeFileId === file.id}
+                            label={file.name}
+                            title={file.id}
+                            filePath={file.id}
+                            fileIconsStyle={fileIconsStyle}
+                            pinned={pinnedFileIds.includes(file.id)}
+                            onUnpin={() => togglePinFile(file.id)}
+                            onSelect={() => onSelectFile(file.id)}
+                            onClose={() => onCloseFile(file.id)}
+                            onContextMenu={(event) => openMenu(event, 'file', file.id)}
+                            draggable={true}
+                            dragging={draggedItem?.type === 'file' && draggedItem?.id === file.id}
+                            onDragStart={(event) => handleDragStart(event, 'file', file.id)}
+                            onDragEnd={handleDragEnd}
+                            onDragOver={(event) => handleDragOver(event, 'file', file.id)}
+                            onDrop={handleDrop}
+                        />
+                    ))}
+                    {sortedFiles.length > 0 && sortedTerminals.length > 0 && (
+                        <div className="tab-group-separator" />
+                    )}
+                    {sortedTerminals.map((terminal) => (
+                        <ToolbarTab
+                            key={`toolbar-terminal-${terminal.id}`}
+                            active={activeTerminalId === terminal.id}
+                            label={`term:${terminal.name}`}
+                            variant="terminal"
+                            pinned={pinnedTerminalIds.includes(terminal.id)}
+                            onUnpin={() => togglePinTerminal(terminal.id)}
+                            onSelect={() => onSelectTerminal(terminal.id)}
+                            onClose={() => onCloseTerminal(terminal.id)}
+                            onContextMenu={(event) => openMenu(event, 'terminal', terminal.id)}
+                            draggable={true}
+                            dragging={draggedItem?.type === 'terminal' && draggedItem?.id === terminal.id}
+                            onDragStart={(event) => handleDragStart(event, 'terminal', terminal.id)}
+                            onDragEnd={handleDragEnd}
+                            onDragOver={(event) => handleDragOver(event, 'terminal', terminal.id)}
+                            onDrop={handleDrop}
+                        />
+                    ))}
+                    {sortedAgentSessions.length > 0 && (sortedFiles.length > 0 || sortedTerminals.length > 0) && (
+                        <div className="tab-group-separator" />
+                    )}
+                    {sortedAgentSessions.map((session) => (
+                        <ToolbarTab
+                            key={`toolbar-agent-${session.agentId}`}
+                            active={activeAgentId === session.agentId}
+                            label={session.agentName || session.agentId}
+                            variant="agent"
+                            pinned={pinnedAgentIds.includes(session.agentId)}
+                            onUnpin={() => togglePinAgent(session.agentId)}
+                            onSelect={() => onSelectAgent(session.agentId)}
+                            onClose={() => onCloseAgent(session.agentId)}
+                            onContextMenu={(event) => openMenu(event, 'agent', session.agentId)}
+                            draggable={true}
+                            dragging={draggedItem?.type === 'agent' && draggedItem?.id === session.agentId}
+                            onDragStart={(event) => handleDragStart(event, 'agent', session.agentId)}
+                            onDragEnd={handleDragEnd}
+                            onDragOver={(event) => handleDragOver(event, 'agent', session.agentId)}
+                            onDrop={handleDrop}
+                        />
+                    ))}
+                </div>
+            )}
 
             {tabMenu && menuGroups.length > 0 && (
                 <TabContextMenu

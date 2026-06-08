@@ -126,6 +126,38 @@
     display: none;
 }
 
+.toolbar-connection-status {
+    display: flex;
+    align-items: center;
+    flex: 0 0 auto;
+    gap: 6px;
+    height: 22px;
+    padding: 0 8px;
+    color: #ffd7d7;
+    background: rgba(110, 32, 32, 0.72);
+    border: 1px solid rgba(255, 107, 107, 0.38);
+    border-radius: 5px;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1;
+    pointer-events: none;
+    margin-left: auto;
+}
+
+.toolbar-connection-dot {
+    width: 6px;
+    height: 6px;
+    flex: 0 0 auto;
+    background: #ff6b6b;
+    border-radius: 50%;
+    box-shadow: 0 0 0 2px rgba(255, 107, 107, 0.14);
+}
+
+.toolbar-connection-detail {
+    color: rgba(255, 255, 255, 0.58);
+    font-weight: 400;
+}
+
 .tab-terminal {
     color: var(--theme-tab-foreground, #7ec8ff);
 }

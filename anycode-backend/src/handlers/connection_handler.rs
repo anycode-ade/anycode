@@ -18,6 +18,8 @@ pub async fn handle_connect(socket: SocketRef, _state: State<AppState>) {
     socket.on("file:save", handle_file_save);
     socket.on("file:create", handle_create);
     socket.on("file:close", handle_file_close);
+    socket.on("file:delete", handle_delete);
+    socket.on("file:rename", handle_rename);
 
     socket.on("lsp:completion", handle_completion);
     socket.on("lsp:definition", handle_definition);

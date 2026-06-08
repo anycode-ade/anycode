@@ -1033,6 +1033,9 @@ export const useEditors = ({ wsRef, isConnected, onFileClosed }: UseEditorsParam
     }, [activeEditorPaneId, activeFileId, applyDiffModeToPaneEditor, getEditorDiffMode]);
 
     const closeFile = useCallback((fileId: string) => {
+        const fileExists = filesRef.current.some((file) => file.id === fileId);
+        if (!fileExists) return;
+
         flushChanges(fileId);
 
         if (wsRef.current && isConnected) {
@@ -1202,8 +1205,128 @@ export const useEditors = ({ wsRef, isConnected, onFileClosed }: UseEditorsParam
         pendingChangesRef.current.clear();
     }, [flushChanges]);
 
+    const closeFilesUnderPath = useCallback((dirPath: string) => {
+        const filesToClose = filesRef.current.filter((file) => file.id === dirPath || file.id.startsWith(dirPath + '/'));
+        filesToClose.forEach((file) => {
+            closeFile(file.id);
+        });
+    }, [closeFile]);
+
+    const renameFilesUnderPath = useCallback((oldDirPath: string, newDirPath: string) => {
+        const oldPrefix = oldDirPath + '/';
+        const newPrefix = newDirPath + '/';
+
+        setFiles((prev) =>
+            prev.map((file) => {
+                if (file.id === oldDirPath) {
+                    const fileName = getFileName(newDirPath);
+                    const language = getLanguageFromFileName(fileName);
+                    return { ...file, id: newDirPath, name: fileName, language };
+                }
+                if (file.id.startsWith(oldPrefix)) {
+                    const relative = file.id.substring(oldPrefix.length);
+                    const nextId = newPrefix + relative;
+                    const fileName = getFileName(nextId);
+                    const language = getLanguageFromFileName(fileName);
+                    return { ...file, id: nextId, name: fileName, language };
+                }
+                return file;
+            })
+        );
+
+        setPaneActiveFileIds((prev) => {
+            const next = { ...prev };
+            Object.keys(next).forEach((paneId) => {
+                const activeId = next[paneId];
+                if (activeId) {
+                    if (activeId === oldDirPath) {
+                        next[paneId] = newDirPath;
+                    } else if (activeId.startsWith(oldPrefix)) {
+                        next[paneId] = newPrefix + activeId.substring(oldPrefix.length);
+                    }
+                }
+            });
+            return next;
+        });
+
+        const updateMapKeys = <T>(map: Map<string, T> | { current: Map<string, T> }) => {
+            const actualMap = 'current' in map ? map.current : map;
+            const keys = Array.from(actualMap.keys());
+            for (const key of keys) {
+                if (key === oldDirPath || key.startsWith(oldPrefix)) {
+                    const nextKey = key === oldDirPath ? newDirPath : newPrefix + key.substring(oldPrefix.length);
+                    const value = actualMap.get(key);
+                    if (value !== undefined) {
+                        actualMap.delete(key);
+                        actualMap.set(nextKey, value);
+                    }
+                }
+            }
+        };
+
+        setEditorStates((prev) => {
+            const next = new Map(prev);
+            const keys = Array.from(next.keys());
+            for (const key of keys) {
+                if (key === oldDirPath || key.startsWith(oldPrefix)) {
+                    const nextKey = key === oldDirPath ? newDirPath : newPrefix + key.substring(oldPrefix.length);
+                    const val = next.get(key);
+                    if (val !== undefined) {
+                        next.delete(key);
+                        next.set(nextKey, val);
+                    }
+                }
+            }
+            return next;
+        });
+
+        updateMapKeys(editorRefs);
+        updateMapKeys(savedFileContentsRef);
+        updateMapKeys(editorOpenRequestsRef);
+        updateMapKeys(previewFileContentsRef);
+        updateMapKeys(diagnosticsRef);
+
+        const pendingChangeKeys = Array.from(pendingChangesRef.current.keys());
+        for (const key of pendingChangeKeys) {
+            if (key === oldDirPath || key.startsWith(oldPrefix)) {
+                const nextKey = key === oldDirPath ? newDirPath : newPrefix + key.substring(oldPrefix.length);
+                const batch = pendingChangesRef.current.get(key);
+                if (batch) {
+                    if (batch.timerId) {
+                        clearTimeout(batch.timerId);
+                    }
+                    batch.timerId = setTimeout(() => {
+                        flushChanges(nextKey);
+                    }, BATCH_DELAY_MS);
+                    pendingChangesRef.current.delete(key);
+                    pendingChangesRef.current.set(nextKey, batch);
+                }
+            }
+        }
+
+        const pendingOpenFiles = Array.from(pendingOpenFilesRef.current);
+        for (const key of pendingOpenFiles) {
+            if (key === oldDirPath || key.startsWith(oldPrefix)) {
+                const nextKey = key === oldDirPath ? newDirPath : newPrefix + key.substring(oldPrefix.length);
+                pendingOpenFilesRef.current.delete(key);
+                pendingOpenFilesRef.current.add(nextKey);
+            }
+        }
+
+        const cursorKeys = Object.keys(cursor2FileRef.current);
+        for (const key of cursorKeys) {
+            if (key === oldDirPath || key.startsWith(oldPrefix)) {
+                const nextKey = key === oldDirPath ? newDirPath : newPrefix + key.substring(oldPrefix.length);
+                cursor2FileRef.current[nextKey] = cursor2FileRef.current[key];
+                delete cursor2FileRef.current[key];
+            }
+        }
+    }, [flushChanges]);
+
     return {
         files,
+        closeFilesUnderPath,
+        renameFilesUnderPath,
         activeFile,
         activeFileId,
         activeEditorPaneId,
