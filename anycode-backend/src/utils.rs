@@ -283,20 +283,64 @@ pub fn path_to_uri(path: &str) -> anyhow::Result<Uri> {
         .canonicalize()
         .unwrap_or_else(|_| path_obj.to_path_buf());
 
-    let path_str = canonical_path.to_string_lossy().replace('\\', "/");
-
-    let uri_str = if path_str.len() > 2 && &path_str[1..2] == ":" {
-        // Windows path like C:/... -> file:///C:/...
-        format!("file:///{}", path_str)
-    } else if path_str.starts_with('/') {
-        // Unix absolute path /path -> file:///path
-        format!("file://{}", path_str)
+    let absolute_path = if canonical_path.is_absolute() {
+        canonical_path
     } else {
-        // Relative path -> file:///path
-        format!("file:///{}", path_str)
+        std::env::current_dir()?.join(canonical_path)
     };
 
-    uri_str
+    let url = url::Url::from_file_path(&absolute_path)
+        .map_err(|_| anyhow::anyhow!("Failed to convert path to Url: {:?}", absolute_path))?;
+
+    url.as_str()
         .parse()
         .map_err(|e| anyhow::anyhow!("Failed to parse URI: {}", e))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_path_to_uri_with_spaces() {
+        let path = if cfg!(target_os = "windows") {
+            r"C:\Users\max\dev\anycode\code copy.ts"
+        } else {
+            "/Users/max/dev/anycode/code copy.ts"
+        };
+        let uri = path_to_uri(path).unwrap();
+        assert!(uri.to_string().contains("code%20copy.ts"));
+    }
+
+    #[test]
+    fn test_path_to_uri_relative() {
+        let path = "src/utils.rs";
+        let uri = path_to_uri(path).unwrap();
+        assert!(uri.to_string().starts_with("file:///"));
+        assert!(uri.to_string().ends_with("src/utils.rs"));
+    }
+
+    #[test]
+    fn test_path_to_uri_cyrillic() {
+        let path = if cfg!(target_os = "windows") {
+            r"C:\Users\max\dev\anycode\привет мир.ts"
+        } else {
+            "/Users/max/dev/anycode/привет мир.ts"
+        };
+        let uri = path_to_uri(path).unwrap();
+        assert!(uri.to_string().contains("%20"));
+        // "привет" in UTF-8 percent-encoded is %D0%BF%D1%80%D0%B8%D0%B2%D0%B5%D1%82
+        assert!(uri.to_string().contains("%D0%BF%D1%80%D0%B8%D0%B2%D0%B5%D1%82"));
+    }
+
+    #[test]
+    fn test_path_to_uri_special_chars() {
+        let path = if cfg!(target_os = "windows") {
+            r"C:\Users\max\dev\anycode\file#name?.ts"
+        } else {
+            "/Users/max/dev/anycode/file#name?.ts"
+        };
+        let uri = path_to_uri(path).unwrap();
+        assert!(uri.to_string().contains("file%23name%3F.ts"));
+    }
 }
