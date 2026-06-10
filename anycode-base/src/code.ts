@@ -25,6 +25,7 @@ import type { Lang } from './lang';
 
 import javascript from './langs/javascript';
 import typescript from './langs/typescript';
+import tsx from './langs/tsx';
 import python from './langs/python';
 import rust from './langs/rust';
 import yaml from './langs/yaml';
@@ -642,6 +643,7 @@ export class Code {
     getLang(lang: string): Lang | null {
         if (lang === 'javascript') return javascript
         if (lang === 'typescript') return typescript
+        if (lang === 'tsx') return tsx
         if (lang === 'rust') return rust
         if (lang === 'python') return python
         if (lang === 'yaml') return yaml

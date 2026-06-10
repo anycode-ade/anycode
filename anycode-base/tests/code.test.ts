@@ -37,6 +37,24 @@ function greet(name: string): void {
             expect(nodesLine2.some(n => n.name === 'type' && n.text === 'string')).toBe(true);
             expect(nodesLine2.some(n => n.name === 'type' && n.text === 'void')).toBe(true);
         });
+
+        it('should parse and highlight TSX elements separately from TypeScript', async () => {
+            const tsxCode = `type Props = { title: string };
+export function Card({ title }: Props) {
+    return <section className="card"><Header title={title} /></section>;
+}
+`;
+            const code = new Code(tsxCode, 'Card.tsx', 'tsx');
+            await code.init();
+
+            const jsxLine = code.getLineNodes(2);
+            expect(code.language).toBe('tsx');
+            expect(jsxLine.some(n => n.name === 'tag' && n.text === 'section')).toBe(true);
+            expect(jsxLine.some(n => n.name === 'tag' && n.text === 'Header')).toBe(true);
+            expect(jsxLine.some(n => n.name === 'attribute' && n.text === 'className')).toBe(true);
+            expect(jsxLine.some(n => n.name === 'attribute' && n.text === 'title')).toBe(true);
+            expect(jsxLine.some(n => n.name === 'string' && n.text === '"card"')).toBe(true);
+        });
     });
 
     describe('Python Parsing', () => {

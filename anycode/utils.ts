@@ -27,7 +27,7 @@ export const LANGUAGE_EXTENSIONS: { [key: string]: string } = {
     'js': 'javascript',
     'ts': 'typescript',
     'jsx': 'javascript',
-    'tsx': 'typescript',
+    'tsx': 'tsx',
     'py': 'python',
     'cpp': 'cpp',
     'c': 'c',

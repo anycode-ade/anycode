@@ -1,6 +1,6 @@
 import type { Lang } from "../lang";
 
-const query = `
+export const query = `
 ; Special identifiers
 ;--------------------
 
@@ -464,7 +464,7 @@ let runnablesQuery = `
 )
 `
 
-let foldsQuery = `
+export const foldsQuery = `
 [
   (statement_block)
   (class_body)
@@ -497,9 +497,9 @@ let foldsQuery = `
 ] @fold
 `
 
-let executable = true;
-let cmd = "node {file}"
-let cmdTest = "npx jest {file} -t \"{test-name}\""
+export const executable = true;
+export const cmd = "node {file}"
+export const cmdTest = "npx jest {file} -t \"{test-name}\""
 
 export default {
   query, foldsQuery, runnablesQuery, executable, cmd, cmdTest, indent, comment
