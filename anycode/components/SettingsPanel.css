@@ -4,10 +4,14 @@
     gap: 20px;
     padding: 16px;
     height: 100%;
+    overflow-x: hidden;
     overflow-y: auto;
+    width: 100%;
     /*background-color: var(--background-color, #242424);*/
     color: var(--theme-foreground, var(--foreground-color, #f0f0f0));
-    font-family: inherit;
+    font-family: var(--interface-font-family);
+    font-size: var(--interface-font-size, 14px);
+    font-weight: var(--interface-font-weight, 700);
     box-sizing: border-box;
     user-select: none;
     -webkit-user-select: none;
@@ -24,11 +28,12 @@
     display: flex;
     flex-direction: column;
     gap: 12px;
+    min-width: 0;
 }
 
 .settings-section-title {
-    font-size: 11px;
-    font-weight: 700;
+    font-size: 0.79em;
+    font-weight: inherit;
     text-transform: uppercase;
     letter-spacing: 0.08em;
     color: var(--theme-tab-foreground, #8f8f8f);
@@ -62,12 +67,12 @@
 }
 
 .settings-option-label {
-    font-size: 14px;
-    font-weight: 500;
+    font-size: 1em;
+    font-weight: inherit;
 }
 
 .settings-option-desc {
-    font-size: 11px;
+    font-size: 0.79em;
     line-height: 1.4;
     color: var(--theme-tab-foreground, #8f8f8f);
     word-break: break-word;
@@ -130,7 +135,7 @@
     gap: 12px;
 }
 
-.theme-card {
+.settings-card {
     display: flex;
     flex-direction: column;
     justify-content: space-between;
@@ -147,30 +152,30 @@
     outline: none;
 }
 
-.theme-card:focus {
+.settings-card:focus {
     outline: none !important;
 }
 
-.theme-card:focus-visible {
+.settings-card:focus-visible {
     outline: 2px solid var(--theme-accent-background, #007acc) !important;
     outline-offset: 2px;
 }
 
-.theme-card:hover {
+.settings-card:hover {
     background: rgba(255, 255, 255, 0.04);
     border-color: var(--theme-tab-foreground, #8f8f8f);
 }
 
-.theme-card:active {
+.settings-card:active {
 }
 
-.theme-card.active {
+.settings-card.active {
     background: rgba(255, 255, 255, 0.03);
     border-color: var(--theme-accent-background, #007acc);
     box-shadow: 0 4px 12px rgba(0, 122, 204, 0.15), 0 0 0 1px var(--theme-accent-background, #007acc);
 }
 
-.theme-card-header {
+.settings-card-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -179,9 +184,9 @@
     margin-bottom: 6px;
 }
 
-.theme-card-name {
-    font-size: 13px;
-    font-weight: 600;
+.settings-card-name {
+    font-size: 0.93em;
+    font-weight: inherit;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -190,28 +195,28 @@
     flex-grow: 1;
 }
 
-.theme-card-badge {
-    font-size: 9px;
-    font-weight: 700;
+.settings-card-badge {
+    font-size: 0.64em;
+    font-weight: inherit;
     padding: 2px 6px;
     border-radius: 4px;
     text-transform: uppercase;
     flex-shrink: 0;
 }
 
-.theme-card-badge.dark {
+.settings-card-badge.dark {
     background: #1f2328;
     color: #f0f6fc;
     border: 1px solid #30363d;
 }
 
-.theme-card-badge.light {
+.settings-card-badge.light {
     background: rgba(255, 255, 255, 0.8);
     color: #242424;
 }
 
-.theme-card-file {
-    font-size: 10px;
+.settings-card-file {
+    font-size: 0.71em;
     color: var(--theme-tab-foreground, #8f8f8f);
     font-family: monospace;
     white-space: nowrap;
@@ -222,7 +227,7 @@
 
 .settings-loading,
 .settings-empty {
-    font-size: 13px;
+    font-size: 0.93em;
     color: var(--theme-tab-foreground, #8f8f8f);
     padding: 20px;
     text-align: center;
@@ -243,11 +248,11 @@
 }
 
 @container settings (max-width: 160px) {
-    .theme-card {
+    .settings-card {
         padding: 10px 12px;
     }
     
-    .theme-card-badge {
+    .settings-card-badge {
         display: none;
     }
 }
@@ -259,7 +264,7 @@
     border: 1px solid var(--theme-border, #3f3f3f);
     border-radius: 8px;
     color: var(--theme-foreground, var(--foreground-color, #f0f0f0));
-    font-size: 13px;
+    font-size: 0.93em;
     outline: none;
     cursor: pointer;
     box-sizing: border-box;
@@ -280,6 +285,153 @@
     color: var(--theme-foreground, var(--foreground-color, #f0f0f0));
 }
 
+.font-settings {
+    display: grid;
+    gap: 16px;
+    min-width: 0;
+}
+
+.font-setting {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-width: 0;
+    max-width: 100%;
+}
+
+.font-options-grid {
+    display: flex;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 4px 4px 10px;
+    scroll-snap-type: x proximity;
+    scroll-padding-inline: 4px;
+    scrollbar-width: thin;
+    box-sizing: border-box;
+    overscroll-behavior-x: contain;
+}
+
+.font-card {
+    flex: 0 0 170px;
+    min-height: 88px;
+    scroll-snap-align: start;
+    box-sizing: border-box;
+}
+
+.font-card-preview {
+    color: var(--theme-tab-foreground, #8f8f8f);
+    font-family: inherit;
+    font-size: 1.07em;
+    font-weight: inherit;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+}
+
+.font-choice-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+}
+
+.font-custom-input {
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    border: 1px solid var(--theme-border, #3f3f3f);
+    border-radius: 8px;
+    background: transparent;
+    color: var(--theme-foreground, #f0f0f0);
+    font: inherit;
+    padding: 7px 8px;
+    outline: none;
+    font-size: 0.79em;
+}
+
+.font-custom-input:focus {
+    border-color: var(--theme-accent-background, #007acc);
+    box-shadow: 0 0 0 1px var(--theme-accent-background, #007acc);
+}
+
+.font-custom-input::placeholder {
+    color: var(--theme-tab-foreground, #8f8f8f);
+}
+
+.font-custom-card {
+    cursor: pointer;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.font-custom-card .font-custom-input {
+    cursor: text;
+}
+
+.font-choice-label {
+    color: var(--theme-tab-foreground, #8f8f8f);
+    font-size: 0.71em;
+    font-weight: inherit;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.font-choice-row {
+    display: flex;
+    gap: 10px;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 4px 4px 10px;
+    box-sizing: border-box;
+    scroll-snap-type: x proximity;
+    scroll-padding-inline: 4px;
+    scrollbar-width: thin;
+    overscroll-behavior-x: contain;
+}
+
+.font-choice-row::-webkit-scrollbar {
+    height: 6px;
+}
+
+.font-choice-row::-webkit-scrollbar-thumb {
+    background: var(--theme-border, #3f3f3f);
+    border-radius: 999px;
+}
+
+.font-choice-card {
+    flex: 0 0 100px;
+    min-height: 48px;
+    align-items: center;
+    justify-content: center;
+    scroll-snap-align: start;
+    box-sizing: border-box;
+}
+
+.font-choice-value {
+    color: var(--theme-foreground, #f0f0f0);
+    font-family: inherit;
+    font-size: 0.86em;
+    white-space: nowrap;
+}
+
+.font-weight-card {
+    flex-basis: 125px;
+}
+
+.font-options-grid::-webkit-scrollbar {
+    height: 6px;
+}
+
+.font-options-grid::-webkit-scrollbar-thumb {
+    background: var(--theme-border, #3f3f3f);
+    border-radius: 999px;
+}
+
 .icon-style-card {
     display: flex;
     flex-direction: column;
@@ -292,18 +444,18 @@
     width: 100%;
 }
 
-.icon-style-card-content .theme-card-header {
+.icon-style-card-content .settings-card-header {
     margin-bottom: 4px;
 }
 
 .icon-style-badge {
     opacity: 0.8;
-    font-size: 8px !important;
+    font-size: 0.57em !important;
 }
 
 .icon-style-desc {
     white-space: normal !important;
-    font-size: 10px !important;
+    font-size: 0.71em !important;
     line-height: 1.3 !important;
     margin-bottom: 6px;
 }
@@ -316,7 +468,7 @@
 }
 
 .icon-style-empty {
-    font-size: 10px;
+    font-size: 0.71em;
     color: var(--theme-tab-foreground, #888);
     font-style: italic;
     margin-top: auto;
@@ -395,8 +547,8 @@
 }
 
 .settings-slider-value {
-    font-size: 13px;
-    font-weight: 600;
+    font-size: 0.93em;
+    font-weight: inherit;
     color: var(--theme-foreground, #f0f0f0);
     min-width: 38px;
     text-align: right;

@@ -5,6 +5,9 @@
     user-select: none;
     -webkit-user-select: none;
     -webkit-touch-callout: none;
+    font-family: var(--interface-font-family);
+    font-size: var(--interface-font-size, 14px);
+    font-weight: var(--interface-font-weight, 700);
 }
 
 .search-results {
@@ -49,7 +52,7 @@
 
 .search-summary-text {
     color: var(--theme-muted-foreground, var(--text-color-secondary, #c8c8c8));
-    font-size: 14px;
+    font-size: 1em;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -64,7 +67,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    font-size: 16px;
+    font-size: 1.14em;
     padding: 10px 0;
 }
 
@@ -113,7 +116,7 @@
 
 .search-prefix {
     margin-right: 10px;
-    font-weight: bold;
+    font-weight: inherit;
 }
 
 .search-input {
@@ -127,8 +130,9 @@
     resize: none;
     min-height: 32px;
     max-height: 50vh;
-    font-family: inherit;
-    font-size: 13px;
+    font-family: var(--interface-font-family);
+    font-size: 0.93em;
+    font-weight: var(--interface-font-weight, 700);
     line-height: 1.4;
     color: var(--theme-foreground, var(--foreground-color, #e0e0e0));
     overflow-y: auto;
@@ -158,7 +162,7 @@
     color: var(--theme-foreground, var(--text-color, #ffffff));
     cursor: pointer;
     padding: 0.25rem 0.45rem;
-    font-size: 14px;
+    font-size: 1em;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -257,7 +261,7 @@
 .file-arrow {
     display: inline-block;
     margin-right: 6px;
-    font-size: 11px;
+    font-size: 0.79em;
     color: var(--theme-muted-foreground, var(--text-color-secondary, #8a8a8a));
     line-height: 1;
 }
@@ -271,7 +275,7 @@
     align-items: center;
     gap: 1px;
     cursor: pointer;
-    font-size: 14px;
+    font-size: 1em;
     padding: 4px;
     margin: 0px;
     word-wrap: break-word;  /* In case of very long file paths */
@@ -298,7 +302,7 @@
     /*background-color: var(--hover-bg, rgba(255, 255, 255, 0.08));*/
     border-radius: 999px;
     padding: 1px 7px;
-    font-size: 12px;
+    font-size: 0.86em;
     font-variant-numeric: tabular-nums;
 }
 
@@ -308,7 +312,7 @@
 
 .search-item {
     padding-left: 24px; 
-    font-size: 14px;
+    font-size: 1em;
     line-height: 22px;
     min-height: 22px;
     box-sizing: border-box;
@@ -330,7 +334,7 @@
     color: inherit;
     padding: 0 2px;
     border-radius: 2px;
-    font-weight: 500;
+    font-weight: inherit;
 }
 .search-item:hover {
     background-color: var(--hover-bg, rgba(255, 255, 255, 0.08));
@@ -362,7 +366,7 @@
 }
 
 .loading {
-    font-size: 18px;
+    font-size: 1.29em;
     color: var(--theme-muted-foreground, var(--text-color-secondary, #999));
 }
 
@@ -372,7 +376,7 @@
 
 @media (max-width: 768px) {
     .search-input {
-        font-size: 16px;
+        font-size: 1em;
     }
 }
 

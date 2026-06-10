@@ -3,6 +3,9 @@
     overflow-y: auto;
     overflow-x: hidden;
     min-height: 0;
+    font-family: var(--interface-font-family);
+    font-size: var(--interface-font-size, 14px);
+    font-weight: var(--interface-font-weight, 700);
 }
 
 .acp-messages-inner {
@@ -30,7 +33,7 @@
 
 .acp-tool-calls h4 {
     margin: 0 0 8px 0;
-    font-size: 14px;
+    font-size: 1em;
     color: var(--text-color, #ccc);
 }
 
@@ -49,7 +52,7 @@
     padding: 8px;
     background-color: var(--code-bg, #0d0d0d);
     border-radius: 4px;
-    font-size: 12px;
+    font-size: 0.86em;
     overflow-x: auto;
     color: var(--code-color, #d4d4d4);
 }

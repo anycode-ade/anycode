@@ -34,10 +34,12 @@ import { AgentPanel } from './features/agents/AgentPanel';
 import { BrowserPanel } from './features/browser/BrowserPanel';
 import { type DiffMode } from './types/diffMode';
 import { normalizePath } from './utils';
+import { useSettings } from './hooks/useSettings';
 
 const App: React.FC = () => {
     const { wsRef, isConnected, connectionStatus } = useSocket({});
     const [showConnectionBanner, setShowConnectionBanner] = React.useState(false);
+    const settings = useSettings();
 
     const [fileIconsStyle, setFileIconsStyle] = React.useState<'colored' | 'monochrome' | 'disabled'>(() => {
         if (typeof window === 'undefined') return 'colored';
@@ -53,7 +55,7 @@ const App: React.FC = () => {
     const fileTree = useFileTree({ wsRef, isConnected });
     const editors = useEditors({ wsRef, isConnected });
     const terminals = useTerminals({ wsRef, isConnected });
-    const terminalPanes = useTerminalPanes({
+    const  terminalPanes = useTerminalPanes({
         terminals: terminals.terminals,
         addTerminal: terminals.addTerminal,
         closeTerminal: terminals.closeTerminal,
@@ -429,6 +431,7 @@ const App: React.FC = () => {
                         onTerminalMessage={terminals.handleTerminalDataCallback}
                         onTerminalResize={terminals.handleTerminalResize}
                         onIsTerminalClosing={terminals.isTerminalClosing}
+                        fontConfig={settings.fontSettings.terminal}
                     />
                 );
             case 'agent':
@@ -485,6 +488,8 @@ const App: React.FC = () => {
                         onFileIconsStyleChange={handleFileIconsStyleChange}
                         fileIconsOpacity={fileIconsOpacity}
                         onFileIconsOpacityChange={handleFileIconsOpacityChange}
+                        fontSettings={settings.fontSettings}
+                        onFontSettingsChange={settings.updateFontSettings}
                     />
                 );
             default:

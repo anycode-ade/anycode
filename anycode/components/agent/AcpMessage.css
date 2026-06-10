@@ -20,8 +20,8 @@
 }
 
 .acp-message-role {
-    font-size: 11px;
-    font-weight: 600;
+    font-size: 0.79em;
+    font-weight: inherit;
     text-transform: uppercase;
     color: var(--text-color-secondary, #888);
     padding: 0 4px;
@@ -79,20 +79,27 @@
 .acp-message-markdown h4,
 .acp-message-markdown h5,
 .acp-message-markdown h6 {
-    /*margin: 0.75em 0 0.35em 0;*/
-    /*line-height: 1.2;*/
+    margin: 0.7em 0 0.35em;
+    line-height: 1.25;
+    font-weight: inherit;
 }
 
 .acp-message-markdown h1 {
-    /*font-size: 1.25em;*/
+    font-size: 1.3em;
 }
 
 .acp-message-markdown h2 {
-    /*font-size: 1.15em;*/
+    font-size: 1.18em;
 }
 
 .acp-message-markdown h3 {
-    /*font-size: 1.05em;*/
+    font-size: 1.08em;
+}
+
+.acp-message-markdown h4,
+.acp-message-markdown h5,
+.acp-message-markdown h6 {
+    font-size: 1em;
 }
 
 .acp-message-markdown ul,
@@ -111,7 +118,7 @@
 }
 
 .acp-message-markdown code {
-    font-family: "JetBrains Mono", monospace;
+    font-family: var(--editor-font-family, "JetBrains Mono", monospace);
     font-size: 0.92em;
 }
 
@@ -186,7 +193,7 @@
     color: inherit;
     overflow: auto;
     white-space: pre;
-    font-size: 12px;
+    font-size: 0.86em;
     line-height: 1.5;
 }
 
@@ -215,7 +222,7 @@
     background: rgba(0, 0, 0, 0);
     color: inherit;
     padding: 2px 6px;
-    font-size: 10px;
+    font-size: 0.71em;
     border-radius: 999px;
     cursor: pointer;
     opacity: 0.9;
@@ -232,8 +239,8 @@
 }
 
 .acp-message-user .acp-message-content {
-    background-color: var(--theme-accent-background, #3c3c3c);
-    color: var(--theme-accent-foreground, var(--text-color, #ffffff));
+    background-color: var(--user-message-bg, var(--theme-accent-background, #3c3c3c));
+    color: var(--user-message-fg, var(--theme-accent-foreground, var(--text-color, #ffffff)));
 }
 
 .acp-message-assistant .acp-message-content {
@@ -264,7 +271,7 @@
     border: 1px solid var(--border-color, #333);
     border-radius: 8px;
     padding: 6px 10px;
-    font-size: 12px;
+    font-size: 0.86em;
     max-width: 320px;
     white-space: nowrap;
     overflow: hidden;
@@ -275,18 +282,21 @@
     /* background-color: var(--assistant-message-bg, #2a2a2a); */
     color: var(--text-color-secondary, #888);
     /* border: 1px solid var(--border-color, #333); */
-    font-size: 11px;
+    font-size: 0.79em;
     font-style: normal;
 }
 
 .acp-message-tool_call {
     align-items: flex-start;
+    font-family: var(--interface-font-family);
+    font-size: var(--interface-font-size, 14px);
+    font-weight: var(--interface-font-weight, 700);
 }
 
 .acp-message-tool_call .acp-message-content {
     background-color: rgba(127, 127, 127, 0.08);
-     color: var(--text-color, #ccc); 
-    /* border: 1px solid var(--border-color, #333); */
+    color: var(--text-color, #ccc); 
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.22);
     max-width: 100%;
     box-sizing: border-box;
     overflow-x: hidden;
@@ -342,8 +352,8 @@
     border-radius: 999px;
     background: rgba(76, 195, 138, 0.16);
     color: #4cc38a;
-    font-size: 11px;
-    font-weight: 600;
+    font-size: 0.79em;
+    font-weight: inherit;
     line-height: 1.2;
     text-transform: uppercase;
 }
@@ -353,8 +363,8 @@
     align-items: center;
     gap: 8px;
     white-space: nowrap;
-    font-family: "JetBrains Mono", monospace;
-    font-size: 12px;
+    font-family: var(--editor-font-family, "JetBrains Mono", monospace);
+    font-size: 0.86em;
 }
 
 .acp-tool-call-diff {
@@ -370,8 +380,8 @@
     background: transparent;
     color: var(--accent-color, #7ab7ff);
     font: inherit;
-    font-size: 12px;
-    font-weight: 600;
+    font-size: 0.86em;
+    font-weight: inherit;
     cursor: pointer;
     text-decoration: underline;
     text-align: left;
@@ -417,8 +427,8 @@
 .acp-tool-call-toggle,
 .acp-tool-result-indicator,
 .acp-tool-update-indicator {
-    font-size: 12px;
-    font-weight: 600;
+    font-size: 0.86em;
+    font-weight: inherit;
     cursor: pointer;
     user-select: none;
 }
@@ -430,8 +440,8 @@
 }
 
 .acp-tool-call-name {
-    font-size: 11px;
-    font-weight: 400;
+    font-size: 0.79em;
+    font-weight: inherit;
     color: var(--text-color, #ccc);
     min-width: 0;
     white-space: nowrap;
@@ -442,7 +452,7 @@
 .acp-toggle-icon {
     display: inline-block;
     width: 12px;
-    font-size: 10px;
+    font-size: 0.71em;
     color: var(--text-color-secondary, #888);
 }
 
@@ -451,8 +461,8 @@
 }
 
 .acp-tool-call-label {
-    font-size: 11px;
-    font-weight: 600;
+    font-size: 0.79em;
+    font-weight: inherit;
     color: var(--text-color-secondary, #888);
     margin-bottom: 4px;
     text-transform: uppercase;
@@ -464,7 +474,7 @@
 .acp-tool-update-content {
     margin: 0;
     border-radius: 4px;
-    font-size: 12px;
+    font-size: 0.86em;
     overflow-x: auto;
     overflow-y: auto;
     box-sizing: border-box;
@@ -483,22 +493,22 @@
     display: flex;
     flex-direction: column;
     gap: 2px;
-    font-size: 12px;
+    font-size: 0.86em;
 }
 
 .acp-tool-result-title {
-    font-weight: 600;
+    font-weight: inherit;
     color: var(--text-color, #ccc);
 }
 
 .acp-tool-result-status {
-    font-size: 11px;
+    font-size: 0.92em;
     color: var(--text-color-secondary, #888);
     text-transform: uppercase;
 }
 
 .acp-tool-result-text {
-    font-size: 12px;
+    font-size: 0.86em;
     color: var(--text-color, #ccc);
     white-space: pre-wrap;
 }
@@ -517,7 +527,7 @@
 }
 
 .acp-thought-text {
-    font-size: 11px;
+    font-size: 0.79em;
     color: var(--text-color-secondary, #888);
     line-height: 1.4;
     white-space: pre-wrap;
@@ -550,13 +560,13 @@
 }
 
 .acp-error-indicator {
-    font-size: 12px;
-    font-weight: 600;
+    font-size: 0.86em;
+    font-weight: inherit;
     margin-bottom: 4px;
 }
 
 .acp-error-content {
-    font-size: 12px;
+    font-size: 0.86em;
     line-height: 1.4;
 }
 

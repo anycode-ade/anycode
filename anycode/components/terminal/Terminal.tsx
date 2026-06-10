@@ -4,6 +4,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { SerializeAddon } from "@xterm/addon-serialize";
 import "./Terminal.css";
 import "@xterm/xterm/css/xterm.css";
+import { resolveFontFamily, type FontConfig } from "../../hooks/useSettings";
 
 function debounce<T extends (...args: any[]) => any>(
   func: T,
@@ -26,6 +27,7 @@ interface XTerminalProps {
   rows: number;
   cols: number;
   isConnected: boolean;
+  fontConfig: FontConfig;
 }
 
 const TERMINAL_DELAY_MS = 100;
@@ -63,6 +65,7 @@ const Terminal: React.FC<XTerminalProps> = ({
   rows,
   cols,
   isConnected,
+  fontConfig,
 }) => {
   const terminalRef = useRef<HTMLDivElement | null>(null);
   const xtermRef = useRef<XTermTerminal | null>(null);
@@ -168,12 +171,15 @@ const Terminal: React.FC<XTerminalProps> = ({
         cursorBlink: true,
         rows,
         cols,
-        fontWeight: "bold",
         scrollback: 10000,
         macOptionIsMeta: true,
         macOptionClickForcesSelection: true,
         rightClickSelectsWord: true,
         allowTransparency: true,
+        fontFamily: resolveFontFamily(fontConfig),
+        fontSize: fontConfig.size,
+        fontWeight: fontConfig.weight,
+        lineHeight: fontConfig.lineHeight,
       });
 
       const fitAddon = new FitAddon();
@@ -287,6 +293,15 @@ const Terminal: React.FC<XTerminalProps> = ({
       }
     };
   }, [isConnected, name, onMessage]);
+
+  useEffect(() => {
+    if (!xtermRef.current) return;
+    xtermRef.current.options.fontFamily = resolveFontFamily(fontConfig);
+    xtermRef.current.options.fontSize = fontConfig.size;
+    xtermRef.current.options.fontWeight = fontConfig.weight;
+    xtermRef.current.options.lineHeight = fontConfig.lineHeight;
+    requestAnimationFrame(() => fitAddonRef.current?.fit());
+  }, [fontConfig]);
 
   useEffect(() => {
     if (!isConnected || !xtermRef.current) return;

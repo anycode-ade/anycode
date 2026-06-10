@@ -139,6 +139,14 @@
     color: var(--theme-tab-active-foreground, #f0f0f0) !important;
 }
 
+.layout .dv-tab,
+.layout .dv-tab .dv-default-tab,
+.layout .dv-tab .dv-default-tab .dv-default-tab-content {
+    font-family: var(--interface-font-family) !important;
+    font-size: var(--interface-font-size, 14px) !important;
+    font-weight: var(--interface-font-weight, 700) !important;
+}
+
 .layout.dockview-theme-dark .dv-tab.dv-inactive-tab {
     background-color: var(--background-color, #242424) !important;
     color: var(--theme-tab-foreground, #a8a8a8) !important;
@@ -299,8 +307,8 @@
 }
 
 .layout-header-action-btn--diff {
-    font-size: 12px;
-    font-weight: 600;
+    font-size: 0.86em;
+    font-weight: inherit;
 }
 
 .layout-header-action-icon {
@@ -318,9 +326,9 @@
 }
 
 .layout-header-action-plus {
-    font-size: 16px;
+    font-size: 1.14em;
     line-height: 1;
-    font-weight: 500;
+    font-weight: inherit;
 }
 
 .layout-header-action-btn--close .layout-header-action-icon {
@@ -355,6 +363,9 @@
     user-select: none;
     -webkit-user-select: none;
     overflow-y: auto;
+    font-family: var(--interface-font-family);
+    font-size: var(--interface-font-size, 14px);
+    font-weight: var(--interface-font-weight, 700);
 }
 
 .layout-panel-picker-header {
@@ -366,8 +377,8 @@
 
 .layout-panel-picker-title {
     color: var(--theme-foreground, #f0f0f0);
-    font-size: 15px;
-    font-weight: 600;
+    font-size: 1.07em;
+    font-weight: inherit;
     letter-spacing: 0.02em;
     text-transform: uppercase;
 }
@@ -398,8 +409,8 @@
     padding: 16px 12px;
     border-radius: 8px;
     cursor: pointer;
-    font-size: 12px;
-    font-weight: 500;
+    font-size: 0.86em;
+    font-weight: inherit;
     flex: 1 1 105px;
     max-width: 115px;
     aspect-ratio: 1.15;
@@ -422,7 +433,7 @@
 }
 
 .layout-panel-picker-item span {
-    font-size: 11.5px;
+    font-size: 0.82em;
     transition: color 0.22s ease;
 }
 

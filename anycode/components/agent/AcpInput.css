@@ -5,7 +5,6 @@
     border: 1px solid #8f8f8f2e;
     align-items: stretch;
     border-radius: 24px;
-    transition: transform 0.2s ease-in-out, opacity 0.2s ease-in-out, visibility 0.2s ease-in-out, background-color 0.15s, border-color 0.15s, box-shadow 0.15s;
     position: absolute;
     bottom: 7px;
     left: 12px;
@@ -19,6 +18,9 @@
     transform: translateY(0);
     opacity: 1;
     visibility: visible;
+    font-family: var(--interface-font-family);
+    font-size: var(--interface-font-size, 14px);
+    font-weight: var(--interface-font-weight, 700);
 }
 
 .acp-input-drag-over {
@@ -77,7 +79,7 @@
     border: 1px solid var(--border-color, #333);
     border-radius: 999px;
     padding: 2px 8px;
-    font-size: 11px;
+    font-size: 0.79em;
 }
 
 .acp-input-attachment-name {
@@ -92,14 +94,14 @@
     border: none;
     color: inherit;
     cursor: pointer;
-    font-size: 14px;
+    font-size: 1em;
     line-height: 1;
     padding: 0;
 }
 
 .acp-input-preview-text {
     flex: 1;
-    font-size: 12px;
+    font-size: 0.86em;
     color: var(--text-color-secondary, rgba(255, 255, 255, 0.7));
     white-space: nowrap;
     overflow: hidden;
@@ -164,7 +166,7 @@
     min-height: 26px;
     border-radius: 8px;
     color: var(--text-color, #fff);
-    font-size: 11px;
+    font-size: 0.79em;
     padding: 0 8px;
     user-select: none;
     --webkit-user-select: none;
@@ -219,7 +221,7 @@
 }
 
 .acp-input-agent-chip-label {
-    font-size: 11px;
+    font-size: 0.79em;
     line-height: 1.2;
     white-space: nowrap;
     overflow: hidden;
@@ -236,7 +238,9 @@
     padding: 6px 8px;
     color: var(--text-color, #fff);
     -webkit-text-fill-color: var(--text-color, #fff);
-    font-size: 14px;
+    font-family: var(--interface-font-family);
+    font-size: var(--interface-font-size, 14px);
+    font-weight: var(--interface-font-weight, 700);
     resize: none;
     min-height: 32px;
 }
@@ -254,7 +258,7 @@
 .acp-input textarea::placeholder {
     color: var(--text-color-secondary, rgba(255, 255, 255, 0.55));
     -webkit-text-fill-color: var(--text-color-secondary, rgba(255, 255, 255, 0.55));
-    font-size: 13px;
+    font-size: 0.93em;
 }
 
 .acp-send-btn,
@@ -267,8 +271,8 @@
     padding: 0px;
     border-radius: 50%;
     cursor: pointer;
-    font-size: 14px;
-    font-weight: 500;
+    font-size: 1em;
+    font-weight: inherit;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -320,7 +324,7 @@
 
     .acp-input textarea,
     .acp-input-preview-text {
-        font-size: 16px;
+        font-size: max(16px, var(--interface-font-size, 16px));
     }
 }
 
@@ -354,7 +358,7 @@
 }
 
 .acp-recording-text {
-    font-size: 13px;
+    font-size: 0.93em;
     color: var(--text-color, #fff);
     font-weight: 500;
 }
@@ -369,7 +373,7 @@
     border: none;
     padding: 6px 12px;
     border-radius: 6px;
-    font-size: 12px;
+    font-size: 0.86em;
     font-weight: 500;
     cursor: pointer;
     transition: background 0.15s;

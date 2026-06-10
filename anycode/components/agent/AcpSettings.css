@@ -3,6 +3,9 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  font-family: var(--interface-font-family);
+  font-size: var(--interface-font-size, 14px);
+  font-weight: var(--interface-font-weight, 700);
 }
 
 .agent-settings-header {
@@ -14,8 +17,8 @@
 
 .agent-settings-header h3 {
   margin: 0;
-  font-size: 16px;
-  font-weight: 600;
+  font-size: 1.14em;
+  font-weight: inherit;
   color: var(--text-color, #ccc);
 }
 
@@ -70,8 +73,8 @@
 
 .agent-settings-item-header h4 {
   margin: 0;
-  font-size: 16px;
-  font-weight: 600;
+  font-size: 1.14em;
+  font-weight: inherit;
   color: var(--text-color, #ccc);
 }
 
@@ -91,7 +94,7 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
+  font-size: 0.86em;
 }
 
 .agent-settings-sessions-btn:hover {
@@ -108,7 +111,7 @@
   align-items: center;
   gap: 6px;
   cursor: pointer;
-  font-size: 13px;
+  font-size: 0.93em;
   color: var(--text-color, #ccc);
 }
 
@@ -117,7 +120,7 @@
 }
 
 .agent-settings-default-checkbox span {
-  font-size: 11px;
+  font-size: 0.79em;
 }
 
 .agent-settings-remove-btn {
@@ -162,13 +165,13 @@
 }
 
 .agent-settings-mode-title {
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 0.93em;
+  font-weight: inherit;
 }
 
 .agent-settings-mode-description {
   margin-top: 2px;
-  font-size: 12px;
+  font-size: 0.86em;
   line-height: 1.35;
   color: var(--text-color-secondary, #888);
 }
@@ -180,8 +183,8 @@
 }
 
 .agent-settings-field label {
-  font-size: 13px;
-  font-weight: 500;
+  font-size: 0.93em;
+  font-weight: inherit;
   color: var(--text-color, #ccc);
 }
 
@@ -189,7 +192,7 @@
 .agent-settings-field textarea {
   border: 1px solid var(--border-color, #333);
   padding: 8px 12px;
-  font-size: 13px;
+  font-size: 0.93em;
   font-family: inherit;
   resize: vertical;
   border-radius: 16px;
@@ -222,8 +225,8 @@
 }
 
 .agent-settings-sessions-title {
-  font-size: 12px;
-  font-weight: 600;
+  font-size: 0.86em;
+  font-weight: inherit;
   color: var(--text-color, #ccc);
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -254,7 +257,7 @@
 .agent-settings-sessions-empty {
   padding: 12px;
   color: var(--text-color-secondary, #888);
-  font-size: 13px;
+  font-size: 0.93em;
 }
 
 .agent-settings-sessions-list {
@@ -284,18 +287,18 @@
 
 .agent-settings-session-title {
   color: var(--text-color, #ccc);
-  font-size: 13px;
+  font-size: 0.93em;
   line-height: 1.35;
 }
 
 .agent-settings-session-meta {
   color: var(--text-color-secondary, #888);
-  font-size: 11px;
+  font-size: 0.79em;
 }
 
 .agent-settings-session-id {
   color: var(--text-color-secondary, #6b7280);
-  font-size: 10px;
+  font-size: 0.71em;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -308,8 +311,8 @@
   padding: 8px 12px;
   border-radius: 8px;
   cursor: pointer;
-  font-size: 12px;
-  font-weight: 600;
+  font-size: 0.86em;
+  font-weight: inherit;
   flex-shrink: 0;
 }
 
@@ -318,7 +321,7 @@
 }
 
 .agent-settings-id-hint {
-  font-size: 11px;
+  font-size: 0.79em;
   color: var(--text-color-secondary, #888);
   margin-top: 2px;
   font-style: italic;
@@ -330,8 +333,8 @@
   border-radius: 6px;
   padding: 12px 16px;
   color: var(--text-color, #ccc);
-  font-size: 14px;
-  font-weight: 500;
+  font-size: 1em;
+  font-weight: inherit;
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -354,8 +357,8 @@
 .agent-settings-save-btn {
   padding: 4px 12px;
   border-radius: 4px;
-  font-size: 13px;
-  font-weight: 500;
+  font-size: 0.93em;
+  font-weight: inherit;
   cursor: pointer;
   transition: background-color 0.2s;
   border: none;

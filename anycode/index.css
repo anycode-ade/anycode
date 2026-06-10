@@ -2,7 +2,13 @@
 
 
 :root {
-  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+  --interface-font-family: 'JetBrains Mono', monospace;
+  --editor-font-family: 'JetBrains Mono', monospace;
+  --terminal-font-family: 'JetBrains Mono', monospace;
+  --interface-font-size: 14px;
+  --interface-font-weight: 700;
+  --interface-line-height: 1.4;
+  font-family: var(--interface-font-family);
   /* line-height: 1.5; */
   font-weight: 400;
 
@@ -44,6 +50,10 @@ body {
 
 body {
   margin: 0;
+  font-family: var(--interface-font-family);
+  font-size: var(--interface-font-size);
+  font-weight: var(--interface-font-weight);
+  line-height: var(--interface-line-height);
   /* display: flex;
   place-items: center;
   min-width: 320px;
@@ -78,10 +88,7 @@ button:focus-visible {
 }
 
 * {
-  font-family: 'JetBrains Mono', monospace;
-  font-weight: bold;
   /* line-height: normal; */
-  font-size: 14px;
 }
 
 .unselectable {

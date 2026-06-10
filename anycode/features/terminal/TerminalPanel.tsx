@@ -1,6 +1,7 @@
 import Terminal from '../../components/terminal/Terminal';
 import { TerminalEmptyPane } from '../../components/terminal/TerminalEmptyPane';
 import type { Terminal as TerminalState } from '../../types';
+import type { FontConfig } from '../../hooks/useSettings';
 
 type TerminalPanelProps = {
     panelKey: string;
@@ -17,6 +18,7 @@ type TerminalPanelProps = {
     onTerminalMessage: (name: string, callback: (data: string) => void) => () => void;
     onTerminalResize: (name: string, cols: number, rows: number) => void;
     onIsTerminalClosing: (name: string) => boolean;
+    fontConfig: FontConfig;
 };
 
 export const TerminalPanel = ({
@@ -29,6 +31,7 @@ export const TerminalPanel = ({
     onTerminalMessage,
     onTerminalResize,
     onIsTerminalClosing,
+    fontConfig,
 }: TerminalPanelProps) => {
     const selectedTerminalId = terminalPanes.getSelectedId(panelKey);
     if (selectedTerminalId === null) {
@@ -73,6 +76,7 @@ export const TerminalPanel = ({
                         cols={selectedTerminal.cols}
                         isConnected={isConnected}
                         isTerminalClosing={onIsTerminalClosing}
+                        fontConfig={fontConfig}
                     />
                 </div>
             </div>

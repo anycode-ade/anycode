@@ -3,16 +3,17 @@
     flex-direction: column;
     height: 100%;
     color: var(--theme-foreground, var(--foreground-color, #e0e0e0));
-    font-size: 13px;
+    font-family: var(--interface-font-family);
+    font-size: var(--interface-font-size, 14px);
+    font-weight: var(--interface-font-weight, 700);
 }
 
 .changes-panel-title {
     padding: 10px 20px;
-    font-size: 11px;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    font-size: 15px;
+    font-size: 1.07em;
 }
 
 .changes-header {
@@ -50,7 +51,7 @@
 }
 
 .changes-branch {
-    font-weight: 500;
+    font-weight: inherit;
 }
 
 .changes-branch-select {
@@ -65,7 +66,9 @@
     border: none;
     background-color: transparent;
     color: var(--theme-foreground, var(--foreground-color, #e0e0e0));
-    font-size: 12px;
+    font-family: var(--interface-font-family);
+    font-size: 0.86em;
+    font-weight: var(--interface-font-weight, 700);
     border-radius: 0;
     padding: 2px 18px 2px 0;
     min-height: 24px;
@@ -89,7 +92,7 @@
     background: none;
     border: 1px solid transparent;
     color: var(--theme-foreground, var(--foreground-color, #e0e0e0));
-    font-size: 11px;
+    font-size: 0.79em;
     cursor: pointer;
     padding: 2px 8px;
     border-radius: 4px;
@@ -122,8 +125,7 @@
 }
 
 .changes-refresh-btn {
-    font-size: 16px;
-    font-size: 16px;
+    font-size: 1.14em;
 }
 
 .changes-message-container {
@@ -141,8 +143,9 @@
     color: var(--theme-foreground, var(--foreground-color, #e0e0e0));
     padding: 6px 8px;
     border-radius: 8px;
-    font-family: inherit;
-    font-size: 13px;
+    font-family: var(--interface-font-family);
+    font-size: 0.93em;
+    font-weight: var(--interface-font-weight, 700);
     min-height: 32px;
     max-height: 50vh;
     line-height: 1.4;
@@ -154,7 +157,7 @@
 @media (max-width: 768px) {
     .changes-message-mirror,
     .changes-message-input {
-        font-size: 16px;
+        font-size: 1em;
     }
 }
 
@@ -215,7 +218,7 @@
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    font-size: 11px;
+    font-size: 0.79em;
     line-height: 1;
     font-variant-numeric: tabular-nums;
     opacity: 0.95;
@@ -296,7 +299,7 @@
 
 .changes-group-title {
     padding: 6px 8px 4px;
-    font-size: 11px;
+    font-size: 0.79em;
     text-transform: uppercase;
     letter-spacing: 0.04em;
     color: var(--theme-tab-foreground, #8f8f8f);
@@ -335,7 +338,7 @@
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    font-size: 11px;
+    font-size: 1em;
     line-height: 1;
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
@@ -348,7 +351,7 @@
     width: 18px;
     height: 18px;
     line-height: 16px;
-    font-size: 14px;
+    font-size: 1em;
     border-radius: 4px;
     cursor: pointer;
     padding: 0;
@@ -423,7 +426,7 @@
     border: none;
     color: var(--theme-tab-foreground, #7f7f7f);
     margin-right: 0;
-    font-size: 14px;
+    font-size: 1em;
     cursor: pointer !important;
     padding: 1px 4px;
     opacity: 0;
@@ -455,7 +458,7 @@
     border: none;
     color: var(--theme-tab-foreground, #7f7f7f);
     margin-right: 0;
-    font-size: 16px;
+    font-size: 1.14em;
     line-height: 1;
     cursor: pointer !important;
     padding: 1px 4px;
@@ -511,7 +514,7 @@
      /* Pushed to right in flex container if it's the last item */
     margin-left: auto;
     color: var(--theme-foreground, var(--foreground-color, #ffffff));
-    font-size: 15px;
+    font-size: 1.07em;
     background-color: var(--theme-background, var(--background-color, #2d2d2d));
     cursor: pointer !important;
     flex-shrink: 0;
@@ -556,7 +559,7 @@
     align-items: center;
     justify-content: flex-end;
     gap: 2px;
-    font-size: 11px;
+    font-size: 0.79em;
     line-height: 1;
     font-variant-numeric: tabular-nums;
     flex-shrink: 0;

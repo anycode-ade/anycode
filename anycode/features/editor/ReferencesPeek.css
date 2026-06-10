@@ -19,6 +19,9 @@
     backdrop-filter: blur(10px) saturate(130%);
     -webkit-backdrop-filter: blur(10px) saturate(130%);
     overflow: hidden;
+    font-family: var(--interface-font-family);
+    font-size: var(--interface-font-size, 14px);
+    font-weight: var(--interface-font-weight, 700);
 }
 
 .references-peek-header {
@@ -39,7 +42,7 @@
 }
 
 .references-peek-title {
-    font-size: 13px;
+    font-size: 0.93em;
     color: var(--theme-foreground, #fff);
 }
 
@@ -50,14 +53,14 @@
     white-space: nowrap;
     overflow: hidden;
     color: var(--theme-muted-foreground, #aaa);
-    font-size: 12px;
+    font-size: 0.86em;
 }
 
 .references-peek-close {
     border: none;
     background: transparent;
     color: var(--theme-muted-foreground, rgba(255, 255, 255, 0.75));
-    font-size: 20px;
+    font-size: 1.43em;
     line-height: 1;
     padding: 0 6px;
     border-radius: 8px;
@@ -135,7 +138,7 @@
     justify-content: space-between;
     color: var(--theme-foreground, #ddd);
     padding: 7px 10px;
-    font-size: 12px;
+    font-size: 0.86em;
     background: var(--hover-bg, rgba(255, 255, 255, 0.04));
     border: 1px solid var(--theme-border, rgba(255, 255, 255, 0.12));
     border-radius: 10px;
@@ -207,7 +210,7 @@
     border: 1px solid var(--theme-border, rgba(255, 255, 255, 0.16));
     border-radius: 7px;
     padding: 4px 8px;
-    font-size: 11px;
+    font-size: 0.79em;
     color: var(--theme-foreground, #ddd);
     background: var(--hover-bg, rgba(255, 255, 255, 0.06));
     flex-shrink: 0;
@@ -232,7 +235,7 @@
 }
 
 .references-peek-item-location {
-    font-size: 12px;
+    font-size: 0.86em;
 }
 
 .references-peek-empty {

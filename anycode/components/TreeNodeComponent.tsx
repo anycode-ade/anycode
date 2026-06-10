@@ -173,7 +173,7 @@ const TreeNodeComponentImpl: React.FC<TreeNodeComponentProps> = ({
                     isDirectory={node.type === 'directory'}
                     isExpanded={isExpanded}
                     styleType={fileIconsStyle}
-                    className="tree-file-icon"
+                    className={`tree-file-icon tree-file-icon-${fileIconsStyle}`}
                 />
 
                 {isEditing ? (

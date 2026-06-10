@@ -9,8 +9,8 @@
       "name": "Vesper Dark",
       "mode": "dark",
       "colors": {
-        "accent.background": "#444444",
-        "accent.foreground": "#ffffff",
+        "accent.background": "#171717b3",
+        "accent.foreground": "#fafafa",
         "accordion.background": "#0a0a0a",
         "background": "#0a0a0a",
         "border": "#262626",

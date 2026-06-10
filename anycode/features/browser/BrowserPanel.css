@@ -5,6 +5,9 @@
     min-height: 0;
     background: var(--theme-background, var(--background-color, #242424));
     overflow: hidden;
+    font-family: var(--interface-font-family);
+    font-size: var(--interface-font-size, 14px);
+    font-weight: var(--interface-font-weight, 700);
 }
 
 .browser-panel-controls {
@@ -22,7 +25,7 @@
     border: 1px solid var(--theme-border, #4a4a4a);
     border-radius: 6px;
     padding: 0 10px;
-    font-size: 13px;
+    font: inherit;
     color: #f0f0f0;
     background: transparent;
     outline: none;
@@ -40,7 +43,7 @@
     border-radius: 6px;
     background: transparent;
     color: #f0f0f0;
-    font-size: 13px;
+    font: inherit;
     cursor: pointer;
     display: inline-flex;
     align-items: center;
@@ -79,5 +82,5 @@
     align-items: center;
     justify-content: center;
     color: #a5a5a5;
-    font-size: 13px;
+    font-size: 0.93em;
 }

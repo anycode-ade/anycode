@@ -11,6 +11,9 @@
     gap: 10px;
     user-select: none;
     -webkit-user-select: none;
+    font-family: var(--interface-font-family);
+    font-size: var(--interface-font-size, 14px);
+    font-weight: var(--interface-font-weight, 700);
 }
 
 .terminal-pane-actions {
@@ -37,8 +40,8 @@
     padding: 16px 12px;
     border-radius: 8px;
     cursor: pointer;
-    font-size: 12px;
-    font-weight: 500;
+    font-size: 0.86em;
+    font-weight: inherit;
     flex: 1 1 105px;
     max-width: 115px;
     aspect-ratio: 1.15;
@@ -60,7 +63,7 @@
 }
 
 .terminal-pane-action span {
-    font-size: 11.5px;
+    font-size: 0.82em;
     transition: color 0.22s ease;
     white-space: nowrap;
     overflow: hidden;
@@ -118,8 +121,8 @@
 
 .terminal-pane-title {
     color: var(--theme-foreground, #f0f0f0);
-    font-size: 13px;
-    font-weight: 600;
+    font-size: 0.93em;
+    font-weight: inherit;
     letter-spacing: 0.03em;
     text-transform: uppercase;
     margin-bottom: 12px;
@@ -137,8 +140,8 @@
     );
     color: var(--theme-accent-background, var(--theme-foreground, #7ec8ff));
     cursor: pointer;
-    font-size: 12px;
-    font-weight: 500;
+    font-size: 0.86em;
+    font-weight: inherit;
     padding: 8px 12px;
     border-radius: 8px;
     display: inline-flex;
@@ -161,7 +164,7 @@
 }
 
 .terminal-pane-opened-action span {
-    font-size: 11.5px;
+    font-size: 0.82em;
     transition: color 0.22s ease;
     white-space: nowrap;
     overflow: hidden;
@@ -233,7 +236,7 @@
     }
 
     .terminal-pane-action {
-        font-size: 11px;
+        font-size: 0.79em;
         padding: 6px 10px;
         border-radius: 10px;
     }

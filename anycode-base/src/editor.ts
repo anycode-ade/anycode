@@ -64,6 +64,7 @@ export class AnycodeEditor {
     private code: Code;
     private offset: number;
     private settings: EditorSettings;
+    private editorFontSettingsHandler: ((event: Event) => void) | null = null;
     private renderer!: Renderer;
     private container!: HTMLDivElement;
     private buttonsColumn!: HTMLDivElement;
@@ -134,6 +135,26 @@ export class AnycodeEditor {
         }
 
         this.settings = { lineHeight: 20, buffer: 15 };
+        if (typeof window !== 'undefined') {
+            const rootStyles = window.getComputedStyle(document.documentElement);
+            const fontSize = Number.parseFloat(rootStyles.getPropertyValue('--editor-font-size'));
+            const lineHeight = Number.parseFloat(rootStyles.getPropertyValue('--editor-line-height'));
+            if (Number.isFinite(fontSize) && Number.isFinite(lineHeight)) {
+                this.settings.lineHeight = Math.max(12, Math.round(fontSize * lineHeight));
+            }
+        }
+        if (typeof window !== 'undefined') {
+            this.editorFontSettingsHandler = (event: Event) => {
+                const detail = (event as CustomEvent<{ size?: number; lineHeight?: number }>).detail;
+                if (!detail) return;
+                const fontSize = Number(detail.size);
+                const lineHeight = Number(detail.lineHeight);
+                if (Number.isFinite(fontSize) && Number.isFinite(lineHeight)) {
+                    this.setLineHeight(fontSize * lineHeight);
+                }
+            };
+            window.addEventListener('anycode:editor-font-settings', this.editorFontSettingsHandler);
+        }
 
         if (options.theme) {
             const css = generateCssClasses(options.theme);
@@ -179,6 +200,10 @@ export class AnycodeEditor {
 
     public clean() {
         this.removeEventListeners();
+        if (this.editorFontSettingsHandler && typeof window !== 'undefined') {
+            window.removeEventListener('anycode:editor-font-settings', this.editorFontSettingsHandler);
+            this.editorFontSettingsHandler = null;
+        }
         this.clearPendingHover();
         this.closeHover();
         if (this.scrollAnimationFrameId !== null) {
@@ -600,6 +625,14 @@ export class AnycodeEditor {
     public renderCursorOrSelection() {
         if (this.readOnly) return;
         this.renderer.renderCursorOrSelection(this.getEditorState());
+    }
+
+    public setLineHeight(lineHeight: number): void {
+        const nextLineHeight = Math.max(12, Math.round(lineHeight));
+        if (this.settings.lineHeight === nextLineHeight) return;
+        this.settings.lineHeight = nextLineHeight;
+        this.container.style.setProperty('--anycode-line-height', `${nextLineHeight}px`);
+        this.render();
     }
 
     private getDiffGapTarget(target: EventTarget | null): HTMLElement | null {
