@@ -64,7 +64,8 @@ export const useTheme = ({ wsRef, isConnected }: UseThemeParams) => {
             root.style.setProperty('--text-color', baseForeground);
             root.style.setProperty('--text-color-secondary', tabForeground);
             root.style.setProperty('--hover-bg', tabBackground);
-            root.style.setProperty('--user-message-bg', tabBackground);
+            root.style.setProperty('--user-message-bg', getThemeColor('accent.background', tabBackground));
+            root.style.setProperty('--user-message-fg', getThemeColor('accent.foreground', baseForeground));
 
             uiBackground = baseBackground;
             uiForeground = baseForeground;

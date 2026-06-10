@@ -9,8 +9,8 @@
       "name": "anycode",
       "mode": "dark",
       "colors": {
-        "accent.background": "#171717b3",
-        "accent.foreground": "#fafafa",
+        "accent.background": "#555555",
+        "accent.foreground": "#ffffff",
         "accordion.background": "#242424",
         "background": "#242424",
         "border": "#4a4a4a",
