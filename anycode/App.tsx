@@ -37,7 +37,7 @@ import { normalizePath } from './utils';
 import { useSettings } from './hooks/useSettings';
 
 const App: React.FC = () => {
-    const { wsRef, isConnected, connectionStatus } = useSocket({});
+    const { wsRef, isConnected, connectionStatus, connectToBackend } = useSocket({});
     const [showConnectionBanner, setShowConnectionBanner] = React.useState(false);
     const settings = useSettings();
 
@@ -475,6 +475,7 @@ const App: React.FC = () => {
                         fileIconsStyle={fileIconsStyle}
                         showConnectionStatus={showConnectionBanner}
                         connectionStatus={connectionStatus}
+                        onReconnect={connectToBackend}
                     />
                 );
             case 'settings':

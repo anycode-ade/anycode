@@ -1,6 +1,6 @@
 import { Code, HighlighedNode } from "../code";
-import { AnycodeLine, ButtonColumnElement, FoldColumnElement, GutterElement, RealRowElements, RowElements } from "../types";
-import { isGhostElement, objectHash, isDiagnosticElement, getElementAtPosition } from "../utils";
+import { AnycodeLine, RowElements } from "../types";
+import { isGhostElement, objectHash, minimize } from "../utils";
 import { moveCursor, removeCursor } from "../cursor";
 import { EditorState, EditorSettings } from "../editor";
 import { DiffInfo } from "../diff";
@@ -13,6 +13,9 @@ import { DiffRenderer } from "./DiffRenderer";
 import { CompletionRenderer } from "./CompletionRenderer";
 import { HoverRenderer } from "./HoverRenderer";
 import { DiagnosticRenderer } from "./DiagnosticRenderer";
+import { ScrollbarMarkersRenderer } from "./ScrollbarMarkersRenderer";
+import { WordHighlightRenderer } from "./WordHighlightRenderer";
+import { BracketMatchRenderer } from "./BracketMatchRenderer";
 
 /**
  * A real line from the code
@@ -53,21 +56,25 @@ export class Renderer {
     private diffRenderer: DiffRenderer;
     private completionRenderer: CompletionRenderer;
     private hoverRenderer: HoverRenderer;
+    private wordHighlightRenderer: WordHighlightRenderer;
+    private bracketMatchRenderer: BracketMatchRenderer;
+    private scrollbarMarkersRenderer: ScrollbarMarkersRenderer;
     private visualRows: VisualRow[] = [];
     private visualIndexByElement = new WeakMap<HTMLElement, number>();
     private lastCollapsedMap: Map<number, number> = new Map();
     private lastFoldableStarts: Map<number, number> = new Map();
     private lastHiddenLines: Set<number> = new Set();
     private codeFoldingEnabled: boolean = true;
-    private maxWidth: number = 0;
-    private charWidth: number = 0;
+    private charWidth = 0;
+    private lastContentMinWidth = -1;
 
     constructor(
         container: HTMLDivElement,
         buttonsColumn: HTMLDivElement,
         gutter: HTMLDivElement,
         foldsColumn: HTMLDivElement,
-        codeContent: HTMLDivElement
+        codeContent: HTMLDivElement,
+        scrollbarMarkersEnabled: boolean = true
     ) {
         this.container = container;
         this.buttonsColumn = buttonsColumn;
@@ -97,7 +104,21 @@ export class Renderer {
             container,
             (lineNumber) => this.getLine(lineNumber)
         );
-
+        this.wordHighlightRenderer = new WordHighlightRenderer(codeContent);
+        this.bracketMatchRenderer = new BracketMatchRenderer(
+            codeContent,
+            (lineNumber) => this.getLine(lineNumber)
+        );
+        this.scrollbarMarkersRenderer = new ScrollbarMarkersRenderer(
+            container,
+            (state, line) => this.revealLineCenter(state, line),
+            (state, index) => {
+                this.searchRenderer.removeSelectedHighlight(state.search);
+                state.search.setSelected(index);
+                this.searchRenderer.updateSearchHighlights(state.search);
+            },
+            scrollbarMarkersEnabled
+        );
     }
 
     public setDiffEnabled(enabled: boolean) {
@@ -175,8 +196,22 @@ export class Renderer {
         if (!readOnly && search.isActive()) {
             this.searchRenderer.updateSearchHighlights(search);
         }
+        const wordLines = this.wordHighlightRenderer.render(state, state.scrollbarMarkersEnabled);
+        this.renderScrollbarMarkers(state, true, wordLines);
+        this.updateContentMinWidth(state);
 
-        this.updateMaxWidth(code);
+    }
+
+    private renderScrollbarMarkers(
+        state: EditorState | null,
+        includeSearch: boolean = true,
+        wordLines?: number[]
+    ) {
+        const enabled = state?.scrollbarMarkersEnabled ?? false;
+        this.scrollbarMarkersRenderer.setEnabled(enabled);
+        if (!enabled) return;
+
+        this.scrollbarMarkersRenderer.render(state, includeSearch, wordLines, this.visualRows);
     }
 
     /**
@@ -561,7 +596,8 @@ export class Renderer {
     }
 
     public renderChanges(state: EditorState) {
-        const { code, offset, selection, settings, diffs, search } = state;
+        const { code, settings, diffs, search } = state;
+        this.wordHighlightRenderer.invalidateMarkerLines();
         this.codeFoldingEnabled = state.codeFoldingEnabled ?? true;
         this.updateFoldableStarts(state);
         this.updateCollapsedMap(state);
@@ -673,9 +709,8 @@ export class Renderer {
 
         // Render cursor or selection
         this.renderCursorOrSelection(state, true);
+        this.updateContentMinWidth(state);
 
-        // Update max width
-        this.updateMaxWidth(code);
     }
 
     private updateFoldableStarts(state: EditorState) {
@@ -814,63 +849,12 @@ export class Renderer {
     }
 
     public renderWordHighlight(state: EditorState) {
-        if (!this.codeContent) return;
-        this.codeContent.querySelectorAll('span.wh')
-            .forEach(el => el.classList.remove('wh'));
-
-        const wh = state.wordHighlight;
-        if (!wh?.text || !wh.token) return;
-
-        this.codeContent
-            .querySelectorAll(`span[class~="${wh.token}"]`)
-            .forEach(el => el.textContent === wh.text && el.classList.add('wh'));
-    }
-
-    private clearBracketHighlights() {
-        this.codeContent.querySelectorAll('.bm')
-            .forEach(el => el.classList.remove('bm'));
+        const wordLines = this.wordHighlightRenderer.render(state, state.scrollbarMarkersEnabled);
+        this.renderScrollbarMarkers(state, true, wordLines);
     }
 
     public renderBracketMatch(state: EditorState) {
-        if (!this.codeContent) return;
-
-        const { code, offset, selection } = state;
-
-        const targets: Element[] = [];
-        if (!selection || selection.isEmpty()) {
-            const match = code.getMatchingBracket(offset);
-            if (match) {
-                const { openOffset, closeOffset } = match;
-
-                const openPos = code.getPosition(openOffset);
-                const closePos = code.getPosition(closeOffset);
-
-                const openLineDiv = this.getLine(openPos.line);
-                const closeLineDiv = this.getLine(closePos.line);
-
-                const openEl = openLineDiv ? getElementAtPosition(openLineDiv, openPos.column) : null;
-                const closeEl = closeLineDiv ? getElementAtPosition(closeLineDiv, closePos.column) : null;
-
-                if (openEl) targets.push(openEl);
-                if (closeEl) targets.push(closeEl);
-            }
-        }
-
-        const currentBm = Array.from(this.codeContent.querySelectorAll('.bm'));
-
-        // Remove highlights from elements that are no longer targets
-        for (const el of currentBm) {
-            if (!targets.includes(el)) {
-                el.classList.remove('bm');
-            }
-        }
-
-        // Add highlight to target elements if they don't have it already
-        for (const el of targets) {
-            if (!el.classList.contains('bm')) {
-                el.classList.add('bm');
-            }
-        }
+        this.bracketMatchRenderer.render(state);
     }
 
     public revealCursor(state: EditorState, focusLine: number | null = null): boolean {
@@ -908,10 +892,16 @@ export class Renderer {
     }
 
     public revealCursorCenter(state: EditorState): boolean {
-        const { code, offset, settings } = state;
+        const { code, offset } = state;
         if (!code) return false;
 
         const { line } = code.getPosition(offset);
+        return this.revealLineCenter(state, line);
+    }
+
+    private revealLineCenter(state: EditorState, line: number): boolean {
+        const { code, settings } = state;
+        if (!code) return false;
 
         // Use visual index to account for ghost lines above cursor
         const visualIndex = this.getVisualIndexForLine(line);
@@ -929,17 +919,20 @@ export class Renderer {
         return true;
     }
 
-    public renderErrors(errorLines: Map<number, string>) {
+    public renderErrors(state: EditorState) {
+        const { errorLines } = state;
         const lines = this.getLines();
-        if (!lines.length) return;
+        if (lines.length) {
+            for (let i = 0; i < lines.length; i++) {
+                const lineDiv = lines[i];
+                const lineNumber = lineDiv.lineNumber;
 
-        for (let i = 0; i < lines.length; i++) {
-            const lineDiv = lines[i];
-            const lineNumber = lineDiv.lineNumber;
-
-            const message = errorLines.get(lineNumber);
-            this.lineRenderer.renderDiagnostics(lineDiv, message);
+                const message = errorLines.get(lineNumber);
+                this.lineRenderer.renderDiagnostics(lineDiv, message);
+            }
         }
+        this.renderScrollbarMarkers(state);
+        this.updateContentMinWidth(state);
     }
 
     public renderCompletion(
@@ -993,18 +986,21 @@ export class Renderer {
         }
     ) {
         this.searchRenderer.renderSearch(search, state, handlers);
+        this.renderScrollbarMarkers(state);
     }
 
-    public removeSearch() {
+    public removeSearch(state: EditorState) {
         this.searchRenderer.removeSearch();
+        this.renderScrollbarMarkers(state, false);
     }
 
     public focusSearchInput() {
         this.searchRenderer.focusSearchInput();
     }
 
-    public updateSearchHighlights(search: Search) {
-        this.searchRenderer.updateSearchHighlights(search);
+    public updateSearchHighlights(state: EditorState) {
+        this.searchRenderer.updateSearchHighlights(state.search);
+        this.renderScrollbarMarkers(state);
     }
 
     public removeAllHighlights(search: Search) {
@@ -1019,8 +1015,6 @@ export class Renderer {
         this.searchRenderer.updateSearchLabel(text);
     }
 
-
-
     public clearAllDiffs(): void {
         this.diffRenderer.clearAllDiffs();
     }
@@ -1032,38 +1026,42 @@ export class Renderer {
         probe.textContent = 'M';
         probe.style.position = 'absolute';
         probe.style.visibility = 'hidden';
-        probe.style.whiteSpace = 'pre';
         probe.style.pointerEvents = 'none';
-
-        const computed = window.getComputedStyle(this.codeContent);
-        probe.style.fontFamily = computed.fontFamily;
-        probe.style.fontSize = computed.fontSize;
-        probe.style.fontWeight = computed.fontWeight;
-        probe.style.letterSpacing = computed.letterSpacing;
-
         this.codeContent.appendChild(probe);
-        const measured = probe.getBoundingClientRect().width;
-        probe.remove();
 
-        this.charWidth = measured > 0 ? measured : 8;
+        const width = probe.getBoundingClientRect().width;
+        probe.remove();
+        this.charWidth = width > 0 ? width : 8;
         return this.charWidth;
     }
 
-    private updateMaxWidth(code: Code): void {
-        const charW = this.getCharWidth();
-        const totalLines = code.linesLength();
-        let maxW = 0;
+    private updateContentMinWidth(state: EditorState): void {
+        const charWidth = this.getCharWidth();
+        let maxWidth = 0;
 
-        for (let i = 0; i < totalLines; i++) {
-            const width = code.lineLength(i) * charW;
-            if (width > maxW) {
-                maxW = width;
+        for (let line = 0; line < state.code.linesLength(); line++) {
+            let width = state.code.lineLength(line) * charWidth;
+            const diagnostic = state.errorLines.get(line);
+            if (diagnostic) {
+                const diagnosticText = minimize(diagnostic);
+                width += diagnosticText.length * charWidth + charWidth * 3 + 8;
+            }
+            maxWidth = Math.max(maxWidth, width);
+        }
+
+        if (state.originalCode) {
+            for (const row of this.visualRows) {
+                if (row.kind !== 'ghost') continue;
+                const width = state.originalCode.lineLength(row.originalLineIndex) * charWidth;
+                maxWidth = Math.max(maxWidth, width);
             }
         }
 
-        this.maxWidth = maxW;
-        if (this.maxWidth > 0) {
-            this.codeContent.style.minWidth = `${this.maxWidth + 100}px`;
-        }
+        const nextMinWidth = Math.ceil(maxWidth + 100);
+        if (nextMinWidth === this.lastContentMinWidth) return;
+
+        this.lastContentMinWidth = nextMinWidth;
+        this.codeContent.style.minWidth = `${nextMinWidth}px`;
     }
+
 }

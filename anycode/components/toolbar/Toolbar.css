@@ -138,13 +138,22 @@
     padding: 0 8px;
     color: #ffd7d7;
     background: rgba(110, 32, 32, 0.72);
-    border: 1px solid rgba(255, 107, 107, 0.38);
+    border: none;
     border-radius: 5px;
     font-size: 0.79em;
     font-weight: inherit;
     line-height: 1;
-    pointer-events: none;
+    cursor: pointer;
     margin-left: auto;
+    font-family: inherit;
+}
+
+.toolbar-connection-status:hover {
+    background: rgba(132, 39, 39, 0.82);
+}
+
+.toolbar-connection-status:active {
+    background: rgba(150, 45, 45, 0.9);
 }
 
 .toolbar-connection-dot {

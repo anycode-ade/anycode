@@ -40,6 +40,7 @@ export interface EditorOptions {
     focusedDiffContextLines?: number;
     codeFoldingEnabled?: boolean;
     wordHighlightEnabled?: boolean;
+    scrollbarMarkersEnabled?: boolean;
 }
 
 export interface EditorState {
@@ -56,6 +57,7 @@ export interface EditorState {
     collapsedFoldStarts: Set<number>;
     codeFoldingEnabled: boolean;
     wordHighlightEnabled: boolean;
+    scrollbarMarkersEnabled: boolean;
     wordHighlight: WordHighlight | null;
     search: Search;
 }
@@ -112,6 +114,7 @@ export class AnycodeEditor {
     private codeFoldingEnabled: boolean;
     
     private wordHighlightEnabled: boolean;
+    private scrollbarMarkersEnabled: boolean;
     private wordHighlight: WordHighlight | null = null;
 
     constructor(
@@ -126,6 +129,7 @@ export class AnycodeEditor {
         this.focusedDiffContextLines = Math.max(0, options.focusedDiffContextLines ?? 3);
         this.codeFoldingEnabled = options.codeFoldingEnabled ?? true;
         this.wordHighlightEnabled = options.wordHighlightEnabled ?? true;
+        this.scrollbarMarkersEnabled = options.scrollbarMarkersEnabled ?? true;
         // Set initial cursor position
         if (options.line !== undefined && options.column !== undefined) {
             this.offset = this.code.getOffset(options.line, options.column);
@@ -134,7 +138,7 @@ export class AnycodeEditor {
             this.offset = 0;
         }
 
-        this.settings = { lineHeight: 20, buffer: 15 };
+        this.settings = { lineHeight: 20, buffer: 25 };
         if (typeof window !== 'undefined') {
             const rootStyles = window.getComputedStyle(document.documentElement);
             const fontSize = Number.parseFloat(rootStyles.getPropertyValue('--editor-font-size'));
@@ -161,7 +165,14 @@ export class AnycodeEditor {
             addCssToDocument(css, 'anyeditor-theme');
         }
         this.createDomElements();
-        this.renderer = new Renderer(this.container, this.buttonsColumn, this.gutter, this.foldsColumn, this.codeContent);
+        this.renderer = new Renderer(
+            this.container,
+            this.buttonsColumn,
+            this.gutter,
+            this.foldsColumn,
+            this.codeContent,
+            this.scrollbarMarkersEnabled
+        );
         this.renderer.setFocusedDiffMode(this.focusedDiffEnabled, this.focusedDiffContextLines);
     }
 
@@ -451,7 +462,7 @@ export class AnycodeEditor {
         for (const { line, message } of errors) {
             this.errorLines.set(line, message);
         }
-        this.renderer.renderErrors(this.errorLines);
+        this.renderer.renderErrors(this.getEditorState());
     }
 
     public setCompletions(completions: Completion[]) {
@@ -605,6 +616,7 @@ export class AnycodeEditor {
             collapsedFoldStarts: this.collapsedFoldStarts,
             codeFoldingEnabled: this.codeFoldingEnabled,
             wordHighlightEnabled: this.wordHighlightEnabled,
+            scrollbarMarkersEnabled: this.scrollbarMarkersEnabled,
             wordHighlight: this.wordHighlight,
             search: this.search,
         };
@@ -1161,7 +1173,7 @@ export class AnycodeEditor {
 
         if (this.search.isActive() && action === Action.ESC) {
             this.renderer.removeAllHighlights(this.search);
-            this.renderer.removeSearch();
+            this.renderer.removeSearch(this.getEditorState());
             this.search.clear();
         }
     }
@@ -1298,7 +1310,9 @@ export class AnycodeEditor {
         }
         if (selectionChanged) this.selection = result.ctx.selection || null;
 
-        if (textChanged || offsetChanged) {
+        if (textChanged) {
+            this.wordHighlight = null;
+        } else if (offsetChanged) {
             this.updateWordHighlight();
         }
 
@@ -1310,6 +1324,7 @@ export class AnycodeEditor {
                 this.search.setMatches(matches);
             }
             this.renderer.renderChanges(state);
+            this.renderer.renderWordHighlight(state);
             this.renderer.revealCursor(state);
         } else if (offsetChanged || selectionChanged) {
             const didScrollToCursor = this.renderer.revealCursor(state);
@@ -1534,7 +1549,7 @@ export class AnycodeEditor {
 
         if (event.key === "Escape" && this.search.isActive()) {
             this.renderer.removeAllHighlights(this.search);
-            this.renderer.removeSearch();
+            this.renderer.removeSearch(this.getEditorState());
             this.search.clear();
             isSearch = false;
         }
@@ -1543,13 +1558,6 @@ export class AnycodeEditor {
     }
 
     private onSearchKeyDown(event: KeyboardEvent, input: HTMLTextAreaElement) {
-        console.log('[onSearchKeyDown]', {
-            key: event.key,
-            pattern: this.search.getPattern(),
-            matches: this.search.getMatches(),
-            selected: this.search.getSelected(),
-        });
-
         const pattern = this.search.getPattern();
         const patternLines = pattern.split(/\r?\n/);
         const isMultiline = patternLines.length > 1;
@@ -1564,7 +1572,7 @@ export class AnycodeEditor {
             event.preventDefault();
             event.stopPropagation();
             this.renderer.removeAllHighlights(this.search);
-            this.renderer.removeSearch();
+            this.renderer.removeSearch(this.getEditorState());
             this.search.clear();
             this.renderer.renderCursorOrSelection(this.getEditorState());
             return;
@@ -1580,7 +1588,7 @@ export class AnycodeEditor {
             this.search.setFocused(true);
             this.search.setNeedsFocus(true);
             this.renderer.revealCursor(this.getEditorState(), this.search.getSelectedMatch()?.line);
-            this.renderer.updateSearchHighlights(this.search);
+            this.renderer.updateSearchHighlights(this.getEditorState());
             this.renderer.focusSearchInput();
             return;
         }
@@ -1595,7 +1603,7 @@ export class AnycodeEditor {
             this.search.setFocused(true);
             this.search.setNeedsFocus(true);
             this.renderer.revealCursor(this.getEditorState(), this.search.getSelectedMatch()?.line);
-            this.renderer.updateSearchHighlights(this.search);
+            this.renderer.updateSearchHighlights(this.getEditorState());
             this.renderer.focusSearchInput();
             return;
         }
@@ -1606,7 +1614,7 @@ export class AnycodeEditor {
             const selectedMatch = this.search.getSelectedMatch();
             if (selectedMatch) {
                 this.renderer.removeAllHighlights(this.search);
-                this.renderer.removeSearch();
+                this.renderer.removeSearch(this.getEditorState());
                 let start = this.code.getOffset(selectedMatch.line, selectedMatch.column);
                 let end = start + this.search.getPattern().length;
                 this.offset = end;
@@ -1630,6 +1638,7 @@ export class AnycodeEditor {
             this.search.setActive(true);
             this.search.setFocused(true);
             this.search.setNeedsFocus(true);
+            this.renderer.updateSearchHighlights(this.getEditorState());
             return;
         }
 
@@ -1652,7 +1661,7 @@ export class AnycodeEditor {
         }
 
         this.search.setSelected(foundIndex);
-        this.renderer.updateSearchHighlights(this.search);
+        this.renderer.updateSearchHighlights(this.getEditorState());
         this.search.setNeedsFocus(true);
     }
 

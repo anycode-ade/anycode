@@ -60,6 +60,7 @@ export const FilesPanel = ({
     const treeRef = useRef<HTMLDivElement | null>(null);
     const treeNodeRefs = useRef<Map<string, HTMLDivElement>>(new Map());
     const shouldAutoScrollRef = useRef(false);
+    const suppressNextTreeClickRef = useRef(false);
 
     const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
     const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
@@ -260,6 +261,27 @@ export const FilesPanel = ({
         treeRef.current?.focus({ preventScroll: true });
     }, []);
 
+    const handleTreeMouseDownCapture = useCallback((e: MouseEvent<HTMLDivElement>) => {
+        if (e.button !== 0 || !contextMenu) {
+            return;
+        }
+
+        suppressNextTreeClickRef.current = true;
+        closeContextMenu();
+        e.preventDefault();
+        e.stopPropagation();
+    }, [closeContextMenu, contextMenu]);
+
+    const handleTreeClickCapture = useCallback((e: MouseEvent<HTMLDivElement>) => {
+        if (!suppressNextTreeClickRef.current) {
+            return;
+        }
+
+        suppressNextTreeClickRef.current = false;
+        e.preventDefault();
+        e.stopPropagation();
+    }, []);
+
     useEffect(() => {
         if (focusRequestToken === null) {
             return;
@@ -328,6 +350,8 @@ export const FilesPanel = ({
                         role="tree"
                         tabIndex={0}
                         onKeyDown={handleKeyDown}
+                        onMouseDownCapture={handleTreeMouseDownCapture}
+                        onClickCapture={handleTreeClickCapture}
                         onMouseDown={handleMouseDown}
                     >
                         {displayTree.map((node) => (

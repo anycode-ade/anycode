@@ -32,6 +32,7 @@ interface ToolbarProps {
     onCloseAgent: (agentId: string) => void;
     showConnectionStatus?: boolean;
     connectionStatus?: ConnectionStatus;
+    onReconnect?: () => void;
 }
 
 const copyText = (text: string) => {
@@ -54,6 +55,7 @@ export const Toolbar = ({
     onCloseAgent,
     showConnectionStatus = false,
     connectionStatus = 'connected',
+    onReconnect,
 }: ToolbarProps) => {
     const { closeMenu, menuRef, openMenu, tabMenu } = useTabContextMenu();
 
@@ -475,13 +477,19 @@ export const Toolbar = ({
     return (
         <div className="toolbar">
             {showConnectionStatus ? (
-                <div className="toolbar-connection-status" role="status" aria-live="polite">
+                <button
+                    type="button"
+                    className="toolbar-connection-status"
+                    onClick={onReconnect}
+                    title="Retry connection"
+                    aria-label="Retry backend connection"
+                >
                     <span className="toolbar-connection-dot" aria-hidden="true" />
                     <span>Disconnected</span>
                     <span className="toolbar-connection-detail">
                         {connectionStatus === 'connecting' ? 'Connecting...' : 'Reconnecting...'}
                     </span>
-                </div>
+                </button>
             ) : (
                 <div className="toolbar-tabs" onWheel={handleTabsWheel}>
                     {sortedFiles.map((file) => (

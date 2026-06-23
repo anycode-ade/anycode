@@ -13,9 +13,7 @@ export type ConnectionStatus = 'connecting' | 'connected' | 'reconnecting';
 
 export const useSocket = ({ onConnect, onDisconnect, onConnectError, onError }: UseSocketParams) => {
     const wsRef = useRef<Socket | null>(null);
-    const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-    const reconnectAttemptsRef = useRef<number>(0);
-    const reconnectDelay = 1000;
+    const isUnmountingRef = useRef<boolean>(false);
 
     const [isConnected, setIsConnected] = useState<boolean>(false);
     const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('connecting');
@@ -23,31 +21,40 @@ export const useSocket = ({ onConnect, onDisconnect, onConnectError, onError }: 
 
     const connectToBackend = useCallback(() => {
         try {
-            if (reconnectTimeoutRef.current) {
-                clearTimeout(reconnectTimeoutRef.current);
-                reconnectTimeoutRef.current = null;
+            const existingSocket = wsRef.current;
+            if (existingSocket) {
+                if (!existingSocket.connected && !existingSocket.active) {
+                    existingSocket.connect();
+                }
+                return;
             }
 
-            const ws = io(BACKEND_URL, { transports: ['websocket'] });
+            setConnectionStatus('connecting');
+
+            const ws = io(BACKEND_URL, {
+                transports: ['websocket'],
+                reconnection: true,
+                reconnectionAttempts: Infinity,
+                reconnectionDelay: 1000,
+                reconnectionDelayMax: 5000,
+                timeout: 10000,
+            });
             wsRef.current = ws;
 
             ws.on('connect', () => {
                 setIsConnected(true);
                 setConnectionStatus('connected');
                 setConnectionError(null);
-                reconnectAttemptsRef.current = 0;
                 onConnect?.();
             });
 
             ws.on('disconnect', (reason) => {
                 setIsConnected(false);
-                setConnectionStatus('reconnecting');
-                setConnectionError('Connection to backend lost');
+                if (!isUnmountingRef.current) {
+                    setConnectionStatus('reconnecting');
+                    setConnectionError('Connection to backend lost');
+                }
                 onDisconnect?.(reason);
-                reconnectAttemptsRef.current += 1;
-                reconnectTimeoutRef.current = setTimeout(() => {
-                    connectToBackend();
-                }, reconnectDelay);
             });
 
             ws.on('connect_error', (error) => {
@@ -68,12 +75,7 @@ export const useSocket = ({ onConnect, onDisconnect, onConnectError, onError }: 
     }, [onConnect, onDisconnect, onConnectError, onError]);
 
     const disconnectFromBackend = useCallback(() => {
-        if (reconnectTimeoutRef.current) {
-            clearTimeout(reconnectTimeoutRef.current);
-            reconnectTimeoutRef.current = null;
-        }
-
-        reconnectAttemptsRef.current = 0;
+        isUnmountingRef.current = true;
 
         if (wsRef.current) {
             wsRef.current.disconnect();
@@ -81,15 +83,40 @@ export const useSocket = ({ onConnect, onDisconnect, onConnectError, onError }: 
         }
 
         setIsConnected(false);
-        setConnectionStatus('reconnecting');
     }, []);
 
     useEffect(() => {
+        isUnmountingRef.current = false;
         connectToBackend();
         return () => {
             disconnectFromBackend();
         };
     }, [connectToBackend, disconnectFromBackend]);
+
+    useEffect(() => {
+        const reconnectCurrentSocket = () => {
+            const ws = wsRef.current;
+            if (ws && !ws.connected && !ws.active) {
+                ws.connect();
+            }
+        };
+
+        const reconnectWhenVisible = () => {
+            if (document.visibilityState === 'visible') {
+                reconnectCurrentSocket();
+            }
+        };
+
+        window.addEventListener('online', reconnectCurrentSocket);
+        window.addEventListener('pageshow', reconnectCurrentSocket);
+        document.addEventListener('visibilitychange', reconnectWhenVisible);
+
+        return () => {
+            window.removeEventListener('online', reconnectCurrentSocket);
+            window.removeEventListener('pageshow', reconnectCurrentSocket);
+            document.removeEventListener('visibilitychange', reconnectWhenVisible);
+        };
+    }, []);
 
     return {
         wsRef,
