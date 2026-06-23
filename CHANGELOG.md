@@ -2,6 +2,23 @@
 
 All notable changes are documented here by release tag.
 
+## v0.0.21 - 2026-06-23
+
+### Highlights
+- Added scrollbar markers in the editor for diffs, search matches, diagnostics, and word highlights, with click/drag navigation along the scrollbar area.
+- Added dedicated TSX syntax highlighting and an Xcode-inspired theme with configurable accent colors.
+- Added configurable editor font settings and refined agent message styling.
+- Improved Dockview header actions so the hover target adapts on wider panel headers while staying compact in narrow groups.
+- Fixed file URI encoding.
+
+### Commits
+- `5c4e1f2` Make header action hover area responsive
+- `3321e42` Add editor scrollbar markers
+- `9e621f5` feat: add configurable font settings and style agent messages
+- `4312db8` Add Xcode theme and accent colors
+- `e36b2f1` Add dedicated TSX syntax highlighting
+- `245c589` Fix file URI encoding
+
 ## v0.0.20 - 2026-06-08
 
 ### Highlights
