@@ -79,6 +79,7 @@
     min-height: 30px;
     align-items: stretch;
     position: relative;
+    container-type: inline-size;
 }
 
 /* Dockview custom scrollbars in tab header are unstable under frequent relayout.
@@ -239,6 +240,14 @@
 .layout-header-actions:focus-within {
     background-color: var(--background-color, #242424);
     width: max-content;
+}
+
+/* In a sufficiently wide group, reserve the full hit area for all header
+   actions. Narrow groups keep the compact 35px trigger so tabs stay usable. */
+@container (min-width: 360px) {
+    .layout-header-actions {
+        width: max-content;
+    }
 }
 
 .layout .dv-tabs-and-actions-container .dv-right-actions-container:has(.layout-header-actions:hover),
