@@ -79,18 +79,51 @@ impl Terminal {
         tokio::task::spawn_blocking(move || {
             tracing::info!("PTY reader started");
             let mut buf = [0u8; 1024];
+            let mut unprocessed = Vec::new();
             loop {
                 match reader.read(&mut buf) {
                     Ok(0) => break,
                     Ok(n) => {
-                        let s = String::from_utf8_lossy(&buf[..n]).to_string();
-                        let _ = pty_output_tx.blocking_send(s);
+                        unprocessed.extend_from_slice(&buf[..n]);
+                        let mut check_idx = 0;
+                        while check_idx < unprocessed.len() {
+                            match std::str::from_utf8(&unprocessed[check_idx..]) {
+                                Ok(s) => {
+                                    let _ = pty_output_tx.blocking_send(s.to_string());
+                                    unprocessed.clear();
+                                    break;
+                                }
+                                Err(e) => {
+                                    let valid_up_to = e.valid_up_to();
+                                    if valid_up_to > 0 {
+                                        if let Ok(s) = std::str::from_utf8(&unprocessed[check_idx..check_idx + valid_up_to]) {
+                                            let _ = pty_output_tx.blocking_send(s.to_string());
+                                        }
+                                        check_idx += valid_up_to;
+                                    }
+                                    match e.error_len() {
+                                        Some(err_len) => {
+                                            let _ = pty_output_tx.blocking_send(String::from("\u{FFFD}"));
+                                            check_idx += err_len;
+                                        }
+                                        None => {
+                                            unprocessed.drain(..check_idx);
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                     Err(e) => {
                         tracing::warn!("PTY read error: {:?}", e);
                         break;
                     }
                 }
+            }
+            if !unprocessed.is_empty() {
+                let s = String::from_utf8_lossy(&unprocessed).to_string();
+                let _ = pty_output_tx.blocking_send(s);
             }
             tracing::info!("PTY reader stopped");
         });
@@ -204,6 +237,52 @@ mod tests {
         assert!(
             output.contains("test"),
             "terminal did not echo expected output, got: {}",
+            output
+        );
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_terminal_unicode() -> Result<()> {
+        let (tx, mut rx) = mpsc::channel::<String>(10);
+
+        let shell = if cfg!(target_os = "windows") {
+            "cmd.exe".to_string()
+        } else {
+            "cat".to_string()
+        };
+
+        let terminal = Terminal::new(
+            "test_unicode".to_string(),
+            "session2".to_string(),
+            30,
+            80,
+            Some(shell),
+            None,
+            tx,
+        )
+        .await?;
+
+        let unicode_str = "привет, как дела? 🚀";
+        terminal.send_input(format!("{}\n", unicode_str)).await?;
+
+        let mut output = String::new();
+        let _ = timeout(Duration::from_secs(2), async {
+            while let Some(chunk) = rx.recv().await {
+                output.push_str(&chunk);
+                if output.contains(unicode_str) {
+                    break;
+                }
+            }
+        })
+        .await;
+
+        println!("Output: {}", output);
+
+        assert!(
+            output.contains(unicode_str),
+            "terminal did not echo expected unicode output, got: {}",
             output
         );
 
