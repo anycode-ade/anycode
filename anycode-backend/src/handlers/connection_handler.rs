@@ -14,6 +14,8 @@ pub async fn handle_connect(socket: SocketRef, _state: State<AppState>) {
 
     socket.on("file:open", handle_file_open);
     socket.on("dir:list", handle_dir_list);
+    socket.on("search:files:start", handle_files_search);
+    socket.on("search:files:cancel", handle_files_search_cancel);
     socket.on("file:change", handle_file_change);
     socket.on("file:save", handle_file_save);
     socket.on("file:create", handle_create);

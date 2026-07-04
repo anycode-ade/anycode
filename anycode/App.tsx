@@ -268,10 +268,6 @@ const App: React.FC = () => {
                 return;
             }
     
-            if (e.metaKey && !e.shiftKey && e.key.toLowerCase() === 'f') {
-                e.preventDefault();
-            }
-    
             if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'f') {
                 e.preventDefault();
                 const selectedText = editors.getActiveEditorSelectedText().trim();
@@ -384,6 +380,8 @@ const App: React.FC = () => {
                 return (
                     <Search
                         id="search"
+                        wsRef={wsRef}
+                        isConnected={isConnected}
                         focusRequestToken={layout.getFocusRequestToken('search')}
                         inputValue={search.searchInput}
                         onInputValueChange={search.setSearchInput}
@@ -394,6 +392,7 @@ const App: React.FC = () => {
                         results={search.searchResults}
                         searchEnded={search.searchEnded}
                         onMatchClick={handleSearchResultClick}
+                        onFileClick={handleOpenFile}
                         fileIconsStyle={fileIconsStyle}
                     />
                 );

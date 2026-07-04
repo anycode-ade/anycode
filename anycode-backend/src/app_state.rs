@@ -33,6 +33,7 @@ pub struct SocketData {
     pub search_cancel: Option<CancellationToken>,
     pub search_pattern: Option<String>,
     pub search_last_file_result: Option<FileSearchResult>,
+    pub files_search_cancel: Option<CancellationToken>,
 }
 
 #[derive(Clone)]

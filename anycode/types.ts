@@ -30,6 +30,13 @@ export interface FileSystemItem {
     path: string;
 }
 
+export interface FileSearchResult {
+    name: string;
+    path: string;
+    display_path?: string;
+    type: 'file' | 'directory';
+}
+
 export interface DirectoryResponse {
     files: string[];
     dirs: string[];

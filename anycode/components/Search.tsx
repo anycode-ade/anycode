@@ -1,8 +1,10 @@
 import { memo, useState, useRef, useEffect, useMemo, useCallback } from "react";
+import type { RefObject } from "react";
+import type { Socket } from "socket.io-client";
 import { Icons } from "./Icons";
 import { FileIcon } from "./FileIcon";
 import "./Search.css";
-import type { SearchResult, SearchMatch } from "../types";
+import type { FileSearchResult, SearchResult, SearchMatch } from "../types";
 
 const StopIcon = () => (
     <svg width="16" height="16" viewBox="0 0 20 20" fill="none">
@@ -25,6 +27,9 @@ const DownIcon = () => (
 const SEARCH_FILE_ROW_HEIGHT = 28;
 const SEARCH_MATCH_ROW_HEIGHT = 22;
 const SEARCH_RESULTS_OVERSCAN = 12;
+const FILES_SEARCH_ROW_HEIGHT = 38;
+
+type SearchMode = "content" | "files";
 
 interface SearchPreviewProps {
     match: SearchMatch;
@@ -82,6 +87,8 @@ SearchPreview.displayName = "SearchPreview";
 
 interface SearchProps {
     id: string;
+    wsRef: RefObject<Socket | null>;
+    isConnected: boolean;
     focusRequestToken?: number | null;
     inputValue: string;
     onInputValueChange: (value: string) => void;
@@ -90,6 +97,7 @@ interface SearchProps {
     onCancel: () => void;
     onClear?: () => void;
     onMatchClick: (filePath: string, match: SearchMatch) => void;
+    onFileClick: (filePath: string) => void;
     results: SearchResult[];
     searchEnded: boolean;
     fileIconsStyle?: 'colored' | 'monochrome' | 'disabled';
@@ -197,11 +205,32 @@ const SearchMatchRow = memo(({
 });
 SearchMatchRow.displayName = "SearchMatchRow";
 
-const Search = ({ id, focusRequestToken, inputValue, onInputValueChange, onEnter, onInputChange, onCancel, onClear, onMatchClick, results, searchEnded, fileIconsStyle }: SearchProps) => {
+type FilesSearchBatch = {
+    query?: string;
+    request_id?: string;
+    results?: FileSearchResult[];
+};
+
+type FilesSearchError = {
+    query?: string;
+    request_id?: string;
+    message?: string;
+};
+
+const Search = ({ id, wsRef, isConnected, focusRequestToken, inputValue, onInputValueChange, onEnter, onInputChange, onCancel, onClear, onMatchClick, onFileClick, results, searchEnded, fileIconsStyle }: SearchProps) => {
     const searchPatternRef = useRef("");
+    const activeFilesRequestRef = useRef<{ query: string; requestId: string } | null>(null);
+    const filesSearchRequestCounterRef = useRef(0);
     const [visibleMatches, setVisibleMatches] = useState<Record<string, Set<string> | undefined>>({});
     const [activeItemKey, setActiveItemKey] = useState<string | null>(null);
+    const [activeFileSearchPath, setActiveFileSearchPath] = useState<string | null>(null);
     const [elapsedTime, setElapsedTime] = useState<number>(0);
+    const [searchMode, setSearchMode] = useState<SearchMode>("content");
+    const [fileResults, setFileResults] = useState<FileSearchResult[]>([]);
+    const [filesSearchEnded, setFilesSearchEnded] = useState(true);
+    const [filesSearchError, setFilesSearchError] = useState<string | null>(null);
+    const [isModeToggleCompact, setIsModeToggleCompact] = useState(false);
+    const inputWrapperRef = useRef<HTMLDivElement | null>(null);
     const inputRef = useRef<HTMLTextAreaElement>(null);
     const startTimeRef = useRef<number | null>(null);
     const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -209,10 +238,11 @@ const Search = ({ id, focusRequestToken, inputValue, onInputValueChange, onEnter
     const itemRefs = useRef<Map<string, HTMLDivElement>>(new Map());
     const shouldAutoScrollRef = useRef(false);
     const [resultsViewport, setResultsViewport] = useState({ height: 0, scrollTop: 0 });
+    const activeSearchEnded = searchMode === "content" ? searchEnded : filesSearchEnded;
     
     // Clear visible matches when search starts (when searchEnded becomes false)
     useEffect(() => {
-        if (!searchEnded) {
+        if (!activeSearchEnded) {
             setVisibleMatches({});
             setElapsedTime(0);
             startTimeRef.current = Date.now();
@@ -239,7 +269,7 @@ const Search = ({ id, focusRequestToken, inputValue, onInputValueChange, onEnter
                 clearInterval(intervalRef.current);
             }
         };
-    }, [searchEnded]);
+    }, [activeSearchEnded]);
 
     // Auto-resize textarea based on content
     useEffect(() => {
@@ -263,6 +293,20 @@ const Search = ({ id, focusRequestToken, inputValue, onInputValueChange, onEnter
         }
         inputRef.current?.focus();
     }, [focusRequestToken]);
+
+    useEffect(() => {
+        const el = inputWrapperRef.current;
+        if (!el) return;
+
+        const updateCompactMode = () => {
+            setIsModeToggleCompact(el.clientWidth < 250);
+        };
+
+        updateCompactMode();
+        const resizeObserver = new ResizeObserver(updateCompactMode);
+        resizeObserver.observe(el);
+        return () => resizeObserver.disconnect();
+    }, []);
 
     useEffect(() => {
         const el = resultsRef.current;
@@ -303,8 +347,37 @@ const Search = ({ id, focusRequestToken, inputValue, onInputValueChange, onEnter
 
     const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
         onInputValueChange(e.target.value);
-        onInputChange?.();
+        if (searchMode === "content") {
+            onInputChange?.();
+        } else {
+            wsRef.current?.emit('search:files:cancel');
+            activeFilesRequestRef.current = null;
+            setFileResults([]);
+            setFilesSearchEnded(true);
+            setFilesSearchError(null);
+        }
     };
+
+    const startFilesSearch = useCallback((pattern: string) => {
+        const trimmed = pattern.trim();
+        if (!trimmed || !wsRef.current || !isConnected) return;
+
+        filesSearchRequestCounterRef.current += 1;
+        const requestId = `${Date.now()}:${filesSearchRequestCounterRef.current}`;
+        activeFilesRequestRef.current = { query: trimmed.toLowerCase(), requestId };
+        setFileResults([]);
+        setFilesSearchError(null);
+        setFilesSearchEnded(false);
+        setActiveFileSearchPath(null);
+        resultsRef.current?.scrollTo({ top: 0 });
+        wsRef.current.emit('search:files:start', { query: trimmed, request_id: requestId });
+    }, [isConnected, wsRef]);
+
+    const cancelFilesSearch = useCallback(() => {
+        wsRef.current?.emit('search:files:cancel');
+        activeFilesRequestRef.current = null;
+        setFilesSearchEnded(true);
+    }, [wsRef]);
 
     const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
         if (e.key === "ArrowDown") {
@@ -314,29 +387,84 @@ const Search = ({ id, focusRequestToken, inputValue, onInputValueChange, onEnter
         }
 
         // ESC cancels the search
-        if (e.key === "Escape" && !searchEnded) {
+        if (e.key === "Escape" && !activeSearchEnded) {
             e.preventDefault();
-            onCancel();
+            if (searchMode === "content") {
+                onCancel();
+            } else {
+                cancelFilesSearch();
+            }
             return;
         }
         // Enter submits the search, Shift+Enter inserts newline
         if (e.key === "Enter" && !e.shiftKey) {
             e.preventDefault();
             searchPatternRef.current = inputValue; // Save the pattern used for search
-            if (onEnter) {
+            if (searchMode === "content" && onEnter) {
                 onEnter({ id: id, pattern: inputValue });
+            } else {
+                startFilesSearch(inputValue);
             }
         }
         // Shift+Enter allows default behavior (inserts \n)
     };
+
+    useEffect(() => {
+        if (!wsRef.current || !isConnected) return;
+
+        const socket = wsRef.current;
+        const isActiveFilesSearchMessage = (message: { query?: string; request_id?: string }) => {
+            const activeRequest = activeFilesRequestRef.current;
+            return Boolean(
+                activeRequest
+                && message.query === activeRequest.query
+                && message.request_id === activeRequest.requestId
+            );
+        };
+
+        const handleResults = (message: FilesSearchBatch) => {
+            if (!isActiveFilesSearchMessage(message)) return;
+            setFileResults((prevResults) => {
+                const nextByPath = new Map(prevResults.map((result) => [result.path, result]));
+                for (const result of message.results ?? []) {
+                    nextByPath.set(result.path, result);
+                }
+                return Array.from(nextByPath.values()).sort((a, b) => a.path.localeCompare(b.path));
+            });
+        };
+
+        const handleEnd = (message: FilesSearchBatch) => {
+            if (!isActiveFilesSearchMessage(message)) return;
+            setFilesSearchEnded(true);
+            activeFilesRequestRef.current = null;
+        };
+
+        const handleError = (message: FilesSearchError) => {
+            if (!isActiveFilesSearchMessage(message)) return;
+            setFilesSearchError(message.message ?? 'Search failed');
+            setFilesSearchEnded(true);
+            activeFilesRequestRef.current = null;
+        };
+
+        socket.on('search:files:results', handleResults);
+        socket.on('search:files:end', handleEnd);
+        socket.on('search:files:error', handleError);
+
+        return () => {
+            socket.off('search:files:results', handleResults);
+            socket.off('search:files:end', handleEnd);
+            socket.off('search:files:error', handleError);
+        };
+    }, [isConnected, wsRef]);
 
     const totalMatches = useMemo(() => results.reduce(
         (sum, fileResult) => sum + fileResult.matches.length,
         0
     ), [results]);
     const totalFiles = results.length;
+    const totalFileNameMatches = fileResults.length;
     const elapsedMs = Math.max(0, Math.round(elapsedTime * 1000));
-    const hasQuery = inputValue.trim().length > 0 || results.length > 0;
+    const hasQuery = inputValue.trim().length > 0 || results.length > 0 || fileResults.length > 0;
 
     const navItems = useMemo<SearchNavItem[]>(() => {
         const items: SearchNavItem[] = [];
@@ -398,6 +526,23 @@ const Search = ({ id, focusRequestToken, inputValue, onInputValueChange, onEnter
         return { offsets, heights, totalHeight };
     }, [navItems]);
 
+    const visibleFileResultRange = useMemo(() => {
+        if (fileResults.length === 0) {
+            return { start: 0, end: 0, offsetTop: 0, totalHeight: 0 };
+        }
+
+        const start = Math.max(0, Math.floor(resultsViewport.scrollTop / FILES_SEARCH_ROW_HEIGHT) - SEARCH_RESULTS_OVERSCAN);
+        const visibleCount = Math.ceil(Math.max(resultsViewport.height, FILES_SEARCH_ROW_HEIGHT) / FILES_SEARCH_ROW_HEIGHT) + SEARCH_RESULTS_OVERSCAN * 2;
+        const end = Math.min(fileResults.length, start + visibleCount);
+
+        return {
+            start,
+            end,
+            offsetTop: start * FILES_SEARCH_ROW_HEIGHT,
+            totalHeight: fileResults.length * FILES_SEARCH_ROW_HEIGHT,
+        };
+    }, [fileResults.length, resultsViewport.height, resultsViewport.scrollTop]);
+
     const visibleResultRange = useMemo(() => {
         if (navItems.length === 0) {
             return { start: 0, end: 0, offsetTop: 0 };
@@ -432,6 +577,17 @@ const Search = ({ id, focusRequestToken, inputValue, onInputValueChange, onEnter
     }, [navItems.length, resultsViewport.height, resultsViewport.scrollTop, virtualRows]);
 
     useEffect(() => {
+        if (searchMode === "files") {
+            if (fileResults.length === 0) {
+                setActiveFileSearchPath(null);
+                return;
+            }
+            if (!activeFileSearchPath || !fileResults.some((result) => result.path === activeFileSearchPath)) {
+                setActiveFileSearchPath(fileResults[0].path);
+            }
+            return;
+        }
+
         if (navItems.length === 0) {
             setActiveItemKey(null);
             return;
@@ -440,10 +596,10 @@ const Search = ({ id, focusRequestToken, inputValue, onInputValueChange, onEnter
         if (!activeItemKey || !navItems.some((item) => item.key === activeItemKey)) {
             setActiveItemKey(navItems[0].key);
         }
-    }, [activeItemKey, navItems]);
+    }, [activeFileSearchPath, activeItemKey, fileResults, navItems, searchMode]);
 
     useEffect(() => {
-        if (!activeItemKey || !shouldAutoScrollRef.current) {
+        if (searchMode !== "content" || !activeItemKey || !shouldAutoScrollRef.current) {
             return;
         }
 
@@ -458,7 +614,29 @@ const Search = ({ id, focusRequestToken, inputValue, onInputValueChange, onEnter
             }
         }
         shouldAutoScrollRef.current = false;
-    }, [activeItemKey, navItems, virtualRows.offsets]);
+    }, [activeItemKey, navItems, virtualRows.offsets, searchMode]);
+
+    useEffect(() => {
+        if (searchMode !== "files" || !activeFileSearchPath || !shouldAutoScrollRef.current) {
+            return;
+        }
+
+        const activeIndex = fileResults.findIndex((result) => result.path === activeFileSearchPath);
+        if (activeIndex >= 0) {
+            const nextTop = activeIndex * FILES_SEARCH_ROW_HEIGHT;
+            const viewport = resultsViewport;
+            const container = resultsRef.current;
+            if (container) {
+                const itemBottom = nextTop + FILES_SEARCH_ROW_HEIGHT;
+                if (nextTop < viewport.scrollTop) {
+                    container.scrollTo({ top: nextTop });
+                } else if (itemBottom > viewport.scrollTop + viewport.height) {
+                    container.scrollTo({ top: itemBottom - viewport.height });
+                }
+            }
+        }
+        shouldAutoScrollRef.current = false;
+    }, [activeFileSearchPath, fileResults, searchMode, resultsViewport]);
 
     const handleFileClick = useCallback((filePath: string) => {
         // Toggle the visibility of matches for the clicked file
@@ -475,6 +653,27 @@ const Search = ({ id, focusRequestToken, inputValue, onInputValueChange, onEnter
     const navigateResultsByKey = useCallback((key: string): boolean => {
         if (!['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight', 'Enter'].includes(key)) {
             return false;
+        }
+
+        if (searchMode === "files") {
+            if (fileResults.length === 0) return true;
+            const currentIndex = Math.max(0, fileResults.findIndex((result) => result.path === activeFileSearchPath));
+            if (key === 'ArrowDown') {
+                setActiveFileSearchPath(fileResults[Math.min(fileResults.length - 1, currentIndex + 1)].path);
+                shouldAutoScrollRef.current = true;
+                return true;
+            }
+            if (key === 'ArrowUp') {
+                setActiveFileSearchPath(fileResults[Math.max(0, currentIndex - 1)].path);
+                shouldAutoScrollRef.current = true;
+                return true;
+            }
+            if (key === 'Enter') {
+                onFileClick(fileResults[currentIndex].path);
+                resultsRef.current?.blur();
+                return true;
+            }
+            return true;
         }
 
         if (navItems.length === 0) {
@@ -538,7 +737,7 @@ const Search = ({ id, focusRequestToken, inputValue, onInputValueChange, onEnter
         }
 
         return false;
-    }, [activeItemKey, firstMatchByFile, handleFileClick, navItems, onMatchClick]);
+    }, [activeFileSearchPath, activeItemKey, fileResults, firstMatchByFile, handleFileClick, navItems, onFileClick, onMatchClick, searchMode]);
 
     const handleResultsKeyDown = useCallback((event: React.KeyboardEvent<HTMLDivElement>) => {
         if (event.key === 'Escape') {
@@ -595,10 +794,24 @@ const Search = ({ id, focusRequestToken, inputValue, onInputValueChange, onEnter
         setVisibleMatches({});
     }, []);
 
+    const setMode = useCallback((mode: SearchMode) => {
+        if (mode === searchMode) return;
+        if (searchMode === "content") {
+            onCancel();
+        } else {
+            cancelFilesSearch();
+        }
+        setSearchMode(mode);
+        resultsRef.current?.scrollTo({ top: 0 });
+    }, [cancelFilesSearch, onCancel, searchMode]);
+
     return (
         <div className="search-container">
             
-            <div className="search-input-wrapper">
+            <div
+                ref={inputWrapperRef}
+                className={`search-input-wrapper ${isModeToggleCompact ? "search-input-wrapper-compact" : ""}`}
+            >
                 <textarea
                     className="search-input"
                     value={inputValue}
@@ -610,11 +823,35 @@ const Search = ({ id, focusRequestToken, inputValue, onInputValueChange, onEnter
                     title={`Search... (Enter to search, Shift+Enter for newline)`}
                     placeholder={`Search...`}
                 />
+                <div className="search-mode-toggle" role="tablist" aria-label="Search mode">
+                    <button
+                        type="button"
+                        className={`search-mode-button ${searchMode === "content" ? "active" : ""}`}
+                        onClick={() => setMode("content")}
+                        role="tab"
+                        aria-selected={searchMode === "content"}
+                    >
+                        {isModeToggleCompact ? "C" : "Content"}
+                    </button>
+                    <button
+                        type="button"
+                        className={`search-mode-button ${searchMode === "files" ? "active" : ""}`}
+                        onClick={() => setMode("files")}
+                        role="tab"
+                        aria-selected={searchMode === "files"}
+                    >
+                        {isModeToggleCompact ? "F" : "Files"}
+                    </button>
+                </div>
             </div>
 
             <div className="search-summary">
                 {hasQuery ? (
-                    <span className="search-summary-text">{`${totalMatches} matches · ${totalFiles} files · ${elapsedMs} ms`}</span>
+                    <span className="search-summary-text">
+                        {searchMode === "content"
+                            ? `${totalMatches} matches · ${totalFiles} files · ${elapsedMs} ms`
+                            : `${totalFileNameMatches} files · ${elapsedMs} ms`}
+                    </span>
                 ) : (
                     <span className="search-summary-text search-summary-text-empty"></span>
                 )}
@@ -622,7 +859,7 @@ const Search = ({ id, focusRequestToken, inputValue, onInputValueChange, onEnter
 
             <div className="search-actions-row">
                 <div className="search-actions-group">
-                {searchEnded && matchItems.length > 0 && (
+                {searchMode === "content" && searchEnded && matchItems.length > 0 && (
                     <>
                         <button
                             className="search-button"
@@ -640,25 +877,35 @@ const Search = ({ id, focusRequestToken, inputValue, onInputValueChange, onEnter
                         </button>
                     </>
                 )}
-                {searchEnded ? (
+                {activeSearchEnded ? (
                     <>
                         {inputValue.trim() && (
                             <button 
                                 className="search-button replay"
                                 onClick={() => {
                                     searchPatternRef.current = inputValue; // Save the pattern used for search
-                                    onEnter({ id: id, pattern: inputValue });
+                                    if (searchMode === "content") {
+                                        onEnter({ id: id, pattern: inputValue });
+                                    } else {
+                                        startFilesSearch(inputValue);
+                                    }
                                 }}
                                 title="Replay search"
                             >
                                 <Icons.Refresh />
                             </button>
                         )}
-                        {(inputValue.trim() || results.length > 0) && (
+                        {(inputValue.trim() || results.length > 0 || fileResults.length > 0) && (
                             <button
                                 className="search-button"
                                 onClick={() => {
-                                    onClear?.();
+                                    if (searchMode === "content") {
+                                        onClear?.();
+                                    } else {
+                                        cancelFilesSearch();
+                                        setFileResults([]);
+                                        setFilesSearchError(null);
+                                    }
                                 }}
                                 title="Clear results"
                             >
@@ -670,7 +917,7 @@ const Search = ({ id, focusRequestToken, inputValue, onInputValueChange, onEnter
                     <>
                         <button 
                             className="search-button search-button-cancel"
-                            onClick={onCancel}
+                            onClick={searchMode === "content" ? onCancel : cancelFilesSearch}
                             title="Cancel search"
                         >
                             <StopIcon />
@@ -678,20 +925,20 @@ const Search = ({ id, focusRequestToken, inputValue, onInputValueChange, onEnter
                         <span className="search-loading"><span>.</span><span>.</span><span>.</span></span>
                     </>
                 )}
-                <button
+                {searchMode === "content" && <button
                     className="search-button"
                     onClick={handleExpandAll}
                     title="Expand all files"
                 >
                     <Icons.ChevronDown />
-                </button>
-                <button
+                </button>}
+                {searchMode === "content" && <button
                     className="search-button"
                     onClick={handleCollapseAll}
                     title="Collapse all files"
                 >
                     <Icons.ChevronUp />
-                </button>
+                </button>}
                 </div>
             </div>
 
@@ -704,7 +951,38 @@ const Search = ({ id, focusRequestToken, inputValue, onInputValueChange, onEnter
                 onKeyDown={handleResultsKeyDown}
                 onMouseDown={handleResultsMouseDown}
             >
-                {results.length > 0 ? (
+                {searchMode === "files" ? (
+                    fileResults.length > 0 ? (
+                        <div className="search-virtual-spacer" style={{ height: visibleFileResultRange.totalHeight }}>
+                            <div
+                                className="search-virtual-window"
+                                style={{ transform: `translateY(${visibleFileResultRange.offsetTop}px)` }}
+                            >
+                                {fileResults.slice(visibleFileResultRange.start, visibleFileResultRange.end).map((result) => (
+                                    <button
+                                        key={result.path}
+                                        className="search-file-name-result"
+                                        type="button"
+                                        data-active={activeFileSearchPath === result.path ? 'true' : 'false'}
+                                        onClick={() => {
+                                            setActiveFileSearchPath(result.path);
+                                            onFileClick(result.path);
+                                        }}
+                                        title={result.path}
+                                    >
+                                        <FileIcon path={result.path} styleType={fileIconsStyle} className="search-file-icon" />
+                                        <span className="search-file-name-result-text">
+                                            <span className="search-file-name-result-name">{result.name}</span>
+                                            <span className="search-file-name-result-path">{result.display_path ?? result.path}</span>
+                                        </span>
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="no-results">{filesSearchError ?? (filesSearchEnded ? "No results found" : "Searching...")}</div>
+                    )
+                ) : results.length > 0 ? (
                     <div
                         className="search-virtual-spacer"
                         style={{ height: virtualRows.totalHeight }}
