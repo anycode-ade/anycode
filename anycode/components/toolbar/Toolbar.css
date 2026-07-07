@@ -15,8 +15,8 @@
 }
 
 .tab.active {
-    color: var(--theme-accent-background, #007acc);
-    border-bottom-color: var(--theme-accent-background, #007acc);
+    color: var(--theme-tab-active-foreground, var(--theme-accent-background, #007acc));
+    border-bottom-color: var(--theme-tab-active-foreground, var(--theme-accent-background, #007acc));
 }
 
 .tab-icon-container {
