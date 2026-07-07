@@ -183,42 +183,57 @@ fn find_local_paths(text: &str) -> Vec<PathBuf> {
         ".json", ".rs", ".js", ".ts", ".tsx", ".toml", ".yml", ".yaml",
     ];
 
-    let text_lower = text.to_lowercase();
     for ext in extensions {
         let mut start_idx = 0;
-        while let Some(idx) = text_lower[start_idx..].find(ext) {
-            let abs_idx = start_idx + idx;
-            let end_idx = abs_idx + ext.len();
-            start_idx = end_idx;
-
-            let mut best_path: Option<PathBuf> = None;
-            let min_back = if abs_idx > 512 { abs_idx - 512 } else { 0 };
-
-            for back_len in 4..=(abs_idx - min_back) {
-                let start = abs_idx - back_len;
-                let candidate = &text[start..end_idx];
-
-                let candidate_clean = candidate.strip_prefix("file://").unwrap_or(candidate);
-                let is_absolute = candidate_clean.starts_with('/')
-                    || (candidate_clean.len() >= 3
-                        && candidate_clean.chars().next().unwrap().is_alphabetic()
-                        && &candidate_clean[1..3] == ":\\")
-                    || (candidate_clean.len() >= 3
-                        && candidate_clean.chars().next().unwrap().is_alphabetic()
-                        && &candidate_clean[1..3] == ":/");
-
-                if is_absolute {
-                    let path = Path::new(candidate_clean);
-                    if path.is_file() {
-                        best_path = Some(path.to_path_buf());
-                    }
-                }
+        while start_idx + ext.len() <= text.len() {
+            if text.as_bytes()[start_idx] != b'.' {
+                start_idx += 1;
+                continue;
             }
 
-            if let Some(p) = best_path {
-                if !paths.contains(&p) {
-                    paths.push(p);
+            let match_found = if let Some(sub) = text.get(start_idx..start_idx + ext.len()) {
+                sub.eq_ignore_ascii_case(ext)
+            } else {
+                false
+            };
+
+            if match_found {
+                let abs_idx = start_idx;
+                let end_idx = abs_idx + ext.len();
+                start_idx = end_idx;
+
+                let mut best_path: Option<PathBuf> = None;
+                let min_back = if abs_idx > 512 { abs_idx - 512 } else { 0 };
+
+                for back_len in 4..=(abs_idx - min_back) {
+                    let start = abs_idx - back_len;
+                    if text.is_char_boundary(start) {
+                        if let Some(candidate) = text.get(start..end_idx) {
+                            let candidate_clean = candidate.strip_prefix("file://").unwrap_or(candidate);
+                            let candidate_bytes = candidate_clean.as_bytes();
+                            let is_absolute = candidate_clean.starts_with('/')
+                                || (candidate_bytes.len() >= 3
+                                    && candidate_bytes[0].is_ascii_alphabetic()
+                                    && candidate_bytes[1] == b':'
+                                    && (candidate_bytes[2] == b'\\' || candidate_bytes[2] == b'/'));
+
+                            if is_absolute {
+                                let path = Path::new(candidate_clean);
+                                if path.is_file() {
+                                    best_path = Some(path.to_path_buf());
+                                }
+                            }
+                        }
+                    }
                 }
+
+                if let Some(p) = best_path {
+                    if !paths.contains(&p) {
+                        paths.push(p);
+                    }
+                }
+            } else {
+                start_idx += 1;
             }
         }
     }
@@ -501,3 +516,7 @@ pub async fn handle_acp_undo(
         }
     }
 }
+
+#[cfg(test)]
+#[path = "../tests/acp_handler.rs"]
+mod tests;
