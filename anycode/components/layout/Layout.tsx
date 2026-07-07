@@ -250,7 +250,7 @@ export type PanelId = 'files' | 'search' | 'changes' | 'editor' | 'agent' | 'ter
 type PanelParams = {
     panelKey: string;
     panelId: PanelId;
-    content: React.ReactNode;
+    content?: React.ReactNode;
 };
 
 type PanelPlacementDirection = 'above' | 'right' | 'below' | 'within';
@@ -288,6 +288,7 @@ type ScrollSnapshot = {
 
 type LayoutViewStateRegistry = {
     registerPanelViewState: (panelKey: string, handlers: PanelViewStateHandlers) => () => void;
+    savePanelViewState: (panelKey: string, state: unknown) => void;
 };
 
 type LayoutProps = {
@@ -309,6 +310,7 @@ export type LayoutActions = {
 };
 
 const LayoutViewStateContext = React.createContext<LayoutViewStateRegistry | null>(null);
+const LayoutRenderContext = React.createContext<((panelId: PanelId, panelKey: string) => React.ReactNode) | null>(null);
 
 export const useLayoutPanelViewState = (
     panelKey: string,
@@ -587,10 +589,15 @@ const getSplitPanelSizes = (
 
 const LayoutPanel: React.FC<IDockviewPanelProps<PanelParams>> = ({ params }) => {
     const rootRef = useRef<HTMLDivElement | null>(null);
+    const renderPanel = useContext(LayoutRenderContext);
+    const registry = useContext(LayoutViewStateContext);
 
-    const captureViewState = useCallback((): ScrollSnapshot[] => {
+    const captureViewState = useCallback((): ScrollSnapshot[] | null => {
         const root = rootRef.current;
-        return root ? getPanelScrollSnapshots(root) : [];
+        if (!root || !document.body.contains(root) || (root.offsetWidth === 0 && root.offsetHeight === 0)) {
+            return null;
+        }
+        return getPanelScrollSnapshots(root);
     }, []);
 
     const restoreViewState = useCallback((state: unknown) => {
@@ -607,9 +614,24 @@ const LayoutPanel: React.FC<IDockviewPanelProps<PanelParams>> = ({ params }) => 
         restoreViewState,
     });
 
+    useEffect(() => {
+        const element = rootRef.current;
+        if (!element || !registry) return;
+
+        const handleScroll = () => {
+            const snapshot = getPanelScrollSnapshots(element);
+            registry.savePanelViewState(params.panelKey, snapshot);
+        };
+
+        element.addEventListener('scroll', handleScroll, { capture: true, passive: true });
+        return () => element.removeEventListener('scroll', handleScroll, { capture: true });
+    }, [params.panelKey, registry]);
+
+    const content = renderPanel ? renderPanel(params.panelId, params.panelKey) : params.content;
+
     return (
         <div ref={rootRef} className={`layout-dock-panel layout-dock-panel--${params.panelId}`}>
-            {params.content}
+            {content}
         </div>
     );
 };
@@ -659,6 +681,11 @@ const PanelPicker: React.FC<IDockviewPanelProps<PanelPickerParams>> = ({ params 
         </div>
     </div>
 );
+
+const DOCKVIEW_COMPONENTS = {
+    layoutPanel: LayoutPanel,
+    panelPicker: PanelPicker,
+};
 
 const LayoutHeaderActions: React.FC<IDockviewHeaderActionsProps & {
     onSplitRight: (api: DockviewApi, referencePanelId: string) => void;
@@ -791,12 +818,11 @@ const addPanel = (
     api: DockviewApi,
     panelKey: string,
     panelId: PanelId,
-    content: React.ReactNode,
+    content?: React.ReactNode,
 ): IDockviewPanel => {
     const definition = panelDefinitionById[panelId];
     const existing = api.getPanel(panelKey);
     if (existing) {
-        existing.api.updateParameters({ panelId, panelKey, content });
         return existing;
     }
 
@@ -1015,15 +1041,23 @@ export const Layout: React.FC<LayoutProps> = ({
         };
     }, []);
 
+    const savePanelViewState = useCallback((panelKey: string, state: unknown) => {
+        panelViewStatesRef.current[panelKey] = state;
+    }, []);
+
     const viewStateRegistry = useMemo<LayoutViewStateRegistry>(() => ({
         registerPanelViewState,
-    }), [registerPanelViewState]);
+        savePanelViewState,
+    }), [registerPanelViewState, savePanelViewState]);
 
     const capturePanelViewStates = useCallback(() => {
         const nextStates: Record<string, unknown> = {};
 
         panelViewStateHandlersRef.current.forEach((handlers, panelKey) => {
-            nextStates[panelKey] = handlers.captureViewState();
+            const state = handlers.captureViewState();
+            if (state !== null && state !== undefined) {
+                nextStates[panelKey] = state;
+            }
         });
 
         panelViewStatesRef.current = {
@@ -1102,13 +1136,6 @@ export const Layout: React.FC<LayoutProps> = ({
                     continue;
                 }
 
-                for (const existing of existingPanels) {
-                    existing.api.updateParameters({
-                        panelId: panel.id,
-                        panelKey: existing.id,
-                        content: resolvePanelContent(panel.id, existing.id),
-                    });
-                }
                 continue;
             }
 
@@ -1151,10 +1178,9 @@ export const Layout: React.FC<LayoutProps> = ({
             panel.api.updateParameters({
                 panelId,
                 panelKey: panel.id,
-                content: resolvePanelContent(panelId, panel.id),
             });
         }
-    }, [resolvePanelContent]);
+    }, []);
 
     const handleSelectPanelFromPicker = useCallback((panelId: PanelId, pickerPanelId: string) => {
         const api = apiRef.current;
@@ -1474,6 +1500,7 @@ export const Layout: React.FC<LayoutProps> = ({
                 const baseId = getPanelBaseId(panel.id);
                 if (!baseId) return;
                 onPanelActivated?.(baseId, panel.id);
+                restorePanelViewStates();
             }),
             api.onDidLayoutChange(() => {
                 if (isRestoringLayoutRef.current) {
@@ -1558,12 +1585,14 @@ export const Layout: React.FC<LayoutProps> = ({
         <div className="layout dockview-theme-dark">
             <div className="layout-main">
                 <LayoutViewStateContext.Provider value={viewStateRegistry}>
-                    <DockviewReact
-                        components={{ layoutPanel: LayoutPanel, panelPicker: PanelPicker }}
-                        className="layout-root"
-                        onReady={handleReady}
-                        rightHeaderActionsComponent={renderRightHeaderActions}
-                    />
+                    <LayoutRenderContext.Provider value={renderPanel}>
+                        <DockviewReact
+                            components={DOCKVIEW_COMPONENTS}
+                            className="layout-root"
+                            onReady={handleReady}
+                            rightHeaderActionsComponent={renderRightHeaderActions}
+                        />
+                    </LayoutRenderContext.Provider>
                 </LayoutViewStateContext.Provider>
             </div>
             <div className="layout-toolbar">
