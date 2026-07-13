@@ -2,6 +2,24 @@
 
 All notable changes are documented here by release tag.
 
+## v0.0.22 - 2026-07-08
+
+### Highlights
+- Added files search with keyboard navigation improvements and race-condition fixes.
+- Added VS Code Dark+/Light+, GitHub Default Dark/Light, and IntelliJ IDEA Darcula/Light editor themes.
+- Fixed backend terminal character corruption by buffering incomplete UTF-8 bytes at read boundaries.
+- Fixed a panic when finding local paths containing non-ASCII characters.
+- Fixed layout scroll resets and jumps during panel activation and dragging.
+
+### Commits
+- `da7c580` fix(layout): prevent scroll resets and jumps during panel activation and dragging
+- `831e490` feat: add IntelliJ IDEA Darcula and Light themes
+- `e1d82ba` feat: add GitHub Default Dark and Light themes
+- `302c3ea` feat: add VS Code Dark+ and Light+ themes and clean active tab styling
+- `33f1398` fix: prevent panic on non-ASCII characters in find_local_paths
+- `8ae7686` fix(backend): prevent terminal character corruption by buffering incomplete UTF-8 bytes at read boundaries
+- `c27f0d6` feat: implement and optimize files search, fix keyboard navigation and race conditions
+
 ## v0.0.21 - 2026-06-23
 
 ### Highlights
