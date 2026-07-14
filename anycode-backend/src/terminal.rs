@@ -152,7 +152,7 @@ impl Terminal {
             loop {
                 tokio::select! {
                     Some(input) = input_rx.recv() => {
-                        if let Err(e) = write!(writer, "{}", input) {
+                        if let Err(e) = writer.write_all(input.as_bytes()) {
                             tracing::error!("PTY write error: {:?}", e);
                         }
                         let _ = writer.flush();

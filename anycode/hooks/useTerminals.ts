@@ -168,6 +168,10 @@ export const useTerminals = ({ wsRef, isConnected }: UseTerminalsParams) => {
         const terminalToRemove = terminals.find((terminal) => terminal.id === id);
         if (!terminalToRemove) return;
 
+        // Clean up terminal history snapshot and mouse mode from localStorage
+        localStorage.removeItem(`terminal:data:${terminalToRemove.name}`);
+        localStorage.removeItem(`terminal:mouseMode:${terminalToRemove.name}`);
+
         closingTerminalsRef.current.add(terminalToRemove.name);
         newTerminalsRef.current.delete(terminalToRemove.id);
         clearResizeState(terminalToRemove.name);
@@ -188,6 +192,45 @@ export const useTerminals = ({ wsRef, isConnected }: UseTerminalsParams) => {
         return closingTerminalsRef.current.has(name);
     }, []);
 
+    const uploadFile = useCallback(async (file: File): Promise<string | null> => {
+        if (!wsRef.current || !isConnected) return null;
+
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result as string);
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+        });
+
+        const comma = dataUrl.indexOf(',');
+        if (comma === -1) return null;
+        const dataBase64 = dataUrl.slice(comma + 1);
+        if (!dataBase64) return null;
+
+        let filename = file.name;
+        const dotIndex = filename.lastIndexOf('.');
+        const ext = dotIndex !== -1 ? filename.substring(dotIndex) : '';
+        const base = dotIndex !== -1 ? filename.substring(0, dotIndex) : filename;
+        const safeBase = base.replace(/[^a-zA-Z0-9_-]/g, '_');
+        filename = `${safeBase}_${Date.now()}${ext}`;
+
+        return new Promise<string | null>((resolve) => {
+            wsRef.current!.emit('file:create', {
+                parent_path: '',
+                name: filename,
+                is_file: true,
+                content_base64: dataBase64,
+                to_temp_dir: true
+            }, (response: any) => {
+                if (response && response.success) {
+                    resolve(response.file);
+                } else {
+                    resolve(null);
+                }
+            });
+        });
+    }, [wsRef, isConnected]);
+
     useEffect(() => {
         return () => {
             clearResizeState();
@@ -203,5 +246,6 @@ export const useTerminals = ({ wsRef, isConnected }: UseTerminalsParams) => {
         closeTerminal,
         reconnectTerminals,
         isTerminalClosing,
+        uploadFile,
     };
 };

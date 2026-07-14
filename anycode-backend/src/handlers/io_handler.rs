@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{self, json};
 use socketioxide::extract::{AckSender, Data, SocketRef, State};
 use std::path::{Component, Path, PathBuf};
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 /// Apply edits to a Code instance and return LSP change events.
 /// If `use_history` is true, wraps edits in tx()/commit() for undo support.
@@ -434,6 +434,8 @@ pub struct CreateRequest {
     pub parent_path: String,
     pub name: String,
     pub is_file: bool,
+    pub content_base64: Option<String>,
+    pub to_temp_dir: Option<bool>,
 }
 
 pub async fn handle_create(
@@ -447,6 +449,7 @@ pub async fn handle_create(
     let parent_path = &request.parent_path;
     let name = &request.name;
     let is_file = request.is_file;
+    let is_temp = request.to_temp_dir.unwrap_or(false);
 
     let mut name_components = Path::new(name).components();
     if name.is_empty()
@@ -456,20 +459,24 @@ pub async fn handle_create(
         error_ack!(ack, &request.name, "Name must be a single path component");
     }
 
-    // Build path using PathBuf for cross-platform compatibility
-    let full_path = if parent_path.is_empty() || parent_path == "." || parent_path == "./" {
-        PathBuf::from(name)
+    let full_path = if is_temp {
+        std::env::temp_dir().join(name)
     } else {
-        PathBuf::from(parent_path).join(name)
-    };
+        // Build path using PathBuf for cross-platform compatibility
+        let fp = if parent_path.is_empty() || parent_path == "." || parent_path == "./" {
+            PathBuf::from(name)
+        } else {
+            PathBuf::from(parent_path).join(name)
+        };
 
-    // For relative paths, we need to join with current directory
-    let full_path = if full_path.is_absolute() {
-        full_path
-    } else {
-        // Relative path, join with current directory
-        let current_dir = std::env::current_dir().unwrap_or_default();
-        current_dir.join(&full_path)
+        // For relative paths, we need to join with current directory
+        if fp.is_absolute() {
+            fp
+        } else {
+            // Relative path, join with current directory
+            let current_dir = std::env::current_dir().unwrap_or_default();
+            current_dir.join(&fp)
+        }
     };
 
     let full_path_str = full_path.to_string_lossy().to_string();
@@ -490,19 +497,34 @@ pub async fn handle_create(
     }
 
     if is_file {
-        // Create empty file
-        match std::fs::File::create(&full_path) {
-            Ok(_) => {
-                info!("File created successfully: {}", full_path_str);
-                let mut f2c = state.file2code.lock().await;
-                f2c.entry(full_path_str.clone())
-                    .or_insert_with(|| Code::new_empty(&full_path_str, &state.config));
+        let bytes = if let Some(b64) = &request.content_base64 {
+            use base64::Engine;
+            match base64::engine::general_purpose::STANDARD.decode(b64) {
+                Ok(b) => b,
+                Err(e) => error_ack!(ack, &request.name, "Failed to decode base64 data: {:?}", e),
+            }
+        } else {
+            Vec::new()
+        };
 
-                socket
-                    .broadcast()
-                    .emit("file:created", &full_path_str)
-                    .await
-                    .ok();
+        match std::fs::write(&full_path, bytes) {
+            Ok(_) => {
+                if is_temp {
+                    debug!("Temporary file created successfully: {}", full_path_str);
+                } else {
+                    info!("File created successfully: {}", full_path_str);
+                }
+                if !is_temp {
+                    let mut f2c = state.file2code.lock().await;
+                    f2c.entry(full_path_str.clone())
+                        .or_insert_with(|| Code::new_empty(&full_path_str, &state.config));
+
+                    socket
+                        .broadcast()
+                        .emit("file:created", &full_path_str)
+                        .await
+                        .ok();
+                }
                 ack.send(&json!({ "success": true, "file": full_path_str, "is_file": true }))
                     .ok();
             }
@@ -514,12 +536,18 @@ pub async fn handle_create(
         // Create directory
         match std::fs::create_dir(&full_path) {
             Ok(_) => {
-                info!("Directory created successfully: {}", full_path_str);
-                socket
-                    .broadcast()
-                    .emit("dir:created", &full_path_str)
-                    .await
-                    .ok();
+                if is_temp {
+                    debug!("Temporary directory created successfully: {}", full_path_str);
+                } else {
+                    info!("Directory created successfully: {}", full_path_str);
+                }
+                if !is_temp {
+                    socket
+                        .broadcast()
+                        .emit("dir:created", &full_path_str)
+                        .await
+                        .ok();
+                }
                 ack.send(&json!({ "success": true, "dir": full_path_str, "is_file": false }))
                     .ok();
             }
@@ -529,6 +557,7 @@ pub async fn handle_create(
         }
     }
 }
+
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct DeleteRequest {

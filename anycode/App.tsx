@@ -430,6 +430,7 @@ const App: React.FC = () => {
                         onTerminalMessage={terminals.handleTerminalDataCallback}
                         onTerminalResize={terminals.handleTerminalResize}
                         onIsTerminalClosing={terminals.isTerminalClosing}
+                        onUploadFile={terminals.uploadFile}
                         fontConfig={settings.fontSettings.terminal}
                     />
                 );

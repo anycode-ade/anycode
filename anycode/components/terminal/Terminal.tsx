@@ -27,10 +27,12 @@ interface XTerminalProps {
   rows: number;
   cols: number;
   isConnected: boolean;
+  onUploadFile: (file: File) => Promise<string | null>;
   fontConfig: FontConfig;
 }
 
 const TERMINAL_DELAY_MS = 100;
+const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB
 
 const getTerminalTheme = () => {
   const rootStyles = getComputedStyle(document.documentElement);
@@ -65,6 +67,7 @@ const Terminal: React.FC<XTerminalProps> = ({
   rows,
   cols,
   isConnected,
+  onUploadFile,
   fontConfig,
 }) => {
   const terminalRef = useRef<HTMLDivElement | null>(null);
@@ -82,12 +85,93 @@ const Terminal: React.FC<XTerminalProps> = ({
   const onDataRef = useRef(onData);
   const onResizeRef = useRef(onResize);
   const isTerminalClosingRef = useRef(isTerminalClosing);
+  const onUploadFileRef = useRef(onUploadFile);
 
   useEffect(() => {
     onDataRef.current = onData;
     onResizeRef.current = onResize;
     isTerminalClosingRef.current = isTerminalClosing;
-  }, [onData, onResize, isTerminalClosing]);
+    onUploadFileRef.current = onUploadFile;
+  }, [onData, onResize, isTerminalClosing, onUploadFile]);
+
+  const handleDragOver = (event: React.DragEvent<HTMLDivElement>) => {
+    if (event.dataTransfer.types.includes('Files')) {
+      event.preventDefault();
+      event.stopPropagation();
+      event.dataTransfer.dropEffect = 'copy';
+    }
+  };
+
+  const handleDrop = async (event: React.DragEvent<HTMLDivElement>) => {
+    const files = Array.from(event.dataTransfer.files);
+    if (files.length === 0) return;
+
+    const oversized = files.filter(f => f.size > MAX_FILE_SIZE);
+    if (oversized.length > 0) {
+      alert(`File(s) too large. Maximum size allowed is 20MB. (Oversized: ${oversized.map(f => f.name).join(', ')})`);
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    const paths: string[] = [];
+    for (const file of files) {
+      try {
+        const savedPath = await onUploadFileRef.current(file);
+        if (savedPath) {
+          paths.push(savedPath);
+        }
+      } catch (err) {
+        console.error("Failed to upload dropped file:", err);
+      }
+    }
+
+    if (paths.length > 0) {
+      const formattedPaths = paths.map(p => `"${p}"`).join(' ');
+      onDataRef.current(name, formattedPaths);
+    }
+  };
+
+  const handlePaste = async (event: React.ClipboardEvent<HTMLDivElement>) => {
+    const items = event.clipboardData?.items;
+    if (!items || items.length === 0) return;
+
+    const files: File[] = [];
+    for (const item of Array.from(items)) {
+      if (item.kind !== 'file') continue;
+      const file = item.getAsFile();
+      if (file) files.push(file);
+    }
+
+    if (files.length === 0) return;
+
+    const oversized = files.filter(f => f.size > MAX_FILE_SIZE);
+    if (oversized.length > 0) {
+      alert(`File(s) too large. Maximum size allowed is 20MB. (Oversized: ${oversized.map(f => f.name).join(', ')})`);
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    const paths: string[] = [];
+    for (const file of files) {
+      try {
+        const savedPath = await onUploadFileRef.current(file);
+        if (savedPath) {
+          paths.push(savedPath);
+        }
+      } catch (err) {
+        console.error("Failed to upload pasted file:", err);
+      }
+    }
+
+    if (paths.length > 0) {
+      const formattedPaths = paths.map(p => `"${p}"`).join(' ');
+      onDataRef.current(name, formattedPaths);
+    }
+  };
 
   const saveTerminalState = debounce(() => {
     if (isTerminalClosingRef.current(name) || !serializeAddonRef.current) return;
@@ -320,6 +404,9 @@ const Terminal: React.FC<XTerminalProps> = ({
   return (
     <div
       ref={terminalRef}
+      onPasteCapture={handlePaste}
+      onDragOverCapture={handleDragOver}
+      onDropCapture={handleDrop}
       style={{
         width: "100%",
         height: "100%",

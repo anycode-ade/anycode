@@ -18,6 +18,7 @@ type TerminalPanelProps = {
     onTerminalMessage: (name: string, callback: (data: string) => void) => () => void;
     onTerminalResize: (name: string, cols: number, rows: number) => void;
     onIsTerminalClosing: (name: string) => boolean;
+    onUploadFile: (file: File) => Promise<string | null>;
     fontConfig: FontConfig;
 };
 
@@ -31,6 +32,7 @@ export const TerminalPanel = ({
     onTerminalMessage,
     onTerminalResize,
     onIsTerminalClosing,
+    onUploadFile,
     fontConfig,
 }: TerminalPanelProps) => {
     const selectedTerminalId = terminalPanes.getSelectedId(panelKey);
@@ -76,6 +78,7 @@ export const TerminalPanel = ({
                         cols={selectedTerminal.cols}
                         isConnected={isConnected}
                         isTerminalClosing={onIsTerminalClosing}
+                        onUploadFile={onUploadFile}
                         fontConfig={fontConfig}
                     />
                 </div>
