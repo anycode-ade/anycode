@@ -2,9 +2,10 @@
 
 All notable changes are documented here by release tag.
 
-## v0.0.22 - 2026-07-08
+## v0.0.22 - 2026-07-14
 
 ### Highlights
+- Added support for file upload via drag-drop and paste in the terminal.
 - Added files search with keyboard navigation improvements and race-condition fixes.
 - Added VS Code Dark+/Light+, GitHub Default Dark/Light, and IntelliJ IDEA Darcula/Light editor themes.
 - Fixed backend terminal character corruption by buffering incomplete UTF-8 bytes at read boundaries.
@@ -12,6 +13,7 @@ All notable changes are documented here by release tag.
 - Fixed layout scroll resets and jumps during panel activation and dragging.
 
 ### Commits
+- `8fa09aa` feat(terminal): support file upload via drag-drop and paste
 - `da7c580` fix(layout): prevent scroll resets and jumps during panel activation and dragging
 - `831e490` feat: add IntelliJ IDEA Darcula and Light themes
 - `e1d82ba` feat: add GitHub Default Dark and Light themes
