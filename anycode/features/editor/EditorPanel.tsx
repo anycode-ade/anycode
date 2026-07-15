@@ -48,7 +48,7 @@ export const EditorPanel = ({ panelKey, editors }: EditorPanelProps) => {
         >
             {displayedEditor ? (
                 <AnycodeEditorReact
-                    key={`${panelKey}:${displayedEditor.id}`}
+                    key={panelKey}
                     id={displayedEditor.id}
                     editorState={displayedEditor.state}
                 />

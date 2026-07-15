@@ -564,15 +564,16 @@ export class AnycodeEditor {
     }
 
     private handleScroll(e: Event) {
+        if (!this.container.isConnected) return;
+
         this.clearPendingHover();
         this.closeHover();
 
-        if (this.scrollAnimationFrameId !== null) {
-            return;
-        }
+        if (this.scrollAnimationFrameId !== null) return;
 
         this.scrollAnimationFrameId = requestAnimationFrame(() => {
             this.scrollAnimationFrameId = null;
+            if (!this.container.isConnected) return;
             const scrollTop = this.container.scrollTop;
             if (scrollTop !== this.lastScrollTop) {
                 let state = this.getEditorState();

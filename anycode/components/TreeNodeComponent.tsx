@@ -166,15 +166,17 @@ const TreeNodeComponentImpl: React.FC<TreeNodeComponentProps> = ({
                 onContextMenu={(e) => onContextMenu(e, node)}
                 style={{ cursor: 'pointer' }}
             >
-                <div className="tree-indent" style={{ width: level * 16 }}></div>
+                <div className="tree-indent" style={{ width: level * 16 }} onMouseDown={(e) => e.stopPropagation()}></div>
 
-                <FileIcon
-                    path={node.path}
-                    isDirectory={node.type === 'directory'}
-                    isExpanded={isExpanded}
-                    styleType={fileIconsStyle}
-                    className={`tree-file-icon tree-file-icon-${fileIconsStyle}`}
-                />
+                <span onMouseDown={(e) => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center' }}>
+                    <FileIcon
+                        path={node.path}
+                        isDirectory={node.type === 'directory'}
+                        isExpanded={isExpanded}
+                        styleType={fileIconsStyle}
+                        className={`tree-file-icon tree-file-icon-${fileIconsStyle}`}
+                    />
+                </span>
 
                 {isEditing ? (
                     <input

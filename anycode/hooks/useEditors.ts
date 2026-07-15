@@ -223,8 +223,8 @@ export const useEditors = ({ wsRef, isConnected, onFileClosed }: UseEditorsParam
     useEffect(() => { saveItem('editorDiffModeByPane', editorDiffModeByPane); }, [editorDiffModeByPane]);
 
     const getActiveFileIdForPane = useCallback((paneId: string): string | null => {
-        return paneActiveFileIdsRef.current[paneId] ?? null;
-    }, []);
+        return paneActiveFileIds[paneId] ?? null;
+    }, [paneActiveFileIds]);
 
     const getEditorState = useCallback((fileId: string): AnycodeEditor | null => {
         return editorRefs.current.get(fileId) ?? editorStatesRef.current.get(fileId) ?? null;
@@ -661,7 +661,9 @@ export const useEditors = ({ wsRef, isConnected, onFileClosed }: UseEditorsParam
         }
 
         if (wsRef.current && isConnected) {
+            const oldActiveFileId = activeFileIdRef.current;
             pendingOpenFilesRef.current.add(path);
+            setActiveFileId(path, targetPaneId);
 
             wsRef.current.emit('file:open', { path }, (response: any) => {
                 pendingOpenFilesRef.current.delete(path);
@@ -694,6 +696,8 @@ export const useEditors = ({ wsRef, isConnected, onFileClosed }: UseEditorsParam
                     if (existingEditor) {
                         applyEditorOpenRequest(path, existingEditor);
                     }
+                } else {
+                    setActiveFileId(oldActiveFileId, targetPaneId);
                 }
             });
         }

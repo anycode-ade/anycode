@@ -10,10 +10,10 @@
 
 .tree-item-content {
     display: flex;
-    align-items: center;
+    align-items: stretch;
     cursor: pointer;
     border-radius: 6px;
-    min-height: 22px;
+    height: 22px;
     position: relative;
     padding-left: 6px;
 }
@@ -66,6 +66,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
+    height: 100%;
 }
 
 .tree-item-content.directory > .tree-file-icon-colored {
@@ -93,6 +94,8 @@
     user-select: none;
     padding-left: 5px;
     cursor: pointer;
+    display: flex;
+    align-items: center;
 }
 
 .tree-item-content .tree-name {
