@@ -1,12 +1,13 @@
 use crate::acp_fs::AcpFsCommand;
 use crate::acp_history::AcpHistoryManager;
-use agent_client_protocol::schema as acp;
-use agent_client_protocol::schema::{
+use agent_client_protocol::schema::v1 as acp;
+use agent_client_protocol::schema::v1::{
     RequestPermissionOutcome, RequestPermissionRequest, RequestPermissionResponse,
     SelectedPermissionOutcome,
 };
 use agent_client_protocol::{ByteStreams, Client, ConnectionTo};
-use agent_client_protocol_schema::{ProtocolVersion, SessionId};
+use agent_client_protocol::schema::ProtocolVersion;
+use agent_client_protocol::schema::v1::SessionId;
 use anyhow::{Context, Result, anyhow};
 use base64::Engine as _;
 use chrono::Utc;
@@ -1093,7 +1094,7 @@ impl AcpAgent {
             .send_request(acp::SetSessionConfigOptionRequest::new(
                 session_id.clone(),
                 option.config_id.clone(),
-                option.value.clone(),
+                option.value.as_str(),
             ))
             .block_task()
             .await

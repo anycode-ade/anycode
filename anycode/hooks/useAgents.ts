@@ -178,7 +178,8 @@ const projectRawUpdate = (rawMessage: AcpRawUpdateMessage): AcpMessage[] => {
     }
 
     if ((kind === 'user_message_chunk') && payload) {
-        return contentBlockToMessages(payload.content, 'user');
+        // Ignored because the user message is already added to history by the backend/client upon sending.
+        return [];
     }
 
     if ((kind === 'agent_thought_chunk') && payload) {

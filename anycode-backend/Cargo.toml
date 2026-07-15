@@ -39,8 +39,8 @@ dirs = "6"
 lsp-types = "0.97"
 url = "2.5"
 similar = "2"
-agent-client-protocol = { version = "0.11", features = ["unstable_session_close", "unstable_session_resume", "unstable_session_usage"] }
-agent-client-protocol-schema = { version = "0.12", features = ["unstable_session_usage"] }
+agent-client-protocol = { version = "1.2.0" }
+agent-client-protocol-schema = { version = "1.4.0" }
 async-trait = "0.1"
 tokio-util = { version = "0.7", features = ["compat"] }
 unicode-segmentation = "1"
