@@ -2,6 +2,36 @@
 
 All notable changes are documented here by release tag.
 
+## v0.0.24 - 2026-07-21
+
+### Highlights
+- Upgraded TypeScript to version `7.0.2` across the workspace projects (`anycode-base`, `anycode-react`, and root configurations).
+- Refactored layout resizing and group boundaries.
+- Upgraded `dockview` and `dockview-react` to version `7.0.2` for modern layout management and responsiveness.
+- Implemented editor scroll position persistence (`usePersistedScroll`) to prevent layout/scroll resets when switching between files or panels.
+- Configured and integrated the new Grok agent into ACP (Agent Client Protocol) configurations, complete with custom message layout and icon styling support.
+- Relocated Language Server Protocol (LSP) docs to the `docs/` folder, resolved relative documentation links, and updated installation instructions for the dotnet LSP.
+
+### Commits
+- `d81f605` doc: move lsp.md one level up to docs/ and fix relative links
+- `53c1ebc` Merge branch 'pr-25'
+- `6675a4b` Refactor layout resize, scroll persistence, upgrade dockview, and integrate Grok agent
+- `529fe7f` Update installation docs for dotnet LSP
+
+## v0.0.23 - 2026-07-15
+
+### Highlights
+- Updated `agent-client-protocol` dependency to version `1.2.0` and `agent-client-protocol-schema` to version `1.4.0`.
+- Removed obsolete unstable features (`unstable_session_usage`, `unstable_session_close`, `unstable_session_resume`), aligning with the newly stabilized schema.
+- Updated schema-related imports and trait conversions in the Rust backend.
+- Fixed a bug where user prompt messages appeared twice in the chat history by ignoring the agent's echo `user_message_chunk` raw updates (as the client already registers and renders prompt submission immediately).
+
+### Commits
+- `94211df` Make release notes professional
+- `55cf84c` Bump version to 0.0.23 and add release notes
+- `98f8b54` Update agent-client-protocol to 1.2.0 and fix duplicate user messages
+- `bfbe9a5` fixed editor tree and tabs switches
+
 ## v0.0.22 - 2026-07-14
 
 ### Highlights
