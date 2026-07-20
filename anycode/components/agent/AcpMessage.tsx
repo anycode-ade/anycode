@@ -760,6 +760,9 @@ const MarkdownCodeBlock: React.FC<{
       try {
         editor = new AnycodeEditor(code, blockIdRef.current!, language, {
           readOnly: true,
+          codeFoldingEnabled: false,
+          wordHighlightEnabled: false,
+          scrollbarMarkersEnabled: false,
         });
         await editor.init();
 
@@ -837,6 +840,9 @@ const DiffCodeBlock: React.FC<{
       try {
         nextEditor = new AnycodeEditor(diff.newText, blockIdRef.current!, language, {
           readOnly: true,
+          codeFoldingEnabled: false,
+          wordHighlightEnabled: false,
+          scrollbarMarkersEnabled: false,
         });
         await nextEditor.init();
         nextEditor.setOriginalCode(diff.oldText ?? '');

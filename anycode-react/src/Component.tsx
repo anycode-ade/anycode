@@ -4,9 +4,10 @@ import { AnycodeEditor } from 'anycode-base';
 interface AnycodeEditorProps {
     id: string;
     editorState: AnycodeEditor;
+    forceUpdateTrigger?: number;
 }
 
-export default function AnycodeEditorReact({ id, editorState,  }: AnycodeEditorProps) {
+export default function AnycodeEditorReact({ id, editorState, forceUpdateTrigger }: AnycodeEditorProps) {
 
     const containerRef = useRef<HTMLDivElement>(null);
 
@@ -18,16 +19,14 @@ export default function AnycodeEditorReact({ id, editorState,  }: AnycodeEditorP
         host.replaceChildren(editorContainer);
 
         if (editorState.hasScroll()) {
+            editorState.onAttach();
             let focus = editorState.requestedFocus();
 
             if (focus) {
                 let { line, column } = editorState.getCursor();
                 if (line !== undefined && column !== undefined) {
                     editorState.requestFocus(line, column);
-                    editorState.renderCursorOrSelection();
                 }
-            } else {
-                editorState.onAttach();
             }
         } else {
             editorState.render();
@@ -42,7 +41,7 @@ export default function AnycodeEditorReact({ id, editorState,  }: AnycodeEditorP
             // The editor node is moved between hosts on the next mount.
             // Avoid clearing here to prevent a brief blank frame during switches.
         };
-    }, [id, editorState]);
+    }, [id, editorState, forceUpdateTrigger]);
 
   return <div ref={containerRef} style={{ width: '100%', height: '100%' }} />;
 }

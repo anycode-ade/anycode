@@ -113,6 +113,20 @@ export interface FoldRange {
 
 var langsCache: Map<string, Language> = new Map();
 var pendingLangsCache: Map<string, Promise<Language>> = new Map();
+var queriesCache: Map<string, Query> = new Map();
+
+function getCachedQuery(
+    lang: Language, languageId: string, queryType: string, queryText: string
+): Query {
+    const key = `${languageId}:${queryType}`;
+    if (queriesCache.has(key)) {
+        return queriesCache.get(key)!;
+    }
+    const query = new Query(lang, queryText);
+    queriesCache.set(key, query);
+    return query;
+}
+
 
 async function loadLanguage(language: string): Promise<Language> {
     if (langsCache.has(language)) {
@@ -148,6 +162,7 @@ export class Code {
     private foldsQuery: Query | undefined
     private runnablesQuery: Query | undefined
     private foldRanges: FoldRange[] = []
+    private foldRangesInvalidated: boolean = true;
 
     public runnables: Map<number, any> = new Map()
 
@@ -216,10 +231,12 @@ export class Code {
 
         if (this.language) {
             let q = this.getQuery();
-            if (q) this.query = new Query(lang, q);
+            if (q) this.query = getCachedQuery(lang, this.language, 'highlight', q);
             const foldsQ = this.getFoldsQuery();
-            if (foldsQ) this.foldsQuery = new Query(lang, foldsQ);
-            this.updateFoldRanges();
+            if (foldsQ) this.foldsQuery = getCachedQuery(lang, this.language, 'folds', foldsQ);
+            const runnablesQ = this.getRunnablesQuery();
+            if (runnablesQ) this.runnablesQuery = getCachedQuery(lang, this.language, 'runnables', runnablesQ);
+            this.foldRangesInvalidated = true;
             if (this.query) await this.initInjections();
             // let tq = this.getRunnablesQuery();
             // if (tq) this.runnablesQuery = lang.query(tq);
@@ -260,7 +277,7 @@ export class Code {
                     const l = this.getLang(language);
                     let query = l?.query;
                     if (query) {
-                        this.injection_queries.set(language, new Query(lang, query));
+                        this.injection_queries.set(language, getCachedQuery(lang, language, 'highlight', query));
                     } else {
                         console.error(`No query available for ${language}`);
                     }
@@ -421,7 +438,7 @@ export class Code {
         this.buffer = pieceTree;
 
         if (this.parser) this.tree = this.parser.parse(this.input) || undefined;
-        this.updateFoldRanges();
+        this.foldRangesInvalidated = true;
     }
 
     public insert(text: string, offset: number, addHistory: boolean = false) {
@@ -538,7 +555,7 @@ export class Code {
         const newTree = this.parser!.parse(this.input, old);
         this.tree!.delete();
         this.tree = newTree || undefined;
-        this.updateFoldRanges();
+        this.foldRangesInvalidated = true;
     }
     
     tx() {
@@ -725,6 +742,10 @@ export class Code {
     }
 
     public getFoldRanges(): FoldRange[] {
+        if (this.foldRangesInvalidated) {
+            this.updateFoldRanges();
+            this.foldRangesInvalidated = false;
+        }
         return this.foldRanges;
     }
 

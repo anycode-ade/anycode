@@ -569,24 +569,13 @@ export const useEditors = ({ wsRef, isConnected, onFileClosed }: UseEditorsParam
         if (!editor) return;
 
         editor.setOriginalCode(request.originalContent);
-        if (request.mode === 'plain') {
-            editor.setDiffEnabled(false);
-            editor.setFocusedDiffMode(false, 0);
-        }
-        if (request.mode === 'combine') {
-            editor.setDiffEnabled(true);
-            editor.setFocusedDiffMode(false, 0);
-        }
-        if (request.mode === 'diff') {
-            editor.setDiffEnabled(true);
-            editor.setFocusedDiffMode(true, 3);
-        }
+        editor.setDiffMode(request.mode);
 
         if (request.line !== undefined && request.column !== undefined) {
             editor.requestFocus(request.line, request.column, true);
         } else {
-            const cursor = editor.getCursor();
-            editor.requestFocus(cursor.line, cursor.column, true);
+            // const cursor = editor.getCursor();
+            // editor.requestFocus(cursor.line, cursor.column, true);
         }
     }, []);
 
@@ -601,8 +590,7 @@ export const useEditors = ({ wsRef, isConnected, onFileClosed }: UseEditorsParam
         const editor = editorRefs.current.get(fileId);
         if (!editor) return false;
 
-        editor.setDiffEnabled(mode !== 'plain');
-        editor.setFocusedDiffMode(mode === 'diff', 3);
+        editor.setDiffMode(mode);
         return true;
     }, []);
 
@@ -937,7 +925,6 @@ export const useEditors = ({ wsRef, isConnected, onFileClosed }: UseEditorsParam
             editor.setHistory(history.changes, history.index);
         }
 
-        editor.setDiffEnabled(false);
         editor.setOnChange((change: Change) => handleChange(filename, change));
         editor.setOnCursorChange((newState: any, oldState: any) => handleCursorChange(filename, newState, oldState));
         editor.setCompletionProvider(handleCompletion);

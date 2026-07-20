@@ -312,6 +312,9 @@ export class AnycodeEditor {
     }
 
     public getFoldRanges(): FoldRange[] {
+        if (!this.codeFoldingEnabled) {
+            return [];
+        }
         return this.code.getFoldRanges();
     }
 
@@ -1687,13 +1690,38 @@ export class AnycodeEditor {
     }
 
     public setDiffEnabled(enabled: boolean): void {
-        this.diffEnabled = enabled;
-        this.renderer.setDiffEnabled(enabled);
+        this.setDiffMode(enabled ? (this.focusedDiffEnabled ? 'diff' : 'combine') : 'plain');
+    }
 
-        if (enabled) {
+    public setFocusedDiffMode(enabled: boolean, contextLines: number = 3): void {
+        this.setDiffMode(enabled ? 'diff' : (this.diffEnabled ? 'combine' : 'plain'), contextLines);
+    }
+
+    public setDiffMode(mode: 'plain' | 'diff' | 'combine', contextLines: number = 3): void {
+        const diffEnabled = mode !== 'plain';
+        const focusedDiffEnabled = mode === 'diff';
+
+        if (
+            this.diffEnabled === diffEnabled &&
+            this.focusedDiffEnabled === focusedDiffEnabled &&
+            this.focusedDiffContextLines === contextLines
+        ) {
+            return;
+        }
+
+        const wasDiffEnabled = this.diffEnabled;
+
+        this.diffEnabled = diffEnabled;
+        this.renderer.setDiffEnabled(diffEnabled);
+
+        this.focusedDiffEnabled = focusedDiffEnabled;
+        this.focusedDiffContextLines = Math.max(0, contextLines);
+        this.renderer.setFocusedDiffMode(focusedDiffEnabled, this.focusedDiffContextLines);
+
+        if (diffEnabled && !wasDiffEnabled) {
             const baseline = this.originalCode?.getContent() ?? this.code.getContent();
-            void this.initOriginalCode(baseline).then((updated) => {
-                if (!this.diffEnabled || !updated) return;
+            void this.initOriginalCode(baseline).then(() => {
+                if (!this.diffEnabled) return;
                 this.recomputeDiffs();
                 this.renderer.render(this.getEditorState());
             });
@@ -1701,18 +1729,9 @@ export class AnycodeEditor {
 
         this.recomputeDiffs();
 
-        if (!enabled) {
+        if (!diffEnabled) {
             this.renderer.clearAllDiffs();
-            this.renderer.render(this.getEditorState());
-        } else {
-            this.renderer.render(this.getEditorState());
         }
-    }
-
-    public setFocusedDiffMode(enabled: boolean, contextLines: number = 3): void {
-        this.focusedDiffEnabled = enabled;
-        this.focusedDiffContextLines = Math.max(0, contextLines);
-        this.renderer.setFocusedDiffMode(this.focusedDiffEnabled, this.focusedDiffContextLines);
         this.renderer.render(this.getEditorState());
     }
 

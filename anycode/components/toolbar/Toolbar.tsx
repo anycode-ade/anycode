@@ -1,5 +1,5 @@
 import type { FileState, Terminal, AcpSession } from '../../types';
-import { WheelEvent, useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { loadItem, saveItem } from '../../storage';
 import { TabContextMenu } from './TabContextMenu';
 import type { TabMenuAction } from './TabContextMenu';
@@ -58,6 +58,28 @@ export const Toolbar = ({
     onReconnect,
 }: ToolbarProps) => {
     const { closeMenu, menuRef, openMenu, tabMenu } = useTabContextMenu();
+    const tabsRef = useRef<HTMLDivElement | null>(null);
+
+    useEffect(() => {
+        const tabsElement = tabsRef.current;
+        if (!tabsElement) return;
+
+        const handleWheel = (event: WheelEvent) => {
+            if (event.deltaY === 0) return;
+            const maxScrollLeft = tabsElement.scrollWidth - tabsElement.clientWidth;
+            if (maxScrollLeft <= 0) return;
+            const previousScrollLeft = tabsElement.scrollLeft;
+            tabsElement.scrollLeft += event.deltaY;
+            if (tabsElement.scrollLeft !== previousScrollLeft) {
+                event.preventDefault();
+            }
+        };
+
+        tabsElement.addEventListener('wheel', handleWheel, { passive: false });
+        return () => {
+            tabsElement.removeEventListener('wheel', handleWheel);
+        };
+    }, []);
 
     const [pinnedFileIds, setPinnedFileIds] = useState<string[]>(() => {
         return loadItem<string[]>(PINNED_FILES_KEY) ?? [];
@@ -348,17 +370,7 @@ export const Toolbar = ({
         });
     };
 
-    const handleTabsWheel = (event: WheelEvent<HTMLDivElement>) => {
-        if (event.deltaY === 0) return;
-        const tabsElement = event.currentTarget;
-        const maxScrollLeft = tabsElement.scrollWidth - tabsElement.clientWidth;
-        if (maxScrollLeft <= 0) return;
-        const previousScrollLeft = tabsElement.scrollLeft;
-        tabsElement.scrollLeft += event.deltaY;
-        if (tabsElement.scrollLeft !== previousScrollLeft) {
-            event.preventDefault();
-        }
-    };
+
 
     const menuGroups: TabMenuAction[][] = (() => {
         if (!tabMenu) {
@@ -491,7 +503,7 @@ export const Toolbar = ({
                     </span>
                 </button>
             ) : (
-                <div className="toolbar-tabs" onWheel={handleTabsWheel}>
+                <div className="toolbar-tabs" ref={tabsRef}>
                     {sortedFiles.map((file) => (
                         <ToolbarTab
                             key={file.id}

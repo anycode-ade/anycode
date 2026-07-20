@@ -2,14 +2,13 @@
   "compilerOptions": {
     "composite": false,
     "jsx": "react-jsx",
-    "moduleResolution": "node",
+    "moduleResolution": "bundler",
     "module": "esnext",
     "target": "esnext",
     "isolatedModules": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
     "strict": true,
-    "ignoreDeprecations": "6.0",
     "resolveJsonModule": true
   }
 }

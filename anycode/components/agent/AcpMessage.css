@@ -48,14 +48,6 @@
     word-break: normal;
 }
 
-.acp-message-markdown * {
-}
-
-.acp-message-markdown code,
-.acp-message-markdown code *,
-.acp-message-markdown pre,
-.acp-message-markdown pre * {
-}
 
 .acp-message-markdown > :first-child {
     margin-top: 0;
@@ -176,9 +168,14 @@
     min-height: 0;
 }
 
+.acp-code > div {
+    height: auto !important;
+}
+
 .acp-code .anyeditor {
     height: auto !important;
     min-height: 0;
+    overflow-y: hidden !important;
     background: transparent;
 }
 

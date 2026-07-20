@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { usePersistedScroll } from '../hooks/usePersistedScroll';
 import { FileIcon } from './FileIcon';
 import {
     FONT_FAMILIES,
@@ -263,6 +264,7 @@ const SettingsPanelComponent: React.FC<SettingsPanelProps> = ({
     onFontSettingsChange,
 }) => {
     const [themes, setThemes] = useState<ThemeItem[]>([]);
+    const scrollRef = usePersistedScroll<HTMLDivElement>('settings-panel', 'session', [themes]);
     const [isLoading, setIsLoading] = useState(false);
 
     useEffect(() => {
@@ -291,7 +293,7 @@ const SettingsPanelComponent: React.FC<SettingsPanelProps> = ({
     }, [currentThemeId, handleSelectTheme, themes]);
 
     return (
-        <div className="settings-panel">
+        <div ref={scrollRef} className="settings-panel">
             <div className="settings-section">
                 <h3 className="settings-section-title">Font</h3>
                 <div className="font-settings">

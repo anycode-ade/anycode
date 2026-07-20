@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useContext, useEffect, useState } from 'react';
 import { AnycodeEditor, AnycodeEditorReact } from 'anycode-react';
+import { LayoutVersionContext } from '../../components/layout/Layout';
 import type { ReferencesPeekState } from '../../types';
 import { ReferencesPeek } from './ReferencesPeek';
 
@@ -19,6 +20,7 @@ type EditorPanelProps = {
 };
 
 export const EditorPanel = ({ panelKey, editors }: EditorPanelProps) => {
+    const layoutVersion = useContext(LayoutVersionContext);
     const paneFileId = editors.getActiveFileIdForPane(panelKey);
     const paneFile = paneFileId ? editors.files.find((file) => file.id === paneFileId) : null;
     const editorState = paneFile ? editors.editorStates.get(paneFile.id) : null;
@@ -51,6 +53,7 @@ export const EditorPanel = ({ panelKey, editors }: EditorPanelProps) => {
                     key={panelKey}
                     id={displayedEditor.id}
                     editorState={displayedEditor.state}
+                    forceUpdateTrigger={layoutVersion}
                 />
             ) : (
                 <div className="no-editor"></div>

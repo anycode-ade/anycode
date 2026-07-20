@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef } from 'react';
-import 'dockview/dist/styles/dockview.css';
+import 'dockview-react/dist/styles/dockview.css';
 import { ChangesPanel, type ChangedFile, SettingsPanel } from './components';
 import Search from './components/Search';
 import { Layout, type LayoutActions, type PanelId } from './components/layout/Layout';

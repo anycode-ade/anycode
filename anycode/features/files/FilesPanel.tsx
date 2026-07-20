@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { TreeNodeComponent } from '../../components';
 import type { TreeNode } from '../../types';
 import { Icons } from '../../components/Icons';
+import { usePersistedScroll } from '../../hooks/usePersistedScroll';
 
 type FilesPanelProps = {
     fileTree: TreeNode[];
@@ -57,6 +58,7 @@ export const FilesPanel = ({
     onRenameNode,
     onCreateNode,
 }: FilesPanelProps) => {
+    const scrollRef = usePersistedScroll<HTMLDivElement>('files-panel', 'local', [fileTree]);
     const treeRef = useRef<HTMLDivElement | null>(null);
     const treeNodeRefs = useRef<Map<string, HTMLDivElement>>(new Map());
     const shouldAutoScrollRef = useRef(false);
@@ -340,7 +342,7 @@ export const FilesPanel = ({
 
     return (
         <div className="file-system-panel">
-            <div className="file-system-content" onContextMenu={handlePanelContextMenu}>
+            <div ref={scrollRef} className="file-system-content" onContextMenu={handlePanelContextMenu}>
                 {displayTree.length === 0 ? (
                     <p className="file-system-empty"> </p>
                 ) : (

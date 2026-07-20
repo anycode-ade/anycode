@@ -116,6 +116,28 @@ const DefaultSparkleIcon = ({ size, className }: { size: number; className?: str
     );
 };
 
+// Official Grok logo with dark metallic/carbon gradient container and white brand mark (xAI Grok)
+const GrokIcon = ({ size, className }: { size: number; className?: string }) => {
+    const id = React.useId().replace(/:/g, '');
+    const gradId = `grok-grad-${id}`;
+    return (
+        <svg width={size} height={size} viewBox="0 0 512 512" fill="none" className={className}>
+            <defs>
+                <linearGradient id={gradId} x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" stopColor="#1E293B" />
+                    <stop offset="40%" stopColor="#0F172A" />
+                    <stop offset="100%" stopColor="#020617" />
+                </linearGradient>
+            </defs>
+            <rect width="512" height="512" rx="115" fill={`url(#${gradId})`} />
+            <path
+                fill="#ffffff"
+                d="M213.235 306.019l178.976-180.002v.169l51.695-51.763c-.924 1.32-1.86 2.605-2.785 3.89-39.281 54.164-58.46 80.649-43.07 146.922l-.09-.101c10.61 45.11-.744 95.137-37.398 131.836-46.216 46.306-120.167 56.611-181.063 14.928l42.462-19.675c38.863 15.278 81.392 8.57 111.947-22.03 30.566-30.6 37.432-75.159 22.065-112.252-2.92-7.025-11.67-8.795-17.792-4.263l-124.947 92.341zm-25.786 22.437l-.033.034L68.094 435.217c7.565-10.429 16.957-20.294 26.327-30.149 26.428-27.803 52.653-55.359 36.654-94.302-21.422-52.112-8.952-113.177 30.724-152.898 41.243-41.254 101.98-51.661 152.706-30.758 11.23 4.172 21.016 10.114 28.638 15.639l-42.359 19.584c-39.44-16.563-84.629-5.299-112.207 22.313-37.298 37.308-44.84 102.003-1.128 143.81z"
+            />
+        </svg>
+    );
+};
+
 interface AgentIconProps {
     name?: string;
     id?: string;
@@ -157,6 +179,9 @@ export const AgentIcon: React.FC<AgentIconProps> = ({
         checkStr.includes('local')
     ) {
         return <OpenCodeIcon size={size} className={className} />;
+    }
+    if (checkStr.includes('grok')) {
+        return <GrokIcon size={size} className={className} />;
     }
 
     return <DefaultSparkleIcon size={size} className={className} />;

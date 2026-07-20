@@ -12,12 +12,13 @@ import { AcpInput } from './AcpInput';
 import { AcpMessages } from './AcpMessages';
 import { AcpIcons } from './AcpIcons';
 import { loadItem, saveItem } from '../../storage';
+import { usePersistedScroll } from '../../hooks/usePersistedScroll';
 
 const ACP_INPUT_DRAFTS_STORAGE_KEY = 'acpInputDrafts';
 const EMPTY_ARRAY: any[] = [];
 
-const useAutoScroll = (messages: AcpMessage[], isProcessing: boolean) => {
-  const contentRef = useRef<HTMLDivElement>(null);
+const useAutoScroll = (messages: AcpMessage[], isProcessing: boolean, agentId: string) => {
+  const contentRef = usePersistedScroll<HTMLDivElement>('agent-session-' + agentId, 'session', []);
   const innerRef = useRef<HTMLDivElement>(null);
   const autoScrollEnabledRef = useRef(true);
   const lastScrollTopRef = useRef<number>(0);
@@ -269,7 +270,7 @@ const AcpSessionComponent: React.FC<AcpSessionProps> = ({
   const { expanded: expandedToolCalls, toggle: toggleToolCall } = useExpandableItems();
   const { expanded: expandedToolResults, toggle: toggleToolResult } = useExpandableItems();
   const { expanded: expandedThoughts, toggle: toggleThought } = useExpandableItems();
-  const { contentRef, innerRef, autoScrollEnabled, enableAutoScroll } = useAutoScroll(messages, isProcessing);
+  const { contentRef, innerRef, autoScrollEnabled, enableAutoScroll } = useAutoScroll(messages, isProcessing, agentId);
 
   const handleUndoMessage = useCallback(
     (message: AcpMessage) => {

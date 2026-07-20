@@ -3,6 +3,7 @@ import type { RefObject } from "react";
 import type { Socket } from "socket.io-client";
 import { Icons } from "./Icons";
 import { FileIcon } from "./FileIcon";
+import { usePersistedScroll } from "../hooks/usePersistedScroll";
 import "./Search.css";
 import type { FileSearchResult, SearchResult, SearchMatch } from "../types";
 
@@ -234,7 +235,7 @@ const Search = ({ id, wsRef, isConnected, focusRequestToken, inputValue, onInput
     const inputRef = useRef<HTMLTextAreaElement>(null);
     const startTimeRef = useRef<number | null>(null);
     const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-    const resultsRef = useRef<HTMLDivElement | null>(null);
+    const resultsRef = usePersistedScroll<HTMLDivElement>('search-panel', 'session', [results, fileResults, searchMode]);
     const itemRefs = useRef<Map<string, HTMLDivElement>>(new Map());
     const shouldAutoScrollRef = useRef(false);
     const [resultsViewport, setResultsViewport] = useState({ height: 0, scrollTop: 0 });

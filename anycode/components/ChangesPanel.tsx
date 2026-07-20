@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Icons } from './Icons';
 import { FileIcon } from './FileIcon';
+import { usePersistedScroll } from '../hooks/usePersistedScroll';
 import './ChangesPanel.css';
 
 const COMMIT_MESSAGE_STORAGE_KEY = 'commitMessage';
@@ -213,7 +214,7 @@ const ChangesPanelImpl: React.FC<ChangesPanelProps> = ({
     });
     const [activeFilePath, setActiveFilePath] = useState<string | null>(null);
     const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
-    const listRef = useRef<HTMLDivElement | null>(null);
+    const listRef = usePersistedScroll<HTMLDivElement>('changes-panel', 'session', [files]);
     const itemRefs = useRef<Map<string, HTMLDivElement>>(new Map());
     const shouldAutoScrollRef = useRef(false);
 

@@ -48,6 +48,38 @@ const areChangedFilesEqual = (prev: ChangedFile, next: ChangedFile): boolean => 
     && prev.removed === next.removed
 );
 
+const sortChangedFiles = (files: ChangedFile[]): ChangedFile[] => {
+    return [...files].sort((a, b) => {
+        if (a.path < b.path) return -1;
+        if (a.path > b.path) return 1;
+
+        if (a.status < b.status) return -1;
+        if (a.status > b.status) return 1;
+
+        const aStaged = a.staged ? 1 : 0;
+        const bStaged = b.staged ? 1 : 0;
+        if (aStaged !== bStaged) return aStaged - bStaged;
+
+        const aUnstaged = a.unstaged ? 1 : 0;
+        const bUnstaged = b.unstaged ? 1 : 0;
+        if (aUnstaged !== bUnstaged) return aUnstaged - bUnstaged;
+
+        const aConflicted = a.conflicted ? 1 : 0;
+        const bConflicted = b.conflicted ? 1 : 0;
+        if (aConflicted !== bConflicted) return aConflicted - bConflicted;
+
+        const aAdded = a.added ?? 0;
+        const bAdded = b.added ?? 0;
+        if (aAdded !== bAdded) return aAdded - bAdded;
+
+        const aRemoved = a.removed ?? 0;
+        const bRemoved = b.removed ?? 0;
+        if (aRemoved !== bRemoved) return aRemoved - bRemoved;
+
+        return 0;
+    });
+};
+
 export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
     const [changedFiles, setChangedFiles] = useState<ChangedFile[]>([]);
     const [gitBranch, setGitBranch] = useState<string>('');
@@ -59,7 +91,7 @@ export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
 
         wsRef.current.emit('git:status', {}, (response: any) => {
             if (response.success) {
-                setChangedFiles(response.files || []);
+                setChangedFiles(sortChangedFiles(response.files || []));
                 setGitBranch(response.branch || '');
             } else {
                 setChangedFiles([]);
@@ -125,40 +157,40 @@ export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
                 if (!structurallyChanged) {
                     return prev;
                 }
-                return Array.from(next.values());
+                return sortChangedFiles(Array.from(next.values()));
             });
             return;
         }
 
         setGitBranch(data.branch || '');
-            setChangedFiles((prev) => {
-                const nextFiles = data.files || [];
-                if (prev.length !== nextFiles.length) {
-                    const prevByPath = new Map(prev.map((file) => [file.path, file]));
-                    return nextFiles.map((file) => {
-                        const previousFile = prevByPath.get(file.path);
-                        return previousFile && areChangedFilesEqual(previousFile, file)
-                            ? previousFile
-                            : file;
-                    });
+        setChangedFiles((prev) => {
+            const nextFiles = sortChangedFiles(data.files || []);
+            if (prev.length !== nextFiles.length) {
+                const prevByPath = new Map(prev.map((file) => [file.path, file]));
+                return nextFiles.map((file) => {
+                    const previousFile = prevByPath.get(file.path);
+                    return previousFile && areChangedFilesEqual(previousFile, file)
+                        ? previousFile
+                        : file;
+                });
+            }
+            let isDifferent = false;
+            const reusedFiles = new Array<ChangedFile>(nextFiles.length);
+            for (let i = 0; i < prev.length; i++) {
+                const a = prev[i];
+                const b = nextFiles[i];
+                if (areChangedFilesEqual(a, b)) {
+                    reusedFiles[i] = a;
+                } else {
+                    reusedFiles[i] = b;
+                    isDifferent = true;
                 }
-                let isDifferent = false;
-                const reusedFiles = new Array<ChangedFile>(nextFiles.length);
-                for (let i = 0; i < prev.length; i++) {
-                    const a = prev[i];
-                    const b = nextFiles[i];
-                    if (areChangedFilesEqual(a, b)) {
-                        reusedFiles[i] = a;
-                    } else {
-                        reusedFiles[i] = b;
-                        isDifferent = true;
-                    }
-                }
-                if (isDifferent) {
-                    return reusedFiles;
-                }
-                return prev;
-            });
+            }
+            if (isDifferent) {
+                return reusedFiles;
+            }
+            return prev;
+        });
     }, []);
 
     const commit = useCallback((message: string): Promise<boolean> => {

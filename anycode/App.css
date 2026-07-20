@@ -281,3 +281,13 @@
     margin: 8px 0;
     font-size: 14px;
 }
+
+/* Hide scrollbars temporarily during restoration to avoid scrollbar flash/flicker */
+.is-restoring-scroll {
+    scrollbar-width: none !important; /* Firefox */
+    -ms-overflow-style: none !important; /* IE and Edge */
+}
+
+.is-restoring-scroll::-webkit-scrollbar {
+    display: none !important; /* Chrome, Safari, Opera */
+}

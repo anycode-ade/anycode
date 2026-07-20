@@ -1,16 +1,19 @@
 import React, { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
     DockviewApi,
-    DockviewReact,
     Orientation,
     SplitviewApi,
-    SplitviewReact,
-    type IDockviewHeaderActionsProps,
     type DockviewReadyEvent,
     type IDockviewPanel,
+    DockviewPanelApi,
+} from 'dockview';
+import {
+    DockviewReact,
+    SplitviewReact,
+    type IDockviewHeaderActionsProps,
     type IDockviewPanelProps,
     type ISplitviewPanelProps,
-} from 'dockview';
+} from 'dockview-react';
 import {
     loadAgentPanelVisible,
     loadEditorPanelVisible,
@@ -275,21 +278,6 @@ type PanelPickerParams = {
 };
 
 type PanelVisibility = Record<PanelId, boolean>;
-type PanelViewStateHandlers = {
-    captureViewState: () => unknown;
-    restoreViewState: (state: unknown) => void;
-};
-
-type ScrollSnapshot = {
-    path: number[];
-    scrollLeft: number;
-    scrollTop: number;
-};
-
-type LayoutViewStateRegistry = {
-    registerPanelViewState: (panelKey: string, handlers: PanelViewStateHandlers) => () => void;
-    savePanelViewState: (panelKey: string, state: unknown) => void;
-};
 
 type LayoutProps = {
     renderPanel: (panelId: PanelId, panelKey: string) => React.ReactNode;
@@ -309,90 +297,9 @@ export type LayoutActions = {
     ensurePanel: (panelId: PanelId) => string | null;
 };
 
-const LayoutViewStateContext = React.createContext<LayoutViewStateRegistry | null>(null);
+export const LayoutVersionContext = React.createContext<number>(0);
+export const LayoutPanelApiContext = React.createContext<DockviewPanelApi | null>(null);
 const LayoutRenderContext = React.createContext<((panelId: PanelId, panelKey: string) => React.ReactNode) | null>(null);
-
-export const useLayoutPanelViewState = (
-    panelKey: string,
-    handlers: PanelViewStateHandlers,
-) => {
-    const registry = useContext(LayoutViewStateContext);
-    const handlersRef = useRef(handlers);
-
-    useLayoutEffect(() => {
-        handlersRef.current = handlers;
-    }, [handlers]);
-
-    useLayoutEffect(() => {
-        if (!registry) {
-            return undefined;
-        }
-
-        return registry.registerPanelViewState(panelKey, {
-            captureViewState: () => handlersRef.current.captureViewState(),
-            restoreViewState: (state) => handlersRef.current.restoreViewState(state),
-        });
-    }, [panelKey, registry]);
-};
-
-const getElementPath = (root: HTMLElement, element: HTMLElement): number[] => {
-    const path: number[] = [];
-    let current: HTMLElement | null = element;
-
-    while (current && current !== root) {
-        const parent: HTMLElement | null = current.parentElement;
-        if (!parent) {
-            break;
-        }
-
-        path.unshift(Array.prototype.indexOf.call(parent.children, current));
-        current = parent;
-    }
-
-    return path;
-};
-
-const getElementByPath = (root: HTMLElement, path: number[]): HTMLElement | null => {
-    let current: Element = root;
-
-    for (const index of path) {
-        const next = current.children[index];
-        if (!(next instanceof HTMLElement)) {
-            return null;
-        }
-        current = next;
-    }
-
-    return current instanceof HTMLElement ? current : null;
-};
-
-const getPanelScrollSnapshots = (panelRoot: HTMLElement): ScrollSnapshot[] => {
-    const elements = [panelRoot, ...Array.from(panelRoot.querySelectorAll<HTMLElement>('*'))];
-
-    return elements
-        .map((element) => ({
-            path: getElementPath(panelRoot, element),
-            scrollLeft: element.scrollLeft,
-            scrollTop: element.scrollTop,
-        }))
-        .filter((snapshot) => snapshot.scrollTop > 0 || snapshot.scrollLeft > 0);
-};
-
-const restorePanelScrollSnapshots = (panelRoot: HTMLElement, snapshots: ScrollSnapshot[]) => {
-    snapshots.forEach((snapshot) => {
-        const element = getElementByPath(panelRoot, snapshot.path);
-        if (!element) {
-            return;
-        }
-
-        if (snapshot.scrollTop > 0) {
-            element.scrollTop = snapshot.scrollTop;
-        }
-        if (snapshot.scrollLeft > 0) {
-            element.scrollLeft = snapshot.scrollLeft;
-        }
-    });
-};
 
 const PANEL_INSTANCE_SEPARATOR = '__';
 const EMPTY_PANE_PREFIX = 'empty-pane-';
@@ -587,52 +494,17 @@ const getSplitPanelSizes = (
     return {};
 };
 
-const LayoutPanel: React.FC<IDockviewPanelProps<PanelParams>> = ({ params }) => {
-    const rootRef = useRef<HTMLDivElement | null>(null);
+const LayoutPanel: React.FC<IDockviewPanelProps<PanelParams>> = ({ params, api }) => {
     const renderPanel = useContext(LayoutRenderContext);
-    const registry = useContext(LayoutViewStateContext);
-
-    const captureViewState = useCallback((): ScrollSnapshot[] | null => {
-        const root = rootRef.current;
-        if (!root || !document.body.contains(root) || (root.offsetWidth === 0 && root.offsetHeight === 0)) {
-            return null;
-        }
-        return getPanelScrollSnapshots(root);
-    }, []);
-
-    const restoreViewState = useCallback((state: unknown) => {
-        const root = rootRef.current;
-        if (!root || !Array.isArray(state)) {
-            return;
-        }
-
-        restorePanelScrollSnapshots(root, state as ScrollSnapshot[]);
-    }, []);
-
-    useLayoutPanelViewState(params.panelKey, {
-        captureViewState,
-        restoreViewState,
-    });
-
-    useEffect(() => {
-        const element = rootRef.current;
-        if (!element || !registry) return;
-
-        const handleScroll = () => {
-            const snapshot = getPanelScrollSnapshots(element);
-            registry.savePanelViewState(params.panelKey, snapshot);
-        };
-
-        element.addEventListener('scroll', handleScroll, { capture: true, passive: true });
-        return () => element.removeEventListener('scroll', handleScroll, { capture: true });
-    }, [params.panelKey, registry]);
 
     const content = renderPanel ? renderPanel(params.panelId, params.panelKey) : params.content;
 
     return (
-        <div ref={rootRef} className={`layout-dock-panel layout-dock-panel--${params.panelId}`}>
-            {content}
-        </div>
+        <LayoutPanelApiContext.Provider value={api}>
+            <div className={`layout-dock-panel layout-dock-panel--${params.panelId}`}>
+                {content}
+            </div>
+        </LayoutPanelApiContext.Provider>
     );
 };
 
@@ -884,15 +756,15 @@ export const Layout: React.FC<LayoutProps> = ({
 }) => {
     const apiRef = useRef<DockviewApi | null>(null);
     const [visibility, setVisibility] = useState<PanelVisibility>(loadPanelVisibility);
+    const [layoutVersion, setLayoutVersion] = useState(0);
     const listenersRef = useRef<Array<{ dispose: () => void }>>([]);
     const parentGroupMap = useRef<Map<string, string>>(new Map(Object.entries(loadItem<Record<string, string>>('layoutParentGroups') ?? {})));
     const layoutSaveTimerRef = useRef<number | null>(null);
     const emptyPaneRestoreTimerRef = useRef<number | null>(null);
     const isRestoringLayoutRef = useRef<boolean>(false);
-    const panelViewStateHandlersRef = useRef(new Map<string, PanelViewStateHandlers>());
-    const panelViewStatesRef = useRef<Record<string, unknown>>({});
-    const restoreViewStatesFrameRef = useRef<number | null>(null);
     const lastLayoutSnapshotRef = useRef<string | null>(null);
+    const lastStructuralSnapshotRef = useRef<string | null>(null);
+    const lastGroupsLayoutRef = useRef<Map<string, { width: number; height: number; panels: string[] }>>(new Map());
     const splitRightRef = useRef<(api: DockviewApi, referencePanelId: string) => void>(() => {});
     const splitDownRef = useRef<(api: DockviewApi, referencePanelId: string) => void>(() => {});
     const addTabRef = useRef<(api: DockviewApi, referencePanelId: string) => void>(() => {});
@@ -919,6 +791,30 @@ export const Layout: React.FC<LayoutProps> = ({
         delete sanitized.activeGroup;
 
         return JSON.stringify(sanitized);
+    }, []);
+
+    const getStructuralLayoutSnapshot = useCallback((api: DockviewApi): string => {
+        const raw = api.toJSON();
+        const sanitizeGrid = (node: any): any => {
+            if (!node) return null;
+            if (node.type === 'branch') {
+                const children = Array.isArray(node.data) ? node.data : [];
+                return {
+                    type: 'branch',
+                    orientation: node.orientation,
+                    children: children.map(sanitizeGrid),
+                };
+            }
+            if (node.type === 'leaf') {
+                const views = node.data && Array.isArray(node.data.views) ? node.data.views : [];
+                return {
+                    type: 'leaf',
+                    views,
+                };
+            }
+            return null;
+        };
+        return JSON.stringify(sanitizeGrid(raw.grid?.root));
     }, []);
 
     useEffect(() => {
@@ -1031,61 +927,7 @@ export const Layout: React.FC<LayoutProps> = ({
         listenersRef.current = [];
     }, []);
 
-    const registerPanelViewState = useCallback((panelKey: string, handlers: PanelViewStateHandlers) => {
-        panelViewStateHandlersRef.current.set(panelKey, handlers);
 
-        return () => {
-            if (panelViewStateHandlersRef.current.get(panelKey) === handlers) {
-                panelViewStateHandlersRef.current.delete(panelKey);
-            }
-        };
-    }, []);
-
-    const savePanelViewState = useCallback((panelKey: string, state: unknown) => {
-        panelViewStatesRef.current[panelKey] = state;
-    }, []);
-
-    const viewStateRegistry = useMemo<LayoutViewStateRegistry>(() => ({
-        registerPanelViewState,
-        savePanelViewState,
-    }), [registerPanelViewState, savePanelViewState]);
-
-    const capturePanelViewStates = useCallback(() => {
-        const nextStates: Record<string, unknown> = {};
-
-        panelViewStateHandlersRef.current.forEach((handlers, panelKey) => {
-            const state = handlers.captureViewState();
-            if (state !== null && state !== undefined) {
-                nextStates[panelKey] = state;
-            }
-        });
-
-        panelViewStatesRef.current = {
-            ...panelViewStatesRef.current,
-            ...nextStates,
-        };
-    }, []);
-
-    const applyPanelViewStates = useCallback(() => {
-        Object.entries(panelViewStatesRef.current).forEach(([panelKey, state]) => {
-            panelViewStateHandlersRef.current.get(panelKey)?.restoreViewState(state);
-        });
-    }, []);
-
-    const restorePanelViewStates = useCallback(() => {
-        if (restoreViewStatesFrameRef.current !== null) {
-            cancelAnimationFrame(restoreViewStatesFrameRef.current);
-        }
-
-        // Apply immediately to avoid a visible one-frame jump to scrollTop=0.
-        applyPanelViewStates();
-
-        // Run one follow-up pass in the next frame for content that mounts asynchronously.
-        restoreViewStatesFrameRef.current = requestAnimationFrame(() => {
-            restoreViewStatesFrameRef.current = null;
-            applyPanelViewStates();
-        });
-    }, [applyPanelViewStates]);
 
     const queueSaveLayout = useCallback((api: DockviewApi) => {
         if (layoutSaveTimerRef.current !== null) {
@@ -1116,6 +958,18 @@ export const Layout: React.FC<LayoutProps> = ({
             storeLayoutState(createLayoutState(parsedSnapshot, getLayoutPanelId));
         }, 120);
     }, [getLayoutSnapshot]);
+
+    const updateGroupsLayoutSnapshot = useCallback((api: DockviewApi) => {
+        const snapshot = new Map<string, { width: number; height: number; panels: string[] }>();
+        api.groups.forEach((group) => {
+            snapshot.set(group.id, {
+                width: group.api.width,
+                height: group.api.height,
+                panels: group.panels.map((p) => p.id),
+            });
+        });
+        lastGroupsLayoutRef.current = snapshot;
+    }, []);
 
     const syncPanels = useCallback((api: DockviewApi) => {
         for (const panel of panelEntries) {
@@ -1250,7 +1104,6 @@ export const Layout: React.FC<LayoutProps> = ({
         if (!referencePanel) {
             return;
         }
-        capturePanelViewStates();
 
         const splitSize = getSplitPanelSizes(referencePanel, direction);
         const pickerPanelId = createPickerPanelId();
@@ -1272,7 +1125,7 @@ export const Layout: React.FC<LayoutProps> = ({
             },
         });
         pickerPanel.group.api.setConstraints(PANEL_CONSTRAINTS);
-  
+
         if (direction === 'right' || direction === 'below') {
             parentGroupMap.current.set(pickerPanel.group.id, referencePanel.group.id);
             saveItem('layoutParentGroups', Object.fromEntries(parentGroupMap.current.entries()));
@@ -1284,8 +1137,7 @@ export const Layout: React.FC<LayoutProps> = ({
                 pickerPanel.group.api.setSize(splitSize);
             });
         }
-        restorePanelViewStates();
-    }, [capturePanelViewStates, handleSelectPanelFromPicker, restorePanelViewStates]);
+    }, [handleSelectPanelFromPicker]);
 
     const rebindPickerPanels = useCallback((api: DockviewApi) => {
         for (const panel of api.panels) {
@@ -1442,9 +1294,6 @@ export const Layout: React.FC<LayoutProps> = ({
         if (emptyPaneRestoreTimerRef.current !== null) {
             clearTimeout(emptyPaneRestoreTimerRef.current);
         }
-        if (restoreViewStatesFrameRef.current !== null) {
-            cancelAnimationFrame(restoreViewStatesFrameRef.current);
-        }
         disposeListeners();
         apiRef.current = null;
     }, [disposeListeners]);
@@ -1481,10 +1330,6 @@ export const Layout: React.FC<LayoutProps> = ({
                     const hasRemainingPanels = getPanelsByBaseId(api, baseId).length > 0;
                     setVisibility((prev) => ({ ...prev, [baseId]: hasRemainingPanels }));
                 }
-                
-                // dockview resets scroll positions for panels, 
-                // here is a workaround to restore them
-                restorePanelViewStates();
 
                 if (api.totalPanels === 0 && emptyPaneRestoreTimerRef.current === null) {
                     emptyPaneRestoreTimerRef.current = window.setTimeout(() => {
@@ -1495,30 +1340,183 @@ export const Layout: React.FC<LayoutProps> = ({
                     }, 0);
                 }
             }),
-            api.onDidActivePanelChange((panel) => {
+            api.onDidActivePanelChange((event) => {
+                const panel = event.panel;
                 if (!panel) return;
                 const baseId = getPanelBaseId(panel.id);
                 if (!baseId) return;
                 onPanelActivated?.(baseId, panel.id);
-                restorePanelViewStates();
+                if (baseId === 'editor') {
+                    setLayoutVersion((v) => v + 1);
+                }
             }),
             api.onDidLayoutChange(() => {
                 if (isRestoringLayoutRef.current) {
                     return;
                 }
-                // const layoutSnapshot = getLayoutSnapshot(api);
-                // const layoutChanged = layoutSnapshot !== lastLayoutSnapshotRef.current;
-                // if (!layoutChanged) return;
+
+                const prevGroups = lastGroupsLayoutRef.current;
+                const currentGroups = api.groups;
+
+                if (prevGroups) {
+                    // Case 1: A group was removed (merge / close)
+                    if (prevGroups.size > currentGroups.length) {
+                        const currentGroupIds = new Set(currentGroups.map((g) => g.id));
+                        const removedGroupIds = Array.from(prevGroups.keys()).filter((id) => !currentGroupIds.has(id));
+
+                        if (removedGroupIds.length === 1 && lastLayoutSnapshotRef.current) {
+                            const removedGroupId = removedGroupIds[0];
+                            const prevGroupData = prevGroups.get(removedGroupId);
+                            const prevLayout = JSON.parse(lastLayoutSnapshotRef.current) as DockviewLayout;
+
+                            if (prevGroupData && prevLayout?.grid?.root) {
+                                const layoutSiblingInfo = findLayoutSiblings(
+                                    prevLayout.grid.root,
+                                    removedGroupId,
+                                    getLayoutDirection(prevLayout.grid.orientation),
+                                );
+
+                                if (layoutSiblingInfo) {
+                                    const closedGroupSize = layoutSiblingInfo.direction === 'horizontal'
+                                        ? prevGroupData.width
+                                        : prevGroupData.height;
+
+                                    const siblingGroupIds = layoutSiblingInfo.siblings
+                                        .flatMap((sibling) => sibling.groupIds)
+                                        .filter((id) => id !== removedGroupId);
+
+                                    // Check if this was a drag-and-drop merge by finding the recipient group in currentGroups
+                                    let recipientGroup: any = null;
+                                    for (const panelId of prevGroupData.panels) {
+                                        const currentGroup = currentGroups.find((cg) => cg.panels.some((p) => p.id === panelId));
+                                        if (currentGroup) {
+                                            recipientGroup = currentGroup;
+                                            break;
+                                        }
+                                    }
+
+                                    let absorberGroupIds: string[] = [];
+                                    if (recipientGroup) {
+                                        absorberGroupIds = [recipientGroup.id];
+                                    } else {
+                                        const parentGroupId = parentGroupMap.current.get(removedGroupId);
+                                        const parentSibling = parentGroupId
+                                            ? layoutSiblingInfo.siblings.find((sibling) => sibling.groupIds.includes(parentGroupId))
+                                            : undefined;
+                                        const adjacentSibling = layoutSiblingInfo.siblings[
+                                            layoutSiblingInfo.targetIndex > 0
+                                                ? layoutSiblingInfo.targetIndex - 1
+                                                : layoutSiblingInfo.targetIndex + 1
+                                        ];
+                                        absorberGroupIds = (parentSibling ?? adjacentSibling)?.groupIds ?? [];
+                                    }
+
+                                    window.requestAnimationFrame(() => {
+                                        siblingGroupIds.forEach((id) => {
+                                            const remainingGroup = api.groups.find((g) => g.id === id);
+                                            if (!remainingGroup) return;
+
+                                            const prevSiblingData = prevGroups.get(id);
+                                            if (!prevSiblingData) return;
+
+                                            const isAbsorber = absorberGroupIds.includes(id);
+                                            const targetSize: { width?: number; height?: number } = {};
+
+                                            if (layoutSiblingInfo.direction === 'horizontal') {
+                                                targetSize.width = isAbsorber
+                                                    ? prevSiblingData.width + closedGroupSize
+                                                    : prevSiblingData.width;
+                                            } else {
+                                                targetSize.height = isAbsorber
+                                                    ? prevSiblingData.height + closedGroupSize
+                                                    : prevSiblingData.height;
+                                            }
+
+                                            remainingGroup.api.setSize(targetSize);
+                                        });
+
+                                        updateGroupsLayoutSnapshot(api);
+                                    });
+                                }
+                            }
+                        }
+                    }
+                    // Case 2: A group was added (split / drag-to-edge) 
+                    else if (currentGroups.length > prevGroups.size) {
+                        const newGroupIds = currentGroups.filter((cg) => !prevGroups.has(cg.id)).map((cg) => cg.id);
+
+                        if (newGroupIds.length === 1) {
+                            const newGroupId = newGroupIds[0];
+                            const newGroup = currentGroups.find((cg) => cg.id === newGroupId);
+
+                            if (newGroup && newGroup.panels.length > 0) {
+                                const movedPanelId = newGroup.panels[0].id;
+
+                                // Find where this panel came from
+                                let sourceGroupId: string | null = null;
+                                for (const [id, data] of prevGroups.entries()) {
+                                    if (data.panels.includes(movedPanelId)) {
+                                        sourceGroupId = id;
+                                        break;
+                                    }
+                                }
+
+                                if (sourceGroupId) {
+                                    const prevSourceData = prevGroups.get(sourceGroupId);
+                                    const currentLayout = api.toJSON();
+                                    const layoutSiblingInfo = findLayoutSiblings(
+                                        currentLayout.grid.root,
+                                        newGroupId,
+                                        getLayoutDirection(currentLayout.grid.orientation),
+                                    );
+
+                                    if (prevSourceData && layoutSiblingInfo) {
+                                        window.requestAnimationFrame(() => {
+                                            currentGroups.forEach((cg) => {
+                                                const prevData = prevGroups.get(cg.id);
+                                                const targetSize: { width?: number; height?: number } = {};
+
+                                                if (cg.id === newGroupId || cg.id === sourceGroupId) {
+                                                    // Split the source group's previous size
+                                                    if (layoutSiblingInfo.direction === 'horizontal') {
+                                                        targetSize.width = prevSourceData.width / 2;
+                                                        targetSize.height = prevSourceData.height;
+                                                    } else {
+                                                        targetSize.width = prevSourceData.width;
+                                                        targetSize.height = prevSourceData.height / 2;
+                                                    }
+                                                } else if (prevData) {
+                                                    // Restore previous size for unaffected groups
+                                                    targetSize.width = prevData.width;
+                                                    targetSize.height = prevData.height;
+                                                }
+
+                                                if (targetSize.width !== undefined || targetSize.height !== undefined) {
+                                                    cg.api.setSize(targetSize);
+                                                }
+                                            });
+
+                                            updateGroupsLayoutSnapshot(api);
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                const snapshot = getStructuralLayoutSnapshot(api);
+                console.log('[Layout] onDidLayoutChange snapshot:', snapshot, 'previous:', lastStructuralSnapshotRef.current);
+                if (snapshot !== lastStructuralSnapshotRef.current) {
+                    console.log('[Layout] structural change detected!', snapshot);
+                    lastStructuralSnapshotRef.current = snapshot;
+                    setLayoutVersion((v) => v + 1);
+                } else {
+                    console.log('[Layout] no structural change detected');
+                }
+
                 queueSaveLayout(api);
-            }),
-            api.onWillDragPanel(() => {
-                capturePanelViewStates();
-            }),
-            api.onWillDrop(() => {
-                capturePanelViewStates();
-            }),
-            api.onDidMovePanel(() => {
-                restorePanelViewStates();
+                updateGroupsLayoutSnapshot(api);
             }),
         ];
 
@@ -1565,6 +1563,7 @@ export const Layout: React.FC<LayoutProps> = ({
 
         syncToolbarSize(api);
         queueSaveLayout(api);
+        updateGroupsLayoutSnapshot(api);
     }, [
         disposeListeners,
         onPanelAdded,
@@ -1572,8 +1571,7 @@ export const Layout: React.FC<LayoutProps> = ({
         onPanelActivated,
         handleSelectPanelFromPicker,
         queueSaveLayout,
-        capturePanelViewStates,
-        restorePanelViewStates,
+        updateGroupsLayoutSnapshot,
         refreshPanelContents,
         rebindPickerPanels,
         syncPanels,
@@ -1584,7 +1582,7 @@ export const Layout: React.FC<LayoutProps> = ({
     return (
         <div className="layout dockview-theme-dark">
             <div className="layout-main">
-                <LayoutViewStateContext.Provider value={viewStateRegistry}>
+                <LayoutVersionContext.Provider value={layoutVersion}>
                     <LayoutRenderContext.Provider value={renderPanel}>
                         <DockviewReact
                             components={DOCKVIEW_COMPONENTS}
@@ -1593,7 +1591,7 @@ export const Layout: React.FC<LayoutProps> = ({
                             rightHeaderActionsComponent={renderRightHeaderActions}
                         />
                     </LayoutRenderContext.Provider>
-                </LayoutViewStateContext.Provider>
+                </LayoutVersionContext.Provider>
             </div>
             <div className="layout-toolbar">
                 {renderPanelRef.current('toolbar', 'toolbar')}

@@ -39,6 +39,13 @@ export const DEFAULT_AGENTS: AcpAgent[] = [
         args: ["acp"],
         description: 'opencode',
     },
+    {
+        id: 'grok',
+        name: 'Grok',
+        command: 'grok',
+        args: ["agent", "stdio"],
+        description: 'xAI Grok AI coding agent',
+    },
 ];
 
 let cachedAgents: AcpAgent[] | null = null;
