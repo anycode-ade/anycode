@@ -4,7 +4,7 @@ Anycode uses the Language Server Protocol to add completion, hover, go-to-defini
 
 ## Install
 
-Anycode runs the exact server command configured in [`anycode-backend/config.toml`](../../anycode-backend/config.toml). The only requirement is that the configured binary is available on `PATH`.
+Anycode runs the exact server command configured in [`anycode-backend/config.toml`](../anycode-backend/config.toml). The only requirement is that the configured binary is available on `PATH`.
 
 ### Rust
 
@@ -137,7 +137,7 @@ which roslyn-language-server
 roslyn-language-server --version
 ```
 
-Anycode runs it as configured in [`config.toml`](../../anycode-backend/config.toml):
+Anycode runs it as configured in [`config.toml`](../anycode-backend/config.toml):
 
 ```text
 roslyn-language-server --stdio --autoLoadProjects
@@ -147,18 +147,18 @@ Restart Anycode after install so the backend picks up the updated `PATH` / `DOTN
 
 Notes:
 
-- `uvx ty server` matches the Python entry in [`config.toml`](../../anycode-backend/config.toml).
+- `uvx ty server` matches the Python entry in [`config.toml`](../anycode-backend/config.toml).
 - For release-based servers, put the extracted binary directory on `PATH`.
 - If a platform-specific package manager provides a different binary name, keep the configured command in `config.toml` pointed at the binary Anycode should run.
 
 ## How It Works
 
-Anycode starts one LSP process per language from [`anycode-backend/config.toml`](../../anycode-backend/config.toml).
+Anycode starts one LSP process per language from [`anycode-backend/config.toml`](../anycode-backend/config.toml).
 
 The flow is:
 
 1. The backend reads `language.lsp` for the current file type.
-2. On first use, [`LspManager`](../../anycode-backend/src/lsp.rs) spawns the server as a child process.
+2. On first use, [`LspManager`](../anycode-backend/src/lsp.rs) spawns the server as a child process.
 3. The backend speaks JSON-RPC over stdio using the standard LSP `Content-Length` framing.
 4. File events are forwarded to the server as `didOpen`, `didChange`, `didSave`, and `didClose`.
 5. Frontend requests like completion, hover, definition, and references go through Socket.IO handlers.
@@ -166,11 +166,11 @@ The flow is:
 
 ## Frontend API
 
-The frontend request types live in [`anycode-base/src/lsp.ts`](../../anycode-base/src/lsp.ts).
+The frontend request types live in [`anycode-base/src/lsp.ts`](../anycode-base/src/lsp.ts).
 
 Current request/response flow:
 
-- `lsp:completion` -> `handle_completion` in [`anycode-backend/src/handlers/lsp_handler.rs`](../../anycode-backend/src/handlers/lsp_handler.rs)
+- `lsp:completion` -> `handle_completion` in [`anycode-backend/src/handlers/lsp_handler.rs`](../anycode-backend/src/handlers/lsp_handler.rs)
 - `lsp:hover` -> `handle_hover`
 - `lsp:definition` -> `handle_definition`
 - `lsp:references` -> `handle_references`
@@ -178,7 +178,7 @@ Current request/response flow:
 
 ## Configuration
 
-The default language server commands are defined in [`anycode-backend/config.toml`](../../anycode-backend/config.toml).
+The default language server commands are defined in [`anycode-backend/config.toml`](../anycode-backend/config.toml).
 
 Important details:
 
@@ -200,14 +200,14 @@ Anycode currently uses these LSP requests:
 
 ## Where To Look In Code
 
-- [`anycode-backend/src/lsp.rs`](../../anycode-backend/src/lsp.rs)
-- [`anycode-backend/src/handlers/lsp_handler.rs`](../../anycode-backend/src/handlers/lsp_handler.rs)
-- [`anycode-backend/config.toml`](../../anycode-backend/config.toml)
-- [`anycode-base/src/lsp.ts`](../../anycode-base/src/lsp.ts)
+- [`anycode-backend/src/lsp.rs`](../anycode-backend/src/lsp.rs)
+- [`anycode-backend/src/handlers/lsp_handler.rs`](../anycode-backend/src/handlers/lsp_handler.rs)
+- [`anycode-backend/config.toml`](../anycode-backend/config.toml)
+- [`anycode-base/src/lsp.ts`](../anycode-base/src/lsp.ts)
 
 ## Adding A New Language Server
 
-1. Add the language entry to [`anycode-backend/config.toml`](../../anycode-backend/config.toml).
+1. Add the language entry to [`anycode-backend/config.toml`](../anycode-backend/config.toml).
 2. Put the server command into `language.lsp`.
 3. Make sure the binary is available on `PATH`.
 4. If the server needs per-project settings, add the corresponding keys to `.vscode/settings.json`.
