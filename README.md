@@ -5,31 +5,8 @@
 **anycode** is a web platform where people and agents build together. Run it locally or remotely and work from any device you want: desktop, laptop, mobile, or even VR. Use any agent, including Codex, Claude Code, OpenCode, as well as local models.
 
 ![editor](anycode/imgs/screen1.png)
-![agents](anycode/imgs/screen2.png)
-
-## Mobile Previews
-
-<table style="border-collapse: collapse; border: 0;">
-  <tr>
-    <td align="center" style="border: 0;">
-      <img src="anycode/imgs/phone0.png" alt="Editor" width="240" /><br/>
-      Editor
-    </td>
-    <td align="center" style="border: 0;">
-      <img src="anycode/imgs/phone1.png" alt="Agent" width="240" /><br/>
-      Agent
-    </td>
-    <td align="center" style="border: 0;">
-      <img src="anycode/imgs/phone2.PNG" alt="Terminal" width="240" /><br/>
-      Terminal
-    </td>
-    <td align="center" style="border: 0;">
-      <img src="anycode/imgs/phone3.png" alt="Search" width="240" /><br/>
-      Search
-    </td>
-  </tr>
-</table>
-
+![layout](anycode/imgs/screen2.png)
+![agents](anycode/imgs/screen3.png)
 
 ## Features
 - **Ultra-fast custom editor**: Exceptionally fast and highly optimized virtual rendering engine based on tree-sitter parser, delivering superior performance for large codebases. 
