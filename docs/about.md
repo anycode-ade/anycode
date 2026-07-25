@@ -9,19 +9,27 @@
 -   **Tokio**: The industry-standard asynchronous runtime for writing high-performance network applications in Rust.
 -   **Axum**: A minimal and powerful web framework used for HTTP routing and controller architecture.
 -   **Socketioxide**: A `Socket.IO` server implementation providing reliable real-time bidirectional WebSocket communication with the client.
+-   **Notify**: Cross-platform library for recursive real-time file system event monitoring (File Watcher).
+-   **Agent Client Protocol (ACP)**: Rust implementation of the protocol for interacting with AI agents (ACP v1.2.0 / Schema v1.4.0).
 -   **LSP-types**: Data structures for working with the Language Server Protocol (LSP).
 
 ### Frontend (TypeScript/React)
 
--   **React & TypeScript**: Interactive, strictly-typed user interface built with modern React.
--   **Vite**: Next-generation build tool delivering instant Hot Module Replacement (HMR) and optimized production builds.
--   **PNPM**: Efficient package manager optimized for monorepos via `pnpm workspaces`.
+-   **React 19 & TypeScript**: Interactive, strictly-typed UI for the IDE shell — file explorer, editor tabs, AI agent panel, search, Git changes, and settings.
+-   **Vite**: Next-generation build tool with instant Hot Module Replacement (HMR) and optimized production builds; output is copied into `anycode-backend/dist` for serving.
+-   **PNPM workspaces**: Monorepo package manager linking `anycode`, `anycode-base`, and `anycode-react` with shared, efficient dependency storage.
+-   **Socket.IO Client**: Real-time bidirectional WebSocket transport to the Rust backend for file I/O, LSP, terminal, ACP, and file-watcher events.
+-   **web-tree-sitter**: WASM Tree-sitter runtime for incremental AST parsing, syntax highlighting, and code folding inside the browser.
+-   **vscode-textbuffer**: Piece-table text model optimized for frequent insert/delete operations in the editor core (`anycode-base`).
+-   **Xterm.js**: Terminal emulator powering the integrated terminal UI (with fit and serialize addons).
+-   **Dockview**: Dockable multi-panel layout system for editor groups, sidebars, and tool windows.
+-   **react-markdown**: Streaming Markdown rendering for AI agent chat (GFM and soft line breaks via remark plugins).
 
 ## Architecture and Component Interaction
 
 The project follows a monorepo architecture managed by `pnpm workspaces`, enabling centralized dependency management and seamless integration between packages:
 
--   `anycode-backend/` (Rust): The server component bridging the web UI and the user's local operating system. Handles file I/O operations, search, PTY terminal processes, LSP sessions, and ACP clients for AI agents. Communicates with the frontend via **WebSockets** (`Socket.IO`).
+-   `anycode-backend/` (Rust): The server component bridging the web UI and the user's local operating system. Handles file I/O operations, search, PTY terminal processes, LSP sessions, and ACP clients for AI agents. Runs background watcher services for file events (`spawn_file_watcher`) and Git status (`spawn_git_status_watcher`). Communicates with the frontend via **WebSockets** (`Socket.IO`).
 -   `anycode-base/`: Core editor engine in pure TypeScript (framework-agnostic):
     -   Text model management (`vscode-textbuffer`).
     -   `web-tree-sitter` integration for real-time AST parsing and Code Folding calculation.
@@ -29,7 +37,7 @@ The project follows a monorepo architecture managed by `pnpm workspaces`, enabli
     -   Scrollbar markers rendering engine (Scrollbar Markers).
     -   Virtualized rendering system ensuring only visible lines are rendered to DOM for maximum performance on large files.
 -   `anycode-react/`: React wrapper component for `anycode-base` providing React context, lifecycle management, and event handling.
--   `anycode/`: Main web application assembling all components together (layout panels, file manager, terminal, AI agent chat, search, theme manager).
+-   `anycode/`: Main web application assembling all components together (layout panels, file manager, terminal, AI agent chat panel, search, theme manager).
 
 ## Key Features: Detailed Overview
 
@@ -77,6 +85,20 @@ Allows collapsing and expanding structural code blocks (functions, classes, loop
 Visualizes key file-wide points of interest directly on the scrollbar track:
 -   **Color-Coded Indicators**: Highlights Git diff changes, search query results, LSP diagnostic errors/warnings, and occurrence highlights for the word under the cursor.
 -   **Click Navigation**: Clicking any scrollbar marker instantly scrolls the viewport to the target line.
+
+### AI Agent Integration (ACP)
+
+Built-in support for the **Agent Client Protocol (ACP)** enables seamless interaction with AI coding assistants:
+-   **Agent and Session Management**: Connect and switch between different AI agents (Grok, Anthropic Claude, etc.) with persistent session history.
+-   **Real-Time Streaming**: Supports streaming text, code blocks, Markdown rendering, and tool calls in real time.
+-   **Codebase Integration**: AI agents can inspect project files, execute terminal commands, and apply code edits directly in the IDE.
+
+### Real-Time File System & Git Watcher
+
+The Rust backend runs background watcher services to monitor file system and repository events:
+-   **Recursive File Watching (`notify`)**: Recursively watches the project workspace for file creation, modification, and deletion events triggered by external tools, Git commands, or AI agents.
+-   **Live Incremental Edits (`watcher:edits`)**: When an open file is modified externally, the backend computes a text diff and broadcasts incremental edits to the frontend via WebSockets. The editor seamlessly updates the document text without losing focus or cursor position.
+-   **Automatic Git Status Refresh**: File system events instantly update Git diff markers in the editor, file explorer tree badges, and the Git Changes panel.
 
 ### Language Server Protocol (LSP) Integration
 
