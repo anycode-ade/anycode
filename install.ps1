@@ -1,7 +1,8 @@
 param(
     [string]$Version = $env:ANYCODE_VERSION,
     [string]$InstallDir = $env:ANYCODE_INSTALL_DIR,
-    [string]$Repo = $(if ($env:ANYCODE_REPO) { $env:ANYCODE_REPO } else { "anycode-ade/anycode" })
+    [string]$Repo = $(if ($env:ANYCODE_REPO) { $env:ANYCODE_REPO } else { "anycode-ade/anycode" }),
+    [string]$ArchivePath = $env:ANYCODE_ARCHIVE_PATH
 )
 
 Set-StrictMode -Version Latest
@@ -15,7 +16,29 @@ if ([string]::IsNullOrWhiteSpace($InstallDir)) {
     $InstallDir = Join-Path $HOME "AppData\Local\anycode\bin"
 }
 
-$arch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture
+function Get-WindowsArchitecture {
+    $runtimeType = [System.Type]::GetType("System.Runtime.InteropServices.RuntimeInformation")
+    if ($null -ne $runtimeType) {
+        $osArchProperty = $runtimeType.GetProperty("OSArchitecture")
+        if ($null -ne $osArchProperty) {
+            return $osArchProperty.GetValue($null).ToString()
+        }
+    }
+
+    $processArch = $env:PROCESSOR_ARCHITEW6432
+    if ([string]::IsNullOrWhiteSpace($processArch)) {
+        $processArch = $env:PROCESSOR_ARCHITECTURE
+    }
+
+    switch ($processArch.ToUpperInvariant()) {
+        "AMD64" { return "X64" }
+        "X86" { return "X86" }
+        "ARM64" { return "Arm64" }
+        default { return $processArch }
+    }
+}
+
+$arch = Get-WindowsArchitecture
 switch ($arch) {
     "X64" { $asset = "anycode-windows-x86_64.zip" }
     "Arm64" { throw "Windows ARM64 releases are not published yet. Build from source instead." }
@@ -24,14 +47,21 @@ switch ($arch) {
     }
 }
 
-if ($Version -eq "latest") {
-    $downloadUrl = "https://github.com/$Repo/releases/latest/download/$asset"
+if ([string]::IsNullOrWhiteSpace($ArchivePath)) {
+    if ($Version -eq "latest") {
+        $downloadUrl = "https://github.com/$Repo/releases/latest/download/$asset"
+    } else {
+        $downloadUrl = "https://github.com/$Repo/releases/download/$Version/$asset"
+    }
 } else {
-    $downloadUrl = "https://github.com/$Repo/releases/download/$Version/$asset"
+    $ArchivePath = [System.IO.Path]::GetFullPath($ArchivePath)
+    if (-not (Test-Path $ArchivePath)) {
+        throw "Archive not found: $ArchivePath"
+    }
 }
 
 $tmpRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("anycode-install-" + [System.Guid]::NewGuid().ToString("N"))
-$archivePath = Join-Path $tmpRoot $asset
+$tempArchivePath = Join-Path $tmpRoot $asset
 $extractDir = Join-Path $tmpRoot "extract"
 
 New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
@@ -39,10 +69,15 @@ New-Item -ItemType Directory -Force -Path $tmpRoot | Out-Null
 New-Item -ItemType Directory -Force -Path $extractDir | Out-Null
 
 try {
-    Write-Host "Downloading $asset from $downloadUrl"
-    Invoke-WebRequest -Uri $downloadUrl -OutFile $archivePath
+    if ([string]::IsNullOrWhiteSpace($ArchivePath)) {
+        Write-Host "Downloading $asset from $downloadUrl"
+        Invoke-WebRequest -Uri $downloadUrl -OutFile $tempArchivePath
+    } else {
+        Write-Host "Using local archive $ArchivePath"
+        Copy-Item -Path $ArchivePath -Destination $tempArchivePath -Force
+    }
 
-    Expand-Archive -Path $archivePath -DestinationPath $extractDir -Force
+    Expand-Archive -Path $tempArchivePath -DestinationPath $extractDir -Force
 
     $sourceExe = Join-Path $extractDir "anycode.exe"
     if (-not (Test-Path $sourceExe)) {
