@@ -19,7 +19,8 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build-and-deploy:
+  demo-build-and-deploy:
+    name: Demo Build and Deploy
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
