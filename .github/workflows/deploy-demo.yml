@@ -57,7 +57,7 @@ jobs:
         run: pnpm --filter anycode build:demo
 
       - name: Install Playwright Browsers
-        run: npx playwright install --with-deps chromium
+        run: pnpm --filter anycode exec playwright install --with-deps chromium
 
       - name: Run Playwright E2E Tests
         run: pnpm --filter anycode test:demo
