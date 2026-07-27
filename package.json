@@ -7,6 +7,11 @@
   "author": "",
   "license": "Apache-2.0",
   "packageManager": "pnpm@10.13.1",
+  "scripts": {
+    "dev:demo": "pnpm --filter anycode dev:demo",
+    "build:demo": "pnpm --filter anycode build:demo",
+    "test:demo": "pnpm --filter anycode test:demo"
+  },
   "devDependencies": {
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",

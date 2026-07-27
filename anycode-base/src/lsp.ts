@@ -12,6 +12,8 @@ export interface Range {
 export interface Completion {
     label: string;
     kind?: number;
+    detail?: string;
+    insertText?: string;
 }
 
 export interface CompletionRequest {

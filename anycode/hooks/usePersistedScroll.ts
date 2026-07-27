@@ -29,7 +29,6 @@ export function usePersistedScroll<T extends HTMLElement>(
             if (savedScroll !== null && element.scrollHeight > element.clientHeight) {
                 element.classList.add('is-restoring-scroll');
                 element.scrollTop = savedScroll;
-                console.log(`[usePersistedScroll:${id}] Restored scroll to:`, savedScroll, 'Actual scrollTop:', element.scrollTop);
                 
                 requestAnimationFrame(() => {
                     requestAnimationFrame(() => {
@@ -66,7 +65,6 @@ export function usePersistedScroll<T extends HTMLElement>(
         let visibilityDisposable: { dispose: () => void } | null = null;
         if (panel) {
             visibilityDisposable = panel.onDidVisibilityChange((event: any) => {
-                console.log(`[usePersistedScroll:${id}] Visibility changed:`, event.isVisible);
                 if (event.isVisible) {
                     // Wait for layout updates before restoring scroll
                     requestAnimationFrame(() => {

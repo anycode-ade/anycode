@@ -11,6 +11,7 @@ type EditorPanelProps = {
         editorStates: ReadonlyMap<string, AnycodeEditor>;
         getActiveFileIdForPane: (paneId: string) => string | null;
         setActiveEditorPaneId: (paneId: string) => void;
+        referencesPeekByPane?: Record<string, ReferencesPeekState | null>;
         getReferencesPeekForPane: (paneId: string) => ReferencesPeekState | null;
         closeReferencesPeek: (paneId?: string) => void;
         focusEditorInPane: (paneId: string) => void;
@@ -24,7 +25,9 @@ export const EditorPanel = ({ panelKey, editors }: EditorPanelProps) => {
     const paneFileId = editors.getActiveFileIdForPane(panelKey);
     const paneFile = paneFileId ? editors.files.find((file) => file.id === paneFileId) : null;
     const editorState = paneFile ? editors.editorStates.get(paneFile.id) : null;
-    const referencesPeek = editors.getReferencesPeekForPane(panelKey);
+    const referencesPeek = editors.referencesPeekByPane
+        ? (editors.referencesPeekByPane[panelKey] ?? null)
+        : editors.getReferencesPeekForPane(panelKey);
     const [lastReadyEditor, setLastReadyEditor] = useState<{ id: string; state: AnycodeEditor } | null>(null);
 
     useEffect(() => {

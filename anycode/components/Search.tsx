@@ -275,8 +275,10 @@ const Search = ({ id, wsRef, isConnected, focusRequestToken, inputValue, onInput
     // Auto-resize textarea based on content
     useEffect(() => {
         if (inputRef.current) {
-            inputRef.current.style.height = "auto";
-            inputRef.current.style.height = `${inputRef.current.scrollHeight}px`;
+            const el = inputRef.current;
+            el.style.height = "auto";
+            const borderHeight = el.offsetHeight - el.clientHeight;
+            el.style.height = `${el.scrollHeight + borderHeight}px`;
         }
     }, [inputValue]);
 

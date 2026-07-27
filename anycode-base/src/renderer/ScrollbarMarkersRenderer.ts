@@ -140,6 +140,11 @@ export class ScrollbarMarkersRenderer {
             return;
         }
 
+        const containerHeight = this.container.clientHeight;
+        if (containerHeight > 0) {
+            this.element.style.height = `${containerHeight}px`;
+        }
+
         const scaleChanged = totalRows !== this.totalRows;
         if (rightOffset !== this.rightOffset) {
             this.rightOffset = rightOffset;
@@ -206,6 +211,7 @@ export class ScrollbarMarkersRenderer {
         this.wordLayer.replaceChildren();
         this.searchLayer.replaceChildren();
         this.errorLayer.replaceChildren();
+        this.element.style.height = '';
         this.element.classList.remove('active');
     }
 

@@ -10,6 +10,8 @@ anycode-backend/dist/*
 csharp-test-project
 
 test.py
+test-results
+playwright-report
 
 .zed
 anycode-react/dist/Component.js

@@ -1425,7 +1425,7 @@ export class AnycodeEditor {
             file: this.code.filename, row: line, column: column
         });
 
-        if (newCompletions.length === 0) {
+        if (!Array.isArray(newCompletions) || newCompletions.length === 0) {
             this.completions = [];
             this.renderer.closeCompletion();
             this.isCompletionOpen = false;
@@ -1460,7 +1460,7 @@ export class AnycodeEditor {
 
         let { line, column } = this.code.getPosition(this.offset);
         let completionItem = this.completions[index];
-        let text = completionItem.label;
+        let text = completionItem.insertText !== undefined ? completionItem.insertText : completionItem.label;
 
         let lineStr = this.code.line(line);
 

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { io, type Socket } from 'socket.io-client';
 import { BACKEND_URL } from '../constants';
+import { DemoSocket } from '../demoSocket';
 
 type UseSocketParams = {
     onConnect?: () => void;
@@ -10,6 +11,8 @@ type UseSocketParams = {
 };
 
 export type ConnectionStatus = 'connecting' | 'connected' | 'reconnecting';
+
+const IS_DEMO_MODE = import.meta.env.MODE === 'demo' || import.meta.env.VITE_DEMO_MODE === 'true';
 
 export const useSocket = ({ onConnect, onDisconnect, onConnectError, onError }: UseSocketParams) => {
     const wsRef = useRef<Socket | null>(null);
@@ -31,14 +34,16 @@ export const useSocket = ({ onConnect, onDisconnect, onConnectError, onError }: 
 
             setConnectionStatus('connecting');
 
-            const ws = io(BACKEND_URL, {
-                transports: ['websocket'],
-                reconnection: true,
-                reconnectionAttempts: Infinity,
-                reconnectionDelay: 1000,
-                reconnectionDelayMax: 5000,
-                timeout: 10000,
-            });
+            const ws = IS_DEMO_MODE
+                ? (new DemoSocket() as unknown as Socket)
+                : io(BACKEND_URL, {
+                    transports: ['websocket'],
+                    reconnection: true,
+                    reconnectionAttempts: Infinity,
+                    reconnectionDelay: 1000,
+                    reconnectionDelayMax: 5000,
+                    timeout: 10000,
+                });
             wsRef.current = ws;
 
             ws.on('connect', () => {

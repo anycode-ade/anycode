@@ -1506,13 +1506,9 @@ export const Layout: React.FC<LayoutProps> = ({
                 }
 
                 const snapshot = getStructuralLayoutSnapshot(api);
-                console.log('[Layout] onDidLayoutChange snapshot:', snapshot, 'previous:', lastStructuralSnapshotRef.current);
                 if (snapshot !== lastStructuralSnapshotRef.current) {
-                    console.log('[Layout] structural change detected!', snapshot);
                     lastStructuralSnapshotRef.current = snapshot;
                     setLayoutVersion((v) => v + 1);
-                } else {
-                    console.log('[Layout] no structural change detected');
                 }
 
                 queueSaveLayout(api);

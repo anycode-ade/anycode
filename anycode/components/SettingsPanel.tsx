@@ -282,9 +282,9 @@ const SettingsPanelComponent: React.FC<SettingsPanelProps> = ({
     }, [onThemeChange]);
 
     const themeCards = useMemo(() => {
-        return themes.map((theme) => (
+        return themes.map((theme, idx) => (
             <ThemeCard
-                key={theme.id}
+                key={theme.id || `${theme.fileName || 'theme'}-${idx}`}
                 theme={theme}
                 isActive={currentThemeId === theme.id}
                 onSelectTheme={handleSelectTheme}

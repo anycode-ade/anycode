@@ -126,11 +126,7 @@
 .search-input-wrapper {
     display: grid;
     position: relative;
-    padding: 8px 0px;
-    margin-left: 8px;
-    margin-right: 8px;
-    overflow: hidden;
-    border-radius: 8px;
+    margin: 8px 8px 0px 8px;
 }
 
 .search-prefix {
@@ -244,7 +240,7 @@
 
 .search-mode-toggle {
     position: absolute;
-    top: 12px;
+    top: 5px;
     right: 6px;
     z-index: 1;
     display: inline-flex;

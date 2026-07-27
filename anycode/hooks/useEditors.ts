@@ -381,11 +381,14 @@ export const useEditors = ({ wsRef, isConnected, onFileClosed }: UseEditorsParam
     const handleCompletion = useCallback((completionRequest: CompletionRequest): Promise<Completion[]> => {
         return new Promise((resolve, reject) => {
             wsRef.current?.emit('lsp:completion', completionRequest, (response: any) => {
-                if (response.error) {
+                if (response?.error) {
                     reject([]);
                     return;
                 }
-                resolve(response || []);
+                const list = Array.isArray(response)
+                    ? response
+                    : (Array.isArray(response?.items) ? response.items : (Array.isArray(response?.completions) ? response.completions : []));
+                resolve(list);
             });
         });
     }, [wsRef]);
@@ -748,7 +751,7 @@ export const useEditors = ({ wsRef, isConnected, onFileClosed }: UseEditorsParam
             preview: null,
         });
 
-        wsRef.current.emit('lsp:references', request, (response: any) => {
+        wsRef.current.emit('lsp:references', request, async (response: any) => {
             if (referencesPeekRequestTokenRef.current !== requestToken) {
                 return;
             }
@@ -796,10 +799,14 @@ export const useEditors = ({ wsRef, isConnected, onFileClosed }: UseEditorsParam
 
             const firstItem = dedupedItems[0];
             const firstFilePath = firstItem ? uriToFilePath(firstItem.uri || firstItem.file) : '';
-            const syncContent = firstFilePath ? getFileContentForPreviewSync(firstFilePath) : null;
-            let initialPreview: string | null = null;
-            if (syncContent !== null && firstItem) {
-                initialPreview = syncContent;
+            let initialPreview = firstFilePath ? getFileContentForPreviewSync(firstFilePath) : null;
+
+            if (firstFilePath && initialPreview === null) {
+                initialPreview = await resolveFileContentForPreview(firstFilePath);
+            }
+
+            if (referencesPeekRequestTokenRef.current !== requestToken) {
+                return;
             }
 
             updateReferencesPeekForPane(targetPaneId, {
@@ -810,16 +817,10 @@ export const useEditors = ({ wsRef, isConnected, onFileClosed }: UseEditorsParam
                 selectedIndex: 0,
                 preview: initialPreview,
             });
-
-            if (dedupedItems.length > 0 && initialPreview === null) {
-                loadReferencesPeekPreview(targetPaneId, 0, requestToken, dedupedItems).catch(() => {
-                    // Swallow preview load errors in lite mode.
-                });
-            }
         });
     }, [
         isConnected,
-        loadReferencesPeekPreview,
+        resolveFileContentForPreview,
         updateReferencesPeekForPane,
         getFileContentForPreviewSync,
         wsRef,

@@ -273,10 +273,8 @@
 }
 
 .changes-empty {
-    color: var(--theme-tab-foreground, #666);
-    text-align: center;
-    padding: 24px;
-    font-style: italic;
+    color: var(--theme-muted-foreground, var(--text-color-secondary, #888));
+    margin-left: 8px;
 }
 
 .changes-group {

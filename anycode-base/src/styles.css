@@ -24,11 +24,10 @@
   align-self: flex-start;
   flex: 0 0 14px;
   width: 14px;
-  height: 100%;
-  min-height: 100%;
   margin-left: -14px;
   z-index: 20;
   pointer-events: none;
+  overflow: hidden;
 }
 
 .anyeditor .smr.active {
