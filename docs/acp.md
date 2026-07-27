@@ -13,7 +13,7 @@ Some agents ship ACP as a separate package or wrapper binary. Others expose ACP 
 Install Codex globally:
 
 ```bash
-npm install -g @zed-industries/codex-acp
+npm install -g @agentclientprotocol/codex-acp
 ```
 
 ### Gemini
