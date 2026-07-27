@@ -29,6 +29,7 @@ export default defineConfig(({ mode }) => {
   const backendTarget = `http://localhost:${backendPort}`;
 
   return {
+    base: mode === "demo" ? "./" : "/",
     plugins: [react()],
     resolve: {
       extensions: [".ts", ".tsx", ".js", ".jsx"],
