@@ -20,7 +20,7 @@ concurrency:
 
 jobs:
   demo-build-and-deploy:
-    name: Demo Build and Deploy
+    name: Demo Deploy
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
