@@ -260,12 +260,12 @@ port: 80
             // Line 1: name: test
             const nodesLine1 = code.getLineNodes(1);
             expect(nodesLine1.some(n => n.name === 'type' && n.text === 'name')).toBe(true);
-            expect(nodesLine1.some(n => n.name === 'type' && n.text === 'test')).toBe(true);
+            expect(nodesLine1.some(n => n.name === 'string' && n.text === 'test')).toBe(true);
 
             // Line 2: port: 80
             const nodesLine2 = code.getLineNodes(2);
             expect(nodesLine2.some(n => n.name === 'type' && n.text === 'port')).toBe(true);
-            expect(nodesLine2.some(n => n.name === 'type' && n.text === '80')).toBe(true);
+            expect(nodesLine2.some(n => n.name === 'number' && n.text === '80')).toBe(true);
         });
     });
 
