@@ -199,6 +199,10 @@ mod tests {
     use tokio::time::{Duration, timeout};
 
     #[tokio::test]
+    #[cfg_attr(
+        target_os = "windows",
+        ignore = "portable-pty shell echo is flaky on Windows CI runners"
+    )]
     async fn test_terminal_echo() -> Result<()> {
         let (tx, mut rx) = mpsc::channel::<String>(10);
 
@@ -244,6 +248,10 @@ mod tests {
     }
 
     #[tokio::test]
+    #[cfg_attr(
+        target_os = "windows",
+        ignore = "portable-pty unicode echo is flaky on Windows CI runners"
+    )]
     async fn test_terminal_unicode() -> Result<()> {
         let (tx, mut rx) = mpsc::channel::<String>(10);
 

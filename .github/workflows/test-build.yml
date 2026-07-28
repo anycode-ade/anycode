@@ -103,3 +103,83 @@ jobs:
         working-directory: ./anycode-backend
         run: |
           ./target/x86_64-unknown-linux-musl/release/anycode --help
+
+  test-build-windows:
+    name: Test Build Windows
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Get pnpm store directory
+        shell: pwsh
+        run: |
+          "STORE_PATH=$(pnpm store path --silent)" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Setup pnpm cache
+        uses: actions/cache@v5
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build frontend
+        working-directory: ./anycode
+        run: pnpm build
+
+      - name: Verify frontend build
+        working-directory: ./anycode-backend
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "dist")) {
+            Write-Error "Error: dist directory is missing"
+          }
+          $files = Get-ChildItem -Path dist -Recurse -File
+          if ($files.Count -eq 0) {
+            Write-Error "Error: dist directory is empty"
+          }
+          Write-Host "Frontend build verified. Total files: $($files.Count)"
+
+      - name: Run core library tests
+        working-directory: ./anycode-base
+        run: pnpm test -- --run
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.96.0
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            anycode-backend -> target
+
+      - name: Run Rust backend tests
+        working-directory: ./anycode-backend
+        run: cargo test
+
+      - name: Build Windows binary
+        working-directory: ./anycode-backend
+        run: cargo build --release
+
+      - name: Check binary output
+        working-directory: ./anycode-backend
+        shell: pwsh
+        run: |
+          Get-Item target/release/anycode.exe | Format-List FullName,Length,LastWriteTime
+
+      - name: Test binary help
+        working-directory: ./anycode-backend
+        run: .\target\release\anycode.exe --help
