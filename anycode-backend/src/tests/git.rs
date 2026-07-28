@@ -115,6 +115,42 @@ fn untracked_file_is_reported_as_unstaged_by_path_status() {
 }
 
 #[test]
+fn revert_deletes_untracked_file_given_an_absolute_path() {
+    let temp_dir = tempfile::TempDir::new().unwrap();
+    Repository::init(temp_dir.path()).unwrap();
+
+    let file_path = temp_dir.path().join("new.txt");
+    std::fs::write(&file_path, "new line\n").unwrap();
+
+    let manager = GitManager::new(temp_dir.path().to_path_buf());
+    manager.revert(file_path.to_str().unwrap()).unwrap();
+
+    assert!(!file_path.exists());
+    assert!(manager.status().unwrap().files.is_empty());
+}
+
+#[test]
+fn revert_removes_a_staged_added_file_from_disk_and_index() {
+    let temp_dir = tempfile::TempDir::new().unwrap();
+    let repo = Repository::init(temp_dir.path()).unwrap();
+
+    let file_path = temp_dir.path().join("new.txt");
+    std::fs::write(&file_path, "new line\n").unwrap();
+    let mut index = repo.index().unwrap();
+    index.add_path(Path::new("new.txt")).unwrap();
+    index.write().unwrap();
+
+    let manager = GitManager::new(temp_dir.path().to_path_buf());
+    manager.revert(file_path.to_str().unwrap()).unwrap();
+
+    assert!(!file_path.exists());
+    assert!(manager.status().unwrap().files.is_empty());
+    let mut index = repo.index().unwrap();
+    index.read(true).unwrap();
+    assert!(index.get_path(Path::new("new.txt"), 0).is_none());
+}
+
+#[test]
 fn deleted_file_numstat_counts_lines_not_bytes() {
     let temp_dir = tempfile::TempDir::new().unwrap();
     let repo = Repository::init(temp_dir.path()).unwrap();

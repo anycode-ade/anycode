@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use git2::{Repository, Status, StatusOptions};
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use tracing::info;
@@ -836,14 +836,39 @@ impl GitManager {
 
         let file_path = Path::new(path);
         let relative_path = if file_path.is_absolute() {
-            file_path.strip_prefix(repo_root).unwrap_or(file_path)
+            match file_path.strip_prefix(repo_root) {
+                Ok(path) => path.to_path_buf(),
+                Err(_) => {
+                    let canonical_path = file_path.canonicalize().ok();
+                    let canonical_root = repo_root.canonicalize().ok();
+                    canonical_path
+                        .as_deref()
+                        .zip(canonical_root.as_deref())
+                        .and_then(|(path, root)| path.strip_prefix(root).ok())
+                        .map(Path::to_path_buf)
+                        .context("Path to revert is outside the repository")?
+                }
+            }
         } else {
-            file_path
+            file_path.to_path_buf()
         };
+
+        if relative_path.as_os_str().is_empty()
+            || relative_path.components().any(|component| {
+                matches!(
+                    component,
+                    std::path::Component::ParentDir
+                        | std::path::Component::RootDir
+                        | std::path::Component::Prefix(_)
+                )
+            })
+        {
+            anyhow::bail!("Invalid repository-relative path to revert: {}", path);
+        }
 
         // Check file status
         let mut opts = StatusOptions::new();
-        opts.include_untracked(true).pathspec(path);
+        opts.include_untracked(true).pathspec(&relative_path);
 
         let statuses = repo.statuses(Some(&mut opts))?;
         let is_new_file = statuses.iter().any(|entry| {
@@ -851,14 +876,24 @@ impl GitManager {
         });
 
         if is_new_file {
-            let full_path = repo_root.join(relative_path);
+            // A newly added file can be either untracked or already staged.
+            // Remove an index entry as well, otherwise it remains in Changes.
+            repo.reset_default(None, [&relative_path])
+                .context("Failed to remove added file from the Git index")?;
+
+            let full_path = repo_root.join(&relative_path);
             if full_path.exists() {
                 std::fs::remove_file(&full_path).context("Failed to delete untracked file")?;
             }
             info!("Git revert: deleted untracked file {}", path);
         } else {
+            // Reset both the index and worktree so Revert also handles staged edits.
+            let head = repo.head()?.peel_to_commit()?;
+            repo.reset_default(Some(head.as_object()), [&relative_path])
+                .context("Failed to reset file in the Git index")?;
+
             let mut checkout_opts = git2::build::CheckoutBuilder::new();
-            checkout_opts.path(relative_path).force();
+            checkout_opts.path(&relative_path).force();
             repo.checkout_head(Some(&mut checkout_opts))
                 .context("Failed to restore file from HEAD")?;
             info!("Git revert: restored {} from HEAD", path);
