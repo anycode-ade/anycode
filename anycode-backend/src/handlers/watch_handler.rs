@@ -15,7 +15,7 @@ use crate::git::GitManager;
 use crate::handlers::io_handler::apply_edits_to_code;
 use crate::lsp::LspManager;
 use crate::search::search_file_result;
-use crate::utils::normalize_watch_path;
+use crate::utils::{format_path, normalize_watch_path};
 
 const DEBOUNCE: Duration = Duration::from_millis(100);
 
@@ -213,7 +213,7 @@ async fn process_watch_event(
                     notify::EventKind::Create(notify::event::CreateKind::Folder) => false,
                     _ => path.is_file(),
                 };
-                let data = &json!({"path": path_str, "isFile": is_file});
+                let data = &json!({"path": format_path(path_str), "isFile": is_file});
                 let _ = socket.emit("watcher:create", data).await;
             }
         }
@@ -224,7 +224,7 @@ async fn process_watch_event(
                     notify::EventKind::Remove(notify::event::RemoveKind::Folder) => false,
                     _ => path.extension().is_some(),
                 };
-                let data = &json!({"path": path_str, "isFile": is_file});
+                let data = &json!({"path": format_path(path_str), "isFile": is_file});
                 let _ = socket.emit("watcher:remove", data).await;
             }
         }
@@ -374,7 +374,7 @@ async fn handle_file_modification(
     // Notify frontend using the absolute path to keep editor identity consistent.
     let file = path_str.to_string();
     socket
-        .emit("watcher:edits", &json! {{ "file": file, "edits": edits }})
+        .emit("watcher:edits", &json! {{ "file": format_path(&file), "edits": edits }})
         .await
         .map_err(|e| anyhow::anyhow!("Failed to emit edits: {}", e))?;
 

@@ -2,7 +2,7 @@ use crate::app_state::*;
 use crate::code::{Edit, Operation};
 use crate::error_ack;
 use crate::handlers::git_handler::is_file_tracked;
-use crate::utils::{abs_file, is_ignored_path};
+use crate::utils::{abs_file, format_path, is_ignored_path};
 use crate::{
     app_state::{AppState, SocketData},
     code::Code,
@@ -145,7 +145,7 @@ pub async fn handle_file_open(
     ack.send(&json!({
         "content": content,
         "original": original,
-        "path": request.path,
+        "path": format_path(&request.path),
         "success": true,
         "history": code.history,
     }))
@@ -219,7 +219,7 @@ pub async fn handle_dir_list(
         "files": files,
         "dirs": dirs,
         "name": name,
-        "fullpath": abs_path,
+        "fullpath": format_path(&dir),
         "relative_path": relative_path,
     });
 
@@ -245,7 +245,10 @@ pub async fn handle_file_close(
     state: State<AppState>,
     ack: AckSender,
 ) {
-    info!("Received file:close: {:?}", request);
+    info!(
+        "Received file:close: {}",
+        request.file.replace('\\', "/")
+    );
 
     let sid = socket.id.as_str().to_string();
 
@@ -289,7 +292,10 @@ pub async fn handle_file_close(
     if !is_still_opened {
         let mut f2c = state.file2code.lock().await;
         f2c.remove(&abs_path);
-        info!("Removed file from file2code: {}", abs_path);
+        info!(
+            "Removed file from file2code: {}",
+            request.file.replace('\\', "/")
+        );
     }
 
     // Lsp autoclose
@@ -426,7 +432,7 @@ pub async fn handle_file_save(
         }
     }
 
-    ack.send(&json!({ "success": true, "file": abs_path })).ok();
+    ack.send(&json!({ "success": true })).ok();
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -480,6 +486,7 @@ pub async fn handle_create(
     };
 
     let full_path_str = full_path.to_string_lossy().to_string();
+    let wire_full_path = format_path(&full_path_str);
     if full_path.exists() {
         error_ack!(ack, &request.name, "Destination path already exists");
     }
@@ -521,11 +528,11 @@ pub async fn handle_create(
 
                     socket
                         .broadcast()
-                        .emit("file:created", &full_path_str)
+                        .emit("file:created", &wire_full_path)
                         .await
                         .ok();
                 }
-                ack.send(&json!({ "success": true, "file": full_path_str, "is_file": true }))
+                ack.send(&json!({ "success": true, "file": wire_full_path, "is_file": true }))
                     .ok();
             }
             Err(e) => {
@@ -544,11 +551,11 @@ pub async fn handle_create(
                 if !is_temp {
                     socket
                         .broadcast()
-                        .emit("dir:created", &full_path_str)
+                        .emit("dir:created", &wire_full_path)
                         .await
                         .ok();
                 }
-                ack.send(&json!({ "success": true, "dir": full_path_str, "is_file": false }))
+                ack.send(&json!({ "success": true, "dir": wire_full_path, "is_file": false }))
                     .ok();
             }
             Err(e) => {
@@ -565,7 +572,7 @@ pub struct DeleteRequest {
 }
 
 pub async fn handle_delete(
-    socket: SocketRef,
+    _socket: SocketRef,
     Data(request): Data<DeleteRequest>,
     state: State<AppState>,
     ack: AckSender,
@@ -629,8 +636,7 @@ pub async fn handle_delete(
                 }
             }
 
-            socket.broadcast().emit("file:deleted", &abs_path).await.ok();
-            ack.send(&json!({ "success": true, "path": abs_path })).ok();
+            ack.send(&json!({ "success": true })).ok();
         }
         Err(e) => {
             error_ack!(ack, &request.path, "Failed to delete: {:?}", e);
@@ -763,19 +769,18 @@ pub async fn handle_rename(
 
             let _ = socket.emit(
                 "file:renamed",
-                &json!({ "old": old_abs_path, "new": new_abs_path }),
+                &json!({ "old": format_path(&request.old_path), "new": format_path(&request.new_path) }),
             );
 
             socket
                 .broadcast()
                 .emit(
                     "file:renamed",
-                    &json!({ "old": old_abs_path, "new": new_abs_path }),
+                    &json!({ "old": format_path(&request.old_path), "new": format_path(&request.new_path) }),
                 )
                 .await
                 .ok();
-            ack.send(&json!({ "success": true, "old": old_abs_path, "new": new_abs_path }))
-                .ok();
+            ack.send(&json!({ "success": true })).ok();
         }
         Err(e) => {
             error_ack!(ack, &request.old_path, "Failed to rename: {:?}", e);

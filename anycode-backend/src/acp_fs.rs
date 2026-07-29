@@ -14,6 +14,7 @@ use crate::diff::compute_text_edits;
 use crate::handlers::io_handler::apply_edits_to_code;
 use crate::lsp::LspManager;
 use crate::utils::abs_file;
+use crate::utils::format_path;
 
 pub enum AcpFsCommand {
     WriteTextFile {
@@ -123,7 +124,7 @@ async fn handle_write(
         let lang = code.lang.clone();
         // Serialize edits for frontend notification
         let edits_json = json!({
-            "file": abs_path,
+            "file": format_path(&abs_path),
             "edits": edits,
         });
 

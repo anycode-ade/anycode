@@ -20,6 +20,58 @@ use lsp_types::*;
 use crate::config::Config;
 use crate::utils::path_to_uri;
 
+fn lsp_command(program: &str, args: &[&str]) -> Command {
+    let mut command = Command::new(program);
+    command
+        .args(args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    command
+}
+
+fn spawn_lsp(program: &str, args: &[&str]) -> io::Result<tokio::process::Child> {
+    match lsp_command(program, args).spawn() {
+        Ok(child) => Ok(child),
+        #[cfg(windows)]
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            let mut command = Command::new("cmd.exe");
+            command
+                .arg("/C")
+                .arg(program)
+                .args(args)
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped());
+            command.spawn()
+        }
+        Err(error) => Err(error),
+    }
+}
+
+fn workspace_configuration(settings: &Value, params: &Value) -> Value {
+    let Some(items) = params.get("items").and_then(Value::as_array) else {
+        return Value::Array(Vec::new());
+    };
+
+    Value::Array(
+        items
+            .iter()
+            .map(|item| {
+                let Some(section) = item.get("section").and_then(Value::as_str) else {
+                    return settings.clone();
+                };
+
+                section
+                    .split('.')
+                    .try_fold(settings, |value, key| value.get(key))
+                    .cloned()
+                    .unwrap_or(Value::Null)
+            })
+            .collect(),
+    )
+}
+
 pub struct Lsp {
     lang: String,
     lsp_name: Option<String>,
@@ -28,6 +80,7 @@ pub struct Lsp {
     next_id: AtomicUsize,
     versions: HashMap<String, AtomicUsize>,
     pending: Arc<Mutex<HashMap<usize, mpsc::Sender<String>>>>,
+    configuration: Arc<Mutex<Value>>,
     ready: AtomicBool,
     opened: HashSet<String>,
 }
@@ -42,6 +95,7 @@ impl Lsp {
             next_id: AtomicUsize::new(1),
             versions: HashMap::new(),
             pending: Arc::new(Mutex::new(HashMap::new())),
+            configuration: Arc::new(Mutex::new(Value::Object(serde_json::Map::new()))),
             ready: AtomicBool::new(false),
             opened: HashSet::new(),
         }
@@ -65,18 +119,22 @@ impl Lsp {
         self.kill_send = Some(kill_send);
 
         let (stdin_send, mut stdin_recv) = mpsc::channel::<String>(1);
-        self.stdin_send = Some(stdin_send);
+        self.stdin_send = Some(stdin_send.clone());
+        let server_request_send = stdin_send;
 
         // spawn lsp process
-        let mut child = Command::new(cmd)
-            .args(args)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()?;
+        let mut child = spawn_lsp(cmd, args)?;
 
         let mut stdin = child.stdin.take().unwrap();
         let stdout = child.stdout.take().unwrap();
+        let stderr = child.stderr.take().unwrap();
+
+        tokio::spawn(async move {
+            let mut lines = BufReader::new(stderr).lines();
+            while let Ok(Some(line)) = lines.next_line().await {
+                error!("LSP stderr: {}", line);
+            }
+        });
 
         // reading from channel and write to child stdin
         tokio::spawn(async move {
@@ -90,6 +148,7 @@ impl Lsp {
         });
 
         let pending = self.pending.clone();
+        let configuration = self.configuration.clone();
 
         // reading from child stdout
         tokio::spawn(async move {
@@ -130,6 +189,29 @@ impl Lsp {
                 let parsed_json: Value = serde_json::from_str(msg).unwrap();
 
                 if let Some(id) = parsed_json["id"].as_u64() {
+                    if let Some(method) = parsed_json.get("method").and_then(Value::as_str) {
+                        let response = match method {
+                            "workspace/configuration" => serde_json::json!({
+                                "jsonrpc": "2.0",
+                                "id": id,
+                                "result": workspace_configuration(
+                                    &*configuration.lock().await,
+                                    &parsed_json["params"],
+                                ),
+                            }),
+                            _ => serde_json::json!({
+                                "jsonrpc": "2.0",
+                                "id": id,
+                                "error": {
+                                    "code": -32601,
+                                    "message": format!("Method not found: {}", method),
+                                },
+                            }),
+                        };
+                        let _ = server_request_send.send(response.to_string()).await;
+                        continue;
+                    }
+
                     // response
                     let id = id as usize;
                     if let Some(sender) = pending.lock().await.get(&id) {
@@ -218,17 +300,33 @@ impl Lsp {
 
     pub async fn init(&mut self, dir: &str) -> Result<()> {
         let id = 0;
+        let settings = self
+            .lsp_name
+            .as_deref()
+            .and_then(|lsp_name| lsp_messages::read_vscode_settings(lsp_name, dir))
+            .unwrap_or_else(|| Value::Object(serde_json::Map::new()));
+        *self.configuration.lock().await = settings.clone();
+
+        let message = lsp_messages::initialize(dir, self.lsp_name.as_deref())?;
         let (tx, rx) = mpsc::channel::<String>(1);
         self.add_pending(id, tx).await;
-        let message = lsp_messages::initialize(dir, self.lsp_name.as_deref())?;
         self.send_async(message);
-        self.wait(5, rx).await;
+        let response = self.wait(5, rx).await;
         self.remove_pending(id).await;
+
+        let response =
+            response.ok_or_else(|| anyhow::anyhow!("LSP initialize request timed out"))?;
+        let raw: lsp_messages::LspRawResponse = serde_json::from_str(&response)?;
+        if let Some(error) = raw.error {
+            return Err(anyhow::anyhow!("LSP initialize failed: {}", error));
+        }
+        if raw.result.is_none() {
+            return Err(anyhow::anyhow!("LSP initialize response has no result"));
+        }
+
         self.initialized();
 
-        if let Some(lsp_name) = &self.lsp_name {
-            let settings = lsp_messages::read_vscode_settings(lsp_name, dir)
-                .unwrap_or_else(|| Value::Object(serde_json::Map::new()));
+        if self.lsp_name.is_some() {
             self.did_change_configuration(settings);
         }
 
@@ -271,20 +369,21 @@ impl Lsp {
         let (tx, rx) = mpsc::channel::<String>(1);
         self.add_pending(id, tx).await;
         self.send_async(msg.to_string());
-        let response = self.wait(3, rx).await;
+        let response = self.wait(10, rx).await;
         self.remove_pending(id).await;
 
         let response_str =
             response.ok_or_else(|| anyhow::anyhow!("no response for request {}", R::METHOD))?;
 
-        let raw: lsp_messages::LspRawResponse = serde_json::from_str(&response_str)?;
+        let raw: Value = serde_json::from_str(&response_str)?;
 
-        if let Some(err) = raw.error {
+        if let Some(err) = raw.get("error").filter(|value| !value.is_null()) {
             return Err(anyhow::anyhow!("LSP error: {}", err));
         }
 
         let result_value = raw
-            .result
+            .get("result")
+            .cloned()
             .ok_or_else(|| anyhow::anyhow!("missing result field"))?;
 
         let parsed = serde_json::from_value::<R::Result>(result_value)?;
@@ -546,6 +645,96 @@ mod tests {
         // println!("References: {:?}", references_str);
         assert!(references_str.contains("fast.py"));
         assert!(references_str.contains("Position { line: 0, character: 30 }"));
+
+        let _ = lsp.stop().await;
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_typescript_completion() -> anyhow::Result<()> {
+        let mut lsp = Lsp::new();
+        lsp.start(
+            "typescript",
+            "typescript-language-server --stdio",
+            Some("typescript-language-server".to_string()),
+            None,
+        )?;
+
+        let workspace = tempfile::tempdir()?;
+        let dir = workspace.path().to_string_lossy().into_owned();
+        let content = r#"const value: string = "hello";
+value.t"#;
+        std::fs::write(
+            workspace.path().join("tsconfig.json"),
+            r#"{"compilerOptions":{"strict":true},"include":["completion.ts"]}"#,
+        )?;
+        let file_path = std::path::Path::new(&dir).join("completion.ts");
+        let file_path = file_path.to_string_lossy().into_owned();
+        std::fs::write(&file_path, content)?;
+
+        lsp.init(&dir).await?;
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        lsp.did_open("typescript", &file_path, content)?;
+        tokio::time::sleep(Duration::from_millis(500)).await;
+
+        let completions = lsp.completion(&file_path, 1, 7).await?;
+        assert!(
+            completions.iter().any(|item| item.label == "toUpperCase"),
+            "TypeScript completion did not include toUpperCase: {:?}",
+            completions
+        );
+
+        let _ = lsp.stop().await;
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_rust_analyzer_completion() -> anyhow::Result<()> {
+        let workspace = tempfile::tempdir()?;
+        let src_dir = workspace.path().join("src");
+        std::fs::create_dir(&src_dir)?;
+        std::fs::write(
+            workspace.path().join("Cargo.toml"),
+            r#"[package]
+name = "completion-test"
+version = "0.1.0"
+edition = "2024"
+"#,
+        )?;
+
+        let content = r#"struct Thing { field: i32 }
+fn main() {
+    let value = Thing { field: 1 };
+    value.fi
+}"#;
+        let file_path = src_dir.join("main.rs");
+        std::fs::write(&file_path, content)?;
+
+        let mut lsp = Lsp::new();
+        lsp.start(
+            "rust",
+            "rust-analyzer",
+            Some("rust-analyzer".to_string()),
+            None,
+        )?;
+
+        let dir = workspace.path().to_string_lossy().into_owned();
+        let file_path = file_path.to_string_lossy().into_owned();
+        lsp.init(&dir).await?;
+        tokio::time::sleep(Duration::from_secs(10)).await;
+        lsp.did_open("rust", &file_path, content)?;
+        tokio::time::sleep(Duration::from_secs(2)).await;
+
+        let completions = lsp.completion(&file_path, 3, 12).await?;
+        assert!(
+            completions
+                .iter()
+                .any(|item| item.label.starts_with("field")),
+            "rust-analyzer completion did not include field: {:?}",
+            completions
+        );
 
         let _ = lsp.stop().await;
         Ok(())

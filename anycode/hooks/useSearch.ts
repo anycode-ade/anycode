@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Socket } from 'socket.io-client';
 import type { SearchEnd, SearchResult, SearchResultsBatch } from '../types';
+import { normalizePath } from '../utils';
 
 type UseSearchParams = {
     wsRef: React.RefObject<Socket | null>;
@@ -87,7 +88,12 @@ export const useSearch = ({ wsRef, isConnected }: UseSearchParams) => {
 
     const handleSearchResults = useCallback((message: SearchResultsBatch) => {
         for (const result of message.results) {
-            pendingResultsRef.current.set(result.file_path, result);
+            const normalized = {
+                ...result,
+                file_path: normalizePath(result.file_path),
+                display_path: normalizePath(result.display_path),
+            };
+            pendingResultsRef.current.set(normalized.file_path, normalized);
         }
         scheduleResultsFlush();
     }, [scheduleResultsFlush]);

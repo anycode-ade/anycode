@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react';
 import type { Socket } from 'socket.io-client';
 import type { TreeNode, WatcherCreate, WatcherRemove } from '../types';
-import { getFileName, getParentPath, joinPath } from '../utils';
+import { getFileName, getParentPath, joinPath, normalizePath } from '../utils';
 
 type UseFileTreeParams = {
     wsRef: React.RefObject<Socket | null>;
@@ -160,7 +160,7 @@ export const useFileTree = ({ wsRef, isConnected }: UseFileTreeParams) => {
             return;
         }
 
-        const basePath = response.fullpath;
+        const basePath = normalizePath(response.fullpath);
 
         setFileTree((prev) => {
             if (response.relative_path === '.') {

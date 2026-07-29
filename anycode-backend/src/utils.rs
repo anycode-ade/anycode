@@ -203,6 +203,21 @@ pub fn abs_file(input: &str) -> anyhow::Result<String> {
     }
 }
 
+/// Format filesystem paths for the Socket.IO API.
+pub fn format_path(path: &str) -> String {
+    #[cfg(windows)]
+    {
+        let path = path.replace('\\', "/");
+        if let Some(path) = path.strip_prefix("//?/UNC/") {
+            return format!("//{path}");
+        }
+        return path.strip_prefix("//?/").unwrap_or(&path).to_string();
+    }
+
+    #[cfg(not(windows))]
+    path.to_string()
+}
+
 /// Normalize a path for watcher comparisons without requiring the file to exist.
 ///
 /// This resolves `.` and `..` segments and makes relative paths absolute against the

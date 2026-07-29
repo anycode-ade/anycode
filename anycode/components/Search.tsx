@@ -6,6 +6,7 @@ import { FileIcon } from "./FileIcon";
 import { usePersistedScroll } from "../hooks/usePersistedScroll";
 import "./Search.css";
 import type { FileSearchResult, SearchResult, SearchMatch } from "../types";
+import { normalizePath } from "../utils";
 
 const StopIcon = () => (
     <svg width="16" height="16" viewBox="0 0 20 20" fill="none">
@@ -430,7 +431,12 @@ const Search = ({ id, wsRef, isConnected, focusRequestToken, inputValue, onInput
             setFileResults((prevResults) => {
                 const nextByPath = new Map(prevResults.map((result) => [result.path, result]));
                 for (const result of message.results ?? []) {
-                    nextByPath.set(result.path, result);
+                    const normalized = {
+                        ...result,
+                        path: normalizePath(result.path),
+                        display_path: result.display_path ? normalizePath(result.display_path) : result.display_path,
+                    };
+                    nextByPath.set(normalized.path, normalized);
                 }
                 return Array.from(nextByPath.values()).sort((a, b) => a.path.localeCompare(b.path));
             });

@@ -1,6 +1,6 @@
 use crate::app_state::{AppState, SocketData};
 use crate::search::{FileSearchResult, global_search};
-use crate::utils::{abs_file, is_ignored_path, relative_to_current_dir};
+use crate::utils::{format_path, is_ignored_path, relative_to_current_dir};
 use serde::{Deserialize, Serialize};
 use serde_json::{self, json};
 use socketioxide::extract::{Data, SocketRef, State};
@@ -137,8 +137,8 @@ fn search_files_by_name(
                 && result_tx
                     .blocking_send(FilesSearchResult {
                         name: name.to_string(),
-                        path: path.to_string_lossy().to_string(),
-                        display_path,
+                        path: format_path(&path.to_string_lossy()),
+                        display_path: format_path(&display_path),
                         kind: "file",
                     })
                     .is_err()
@@ -297,23 +297,7 @@ pub async fn handle_files_search(
         return;
     }
 
-    let root = crate::utils::current_dir().to_string_lossy().into_owned();
-
-    let root_path = match abs_file(&root) {
-        Ok(path) => PathBuf::from(path),
-        Err(e) => {
-            let _ = socket.emit(
-                "search:files:error",
-                &json!({
-                    "error": "Search failed",
-                    "query": query,
-                    "request_id": request.request_id,
-                    "message": format!("Failed to resolve search root: {:?}", e),
-                }),
-            );
-            return;
-        }
-    };
+    let root_path = crate::utils::current_dir();
 
     let (result_tx, mut result_rx) = mpsc::channel::<FilesSearchResult>(1000);
     let search_cancel = cancel.clone();

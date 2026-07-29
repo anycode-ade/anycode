@@ -1,4 +1,4 @@
-use crate::utils::{is_ignored_path, is_search_ignored_dir, relative_to_current_dir};
+use crate::utils::{format_path, is_ignored_path, is_search_ignored_dir, relative_to_current_dir};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -212,8 +212,8 @@ pub async fn search_file_result(
 
     if !path.exists() {
         return Some(FileSearchResult {
-            file_path: file_path_str,
-            display_path,
+            file_path: format_path(&file_path_str),
+            display_path: format_path(&display_path),
             matches: Vec::new(),
         });
     }
@@ -224,8 +224,8 @@ pub async fn search_file_result(
     };
 
     Some(FileSearchResult {
-        file_path: file_path_str,
-        display_path,
+        file_path: format_path(&file_path_str),
+        display_path: format_path(&display_path),
         matches,
     })
 }
@@ -271,8 +271,8 @@ pub async fn global_search(
             if !matches.is_empty() {
                 if result_tx
                     .send(FileSearchResult {
-                        file_path: file_path_str,
-                        display_path,
+                        file_path: format_path(&file_path_str),
+                        display_path: format_path(&display_path),
                         matches,
                     })
                     .await

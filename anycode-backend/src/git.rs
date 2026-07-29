@@ -6,6 +6,8 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use tracing::info;
 
+use crate::utils::format_path;
+
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum FileStatus {
@@ -544,8 +546,14 @@ impl GitManager {
         let file_path = Path::new(path);
 
         let relative_path = if file_path.is_absolute() {
-            file_path
-                .strip_prefix(repo_path)
+            let canonical_repo = repo_path
+                .canonicalize()
+                .unwrap_or_else(|_| repo_path.into());
+            let canonical_file = file_path
+                .canonicalize()
+                .unwrap_or_else(|_| file_path.into());
+            canonical_file
+                .strip_prefix(canonical_repo)
                 .map(|p| p.to_string_lossy().to_string())
                 .unwrap_or_else(|_| path.to_string())
         } else {
@@ -962,7 +970,7 @@ impl GitManager {
         };
 
         Some(GitFileStatus {
-            path: repo_root.join(relative_path).to_string_lossy().to_string(),
+            path: format_path(&repo_root.join(relative_path).to_string_lossy()),
             status: file_status,
             staged,
             unstaged,
@@ -1358,7 +1366,7 @@ impl GitManager {
             let (_, removed) = self.numstat_in_memory(relative_path, &FileStatus::Deleted);
 
             return Ok(Some(GitFileStatus {
-                path: abs_path.to_string_lossy().to_string(),
+                path: format_path(&abs_path.to_string_lossy()),
                 status: FileStatus::Deleted,
                 staged,
                 unstaged,
@@ -1448,7 +1456,7 @@ impl GitManager {
         }
 
         Ok(Some(GitFileStatus {
-            path: abs_path.to_string_lossy().to_string(),
+            path: format_path(&abs_path.to_string_lossy()),
             status: file_status,
             staged: has_staged_changes,
             unstaged: has_worktree_changes,
