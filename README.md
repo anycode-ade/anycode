@@ -33,28 +33,65 @@ The project consists of several packages:
 ## Installation
 ### From releases
 
-One-shot installer:
+#### macOS and Linux one-shot installer:
 ```bash
 curl -fsSL https://raw.githubusercontent.com/anycode-ade/anycode/main/install.sh | sh
 ```
 
+#### Windows PowerShell installer (x64):
+```powershell
+irm https://raw.githubusercontent.com/anycode-ade/anycode/main/install.ps1 | iex
+```
+
+Windows installer details:
+- Installs `anycode.exe` into `%USERPROFILE%\AppData\Local\anycode\bin` by default
+- Adds that directory to the user `PATH` if needed
+- Supports overrides via `ANYCODE_VERSION`, `ANYCODE_INSTALL_DIR`, and `ANYCODE_REPO`
+- Current release installer targets Windows x64; Windows ARM64 can still build from source
+
+If you want a specific release:
+```powershell
+$env:ANYCODE_VERSION="v0.0.24"
+irm https://raw.githubusercontent.com/anycode-ade/anycode/main/install.ps1 | iex
+```
+
 ## Development
 
-1. **Start frontend:**
+Prerequisites:
+- Node.js 24+
+- `pnpm`
+- Rust 1.96.0+
+
+1. **Install workspace dependencies:**
    ```bash
    pnpm install
+   ```
+
+2. **Start frontend:**
+   ```bash
    cd anycode
-   pnpm build
    pnpm dev
    ```
 
-2. **Start rust backend:**
+3. **Build frontend assets for the backend:**
+   ```bash
+   cd anycode
+   pnpm build
+   ```
+
+4. **Start Rust backend:**
    ```bash
    cd anycode-backend
    cargo run --release
    ```
 
-3. **Open your browser** and navigate to the frontend URL
+5. **Open your browser** and navigate to the frontend URL
+
+### Windows notes
+
+- Run the commands in PowerShell, Windows Terminal, or another shell with `cargo`, `node`, and `pnpm` on `PATH`.
+- The backend already uses `cmd.exe` as the integrated terminal shell on Windows.
+- Release-based installation on Windows depends on the published `anycode-windows-x86_64.zip` asset.
 
 ## Contributing
 
