@@ -634,7 +634,8 @@ impl AcpAgent {
         tokio::process::ChildStdout,
         tokio::process::ChildStderr,
     )> {
-        let mut child = Command::new(cmd)
+        let mut command = Self::agent_command(cmd);
+        let mut child = command
             .args(args)
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
@@ -647,6 +648,23 @@ impl AcpAgent {
         let stderr = child.stderr.take().unwrap();
 
         Ok((child, stdin, stdout, stderr))
+    }
+
+    fn agent_command(cmd: &str) -> Command {
+        #[cfg(windows)]
+        {
+            // npm installs CLI entrypoints such as codex-acp as `.cmd` shims
+            // on Windows. Run them through cmd.exe so they work with the
+            // same agent configuration used on Unix-like platforms.
+            let mut command = Command::new("cmd.exe");
+            command.arg("/D").arg("/S").arg("/C").arg(cmd);
+            command
+        }
+
+        #[cfg(not(windows))]
+        {
+            Command::new(cmd)
+        }
     }
 
     async fn run_agent(
