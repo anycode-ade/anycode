@@ -2,6 +2,19 @@
 
 All notable changes are documented here by release tag.
 
+## v0.0.25 - 2026-07-29
+
+### Highlights
+- Improved LSP lifecycle handling, diagnostics, configuration requests, stderr logging, and completion reliability.
+- Normalized filesystem paths across backend Socket.IO events and frontend file/search state, including Windows path handling.
+- Improved Git status path resolution and file watcher/search consistency.
+- Added Windows installation and release build support.
+
+### Commits
+- `eda7d94` fix: normalize paths and harden LSP
+- `28824a2` Merge pull request #26 from anycode-ade/chore/windows
+
+
 ## v0.0.24 - 2026-07-21
 
 ### Highlights

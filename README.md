@@ -51,7 +51,7 @@ Windows installer details:
 
 If you want a specific release:
 ```powershell
-$env:ANYCODE_VERSION="v0.0.24"
+$env:ANYCODE_VERSION="v0.0.25"
 irm https://raw.githubusercontent.com/anycode-ade/anycode/main/install.ps1 | iex
 ```
 
