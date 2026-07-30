@@ -178,8 +178,10 @@ const projectRawUpdate = (rawMessage: AcpRawUpdateMessage): AcpMessage[] => {
     }
 
     if ((kind === 'user_message_chunk') && payload) {
-        // Ignored because the user message is already added to history by the backend/client upon sending.
-        return [];
+        // User chunks are emitted by ACP while replaying a loaded/resumed session.
+        // For a live prompt the backend already adds the complete user message to
+        // history, so handleAcpMessageImmediate de-duplicates that case.
+        return contentBlockToMessages(payload.content, 'user');
     }
 
     if ((kind === 'agent_thought_chunk') && payload) {
@@ -482,6 +484,15 @@ export const useAgents = ({
                     if (projectedItem.role === 'error') {
                         messages = mergeConsecutiveErrors([...messages, projectedItem]);
                         continue;
+                    }
+
+                    if (projectedItem.role === 'user') {
+                        const lastMessage = messages[messages.length - 1];
+                        // send_prompt adds the complete user message before ACP
+                        // echoes user_message_chunk for the live prompt.
+                        if (lastMessage?.role === 'user') {
+                            continue;
+                        }
                     }
 
                     messages.push(projectedItem);

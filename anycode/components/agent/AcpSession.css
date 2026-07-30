@@ -1,4 +1,5 @@
 .acp-session {
+    --acp-input-height: 0px;
     height: 100%;
     display: flex;
     flex-direction: column;
@@ -33,7 +34,7 @@
 .acp-scroll-to-bottom-btn {
     position: absolute;
     right: 16px;
-    bottom: 160px;
+    bottom: max(calc(var(--acp-input-height) + 23px), 60px);
     width: 36px;
     height: 36px;
     border: none;
@@ -62,6 +63,6 @@
 @media (max-width: 768px) {
     .acp-scroll-to-bottom-btn {
         right: 12px;
-        bottom: 160px;
+        bottom: max(calc(var(--acp-input-height) + 23px), 60px);
     }
 }

@@ -41,12 +41,33 @@ export const AcpInput: React.FC<AcpInputProps> = ({
   onSelectReasoning,
 }) => {
   const inputRef = React.useRef<HTMLTextAreaElement>(null);
+  const inputContainerRef = React.useRef<HTMLDivElement>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const [isMinimized, setIsMinimized] = React.useState(false);
   const [isDragOver, setIsDragOver] = React.useState(false);
   const [attachments, setAttachments] = React.useState<AcpPromptAttachment[]>([]);
   const MIN_ROWS = 3;
   const MAX_ROWS = 10;
+
+  React.useLayoutEffect(() => {
+    const inputContainer = inputContainerRef.current;
+    const session = inputContainer?.closest<HTMLElement>('.acp-session');
+    if (!inputContainer || !session) return;
+
+    const updateInputSpace = () => {
+      const height = isMinimized ? 0 : inputContainer.getBoundingClientRect().height;
+      session.style.setProperty('--acp-input-height', `${height}px`);
+    };
+
+    updateInputSpace();
+    const observer = new ResizeObserver(updateInputSpace);
+    observer.observe(inputContainer);
+
+    return () => {
+      observer.disconnect();
+      session.style.removeProperty('--acp-input-height');
+    };
+  }, [isMinimized]);
 
   const [isRecording, setIsRecording] = React.useState(false);
   const [recordingSeconds, setRecordingSeconds] = React.useState(0);
@@ -293,6 +314,7 @@ export const AcpInput: React.FC<AcpInputProps> = ({
   return (
     <>
       <div
+      ref={inputContainerRef}
       className={`acp-input ${isMinimized ? 'acp-input-minimized' : ''} ${isDragOver ? 'acp-input-drag-over' : ''}`}
       onDragOver={(event) => {
         event.preventDefault();
