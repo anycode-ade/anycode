@@ -67,6 +67,8 @@ export const FilesPanel = ({
     const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
     const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
     const [creatingNode, setCreatingNode] = useState<CreatingNodeState | null>(null);
+    const [draggedNode, setDraggedNode] = useState<TreeNode | null>(null);
+    const [dragOverNodeId, setDragOverNodeId] = useState<string | null>(null);
 
     const handleNodeRef = useCallback((nodeId: string, element: HTMLDivElement | null) => {
         if (element) {
@@ -284,6 +286,64 @@ export const FilesPanel = ({
         e.stopPropagation();
     }, []);
 
+    const handleDragStart = useCallback((e: React.DragEvent<HTMLDivElement>, node: TreeNode) => {
+        if (node.path === fileTree[0]?.path) {
+            e.preventDefault();
+            return;
+        }
+
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', node.path);
+        setDraggedNode(node);
+    }, [fileTree]);
+
+    const handleDragEnd = useCallback(() => {
+        setDraggedNode(null);
+        setDragOverNodeId(null);
+    }, []);
+
+    const canDropOn = useCallback((source: TreeNode | null, target: TreeNode): boolean => {
+        if (!source || target.type !== 'directory' || source.path === target.path) {
+            return false;
+        }
+        const sourceParent = getParentPath(source.path);
+        if (sourceParent === target.path || (sourceParent === '' && target.path === '.')) {
+            return false;
+        }
+        return !target.path.startsWith(`${source.path}/`);
+    }, []);
+
+    const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>, node: TreeNode) => {
+        if (!canDropOn(draggedNode, node)) {
+            return;
+        }
+
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        setDragOverNodeId(node.id);
+    }, [canDropOn, draggedNode]);
+
+    const handleDragLeave = useCallback((e: React.DragEvent<HTMLDivElement>, node: TreeNode) => {
+        const nextTarget = e.relatedTarget;
+        if (nextTarget instanceof Node && e.currentTarget.contains(nextTarget)) {
+            return;
+        }
+        setDragOverNodeId((current) => current === node.id ? null : current);
+    }, []);
+
+    const handleDrop = useCallback((e: React.DragEvent<HTMLDivElement>, target: TreeNode) => {
+        e.preventDefault();
+        const source = draggedNode;
+        setDraggedNode(null);
+        setDragOverNodeId(null);
+
+        if (!source || !canDropOn(source, target) || !onRenameNode) {
+            return;
+        }
+
+        onRenameNode(source.path, `${target.path}/${source.name}`);
+    }, [canDropOn, draggedNode, onRenameNode]);
+
     useEffect(() => {
         if (focusRequestToken === null) {
             return;
@@ -375,6 +435,12 @@ export const FilesPanel = ({
                                     setEditingNodeId(null);
                                     setCreatingNode(null);
                                 }}
+                                onDragStart={handleDragStart}
+                                onDragEnd={handleDragEnd}
+                                onDragOver={handleDragOver}
+                                onDragLeave={handleDragLeave}
+                                onDrop={handleDrop}
+                                dragOverNodeId={dragOverNodeId}
                             />
                         ))}
                     </div>

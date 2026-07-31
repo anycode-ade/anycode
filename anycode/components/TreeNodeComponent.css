@@ -49,6 +49,19 @@
     transition: none;
 }
 
+.tree-item-content[draggable="true"] {
+    cursor: grab;
+}
+
+.tree-item-content[draggable="true"]:active {
+    cursor: grabbing;
+}
+
+.tree-item-content.drag-over {
+    background: color-mix(in srgb, var(--theme-accent-background, #007acc) 24%, transparent);
+    box-shadow: 0 0 0 1px var(--theme-accent-background, #007acc) inset;
+}
+
 .tree-item-content.selected .tree-name {
     color: var(--theme-accent-foreground, #fff) !important;
 }

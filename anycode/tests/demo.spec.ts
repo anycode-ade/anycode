@@ -29,6 +29,19 @@ test.describe('Anycode Live Demo Mode E2E Tests', () => {
         await expect(readme).toBeVisible({ timeout: 10000 });
     });
 
+    test('should move files between folders with drag and drop', async ({ page }) => {
+        const readmeRow = page.locator('.tree-item-content').filter({ hasText: 'README.md' }).first();
+        const srcRow = page.getByText('src', { exact: true }).first().locator('..');
+        await expect(readmeRow).toBeVisible({ timeout: 10000 });
+        await expect(srcRow).toBeVisible({ timeout: 10000 });
+
+        await readmeRow.dragTo(srcRow);
+        await srcRow.click();
+
+        const srcTreeItem = srcRow.locator('xpath=..');
+        await expect(srcTreeItem.getByText('README.md', { exact: true })).toBeVisible({ timeout: 10000 });
+    });
+
     test('should open file and create editor tab', async ({ page }) => {
         const readme = page.getByText('README.md').first();
         await expect(readme).toBeVisible({ timeout: 10000 });

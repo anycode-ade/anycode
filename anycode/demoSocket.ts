@@ -398,7 +398,7 @@ export class DemoSocket {
                         }
                     });
 
-                    this.emitLocal('file:rename', { old: cleanOld, new: cleanNew });
+                    this.emitLocal('file:renamed', { old: cleanOld, new: cleanNew });
                 }
 
                 callback?.({ status: 'ok', success: true, old: cleanOld, new: cleanNew });

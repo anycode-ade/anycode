@@ -18,6 +18,12 @@ interface TreeNodeComponentProps {
     editingNodeId: string | null;
     onRename?: (path: string, newName: string) => void;
     onCancelRename?: () => void;
+    onDragStart?: (e: React.DragEvent<HTMLDivElement>, node: TreeNode) => void;
+    onDragEnd?: () => void;
+    onDragOver?: (e: React.DragEvent<HTMLDivElement>, node: TreeNode) => void;
+    onDragLeave?: (e: React.DragEvent<HTMLDivElement>, node: TreeNode) => void;
+    onDrop?: (e: React.DragEvent<HTMLDivElement>, node: TreeNode) => void;
+    dragOverNodeId?: string | null;
 }
 
 const isPathWithinNode = (nodePath: string, activeNodeId: string | null): boolean => {
@@ -47,12 +53,19 @@ const TreeNodeComponentImpl: React.FC<TreeNodeComponentProps> = ({
     editingNodeId,
     onRename,
     onCancelRename,
+    onDragStart,
+    onDragEnd,
+    onDragOver,
+    onDragLeave,
+    onDrop,
+    dragOverNodeId = null,
 }) => {
     const hasChildren = node.type === 'directory';
     const isExpanded = Boolean(node.isExpanded);
     const isSelected = Boolean(node.isSelected);
     const isActive = activeNodeId === node.id;
     const isEditing = editingNodeId === node.id;
+    const isDragOver = dragOverNodeId === node.id;
 
     const [renameValue, setRenameValue] = React.useState(node.name);
     const inputRef = React.useRef<HTMLInputElement>(null);
@@ -159,12 +172,18 @@ const TreeNodeComponentImpl: React.FC<TreeNodeComponentProps> = ({
     return (
         <div className="tree-item">
             <div
-                className={`tree-item-content ${node.type} ${isSelected ? 'selected' : ''} ${isActive ? 'active' : ''}`}
+                className={`tree-item-content ${node.type} ${isSelected ? 'selected' : ''} ${isActive ? 'active' : ''} ${isDragOver ? 'drag-over' : ''}`}
                 ref={(element) => onNodeRef(node.id, element)}
                 onMouseDown={handleActivateOnly}
                 onClick={handleNameClick}
                 onContextMenu={(e) => onContextMenu(e, node)}
-                style={{ cursor: 'pointer' }}
+                draggable={!isEditing && level > 0}
+                onDragStart={(e) => onDragStart?.(e, node)}
+                onDragEnd={onDragEnd}
+                onDragOver={(e) => onDragOver?.(e, node)}
+                onDragLeave={(e) => onDragLeave?.(e, node)}
+                onDrop={(e) => onDrop?.(e, node)}
+                style={{ cursor: isEditing ? 'text' : 'pointer' }}
             >
                 <div className="tree-indent" style={{ width: level * 16 }} onMouseDown={(e) => e.stopPropagation()}></div>
 
@@ -215,6 +234,12 @@ const TreeNodeComponentImpl: React.FC<TreeNodeComponentProps> = ({
                             editingNodeId={editingNodeId}
                             onRename={onRename}
                             onCancelRename={onCancelRename}
+                            onDragStart={onDragStart}
+                            onDragEnd={onDragEnd}
+                            onDragOver={onDragOver}
+                            onDragLeave={onDragLeave}
+                            onDrop={onDrop}
+                            dragOverNodeId={dragOverNodeId}
                         />
                     ))}
                 </div>
@@ -240,6 +265,12 @@ const areEqual = (prev: TreeNodeComponentProps, next: TreeNodeComponentProps): b
         prev.editingNodeId !== next.editingNodeId
         || prev.onRename !== next.onRename
         || prev.onCancelRename !== next.onCancelRename
+        || prev.onDragStart !== next.onDragStart
+        || prev.onDragEnd !== next.onDragEnd
+        || prev.onDragOver !== next.onDragOver
+        || prev.onDragLeave !== next.onDragLeave
+        || prev.onDrop !== next.onDrop
+        || prev.dragOverNodeId !== next.dragOverNodeId
     ) {
         return false;
     }

@@ -488,34 +488,73 @@ export const useFileTree = ({ wsRef, isConnected }: UseFileTreeParams) => {
         const newPrefix = newPath + '/';
 
         setFileTree((prevTree) => {
-            const renameInNodes = (nodes: TreeNode[]): TreeNode[] => {
-                return nodes.map((node) => {
+            const updatePaths = (node: TreeNode): TreeNode => {
+                const nextPath = node.path === oldPath
+                    ? newPath
+                    : node.path.startsWith(oldPrefix)
+                        ? newPrefix + node.path.substring(oldPrefix.length)
+                        : node.path;
+
+                return {
+                    ...node,
+                    id: nextPath,
+                    path: nextPath,
+                    name: node.path === oldPath ? fileName : node.name,
+                    children: node.children?.map(updatePaths),
+                };
+            };
+
+            const extractNode = (nodes: TreeNode[]): { nodes: TreeNode[]; extracted: TreeNode | null } => {
+                for (let index = 0; index < nodes.length; index += 1) {
+                    const node = nodes[index];
                     if (node.path === oldPath) {
                         return {
-                            ...node,
-                            id: newPath,
-                            name: fileName,
-                            path: newPath,
-                            children: node.children ? renameInNodes(node.children) : undefined,
+                            nodes: [...nodes.slice(0, index), ...nodes.slice(index + 1)],
+                            extracted: updatePaths(node),
                         };
                     }
-                    if (node.path.startsWith(oldPrefix)) {
-                        const relative = node.path.substring(oldPrefix.length);
-                        const nextPath = newPrefix + relative;
-                        return {
-                            ...node,
-                            id: nextPath,
-                            path: nextPath,
-                            children: node.children ? renameInNodes(node.children) : undefined,
-                        };
-                    }
+
                     if (node.children) {
-                        return { ...node, children: renameInNodes(node.children) };
+                        const result = extractNode(node.children);
+                        if (result.extracted) {
+                            const nextNodes = [...nodes];
+                            nextNodes[index] = { ...node, children: result.nodes };
+                            return { nodes: nextNodes, extracted: result.extracted };
+                        }
                     }
-                    return node;
-                });
+
+                }
+
+                return { nodes, extracted: null };
             };
-            return renameInNodes(prevTree);
+
+            const destinationParent = getParentPath(newPath);
+            let wasInserted = false;
+            const insertNode = (nodes: TreeNode[], extracted: TreeNode): TreeNode[] => nodes.map((node) => {
+                if (node.path === destinationParent && node.type === 'directory') {
+                    wasInserted = true;
+                    const children = [
+                        ...(node.children ?? []).filter((child) => child.path !== extracted.path),
+                        extracted,
+                    ].sort((a, b) => {
+                        if (a.type !== b.type) {
+                            return a.type === 'directory' ? -1 : 1;
+                        }
+                        return a.name.localeCompare(b.name);
+                    });
+                    return { ...node, children, hasLoaded: true };
+                }
+
+                return node.children ? { ...node, children: insertNode(node.children, extracted) } : node;
+            });
+
+            const { nodes, extracted } = extractNode(prevTree);
+            if (!extracted) {
+                return prevTree;
+            }
+
+            const nextTree = insertNode(nodes, extracted);
+            return wasInserted ? nextTree : nodes;
         });
 
         setActiveNodeId((prev) => {
