@@ -840,6 +840,8 @@ const DiffCodeBlock: React.FC<{
       try {
         nextEditor = new AnycodeEditor(diff.newText, blockIdRef.current!, language, {
           readOnly: true,
+          focusedDiffEnabled: true,
+          focusedDiffContextLines: 3,
           codeFoldingEnabled: false,
           wordHighlightEnabled: false,
           scrollbarMarkersEnabled: false,

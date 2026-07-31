@@ -46,7 +46,7 @@ export const AcpInput: React.FC<AcpInputProps> = ({
   const [isMinimized, setIsMinimized] = React.useState(false);
   const [isDragOver, setIsDragOver] = React.useState(false);
   const [attachments, setAttachments] = React.useState<AcpPromptAttachment[]>([]);
-  const MIN_ROWS = 3;
+  const MIN_ROWS = 1;
   const MAX_ROWS = 10;
 
   React.useLayoutEffect(() => {

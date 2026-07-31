@@ -242,7 +242,6 @@
     font-size: var(--interface-font-size, 14px);
     font-weight: var(--interface-font-weight, 700);
     resize: none;
-    min-height: 32px;
 }
 
 .acp-input textarea:focus {

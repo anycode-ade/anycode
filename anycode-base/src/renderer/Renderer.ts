@@ -389,7 +389,7 @@ export class Renderer {
     }
 
     public renderScroll(state: EditorState) {
-        const { code, offset, selection, settings, diffs, search } = state;
+        const { code, offset, selection, settings, diffs, readOnly, search } = state;
         this.updateFoldableStarts(state);
         this.updateCollapsedMap(state);
         const lineHeight = settings.lineHeight;
@@ -501,7 +501,7 @@ export class Renderer {
         }
 
         // Render cursor or selection
-        if (!search.isActive() || !search.isFocused()) {
+        if (!readOnly && (!search.isActive() || !search.isFocused())) {
             if (!selection || selection.isEmpty()) {
                 const { line, column } = code.getPosition(offset);
                 this.renderCursor(line, column, false);
@@ -779,6 +779,8 @@ export class Renderer {
     }
 
     public renderCursorOrSelection(state: EditorState, focus: boolean = false) {
+        if (state.readOnly) return;
+
         const { code, offset, selection } = state;
         if (!selection || selection.isEmpty()) {
             const { line, column } = code.getPosition(offset);
