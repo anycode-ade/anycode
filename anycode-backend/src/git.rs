@@ -874,14 +874,24 @@ impl GitManager {
             anyhow::bail!("Invalid repository-relative path to revert: {}", path);
         }
 
-        // Check file status
-        let mut opts = StatusOptions::new();
-        opts.include_untracked(true).pathspec(&relative_path);
+        let full_path = repo_root.join(&relative_path);
+        let tracked_in_head = repo
+            .head()
+            .ok()
+            .and_then(|head| head.peel_to_tree().ok())
+            .is_some_and(|tree| tree.get_path(&relative_path).is_ok());
+        let tracked_in_index = repo
+            .index()
+            .context("Failed to read the Git index")?
+            .get_path(&relative_path, 0)
+            .is_some();
 
-        let statuses = repo.statuses(Some(&mut opts))?;
-        let is_new_file = statuses.iter().any(|entry| {
-            entry.status().contains(Status::WT_NEW) || entry.status().contains(Status::INDEX_NEW)
-        });
+        // Do not infer this from `Repository::statuses(pathspec)`: libgit2 may
+        // collapse untracked directories and return no exact match for a nested
+        // path. A path absent from HEAD is an added/untracked path regardless of
+        // whether it has already been staged.
+        let is_new_file = !tracked_in_head
+            && (tracked_in_index || std::fs::symlink_metadata(&full_path).is_ok());
 
         if is_new_file {
             // A newly added file can be either untracked or already staged.
@@ -889,9 +899,15 @@ impl GitManager {
             repo.reset_default(None, [&relative_path])
                 .context("Failed to remove added file from the Git index")?;
 
-            let full_path = repo_root.join(&relative_path);
-            if full_path.exists() {
-                std::fs::remove_file(&full_path).context("Failed to delete untracked file")?;
+            match std::fs::symlink_metadata(&full_path) {
+                Ok(metadata) if metadata.file_type().is_dir() => {
+                    anyhow::bail!("Cannot revert a directory as a file: {}", path);
+                }
+                Ok(_) => {
+                    std::fs::remove_file(&full_path).context("Failed to delete added file")?;
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => return Err(error).context("Failed to inspect added file"),
             }
             info!("Git revert: deleted untracked file {}", path);
         } else {
@@ -905,6 +921,22 @@ impl GitManager {
             repo.checkout_head(Some(&mut checkout_opts))
                 .context("Failed to restore file from HEAD")?;
             info!("Git revert: restored {} from HEAD", path);
+        }
+
+        let still_changed = if is_new_file {
+            let still_in_index = repo
+                .index()
+                .context("Failed to verify the Git index after revert")?
+                .get_path(&relative_path, 0)
+                .is_some();
+            still_in_index || std::fs::symlink_metadata(&full_path).is_ok()
+        } else {
+            !repo.status_file(&relative_path)
+                .context("Failed to verify file status after revert")?
+                .is_empty()
+        };
+        if still_changed {
+            anyhow::bail!("Git revert completed, but the path is still changed: {}", path);
         }
 
         Ok(())

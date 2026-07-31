@@ -121,16 +121,27 @@ pub async fn handle_git_checkout(
 }
 
 pub async fn handle_git_revert(
+    socket: SocketRef,
     Data(request): Data<GitRevertRequest>,
     ack: AckSender,
     state: State<AppState>,
 ) {
     info!("Received git:revert: {:?}", request.path);
-    let result = {
-        let git = state.git_manager.lock().await;
-        git.revert(&request.path).map(|_| json!({}))
+    let (result, status_update) = {
+        let mut git = state.git_manager.lock().await;
+        match git.revert(&request.path).and_then(|_| {
+            git.refresh_status_cache()
+                .map(|status| (json!({}), status.to_json()))
+        }) {
+            Ok((response, status)) => (Ok(response), Some(status)),
+            Err(error) => (Err(error), None),
+        }
     };
     send_response(ack, result);
+
+    if let Some(status) = status_update {
+        let _ = socket.emit("git:update", &status);
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

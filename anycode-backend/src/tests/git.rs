@@ -130,6 +130,34 @@ fn revert_deletes_untracked_file_given_an_absolute_path() {
 }
 
 #[test]
+fn revert_deletes_nested_untracked_file_beside_tracked_files() {
+    let temp_dir = tempfile::TempDir::new().unwrap();
+    let repo = Repository::init(temp_dir.path()).unwrap();
+
+    let app_dir = temp_dir.path().join("anycode");
+    std::fs::create_dir(&app_dir).unwrap();
+    std::fs::write(app_dir.join("tracked.txt"), "tracked\n").unwrap();
+
+    let mut index = repo.index().unwrap();
+    index.add_path(Path::new("anycode/tracked.txt")).unwrap();
+    index.write().unwrap();
+    let tree_id = index.write_tree().unwrap();
+    let tree = repo.find_tree(tree_id).unwrap();
+    let sig = git2::Signature::now("Anycode Test", "test@anycode.dev").unwrap();
+    repo.commit(Some("HEAD"), &sig, &sig, "initial", &tree, &[])
+        .unwrap();
+
+    let file_path = app_dir.join("new.txt");
+    std::fs::write(&file_path, "new line\n").unwrap();
+
+    let manager = GitManager::new(temp_dir.path().to_path_buf());
+    manager.revert(file_path.to_str().unwrap()).unwrap();
+
+    assert!(!file_path.exists());
+    assert!(manager.status().unwrap().files.is_empty());
+}
+
+#[test]
 fn revert_removes_a_staged_added_file_from_disk_and_index() {
     let temp_dir = tempfile::TempDir::new().unwrap();
     let repo = Repository::init(temp_dir.path()).unwrap();
