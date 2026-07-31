@@ -302,7 +302,7 @@ const AcpSessionComponent: React.FC<AcpSessionProps> = ({
     });
   }, [agentId]);
 
-  const handleSend = (attachments: AcpPromptAttachment[] = []) => {
+  const handleSend = useCallback((attachments: AcpPromptAttachment[] = []) => {
     if ((inputValue.trim() || attachments.length > 0) && isConnected) {
       onSendPrompt(agentId, inputValue.trim(), attachments);
       setInputValues((prev) => {
@@ -316,7 +316,23 @@ const AcpSessionComponent: React.FC<AcpSessionProps> = ({
         };
       });
     }
-  };
+  }, [agentId, inputValue, isConnected, onSendPrompt]);
+
+  const handleCancel = useCallback(() => {
+    onCancelPrompt(agentId);
+  }, [agentId, onCancelPrompt]);
+
+  const handleCloseAgent = useCallback(() => {
+    onCloseAgent(agentId);
+  }, [agentId, onCloseAgent]);
+
+  const handleSelectModel = useCallback((option: AcpSelectOption) => {
+    onSelectModel?.(agentId, option);
+  }, [agentId, onSelectModel]);
+
+  const handleSelectReasoning = useCallback((option: AcpSelectOption) => {
+    onSelectReasoning?.(agentId, option);
+  }, [agentId, onSelectReasoning]);
 
   return (
     <div
@@ -357,16 +373,16 @@ const AcpSessionComponent: React.FC<AcpSessionProps> = ({
         value={inputValue}
         onChange={handleInputChange}
         onSend={handleSend}
-        onCancel={() => onCancelPrompt(agentId)}
+        onCancel={handleCancel}
         agentLabel={title}
-        onCloseAgent={() => onCloseAgent(agentId)}
+        onCloseAgent={handleCloseAgent}
         isConnected={isConnected}
         isProcessing={isProcessing}
         modelSelector={modelSelector}
         reasoningSelector={reasoningSelector}
         contextUsage={contextUsage}
-        onSelectModel={(option) => onSelectModel?.(agentId, option)}
-        onSelectReasoning={(option) => onSelectReasoning?.(agentId, option)}
+        onSelectModel={handleSelectModel}
+        onSelectReasoning={handleSelectReasoning}
       />
     </div>
   );

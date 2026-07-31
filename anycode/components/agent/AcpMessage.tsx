@@ -116,6 +116,15 @@ const ToolCallMessage: React.FC<{
                 <ToolResultDetails result={toolResult.result} />
               </div>
             )}
+            <button
+              type="button"
+              className="acp-tool-call-bottom-toggle"
+              onClick={onToggle}
+              aria-label="Collapse tool call"
+              title="Collapse tool call"
+            >
+              <span className="acp-toggle-icon">▲</span>
+            </button>
           </div>
         )}
       </div>

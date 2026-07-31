@@ -308,6 +308,20 @@
     transform-origin: top;
 }
 
+.acp-tool-call-bottom-toggle {
+    align-self: center;
+    border: none;
+    padding: 4px 12px;
+    margin: 0;
+    background: transparent;
+    color: var(--text-color-secondary, #888);
+    cursor: pointer;
+}
+
+.acp-tool-call-bottom-toggle:hover {
+    color: var(--text-color, #ccc);
+}
+
 .acp-message-tool_result {
     align-items: flex-start;
 }

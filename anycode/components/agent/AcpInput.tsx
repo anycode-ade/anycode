@@ -26,7 +26,7 @@ interface AcpInputProps {
   onSelectReasoning?: (option: AcpSelectOption) => void;
 }
 
-export const AcpInput: React.FC<AcpInputProps> = ({
+const AcpInputComponent: React.FC<AcpInputProps> = ({
   value,
   onChange,
   onSend,
@@ -473,3 +473,5 @@ export const AcpInput: React.FC<AcpInputProps> = ({
     </>
   );
 };
+
+export const AcpInput = React.memo(AcpInputComponent);
