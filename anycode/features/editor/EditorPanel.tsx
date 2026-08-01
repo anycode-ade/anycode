@@ -41,9 +41,12 @@ export const EditorPanel = ({ panelKey, editors }: EditorPanelProps) => {
         }
     }, [paneFileId, paneFile, editorState]);
 
+    const editorForCurrentFile = lastReadyEditor?.id === paneFileId
+        ? lastReadyEditor
+        : null;
     const displayedEditor = paneFile && editorState
         ? { id: paneFile.id, state: editorState }
-        : lastReadyEditor;
+        : editorForCurrentFile;
 
     return (
         <div
