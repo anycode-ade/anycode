@@ -175,11 +175,7 @@ const useAutoScroll = (messages: AcpMessage[], isProcessing: boolean, agentId: s
 
     const observer = new ResizeObserver(() => {
       if (!autoScrollEnabledRef.current) return;
-
-      requestAnimationFrame(() => {
-        if (!autoScrollEnabledRef.current) return;
-        scrollToBottom('auto');
-      });
+      scrollToBottom('auto');
     });
 
     observer.observe(innerElement);
