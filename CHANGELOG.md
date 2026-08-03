@@ -2,6 +2,20 @@
 
 All notable changes are documented here by release tag.
 
+## v0.0.26 - 2026-08-03
+
+### Highlights
+- Improved ACP agent launching on Windows, conversation search, message rendering, code previews, prompt input, tool-call collapsing, and session replay.
+- Fixed stale editor flashes, panel transition flicker, scroll behavior, and terminal resize handling.
+- Improved Git status and revert handling for staged, unstaged, untracked, and deleted files.
+
+### Commits
+- `2359eb1` fix: launch ACP commands on Windows
+- `3b9d173` fix ACP code previews and prompt input
+- `0f23f8f` Fix reverting untracked files
+- `f37d081` Optimize ACP agent rendering and tool call collapse
+- `07de903` Add search to agent conversations
+
 ## v0.0.25 - 2026-07-29
 
 ### Highlights
