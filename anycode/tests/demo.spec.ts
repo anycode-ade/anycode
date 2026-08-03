@@ -226,6 +226,52 @@ test.describe('Anycode Live Demo Mode E2E Tests', () => {
         }
     });
 
+    test('should search ACP text without expanding unrelated work groups', async ({ page }) => {
+        const promptInput = page.getByPlaceholder('Ask anything...');
+        if (await promptInput.isVisible({ timeout: 5000 }).catch(() => false)) {
+            await promptInput.fill('first first search turn');
+            await promptInput.press('Enter');
+            await expect(page.getByText(/Demo Mode Notice/i).first()).toBeVisible({ timeout: 10000 });
+
+            await promptInput.fill('second search turn');
+            await promptInput.press('Enter');
+            await expect(page.locator('.acp-message-markdown blockquote')).toHaveCount(2, { timeout: 10000 });
+
+            const selectedMessage = page.locator('.acp-message-user').filter({ hasText: 'first first search turn' });
+            await selectedMessage.evaluate((element) => {
+                const range = document.createRange();
+                range.selectNodeContents(element.querySelector('.acp-message-content')!);
+                window.getSelection()?.removeAllRanges();
+                window.getSelection()?.addRange(range);
+            });
+            await page.keyboard.press('Control+f');
+
+            const conversationSearch = page.getByRole('search').getByLabel('Find in conversation');
+            await expect(conversationSearch).toBeFocused();
+            await expect(conversationSearch).toHaveValue('first first search turn');
+
+            await expect(page.locator('.acp-search-count')).toHaveText('1 / 3');
+            await expect(page.locator('.acp-search-current-hit')).toBeVisible();
+
+            await conversationSearch.press('Enter');
+            await expect(page.locator('.acp-search-count')).toHaveText('2 / 3');
+            await expect(page.locator('[data-search-expanded="true"]')).toHaveCount(1);
+            await expect(page.locator('.acp-tool-call-expanded')).toHaveCount(0);
+
+            await conversationSearch.fill('first');
+            await expect(page.locator('.acp-search-count')).toHaveText('1 / 6');
+            await conversationSearch.press('Enter');
+            await expect(page.locator('.acp-search-count')).toHaveText('2 / 6');
+
+            await conversationSearch.fill('Read 182 bytes from README.md');
+            await expect(page.locator('.acp-search-count')).toHaveText('No results');
+            await expect(page.locator('[data-search-expanded="true"]')).toHaveCount(0);
+
+            await conversationSearch.press('Escape');
+            await expect(page.getByRole('search')).not.toBeVisible();
+        }
+    });
+
     test('should generate interactive Git diff cards (apply_diff) and verify acp-code and acp-diff-code CSS classes', async ({ page }) => {
         const promptInput = page.getByPlaceholder('Ask anything...');
         if (await promptInput.isVisible({ timeout: 5000 }).catch(() => false)) {

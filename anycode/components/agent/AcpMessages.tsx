@@ -16,6 +16,7 @@ interface AcpMessagesProps {
   expandedToolCalls: Set<number>;
   expandedToolResults: Set<number>;
   expandedThoughts: Set<number>;
+  activeSearchMessageIndex?: number;
   onToggleToolCall: (index: number) => void;
   onToggleToolResult: (index: number) => void;
   onToggleThought: (index: number) => void;
@@ -30,6 +31,7 @@ const AcpMessagesComponent: React.FC<AcpMessagesProps> = ({
   expandedToolCalls,
   expandedToolResults,
   expandedThoughts,
+  activeSearchMessageIndex,
   onToggleToolCall,
   onToggleToolResult,
   onToggleThought,
@@ -174,21 +176,26 @@ const AcpMessagesComponent: React.FC<AcpMessagesProps> = ({
     }
 
     return (
-      <AcpMessage
+      <div
         key={index}
-        message={message}
-        isExpanded={isExpanded}
-        onToggle={onToggle}
-        toolResult={toolResult}
-        toolUpdates={toolUpdates}
-        onOpenFile={onOpenFile}
-        onOpenFileDiff={onOpenFileDiff}
-        onUndo={
-          message.role === 'user' && onUndoMessage
-            ? () => onUndoMessage(message)
-            : undefined
-        }
-      />
+        className={`acp-message-search-target${index === activeSearchMessageIndex ? ' acp-search-current-hit' : ''}`}
+        data-message-index={index}
+      >
+        <AcpMessage
+          message={message}
+          isExpanded={isExpanded}
+          onToggle={onToggle}
+          toolResult={toolResult}
+          toolUpdates={toolUpdates}
+          onOpenFile={onOpenFile}
+          onOpenFileDiff={onOpenFileDiff}
+          onUndo={
+            message.role === 'user' && onUndoMessage
+              ? () => onUndoMessage(message)
+              : undefined
+          }
+        />
+      </div>
     );
   };
 
@@ -199,7 +206,13 @@ const AcpMessagesComponent: React.FC<AcpMessagesProps> = ({
           return renderMessage(item.message, item.index);
         } else if (item.type === 'group') {
           return (
-            <AcpWorkGroup key={`group-${idx}`} isLatest={item.isLatest} messageCount={item.messages.length}>
+            <AcpWorkGroup
+              key={`group-${idx}`}
+              isLatest={item.isLatest}
+              messageCount={item.messages.length}
+              searchActive={activeSearchMessageIndex !== undefined}
+              isSearchMatch={item.messages.some(({ index }) => index === activeSearchMessageIndex)}
+            >
               {item.messages.map((m) => renderMessage(m.message, m.index))}
             </AcpWorkGroup>
           );

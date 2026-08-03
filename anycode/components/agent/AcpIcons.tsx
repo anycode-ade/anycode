@@ -1,6 +1,12 @@
 import React from 'react';
 
 export const AcpIcons = {
+  Search: () => (
+    <svg width="16" height="16" viewBox="0 0 20 20" fill="none">
+      <circle cx="8.75" cy="8.75" r="5.25" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M12.5 12.5L16.5 16.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  ),
   Add: () => (
     <svg width="16" height="16" viewBox="0 0 20 20" fill="none">
       <path d="M10 5V15M5 10H15" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>

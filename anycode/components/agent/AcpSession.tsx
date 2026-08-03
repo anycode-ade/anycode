@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AcpMessage,
   type AcpContextUsageMessage,
@@ -16,6 +16,17 @@ import { usePersistedScroll } from '../../hooks/usePersistedScroll';
 
 const ACP_INPUT_DRAFTS_STORAGE_KEY = 'acpInputDrafts';
 const EMPTY_ARRAY: any[] = [];
+
+const findTextMatches = (messages: AcpMessage[], query: string) => {
+  const normalizedQuery = query.toLocaleLowerCase();
+  if (!normalizedQuery) return [];
+
+  return messages.flatMap((message, index) => {
+    if (message.role !== 'user' && message.role !== 'assistant' && message.role !== 'thought') return [];
+    const count = message.content.toLocaleLowerCase().split(normalizedQuery).length - 1;
+    return Array.from({ length: count }, (_, occurrence) => ({ messageIndex: index, occurrence }));
+  });
+};
 
 const useAutoScroll = (messages: AcpMessage[], isProcessing: boolean, agentId: string) => {
   const contentRef = usePersistedScroll<HTMLDivElement>('agent-session-' + agentId, 'session', []);
@@ -197,7 +208,13 @@ const useAutoScroll = (messages: AcpMessage[], isProcessing: boolean, agentId: s
     }
   }, []);
 
-  return { contentRef, innerRef, autoScrollEnabled, enableAutoScroll };
+  return {
+    contentRef,
+    innerRef,
+    autoScrollEnabled,
+    enableAutoScroll,
+    disableAutoScroll: disableAutoScrollImmediately,
+  };
 };
 
 const useExpandableItems = () => {
@@ -253,6 +270,12 @@ const AcpSessionComponent: React.FC<AcpSessionProps> = ({
   onOpenFile,
   onOpenFileDiff,
 }) => {
+  const sessionRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const pointerInsideRef = useRef(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [currentSearchMatch, setCurrentSearchMatch] = useState(0);
   const [inputValues, setInputValues] = useState<Record<string, string>>(() => {
     const savedDrafts = loadItem<Record<string, unknown>>(ACP_INPUT_DRAFTS_STORAGE_KEY);
     if (!savedDrafts || typeof savedDrafts !== 'object') {
@@ -266,7 +289,132 @@ const AcpSessionComponent: React.FC<AcpSessionProps> = ({
   const { expanded: expandedToolCalls, toggle: toggleToolCall } = useExpandableItems();
   const { expanded: expandedToolResults, toggle: toggleToolResult } = useExpandableItems();
   const { expanded: expandedThoughts, toggle: toggleThought } = useExpandableItems();
-  const { contentRef, innerRef, autoScrollEnabled, enableAutoScroll } = useAutoScroll(messages, isProcessing, agentId);
+  const {
+    contentRef,
+    innerRef,
+    autoScrollEnabled,
+    enableAutoScroll,
+    disableAutoScroll,
+  } = useAutoScroll(messages, isProcessing, agentId);
+  const searchMatches = useMemo(
+    () => findTextMatches(messages, searchOpen ? searchQuery : ''),
+    [messages, searchOpen, searchQuery],
+  );
+  const activeSearchMessageIndex = searchMatches[currentSearchMatch]?.messageIndex;
+  const activeOccurrence = searchMatches[currentSearchMatch]?.occurrence ?? 0;
+
+  useEffect(() => {
+    if (searchMatches.length === 0 || currentSearchMatch < searchMatches.length) return;
+    setCurrentSearchMatch(0);
+  }, [currentSearchMatch, searchMatches.length]);
+
+  const searchExpandedThoughts = useMemo(() => {
+    if (activeSearchMessageIndex === undefined || messages[activeSearchMessageIndex]?.role !== 'thought') {
+      return expandedThoughts;
+    }
+    return new Set([...expandedThoughts, activeSearchMessageIndex]);
+  }, [activeSearchMessageIndex, expandedThoughts, messages]);
+
+  const moveSearch = useCallback((direction: number) => {
+    if (searchMatches.length === 0) return;
+    disableAutoScroll();
+    setCurrentSearchMatch((current) => (
+      (current + direction + searchMatches.length) % searchMatches.length
+    ));
+  }, [disableAutoScroll, searchMatches.length]);
+
+  const closeSearch = useCallback(() => {
+    setSearchOpen(false);
+    setSearchQuery('');
+  }, []);
+
+  const openSearch = useCallback(() => {
+    const selectedText = window.getSelection()?.toString().trim();
+    if (selectedText) {
+      disableAutoScroll();
+      setSearchQuery(selectedText);
+      setCurrentSearchMatch(0);
+    }
+    setSearchOpen(true);
+  }, [disableAutoScroll]);
+
+  useEffect(() => {
+    if (!searchOpen) return;
+    searchInputRef.current?.focus();
+    searchInputRef.current?.select();
+  }, [searchOpen]);
+
+  useEffect(() => {
+    const handleFindShortcut = (event: KeyboardEvent) => {
+      const root = sessionRef.current;
+      const isThisSessionActive = pointerInsideRef.current || !!root?.contains(document.activeElement);
+
+      if ((event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === 'f') {
+        if (!isThisSessionActive) return;
+        event.preventDefault();
+        event.stopPropagation();
+        openSearch();
+        return;
+      }
+
+      if (event.key === 'Escape' && searchOpen && root?.contains(document.activeElement)) {
+        event.preventDefault();
+        event.stopPropagation();
+        closeSearch();
+      }
+    };
+
+    window.addEventListener('keydown', handleFindShortcut, true);
+    return () => window.removeEventListener('keydown', handleFindShortcut, true);
+  }, [closeSearch, openSearch, searchOpen]);
+
+  useEffect(() => {
+    if (activeSearchMessageIndex === undefined) return;
+    const frame = requestAnimationFrame(() => {
+      const target = innerRef.current?.querySelector<HTMLElement>(
+        `[data-message-index="${activeSearchMessageIndex}"]`,
+      );
+      if (!target) return;
+
+      const query = searchQuery.toLocaleLowerCase();
+      const ranges: Range[] = [];
+      const walker = document.createTreeWalker(target, NodeFilter.SHOW_TEXT);
+      let node = walker.nextNode();
+      while (node) {
+        const text = node.textContent?.toLocaleLowerCase() ?? '';
+        let offset = text.indexOf(query);
+        while (offset >= 0) {
+          const range = document.createRange();
+          range.setStart(node, offset);
+          range.setEnd(node, offset + searchQuery.length);
+          ranges.push(range);
+          offset = text.indexOf(query, offset + query.length);
+        }
+        node = walker.nextNode();
+      }
+      CSS.highlights.set('acp-search-match', new Highlight(...ranges));
+      if (ranges[activeOccurrence]) {
+        CSS.highlights.set('acp-search-current', new Highlight(ranges[activeOccurrence]));
+      }
+
+      const scroller = contentRef.current;
+      if (scroller) {
+        const matchRect = (ranges[activeOccurrence] ?? target).getBoundingClientRect();
+        const scrollerRect = scroller.getBoundingClientRect();
+        scroller.scrollTo({
+          top: scroller.scrollTop + matchRect.top - scrollerRect.top
+            - (scroller.clientHeight - matchRect.height) / 2,
+          behavior: 'auto',
+        });
+      }
+    });
+
+    return () => {
+      cancelAnimationFrame(frame);
+      CSS.highlights.delete('acp-search-match');
+      CSS.highlights.delete('acp-search-current');
+    };
+  }, [activeOccurrence, activeSearchMessageIndex, contentRef, innerRef, searchQuery]);
 
   const handleUndoMessage = useCallback(
     (message: AcpMessage) => {
@@ -332,10 +480,73 @@ const AcpSessionComponent: React.FC<AcpSessionProps> = ({
 
   return (
     <div
+      ref={sessionRef}
       className="acp-session"
       onMouseDown={onFocusPane}
+      onMouseEnter={() => { pointerInsideRef.current = true; }}
+      onMouseLeave={() => { pointerInsideRef.current = false; }}
     >
       <div className="acp-session-content">
+        {searchOpen ? (
+          <div className="acp-search-bar" role="search">
+            <AcpIcons.Search />
+            <input
+              ref={searchInputRef}
+              className="acp-search-input"
+              type="text"
+              value={searchQuery}
+              placeholder="Find in conversation"
+              aria-label="Find in conversation"
+              onChange={(event) => {
+                disableAutoScroll();
+                setCurrentSearchMatch(0);
+                setSearchQuery(event.target.value);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault();
+                  moveSearch(event.shiftKey ? -1 : 1);
+                }
+              }}
+            />
+            <span className="acp-search-count" aria-live="polite">
+              {searchQuery ? (
+                searchMatches.length > 0
+                  ? `${currentSearchMatch + 1} / ${searchMatches.length}`
+                  : 'No results'
+              ) : ''}
+            </span>
+            <button
+              type="button"
+              className="acp-search-action"
+              onClick={() => moveSearch(-1)}
+              disabled={searchMatches.length === 0}
+              aria-label="Previous match"
+              title="Previous match (Shift+Enter)"
+            >
+              <AcpIcons.ChevronUp />
+            </button>
+            <button
+              type="button"
+              className="acp-search-action"
+              onClick={() => moveSearch(1)}
+              disabled={searchMatches.length === 0}
+              aria-label="Next match"
+              title="Next match (Enter)"
+            >
+              <AcpIcons.ChevronDown />
+            </button>
+            <button
+              type="button"
+              className="acp-search-action"
+              onClick={closeSearch}
+              aria-label="Close search"
+              title="Close search (Escape)"
+            >
+              <AcpIcons.CloseSmall />
+            </button>
+          </div>
+        ) : null}
         <div className="acp-messages" ref={contentRef}>
           <div className="acp-messages-inner" ref={innerRef}>
             <AcpMessages
@@ -343,7 +554,8 @@ const AcpSessionComponent: React.FC<AcpSessionProps> = ({
               toolCalls={EMPTY_ARRAY}
               expandedToolCalls={expandedToolCalls}
               expandedToolResults={expandedToolResults}
-              expandedThoughts={expandedThoughts}
+              expandedThoughts={searchExpandedThoughts}
+              activeSearchMessageIndex={activeSearchMessageIndex}
               onToggleToolCall={toggleToolCall}
               onToggleToolResult={toggleToolResult}
               onToggleThought={toggleThought}

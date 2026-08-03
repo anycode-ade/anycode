@@ -5,17 +5,35 @@ import './AcpWorkGroup.css';
 interface AcpWorkGroupProps {
   isLatest: boolean;
   messageCount: number;
+  searchActive?: boolean;
+  isSearchMatch?: boolean;
   children: React.ReactNode;
 }
 
-export const AcpWorkGroup: React.FC<AcpWorkGroupProps> = ({ isLatest, messageCount, children }) => {
+export const AcpWorkGroup: React.FC<AcpWorkGroupProps> = ({
+  isLatest,
+  messageCount,
+  searchActive = false,
+  isSearchMatch = false,
+  children,
+}) => {
   const [isExpanded, setIsExpanded] = useState(isLatest);
 
   useEffect(() => {
     setIsExpanded(isLatest);
   }, [isLatest]);
 
-  if (isLatest) {
+  if (isSearchMatch) {
+    return (
+      <div className="acp-work-group expanded acp-work-group-search-match" data-search-expanded="true">
+        <div className="acp-work-group-content">
+          {children}
+        </div>
+      </div>
+    );
+  }
+
+  if (isLatest && !searchActive) {
     return (
       <>
         {children}
@@ -36,7 +54,7 @@ export const AcpWorkGroup: React.FC<AcpWorkGroupProps> = ({ isLatest, messageCou
           worked ({messageCount} step{messageCount !== 1 ? 's' : ''})
         </span>
       </div>
-      {isExpanded && (
+      {isExpanded && !searchActive && (
         <div className="acp-work-group-content">
           {children}
         </div>
