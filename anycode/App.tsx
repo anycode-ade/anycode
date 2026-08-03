@@ -187,9 +187,11 @@ const App: React.FC = () => {
     const handleOpenFile = useEvent((
         path: string, line?: number, column?: number, mode?: DiffMode,
     ) => {
+        const keepPreviousEditor = layoutActionsRef.current
+            ?.isEditorPanelVisible(editors.activeEditorPaneId) ?? false;
         const paneId = resolveEditorPaneId();
         if (!paneId) return;
-        editors.openFile(path, line, column, paneId, mode);
+        editors.openFile(path, line, column, paneId, mode, keepPreviousEditor);
     });
 
     const handleSelectFile = useEvent((fileId: string) => {

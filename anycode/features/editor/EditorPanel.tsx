@@ -9,6 +9,7 @@ type EditorPanelProps = {
     editors: {
         files: Array<{ id: string }>;
         editorStates: ReadonlyMap<string, AnycodeEditor>;
+        keepPreviousEditorByPane: Readonly<Record<string, boolean>>;
         getActiveFileIdForPane: (paneId: string) => string | null;
         setActiveEditorPaneId: (paneId: string) => void;
         referencesPeekByPane?: Record<string, ReferencesPeekState | null>;
@@ -44,9 +45,12 @@ export const EditorPanel = ({ panelKey, editors }: EditorPanelProps) => {
     const editorForCurrentFile = lastReadyEditor?.id === paneFileId
         ? lastReadyEditor
         : null;
+    const fallbackEditor = editors.keepPreviousEditorByPane[panelKey]
+        ? lastReadyEditor
+        : editorForCurrentFile;
     const displayedEditor = paneFile && editorState
         ? { id: paneFile.id, state: editorState }
-        : editorForCurrentFile;
+        : fallbackEditor;
 
     return (
         <div

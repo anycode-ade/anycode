@@ -231,8 +231,6 @@ const Search = ({ id, wsRef, isConnected, focusRequestToken, inputValue, onInput
     const [fileResults, setFileResults] = useState<FileSearchResult[]>([]);
     const [filesSearchEnded, setFilesSearchEnded] = useState(true);
     const [filesSearchError, setFilesSearchError] = useState<string | null>(null);
-    const [isModeToggleCompact, setIsModeToggleCompact] = useState(false);
-    const inputWrapperRef = useRef<HTMLDivElement | null>(null);
     const inputRef = useRef<HTMLTextAreaElement>(null);
     const startTimeRef = useRef<number | null>(null);
     const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -297,20 +295,6 @@ const Search = ({ id, wsRef, isConnected, focusRequestToken, inputValue, onInput
         }
         inputRef.current?.focus();
     }, [focusRequestToken]);
-
-    useEffect(() => {
-        const el = inputWrapperRef.current;
-        if (!el) return;
-
-        const updateCompactMode = () => {
-            setIsModeToggleCompact(el.clientWidth < 250);
-        };
-
-        updateCompactMode();
-        const resizeObserver = new ResizeObserver(updateCompactMode);
-        resizeObserver.observe(el);
-        return () => resizeObserver.disconnect();
-    }, []);
 
     useEffect(() => {
         const el = resultsRef.current;
@@ -818,8 +802,7 @@ const Search = ({ id, wsRef, isConnected, focusRequestToken, inputValue, onInput
         <div className="search-container">
             
             <div
-                ref={inputWrapperRef}
-                className={`search-input-wrapper ${isModeToggleCompact ? "search-input-wrapper-compact" : ""}`}
+                className="search-input-wrapper"
             >
                 <textarea
                     className="search-input"
@@ -840,7 +823,8 @@ const Search = ({ id, wsRef, isConnected, focusRequestToken, inputValue, onInput
                         role="tab"
                         aria-selected={searchMode === "content"}
                     >
-                        {isModeToggleCompact ? "C" : "Content"}
+                        <span className="search-mode-label-long">Content</span>
+                        <span className="search-mode-label-short">C</span>
                     </button>
                     <button
                         type="button"
@@ -849,7 +833,8 @@ const Search = ({ id, wsRef, isConnected, focusRequestToken, inputValue, onInput
                         role="tab"
                         aria-selected={searchMode === "files"}
                     >
-                        {isModeToggleCompact ? "F" : "Files"}
+                        <span className="search-mode-label-long">Files</span>
+                        <span className="search-mode-label-short">F</span>
                     </button>
                 </div>
             </div>

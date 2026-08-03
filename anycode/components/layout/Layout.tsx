@@ -294,6 +294,7 @@ type LayoutProps = {
 
 export type LayoutActions = {
     ensureEditorPanel: (preferredPanelId?: string | null) => string | null;
+    isEditorPanelVisible: (preferredPanelId?: string | null) => boolean;
     ensurePanel: (panelId: PanelId) => string | null;
 };
 
@@ -831,7 +832,7 @@ export const Layout: React.FC<LayoutProps> = ({
         renderPanelRef.current(panelId, panelKey)
     ), []);
 
-    const ensureEditorPanel = useCallback((preferredPanelId?: string | null): string | null => {
+    const findEditorPanel = useCallback((preferredPanelId?: string | null): IDockviewPanel | null => {
         const api = apiRef.current;
         if (!api) {
             return null;
@@ -842,7 +843,20 @@ export const Layout: React.FC<LayoutProps> = ({
         const activeEditorPanel = activePanel && getPanelBaseId(activePanel.id) === 'editor'
             ? activePanel
             : null;
-        const existingPanel = preferredPanel ?? activeEditorPanel ?? getPanelsByBaseId(api, 'editor')[0];
+        return preferredPanel ?? activeEditorPanel ?? getPanelsByBaseId(api, 'editor')[0] ?? null;
+    }, []);
+
+    const isEditorPanelVisible = useCallback((preferredPanelId?: string | null): boolean => (
+        findEditorPanel(preferredPanelId)?.api.isVisible ?? false
+    ), [findEditorPanel]);
+
+    const ensureEditorPanel = useCallback((preferredPanelId?: string | null): string | null => {
+        const api = apiRef.current;
+        if (!api) {
+            return null;
+        }
+
+        const existingPanel = findEditorPanel(preferredPanelId);
         if (existingPanel) {
             existingPanel.api.setActive();
             return existingPanel.id;
@@ -873,7 +887,7 @@ export const Layout: React.FC<LayoutProps> = ({
         editorPanel.group.api.setConstraints(PANEL_CONSTRAINTS);
         editorPanel.api.setActive();
         return editorPanel.id;
-    }, [resolvePanelContent]);
+    }, [findEditorPanel, resolvePanelContent]);
 
     const ensurePanel = useCallback((panelId: PanelId): string | null => {
         const api = apiRef.current;
@@ -912,13 +926,14 @@ export const Layout: React.FC<LayoutProps> = ({
     useEffect(() => {
         onActionsReady?.({
             ensureEditorPanel,
+            isEditorPanelVisible,
             ensurePanel,
         });
 
         return () => {
             onActionsReady?.(null);
         };
-    }, [ensureEditorPanel, ensurePanel, onActionsReady]);
+    }, [ensureEditorPanel, ensurePanel, isEditorPanelVisible, onActionsReady]);
 
     const disposeListeners = useCallback(() => {
         for (const listener of listenersRef.current) {

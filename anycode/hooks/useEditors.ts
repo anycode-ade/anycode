@@ -135,6 +135,7 @@ export const useEditors = ({ wsRef, isConnected, onFileClosed }: UseEditorsParam
     const editorStatesRef = useRef<Map<string, AnycodeEditor>>(new Map());
     const editorRefs = useRef<Map<string, AnycodeEditor>>(new Map());
     const initializingEditorsRef = useRef<Map<string, Promise<AnycodeEditor>>>(new Map());
+    const [keepPreviousEditorByPane, setKeepPreviousEditorByPane] = useState<Record<string, boolean>>({});
 
     const savedFileContentsRef = useRef<Map<string, string>>(new Map());
     const previewFileContentsRef = useRef<Map<string, string>>(new Map());
@@ -616,6 +617,7 @@ export const useEditors = ({ wsRef, isConnected, onFileClosed }: UseEditorsParam
         column?: number,
         paneId?: string,
         diffMode?: DiffMode,
+        keepPreviousEditor = true,
     ) => {
         if (!paneId && !hasVisibleEditorPane()) {
             return;
@@ -624,6 +626,11 @@ export const useEditors = ({ wsRef, isConnected, onFileClosed }: UseEditorsParam
         const existingFile = filesRef.current.find((file) => file.id === path);
         const targetPaneId = resolveTargetPaneId(paneId, existingFile?.id);
         const mode = diffMode ?? getEditorDiffMode(targetPaneId);
+        setKeepPreviousEditorByPane((prev) => (
+            prev[targetPaneId] === keepPreviousEditor
+                ? prev
+                : { ...prev, [targetPaneId]: keepPreviousEditor }
+        ));
 
         if (existingFile) {
             const editor = editorRefs.current.get(existingFile.id);
@@ -1333,6 +1340,7 @@ export const useEditors = ({ wsRef, isConnected, onFileClosed }: UseEditorsParam
         setEditorDiffMode,
         cycleEditorDiffMode,
         editorStates,
+        keepPreviousEditorByPane,
         closeFile,
         saveFile,
         openFile,

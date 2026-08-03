@@ -126,7 +126,8 @@
 .search-input-wrapper {
     display: grid;
     position: relative;
-    margin: 8px 8px 0px 8px;
+    margin: 8px;
+    container-type: inline-size;
 }
 
 .search-prefix {
@@ -155,10 +156,6 @@
     user-select: text;
     -webkit-user-select: text;
     -webkit-touch-callout: default;
-}
-
-.search-input-wrapper-compact .search-input {
-    padding-right: 52px;
 }
 
 .search-actions {
@@ -270,9 +267,27 @@
     padding: 0 6px;
 }
 
-.search-input-wrapper-compact .search-mode-button {
-    min-width: 18px;
-    padding: 0 5px;
+.search-mode-label-short {
+    display: none;
+}
+
+@container (max-width: 249px) {
+    .search-input {
+        padding-right: 52px;
+    }
+
+    .search-mode-button {
+        min-width: 18px;
+        padding: 0 5px;
+    }
+
+    .search-mode-label-long {
+        display: none;
+    }
+
+    .search-mode-label-short {
+        display: inline;
+    }
 }
 
 .search-mode-button:hover,

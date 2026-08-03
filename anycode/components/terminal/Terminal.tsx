@@ -82,6 +82,7 @@ const Terminal: React.FC<XTerminalProps> = ({
   const saveSnapshotTimerRef = useRef<number | null>(null);
   const themeObserverRef = useRef<MutationObserver | null>(null);
   const didAutoFocusRef = useRef<boolean>(false);
+  const wasContainerVisibleRef = useRef(false);
   const onDataRef = useRef(onData);
   const onResizeRef = useRef(onResize);
   const isTerminalClosingRef = useRef(isTerminalClosing);
@@ -299,6 +300,30 @@ const Terminal: React.FC<XTerminalProps> = ({
       });
 
       const resizeObserver = new ResizeObserver(() => {
+        const container = terminalRef.current;
+        const isContainerVisible = Boolean(
+          container && container.clientWidth > 0 && container.clientHeight > 0
+        );
+
+        if (!isContainerVisible) {
+          wasContainerVisibleRef.current = false;
+          return;
+        }
+
+        if (!wasContainerVisibleRef.current) {
+          wasContainerVisibleRef.current = true;
+          if (fitDebounceTimerRef.current !== null) {
+            clearTimeout(fitDebounceTimerRef.current);
+            fitDebounceTimerRef.current = null;
+          }
+          if (resizeRafRef.current !== null) {
+            cancelAnimationFrame(resizeRafRef.current);
+            resizeRafRef.current = null;
+          }
+          fitAddon.fit();
+          return;
+        }
+
         if (fitDebounceTimerRef.current !== null) {
           clearTimeout(fitDebounceTimerRef.current);
         }
@@ -367,6 +392,7 @@ const Terminal: React.FC<XTerminalProps> = ({
         resizeObserverRef.current.disconnect();
         resizeObserverRef.current = null;
       }
+      wasContainerVisibleRef.current = false;
       if (themeObserverRef.current) {
         themeObserverRef.current.disconnect();
         themeObserverRef.current = null;

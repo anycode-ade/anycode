@@ -66,10 +66,7 @@ export function usePersistedScroll<T extends HTMLElement>(
         if (panel) {
             visibilityDisposable = panel.onDidVisibilityChange((event: any) => {
                 if (event.isVisible) {
-                    // Wait for layout updates before restoring scroll
-                    requestAnimationFrame(() => {
-                        restoreScroll();
-                    });
+                    restoreScroll();
                 }
             });
         }
