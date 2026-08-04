@@ -17,6 +17,7 @@ interface AcpMessagesProps {
   expandedToolResults: Set<number>;
   expandedThoughts: Set<number>;
   activeSearchMessageIndex?: number;
+  onWorkGroupExpansionChange?: () => void;
   onToggleToolCall: (index: number) => void;
   onToggleToolResult: (index: number) => void;
   onToggleThought: (index: number) => void;
@@ -32,6 +33,7 @@ const AcpMessagesComponent: React.FC<AcpMessagesProps> = ({
   expandedToolResults,
   expandedThoughts,
   activeSearchMessageIndex,
+  onWorkGroupExpansionChange,
   onToggleToolCall,
   onToggleToolResult,
   onToggleThought,
@@ -212,6 +214,7 @@ const AcpMessagesComponent: React.FC<AcpMessagesProps> = ({
               messageCount={item.messages.length}
               searchActive={activeSearchMessageIndex !== undefined}
               isSearchMatch={item.messages.some(({ index }) => index === activeSearchMessageIndex)}
+              onExpansionChange={onWorkGroupExpansionChange}
             >
               {item.messages.map((m) => renderMessage(m.message, m.index))}
             </AcpWorkGroup>

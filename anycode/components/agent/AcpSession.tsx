@@ -18,12 +18,17 @@ const ACP_INPUT_DRAFTS_STORAGE_KEY = 'acpInputDrafts';
 const EMPTY_ARRAY: any[] = [];
 
 const findTextMatches = (messages: AcpMessage[], query: string) => {
-  const normalizedQuery = query.toLocaleLowerCase();
+  const normalizedQuery = query.toLowerCase();
   if (!normalizedQuery) return [];
 
   return messages.flatMap((message, index) => {
     if (message.role !== 'user' && message.role !== 'assistant' && message.role !== 'thought') return [];
-    const count = message.content.toLocaleLowerCase().split(normalizedQuery).length - 1;
+    let count = 0;
+    let offset = message.content.toLowerCase().indexOf(normalizedQuery);
+    while (offset >= 0) {
+      count += 1;
+      offset = message.content.toLowerCase().indexOf(normalizedQuery, offset + normalizedQuery.length);
+    }
     return Array.from({ length: count }, (_, occurrence) => ({ messageIndex: index, occurrence }));
   });
 };
@@ -276,6 +281,7 @@ const AcpSessionComponent: React.FC<AcpSessionProps> = ({
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [currentSearchMatch, setCurrentSearchMatch] = useState(0);
+  const [searchRenderVersion, setSearchRenderVersion] = useState(0);
   const [inputValues, setInputValues] = useState<Record<string, string>>(() => {
     const savedDrafts = loadItem<Record<string, unknown>>(ACP_INPUT_DRAFTS_STORAGE_KEY);
     if (!savedDrafts || typeof savedDrafts !== 'object') {
@@ -302,6 +308,9 @@ const AcpSessionComponent: React.FC<AcpSessionProps> = ({
   );
   const activeSearchMessageIndex = searchMatches[currentSearchMatch]?.messageIndex;
   const activeOccurrence = searchMatches[currentSearchMatch]?.occurrence ?? 0;
+  const handleWorkGroupExpansionChange = useCallback(() => {
+    setSearchRenderVersion((version) => version + 1);
+  }, []);
 
   useEffect(() => {
     if (searchMatches.length === 0 || currentSearchMatch < searchMatches.length) return;
@@ -369,37 +378,70 @@ const AcpSessionComponent: React.FC<AcpSessionProps> = ({
   }, [closeSearch, openSearch, searchOpen]);
 
   useEffect(() => {
-    if (activeSearchMessageIndex === undefined) return;
-    const frame = requestAnimationFrame(() => {
-      const target = innerRef.current?.querySelector<HTMLElement>(
-        `[data-message-index="${activeSearchMessageIndex}"]`,
-      );
-      if (!target) return;
+    const clearHighlights = () => {
+      CSS.highlights.delete('acp-search-match');
+      CSS.highlights.delete('acp-search-current');
+    };
 
-      const query = searchQuery.toLocaleLowerCase();
-      const ranges: Range[] = [];
-      const walker = document.createTreeWalker(target, NodeFilter.SHOW_TEXT);
-      let node = walker.nextNode();
-      while (node) {
-        const text = node.textContent?.toLocaleLowerCase() ?? '';
-        let offset = text.indexOf(query);
-        while (offset >= 0) {
-          const range = document.createRange();
-          range.setStart(node, offset);
-          range.setEnd(node, offset + searchQuery.length);
-          ranges.push(range);
-          offset = text.indexOf(query, offset + query.length);
-        }
-        node = walker.nextNode();
+    if (activeSearchMessageIndex === undefined || !searchQuery) {
+      clearHighlights();
+      return;
+    }
+
+    const frame = requestAnimationFrame(() => {
+      const messageTargets = innerRef.current
+        ? Array.from(innerRef.current.querySelectorAll<HTMLElement>('[data-message-index]'))
+        : [];
+      if (messageTargets.length === 0) {
+        clearHighlights();
+        return;
       }
+
+      const query = searchQuery.toLowerCase();
+      const ranges: Range[] = [];
+      let currentRange: Range | undefined;
+
+      for (const target of messageTargets) {
+        const messageIndex = Number(target.dataset.messageIndex);
+        const targetRanges: Range[] = [];
+        const walker = document.createTreeWalker(target, NodeFilter.SHOW_TEXT);
+        let node = walker.nextNode();
+        while (node) {
+          // Do not search text that is present in the DOM but is not visible.
+          // ACP messages contain collapsed/auxiliary controls whose text can
+          // otherwise produce a misleading highlight.
+          const parent = node.parentElement;
+          const isVisible = !!parent && parent.getClientRects().length > 0;
+          const text = isVisible ? node.textContent?.toLowerCase() ?? '' : '';
+          let offset = text.indexOf(query);
+          while (offset >= 0) {
+            const range = document.createRange();
+            range.setStart(node, offset);
+            range.setEnd(node, offset + query.length);
+            targetRanges.push(range);
+            offset = text.indexOf(query, offset + query.length);
+          }
+          node = walker.nextNode();
+        }
+
+        if (messageIndex === activeSearchMessageIndex) {
+          currentRange = targetRanges[activeOccurrence];
+        }
+        ranges.push(...targetRanges);
+      }
+      clearHighlights();
       CSS.highlights.set('acp-search-match', new Highlight(...ranges));
-      if (ranges[activeOccurrence]) {
-        CSS.highlights.set('acp-search-current', new Highlight(ranges[activeOccurrence]));
+      if (currentRange) {
+        CSS.highlights.set('acp-search-current', new Highlight(currentRange));
       }
 
       const scroller = contentRef.current;
       if (scroller) {
-        const matchRect = (ranges[activeOccurrence] ?? target).getBoundingClientRect();
+        const activeTarget = messageTargets.find(
+          (target) => Number(target.dataset.messageIndex) === activeSearchMessageIndex,
+        );
+        const matchRect = (currentRange ?? activeTarget)?.getBoundingClientRect();
+        if (!matchRect) return;
         const scrollerRect = scroller.getBoundingClientRect();
         scroller.scrollTo({
           top: scroller.scrollTop + matchRect.top - scrollerRect.top
@@ -411,10 +453,9 @@ const AcpSessionComponent: React.FC<AcpSessionProps> = ({
 
     return () => {
       cancelAnimationFrame(frame);
-      CSS.highlights.delete('acp-search-match');
-      CSS.highlights.delete('acp-search-current');
+      clearHighlights();
     };
-  }, [activeOccurrence, activeSearchMessageIndex, contentRef, innerRef, searchQuery]);
+  }, [activeOccurrence, activeSearchMessageIndex, contentRef, innerRef, searchQuery, searchRenderVersion]);
 
   const handleUndoMessage = useCallback(
     (message: AcpMessage) => {
@@ -556,6 +597,7 @@ const AcpSessionComponent: React.FC<AcpSessionProps> = ({
               expandedToolResults={expandedToolResults}
               expandedThoughts={searchExpandedThoughts}
               activeSearchMessageIndex={activeSearchMessageIndex}
+              onWorkGroupExpansionChange={handleWorkGroupExpansionChange}
               onToggleToolCall={toggleToolCall}
               onToggleToolResult={toggleToolResult}
               onToggleThought={toggleThought}

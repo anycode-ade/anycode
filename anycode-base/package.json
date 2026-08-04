@@ -1,6 +1,6 @@
 {
   "name": "anycode-base",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "main": "src/index.ts",
   "description": "Anycode Editor component",
   "keywords": [

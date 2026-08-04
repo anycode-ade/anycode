@@ -7,6 +7,7 @@ interface AcpWorkGroupProps {
   messageCount: number;
   searchActive?: boolean;
   isSearchMatch?: boolean;
+  onExpansionChange?: () => void;
   children: React.ReactNode;
 }
 
@@ -15,23 +16,21 @@ export const AcpWorkGroup: React.FC<AcpWorkGroupProps> = ({
   messageCount,
   searchActive = false,
   isSearchMatch = false,
+  onExpansionChange,
   children,
 }) => {
   const [isExpanded, setIsExpanded] = useState(isLatest);
 
   useEffect(() => {
-    setIsExpanded(isLatest);
-  }, [isLatest]);
-
-  if (isSearchMatch) {
-    return (
-      <div className="acp-work-group expanded acp-work-group-search-match" data-search-expanded="true">
-        <div className="acp-work-group-content">
-          {children}
-        </div>
-      </div>
-    );
-  }
+    // Search should reveal the matching group, but must not replace the
+    // group's own state: the header remains interactive while searching.
+    if (isLatest || isSearchMatch) {
+      setIsExpanded(true);
+      if (isSearchMatch) {
+        onExpansionChange?.();
+      }
+    }
+  }, [isLatest, isSearchMatch, onExpansionChange]);
 
   if (isLatest && !searchActive) {
     return (
@@ -45,7 +44,12 @@ export const AcpWorkGroup: React.FC<AcpWorkGroupProps> = ({
     <div className={`acp-work-group ${isExpanded ? 'expanded' : 'collapsed'}`}>
       <div 
         className="acp-work-group-header" 
-        onClick={() => setIsExpanded(!isExpanded)}
+        onClick={() => {
+          setIsExpanded(!isExpanded);
+          if (searchActive) {
+            onExpansionChange?.();
+          }
+        }}
       >
         <span className="acp-work-group-icon">
           <AcpIcons.ChevronRight />
@@ -54,7 +58,7 @@ export const AcpWorkGroup: React.FC<AcpWorkGroupProps> = ({
           worked ({messageCount} step{messageCount !== 1 ? 's' : ''})
         </span>
       </div>
-      {isExpanded && !searchActive && (
+      {isExpanded && (
         <div className="acp-work-group-content">
           {children}
         </div>
