@@ -255,6 +255,7 @@
 .search-mode-button {
     flex: 0 0 auto;
     border: none;
+    border-bottom: 2px solid transparent;
     border-radius: 4px;
     background: transparent;
     color: var(--theme-muted-foreground, var(--text-color-secondary, #888));
@@ -298,8 +299,10 @@
 }
 
 .search-mode-button.active {
-    background-color: var(--hover-bg, rgba(255, 255, 255, 0.08));
-    color: var(--theme-foreground, var(--foreground-color, #e0e0e0));
+    border-bottom-color: var(--theme-accent-background, #007acc);
+    border-radius: 4px 4px 0 0;
+    background-color: transparent;
+    color: var(--theme-accent-background, #007acc);
 }
 
 .no-results,

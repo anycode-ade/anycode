@@ -36,6 +36,7 @@ export interface EditorOptions {
     column?: number;
     theme?: any;
     readOnly?: boolean;
+    ignoreEdits?: boolean;
     focusedDiffEnabled?: boolean;
     focusedDiffContextLines?: number;
     codeFoldingEnabled?: boolean;
@@ -110,6 +111,7 @@ export class AnycodeEditor {
     private originalCode?: Code;
     private diffs?: Map<number, DiffInfo>;
     private readonly readOnly: boolean;
+    private readonly ignoreEdits: boolean;
     private collapsedFoldStarts: Set<number> = new Set();
     private codeFoldingEnabled: boolean;
     
@@ -125,6 +127,7 @@ export class AnycodeEditor {
     ) {
         this.code = new Code(initialText, filename, language);
         this.readOnly = options.readOnly ?? false;
+        this.ignoreEdits = options.ignoreEdits ?? false;
         this.focusedDiffEnabled = options.focusedDiffEnabled ?? false;
         this.focusedDiffContextLines = Math.max(0, options.focusedDiffContextLines ?? 3);
         this.codeFoldingEnabled = options.codeFoldingEnabled ?? true;
@@ -733,7 +736,9 @@ export class AnycodeEditor {
         }
 
         if (e.altKey) {
-            this.openReferencesPeek(pos.row, pos.col).catch(console.error);
+            if (!this.ignoreEdits) {
+                this.openReferencesPeek(pos.row, pos.col).catch(console.error);
+            }
             return;
         }
 
@@ -785,6 +790,7 @@ export class AnycodeEditor {
     }
 
     private async openReferencesPeek(row: number, col: number): Promise<void> {
+        if (this.ignoreEdits) return;
         if (!this.referencesPeekProvider) {
             console.warn('References peek provider not set');
             return;
@@ -1127,6 +1133,11 @@ export class AnycodeEditor {
         const action = this.getActionFromKey(event);
         if (!action) return;
 
+        if (this.ignoreEdits && this.isEditingAction(action)) {
+            event.preventDefault();
+            return;
+        }
+
         // Special-case paste in non-secure context: let native paste flow,
         // which will be handled by the 'beforeinput' listener.
         if (action === Action.PASTE && !(navigator.clipboard && window.isSecureContext)) {
@@ -1143,6 +1154,7 @@ export class AnycodeEditor {
 
         if (action === Action.REFERENCES) {
             event.preventDefault();
+            if (this.ignoreEdits) return;
             const { line, column } = this.code.getPosition(this.offset);
             this.openReferencesPeek(line, column).catch(console.error);
             return;
@@ -1298,6 +1310,21 @@ export class AnycodeEditor {
         return null;
     }
 
+    private isEditingAction(action: Action): boolean {
+        return action === Action.BACKSPACE
+            || action === Action.DELETE
+            || action === Action.ENTER
+            || action === Action.TAB
+            || action === Action.UNTAB
+            || action === Action.TEXT_INPUT
+            || action === Action.UNDO
+            || action === Action.REDO
+            || action === Action.PASTE
+            || action === Action.CUT
+            || action === Action.DUPLICATE
+            || action === Action.COMMENT;
+    }
+
     private applyEditResult(result: ActionResult) {
         const textChanged = result.changed;
         const offsetChanged = result.ctx.offset !== this.offset;
@@ -1347,6 +1374,7 @@ export class AnycodeEditor {
         this.closeHover();
         e.preventDefault();
         e.stopPropagation();
+        if (this.ignoreEdits) return;
 
         if (e.inputType === 'deleteContentBackward') {
             const ctx: ActionContext = {
@@ -1379,6 +1407,11 @@ export class AnycodeEditor {
     private handlePasteEvent(e: ClipboardEvent) {
         this.clearPendingHover();
         this.closeHover();
+        if (this.ignoreEdits) {
+            e.preventDefault();
+            e.stopPropagation();
+            return;
+        }
         // In secure contexts, paste is handled via Action.PASTE using navigator.clipboard
         if (navigator.clipboard && window.isSecureContext) {
             return;
@@ -1415,6 +1448,7 @@ export class AnycodeEditor {
     }
 
     public async showCompletion() {
+        if (this.ignoreEdits) return;
         if (!this.completionProvider) return;
         this.clearPendingHover();
         this.closeHover();
@@ -1455,6 +1489,7 @@ export class AnycodeEditor {
     }
 
     public applyCompletion(index: number) {
+        if (this.ignoreEdits) return;
         if (index < 0 || index >= this.completions.length) return;
         if (!this.isCompletionOpen) return;
 

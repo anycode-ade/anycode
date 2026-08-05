@@ -50,6 +50,14 @@ pub async fn handle_connect(socket: SocketRef, _state: State<AppState>) {
 
     socket.on("git:status", handle_git_status);
     socket.on("git:file-original", handle_git_file_original);
+    socket.on("git:history", handle_git_history);
+    socket.on("git:history-search", handle_git_history_search);
+    socket.on(
+        "git:history-search-cancel",
+        handle_git_history_search_cancel,
+    );
+    socket.on("git:history-files", handle_git_history_files);
+    socket.on("git:history-file", handle_git_history_file);
     socket.on("git:commit", handle_git_commit);
     socket.on("git:push", handle_git_push);
     socket.on("git:pull", handle_git_pull);
@@ -69,11 +77,20 @@ pub async fn handle_disconnect(socket: SocketRef, state: State<AppState>) {
 
     let sid = socket.id.as_str().to_string();
 
-    // Get opened files for this socket before removing socket data
+    // Remove per-socket state and cooperatively stop all active searches.
     let opened_files = {
-        let sockets_data = state.socket2data.lock().await;
-        match sockets_data.get(&sid) {
-            Some(socket_data) => socket_data.opened_files.clone(),
+        let mut sockets_data = state.socket2data.lock().await;
+        match sockets_data.remove(&sid) {
+            Some(mut socket_data) => {
+                if let Some(cancel) = socket_data.search_cancel.take() {
+                    cancel.cancel();
+                }
+                if let Some(cancel) = socket_data.files_search_cancel.take() {
+                    cancel.cancel();
+                }
+                socket_data.cancel_git_history_search();
+                socket_data.opened_files
+            }
             None => return,
         }
     };
@@ -86,12 +103,6 @@ pub async fn handle_disconnect(socket: SocketRef, state: State<AppState>) {
             .filter_map(|path| f2c.get(path).map(|code| code.lang.clone()))
             .collect::<HashSet<_>>()
     };
-
-    // Remove socket data immediately
-    {
-        let mut sockets_data = state.socket2data.lock().await;
-        sockets_data.remove(&sid);
-    }
 
     // Spawn a delayed task to clean up files and LSP servers (5-second grace period)
     tokio::spawn(async move {

@@ -3,6 +3,7 @@ export { default as Terminal } from './terminal/Terminal';
 export { AcpSettings } from './agent/AcpSettings';
 export { default as Search } from './Search';
 export { ChangesPanel } from './ChangesPanel';
+export { HistoryPanel } from './HistoryPanel';
 export type { ChangedFile } from './ChangesPanel';
 export { SettingsPanel } from './SettingsPanel';
 export { FileIcon } from './FileIcon';

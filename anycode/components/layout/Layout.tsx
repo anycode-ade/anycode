@@ -248,7 +248,7 @@ export const Split: React.FC<SplitProps> = ({ direction, panes, className }) => 
     );
 };
 
-export type PanelId = 'files' | 'search' | 'changes' | 'editor' | 'agent' | 'terminal' | 'browser' | 'toolbar' | 'settings';
+export type PanelId = 'files' | 'search' | 'changes' | 'history' | 'editor' | 'agent' | 'terminal' | 'browser' | 'toolbar' | 'settings';
 
 type PanelParams = {
     panelKey: string;
@@ -375,12 +375,20 @@ const panelDefinitions = [
         ],
     },
     {
+        id: 'history',
+        title: 'History',
+        pickerVisible: true,
+        defaultPlacements: [
+            { direction: 'within', referenceIds: ['files', 'search', 'changes'] },
+        ],
+    },
+    {
         id: 'editor',
         title: 'Editor',
         pickerVisible: true,
         allowMultiple: true,
         defaultPlacements: [
-            { direction: 'right', referenceIds: ['files', 'search', 'changes'] },
+            { direction: 'right', referenceIds: ['files', 'search', 'changes', 'history'] },
         ],
     },
     {
@@ -415,7 +423,7 @@ const panelDefinitions = [
         title: 'Settings',
         pickerVisible: true,
         defaultPlacements: [
-            { direction: 'within', referenceIds: ['files', 'search', 'changes'] },
+            { direction: 'within', referenceIds: ['files', 'search', 'changes', 'history'] },
         ],
     },
 ] as const satisfies readonly PanelDefinition[];
@@ -432,11 +440,12 @@ const getLayoutPanelTitle = (panelId: LayoutPanelId): string => (
     panelId === 'picker' ? 'Empty' : panelTitles[panelId]
 );
 
-const panelSyncOrder: PanelId[] = ['files', 'editor', 'agent', 'search', 'changes', 'terminal', 'browser', 'settings'];
+const panelSyncOrder: PanelId[] = ['files', 'editor', 'agent', 'search', 'changes', 'history', 'terminal', 'browser', 'settings'];
 const loadPanelVisibility = (): PanelVisibility => ({
     files: (loadItem<number>(LAYOUT_VERSION_STORAGE_KEY) ?? 0) < CURRENT_LAYOUT_VERSION ? true : loadFilesPanelVisible(),
     search: (loadItem<number>(LAYOUT_VERSION_STORAGE_KEY) ?? 0) < CURRENT_LAYOUT_VERSION ? true : (loadItem<boolean>('searchPanelVisible') ?? false),
     changes: (loadItem<number>(LAYOUT_VERSION_STORAGE_KEY) ?? 0) < CURRENT_LAYOUT_VERSION ? true : (loadItem<boolean>('changesPanelVisible') ?? false),
+    history: (loadItem<boolean>('historyPanelVisible') ?? true),
     editor: (loadItem<number>(LAYOUT_VERSION_STORAGE_KEY) ?? 0) < CURRENT_LAYOUT_VERSION ? true : loadEditorPanelVisible(),
     agent: (loadItem<number>(LAYOUT_VERSION_STORAGE_KEY) ?? 0) < CURRENT_LAYOUT_VERSION ? true : loadAgentPanelVisible(),
     terminal: loadTerminalPanelVisible(),
@@ -517,6 +526,7 @@ const pickerIconMap: Record<PanelId, React.ComponentType | undefined> = {
     files: Icons.Files,
     search: Icons.Search,
     changes: Icons.Git,
+    history: Icons.Git,
     editor: Icons.Editor,
     agent: Icons.Agent,
     terminal: Icons.Terminal,
@@ -774,6 +784,46 @@ export const Layout: React.FC<LayoutProps> = ({
 
     renderPanelRef.current = renderPanel;
 
+    // Safari can start selecting text when a sash drag crosses panel content.
+    // Keep selection disabled for the whole drag, not just while the pointer
+    // is over the sash itself.
+    useEffect(() => {
+        const root = document.documentElement;
+        const isSashTarget = (target: EventTarget | null): boolean => (
+            target instanceof Element && Boolean(target.closest('.dv-sash'))
+        );
+        const clearResizeSelection = () => {
+            if (!root.classList.contains('is-layout-resizing')) return;
+            root.classList.remove('is-layout-resizing');
+            window.getSelection()?.removeAllRanges();
+        };
+        const handlePointerDown = (event: PointerEvent) => {
+            if (!isSashTarget(event.target)) return;
+            root.classList.add('is-layout-resizing');
+            window.getSelection()?.removeAllRanges();
+        };
+        const handleSelectStart = (event: Event) => {
+            if (root.classList.contains('is-layout-resizing')) {
+                event.preventDefault();
+            }
+        };
+
+        document.addEventListener('pointerdown', handlePointerDown, true);
+        document.addEventListener('pointerup', clearResizeSelection, true);
+        document.addEventListener('pointercancel', clearResizeSelection, true);
+        window.addEventListener('blur', clearResizeSelection);
+        document.addEventListener('selectstart', handleSelectStart, true);
+
+        return () => {
+            document.removeEventListener('pointerdown', handlePointerDown, true);
+            document.removeEventListener('pointerup', clearResizeSelection, true);
+            document.removeEventListener('pointercancel', clearResizeSelection, true);
+            window.removeEventListener('blur', clearResizeSelection);
+            document.removeEventListener('selectstart', handleSelectStart, true);
+            root.classList.remove('is-layout-resizing');
+        };
+    }, []);
+
     const panelEntries = useMemo(() => (
         panelSyncOrder.map((id) => ({
             id,
@@ -822,6 +872,7 @@ export const Layout: React.FC<LayoutProps> = ({
         saveItem('filesPanelVisible', visibility.files);
         saveItem('searchPanelVisible', visibility.search);
         saveItem('changesPanelVisible', visibility.changes);
+        saveItem('historyPanelVisible', visibility.history);
         saveItem('editorPanelVisible', visibility.editor);
         saveItem('agentPanelVisible', visibility.agent);
         saveItem('terminalPanelVisible', visibility.terminal);
@@ -1554,6 +1605,8 @@ export const Layout: React.FC<LayoutProps> = ({
             rebindPickerPanels(api);
             if (restoredSavedLayout) {
                 refreshPanelContents(api);
+                // Add newly introduced visible panel types without discarding the user's layout.
+                syncPanels(api);
             } else {
                 syncPanels(api);
             }

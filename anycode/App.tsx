@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import 'dockview-react/dist/styles/dockview.css';
-import { ChangesPanel, type ChangedFile, SettingsPanel } from './components';
+import { ChangesPanel, HistoryPanel, type ChangedFile, SettingsPanel } from './components';
 import Search from './components/Search';
 import { Layout, type LayoutActions, type PanelId } from './components/layout/Layout';
 import { Toolbar } from './components/toolbar/Toolbar';
@@ -16,7 +16,7 @@ import {
     saveItem,
 } from './storage';
 import { useSocket } from './hooks/useSocket';
-import { useGit } from './hooks/useGit';
+import { useGit, type GitHistoryFile } from './hooks/useGit';
 import { useSearch } from './hooks/useSearch';
 import { useFileTree } from './hooks/useFileTree';
 import { useTerminals } from './hooks/useTerminals';
@@ -102,6 +102,7 @@ const App: React.FC = () => {
             ['watcher:remove', handleWatcherRemove],
             ['file:renamed', handleFileRenamed],
             ['git:update', git.handleGitStatusUpdate],
+            ['git:history-search:results', git.handleHistorySearchResults],
             ['git:update', editors.handleGitUpdate],
             ['acp:message', agents.handleAcpMessage],
             ['acp:history', agents.handleAcpHistory],
@@ -123,6 +124,7 @@ const App: React.FC = () => {
         handleWatcherRemove,
         handleFileRenamed,
         git.handleGitStatusUpdate,
+        git.handleHistorySearchResults,
         agents.handleAcpMessage,
         agents.handleAcpHistory,
         search.handleSearchResults,
@@ -210,6 +212,22 @@ const App: React.FC = () => {
         const paneId = editors.activeEditorPaneId;
         const mode = editors.getEditorDiffMode(paneId);
         handleOpenFile(path, line, column, mode);
+    });
+
+    const handleOpenHistoryDiff = useEvent(async (hash: string, file: GitHistoryFile) => {
+        const content = await git.fetchHistoryFileContent(hash, file);
+        if (!content) return;
+        if (content.old_binary || content.new_binary || content.old_content === null || content.new_content === null) {
+            window.alert(`Cannot display a text diff for binary file "${file.path}".`);
+            return;
+        }
+        editors.openHistoricalDiff(
+            hash,
+            file.path,
+            content.old_content,
+            content.new_content,
+            editors.activeEditorPaneId,
+        );
     });
 
     const activeChangedFile = useMemo<ChangedFile | null>(() => {
@@ -418,6 +436,26 @@ const App: React.FC = () => {
                         fileIconsStyle={fileIconsStyle}
                     />
                 );
+            case 'history':
+                return (
+                    <HistoryPanel
+                        branch={git.gitBranch}
+                        commits={git.historyCommits}
+                        filesByCommit={git.historyFiles}
+                        hasMore={git.historyHasMore}
+                        loading={git.isHistoryLoading}
+                        loaded={git.isHistoryLoaded}
+                        filesLoading={git.historyFilesLoading}
+                        onRefresh={git.refreshHistory}
+                        onLoadMore={git.loadMoreHistory}
+                        onSearch={git.searchHistory}
+                        onClearSearch={git.clearHistorySearch}
+                        onCancelSearch={git.cancelHistorySearch}
+                        onCommitExpand={git.fetchHistoryFiles}
+                        onFileClick={handleOpenHistoryDiff}
+                        fileIconsStyle={fileIconsStyle}
+                    />
+                );
             case 'editor':
                 return <EditorPanel panelKey={panelKey} editors={editors} />;
             case 'terminal':
@@ -506,6 +544,11 @@ const App: React.FC = () => {
         if (panelId === 'changes') {
             git.fetchGitStatus();
             git.fetchBranches();
+            return;
+        }
+        if (panelId === 'history') {
+            git.fetchGitStatus();
+            git.fetchHistory(true);
             return;
         }
         if (panelId === 'editor') {

@@ -92,6 +92,39 @@ interface DemoGitFile {
 
 const DEMO_CHANGED_FILES = new Map<string, DemoGitFile>();
 
+const DEMO_HISTORY_COMMITS = [
+    {
+        hash: 'de00000000000000000000000000000000000001',
+        parents: ['de00000000000000000000000000000000000002'],
+        summary: 'Welcome to the Anycode demo',
+        message: 'Welcome to the Anycode demo',
+        author_name: 'Anycode',
+        author_email: 'demo@anycode.dev',
+        timestamp: 1735689600,
+        timezone_offset: 0,
+    },
+    {
+        hash: 'de00000000000000000000000000000000000002',
+        parents: ['de00000000000000000000000000000000000003'],
+        summary: 'Add editor and terminal panels',
+        message: 'Add editor and terminal panels',
+        author_name: 'Anycode',
+        author_email: 'demo@anycode.dev',
+        timestamp: 1735603200,
+        timezone_offset: 0,
+    },
+    {
+        hash: 'de00000000000000000000000000000000000003',
+        parents: [],
+        summary: 'Initial project',
+        message: 'Initial project',
+        author_name: 'Anycode',
+        author_email: 'demo@anycode.dev',
+        timestamp: 1735516800,
+        timezone_offset: 0,
+    },
+];
+
 const notifyGitChange = (socket: DemoSocket, targetPath: string) => {
     const node = DEMO_VFS[targetPath];
     const original = ORIGINAL_VFS_CONTENTS[targetPath];
@@ -429,6 +462,67 @@ export class DemoSocket {
                 callback?.({
                     success: true,
                     content,
+                });
+                break;
+            }
+
+            case 'git:history': {
+                const offset = payload?.offset ?? 0;
+                const limit = payload?.limit ?? 50;
+                const commits = DEMO_HISTORY_COMMITS.slice(offset, offset + limit);
+                callback?.({ success: true, commits, has_more: false });
+                break;
+            }
+
+            case 'git:history-search': {
+                const requestId = payload?.request_id;
+                const query = String(payload?.query ?? '').trim().toLowerCase();
+                const mode = payload?.mode ?? 'message';
+                const offset = payload?.offset ?? 0;
+                const limit = payload?.limit ?? 50;
+                const matches = DEMO_HISTORY_COMMITS.filter((commit) => {
+                    if (mode === 'hash') return commit.hash.toLowerCase().startsWith(query);
+                    if (mode === 'author') {
+                        return commit.author_name.toLowerCase().includes(query)
+                            || commit.author_email.toLowerCase().includes(query);
+                    }
+                    return commit.message.toLowerCase().includes(query);
+                });
+                callback?.({
+                    success: true,
+                    request_id: requestId,
+                    commits: matches.slice(offset, offset + limit),
+                    has_more: offset + limit < matches.length,
+                });
+                break;
+            }
+
+            case 'git:history-search-cancel': {
+                callback?.({
+                    success: true,
+                    cancelled: true,
+                    request_id: payload?.request_id,
+                });
+                break;
+            }
+
+            case 'git:history-files': {
+                const firstFile = Object.keys(ORIGINAL_VFS_CONTENTS)[0];
+                callback?.({
+                    success: true,
+                    files: firstFile ? [{ path: firstFile, status: 'added', added: 1, removed: 0, binary: false }] : [],
+                });
+                break;
+            }
+
+            case 'git:history-file': {
+                const targetPath = payload?.path || '';
+                callback?.({
+                    success: true,
+                    old_content: '',
+                    new_content: ORIGINAL_VFS_CONTENTS[targetPath] ?? '',
+                    old_binary: false,
+                    new_binary: false,
                 });
                 break;
             }
