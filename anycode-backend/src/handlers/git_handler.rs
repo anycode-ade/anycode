@@ -24,6 +24,31 @@ pub struct GitCheckoutRequest {
     pub branch: String,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct GitHistoryRequest {
+    #[serde(default)]
+    pub offset: usize,
+    #[serde(default = "default_history_limit")]
+    pub limit: usize,
+}
+
+fn default_history_limit() -> usize {
+    50
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct GitHistoryCommitRequest {
+    pub hash: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct GitHistoryFileRequest {
+    pub hash: String,
+    pub path: String,
+    #[serde(default)]
+    pub old_path: Option<String>,
+}
+
 pub async fn handle_git_status(ack: AckSender, state: State<AppState>) {
     info!("Received git:status");
     let result = {
@@ -47,6 +72,58 @@ pub async fn handle_git_file_original(
                 "is_new": f.is_new
             })
         })
+    };
+    send_response(ack, result);
+}
+
+pub async fn handle_git_history(
+    Data(request): Data<GitHistoryRequest>,
+    ack: AckSender,
+    state: State<AppState>,
+) {
+    info!(
+        "Received git:history: offset={}, limit={}",
+        request.offset, request.limit
+    );
+    let result = {
+        let git = state.git_manager.lock().await;
+        git.history(request.offset, request.limit).map(|page| {
+            json!({
+                "commits": page.commits,
+                "has_more": page.has_more,
+            })
+        })
+    };
+    send_response(ack, result);
+}
+
+pub async fn handle_git_history_files(
+    Data(request): Data<GitHistoryCommitRequest>,
+    ack: AckSender,
+    state: State<AppState>,
+) {
+    info!("Received git:history-files: {}", request.hash);
+    let result = {
+        let git = state.git_manager.lock().await;
+        git.history_files(&request.hash)
+            .map(|files| json!({ "files": files }))
+    };
+    send_response(ack, result);
+}
+
+pub async fn handle_git_history_file(
+    Data(request): Data<GitHistoryFileRequest>,
+    ack: AckSender,
+    state: State<AppState>,
+) {
+    info!(
+        "Received git:history-file: {} {:?}",
+        request.hash, request.path
+    );
+    let result = {
+        let git = state.git_manager.lock().await;
+        git.history_file_content(&request.hash, &request.path, request.old_path.as_deref())
+            .map(|content| json!(content))
     };
     send_response(ack, result);
 }

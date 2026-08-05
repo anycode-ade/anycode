@@ -50,6 +50,9 @@ pub async fn handle_connect(socket: SocketRef, _state: State<AppState>) {
 
     socket.on("git:status", handle_git_status);
     socket.on("git:file-original", handle_git_file_original);
+    socket.on("git:history", handle_git_history);
+    socket.on("git:history-files", handle_git_history_files);
+    socket.on("git:history-file", handle_git_history_file);
     socket.on("git:commit", handle_git_commit);
     socket.on("git:push", handle_git_push);
     socket.on("git:pull", handle_git_pull);

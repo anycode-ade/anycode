@@ -98,6 +98,16 @@ button:focus-visible {
   user-select: none;
 }
 
+/* Dockview keeps handling a sash drag after the pointer leaves the sash.
+   Safari otherwise selects text in every panel crossed by the pointer. */
+.is-layout-resizing,
+.is-layout-resizing * {
+  -webkit-user-select: none !important;
+  -moz-user-select: none !important;
+  -ms-user-select: none !important;
+  user-select: none !important;
+}
+
 /* File Icons Opacity */
 .tree-file-icon,
 .changes-file-icon,

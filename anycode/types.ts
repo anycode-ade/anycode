@@ -1,5 +1,9 @@
 import { Change, Edit } from 'anycode-base';
 
+export type FileSource =
+    | { type: 'filesystem'; path: string }
+    | { type: 'git'; revision: string; path: string };
+
 export interface TreeNode {
     id: string;
     name: string;
@@ -17,6 +21,7 @@ export interface FileState {
     id: string;
     name: string;
     language: string;
+    source?: FileSource;
     history?: {
         changes: Change[];
         index: number;

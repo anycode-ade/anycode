@@ -46,6 +46,12 @@ type EditorOpenRequest = {
 };
 
 const DEFAULT_EDITOR_PANE_ID = 'editor';
+// Internal editor keys are opaque; Git metadata lives in FileState.source.
+// Keep recognizing the old prefix so persisted sessions migrate cleanly.
+const isHistoricalFileId = (fileId: string) => fileId.startsWith('git:') || fileId.startsWith('git-history/');
+const createGitFileId = (revision: string, path: string): string => (
+    `git:${encodeURIComponent(revision)}:${encodeURIComponent(path)}`
+);
 const persistedEditorState = loadOpenFiles();
 const persistedPaneActiveFileIds: Record<string, string | null> = {
     [DEFAULT_EDITOR_PANE_ID]: persistedEditorState.activeFileId,
@@ -204,10 +210,19 @@ export const useEditors = ({ wsRef, isConnected, onFileClosed }: UseEditorsParam
 
     useEffect(() => { filesRef.current = files; }, [files]);
     useEffect(() => {
+        const persistedFiles = files.filter((file) => !isHistoricalFileId(file.id));
+        const persistedPaneActiveFileIds = Object.fromEntries(
+            Object.entries(paneActiveFileIds).map(([paneId, fileId]) => [
+                paneId,
+                fileId && isHistoricalFileId(fileId) ? null : fileId,
+            ]),
+        );
         saveOpenFiles({
-            files,
-            activeFileId: getPersistedActiveFileId(files, activeFileId),
-            paneActiveFileIds,
+            files: persistedFiles,
+            activeFileId: activeFileId && isHistoricalFileId(activeFileId)
+                ? null
+                : getPersistedActiveFileId(persistedFiles, activeFileId),
+            paneActiveFileIds: persistedPaneActiveFileIds,
             cursorByFileId: cursor2FileRef.current,
         });
     }, [activeFileId, files, paneActiveFileIds]);
@@ -234,7 +249,7 @@ export const useEditors = ({ wsRef, isConnected, onFileClosed }: UseEditorsParam
     const getActiveEditorSelectedText = useCallback((): string => {
         const paneId = activeEditorPaneIdRef.current;
         const fileId = getActiveFileIdForPane(paneId);
-        if (!fileId) {
+        if (!fileId || isHistoricalFileId(fileId)) {
             return '';
         }
 
@@ -326,6 +341,7 @@ export const useEditors = ({ wsRef, isConnected, onFileClosed }: UseEditorsParam
     }, [wsRef, isConnected]);
 
     const handleChange = useCallback((filename: string, change: Change) => {
+        if (isHistoricalFileId(filename)) return;
         if (ignoreChangeFilesRef.current.has(filename)) {
             return;
         }
@@ -368,10 +384,19 @@ export const useEditors = ({ wsRef, isConnected, onFileClosed }: UseEditorsParam
         if (newCursor.line === oldCursor.line && newCursor.column === oldCursor.column) return;
 
         cursor2FileRef.current[filename] = { line: newCursor.line, column: newCursor.column };
+        const persistedFiles = filesRef.current.filter((file) => !isHistoricalFileId(file.id));
+        const persistedPaneActiveFileIds = Object.fromEntries(
+            Object.entries(paneActiveFileIdsRef.current).map(([paneId, fileId]) => [
+                paneId,
+                fileId && isHistoricalFileId(fileId) ? null : fileId,
+            ]),
+        );
         saveOpenFiles({
-            files: filesRef.current,
-            activeFileId: getPersistedActiveFileId(filesRef.current, activeFileIdRef.current),
-            paneActiveFileIds: paneActiveFileIdsRef.current,
+            files: persistedFiles,
+            activeFileId: activeFileIdRef.current && isHistoricalFileId(activeFileIdRef.current)
+                ? null
+                : getPersistedActiveFileId(persistedFiles, activeFileIdRef.current),
+            paneActiveFileIds: persistedPaneActiveFileIds,
             cursorByFileId: cursor2FileRef.current,
         });
 
@@ -683,7 +708,13 @@ export const useEditors = ({ wsRef, isConnected, onFileClosed }: UseEditorsParam
                         history: response.history,
                     });
                     setFiles((prev) => {
-                        const nextFile: FileState = { id: path, name: fileName, language, history: response.history };
+                        const nextFile: FileState = {
+                            id: path,
+                            name: fileName,
+                            language,
+                            source: { type: 'filesystem', path },
+                            history: response.history,
+                        };
                         return prev.some((file) => file.id === path)
                             ? prev.map((file) => (file.id === path ? { ...file, history: response.history ?? file.history } : file))
                             : [...prev, nextFile];
@@ -700,6 +731,41 @@ export const useEditors = ({ wsRef, isConnected, onFileClosed }: UseEditorsParam
             });
         }
     }, [applyEditorOpenRequest, getEditorDiffMode, hasVisibleEditorPane, isConnected, resolveTargetPaneId, setActiveFileId, wsRef]);
+
+    const openHistoricalDiff = useCallback((
+        hash: string,
+        path: string,
+        originalContent: string,
+        content: string,
+        paneId?: string,
+    ) => {
+        if (!paneId && !hasVisibleEditorPane()) return;
+        const fileId = createGitFileId(hash, path);
+        const existingFile = filesRef.current.find((file) => file.id === fileId);
+        const targetPaneId = resolveTargetPaneId(paneId, existingFile?.id);
+        const fileName = getFileName(path);
+        savedFileContentsRef.current.set(fileId, content);
+        editorOpenRequestsRef.current.set(fileId, {
+            path: fileId,
+            paneId: targetPaneId,
+            content,
+            originalContent,
+            mode: 'diff',
+        });
+        setFiles((prev) => prev.some((file) => file.id === fileId)
+            ? prev
+            : [...prev, {
+                id: fileId,
+                name: `${fileName} (${hash.slice(0, 8)})`,
+                language: getLanguageFromFileName(fileName),
+                source: { type: 'git', revision: hash, path },
+            }]);
+        setEditorDiffModeByPane((prev) => ({ ...prev, [targetPaneId]: 'diff' }));
+        setActiveEditorPaneId(targetPaneId);
+        setActiveFileId(fileId, targetPaneId);
+        const editor = editorRefs.current.get(fileId);
+        if (editor) applyEditorOpenRequest(fileId, editor);
+    }, [applyEditorOpenRequest, hasVisibleEditorPane, resolveTargetPaneId, setActiveFileId]);
 
     const openReferenceFromPeek = useCallback((paneId: string, itemIndex?: number): boolean => {
         const peek = referencesPeekByPaneRef.current[paneId];
@@ -744,6 +810,9 @@ export const useEditors = ({ wsRef, isConnected, onFileClosed }: UseEditorsParam
 
     const openReferencesPeek = useCallback(async (request: ReferencesRequest, paneId?: string): Promise<void> => {
         const targetPaneId = paneId ?? activeEditorPaneIdRef.current ?? DEFAULT_EDITOR_PANE_ID;
+        if (isHistoricalFileId(request.file)) {
+            return;
+        }
         if (!wsRef.current || !isConnected) {
             return;
         }
@@ -926,7 +995,9 @@ export const useEditors = ({ wsRef, isConnected, onFileClosed }: UseEditorsParam
         errors?: { line: number; message: string }[],
         history?: History,
     ): Promise<AnycodeEditor> => {
-        const editor = new AnycodeEditor(content, filename, language, {});
+        const editor = new AnycodeEditor(content, filename, language, {
+            ignoreEdits: isHistoricalFileId(filename),
+        });
         await editor.init();
 
         if (history) {
@@ -1037,7 +1108,7 @@ export const useEditors = ({ wsRef, isConnected, onFileClosed }: UseEditorsParam
 
         flushChanges(fileId);
 
-        if (wsRef.current && isConnected) {
+        if (!isHistoricalFileId(fileId) && wsRef.current && isConnected) {
             wsRef.current.emit('file:close', { file: fileId });
         }
 
@@ -1070,6 +1141,7 @@ export const useEditors = ({ wsRef, isConnected, onFileClosed }: UseEditorsParam
     }, [flushChanges, wsRef, isConnected, onFileClosed]);
 
     const saveFile = useCallback((fileId: string) => {
+        if (isHistoricalFileId(fileId)) return;
         flushChanges(fileId);
 
         const editor = editorRefs.current.get(fileId);
@@ -1344,6 +1416,7 @@ export const useEditors = ({ wsRef, isConnected, onFileClosed }: UseEditorsParam
         closeFile,
         saveFile,
         openFile,
+        openHistoricalDiff,
         referencesPeekByPane,
         getReferencesPeekForPane,
         openReferencesPeekForActiveCursor,

@@ -433,6 +433,64 @@ export class DemoSocket {
                 break;
             }
 
+            case 'git:history': {
+                const commits = payload?.offset > 0 ? [] : [
+                    {
+                        hash: 'de00000000000000000000000000000000000001',
+                        parents: ['de00000000000000000000000000000000000002'],
+                        summary: 'Welcome to the Anycode demo',
+                        message: 'Welcome to the Anycode demo',
+                        author_name: 'Anycode',
+                        author_email: 'demo@anycode.dev',
+                        timestamp: 1735689600,
+                        timezone_offset: 0,
+                    },
+                    {
+                        hash: 'de00000000000000000000000000000000000002',
+                        parents: ['de00000000000000000000000000000000000003'],
+                        summary: 'Add editor and terminal panels',
+                        message: 'Add editor and terminal panels',
+                        author_name: 'Anycode',
+                        author_email: 'demo@anycode.dev',
+                        timestamp: 1735603200,
+                        timezone_offset: 0,
+                    },
+                    {
+                        hash: 'de00000000000000000000000000000000000003',
+                        parents: [],
+                        summary: 'Initial project',
+                        message: 'Initial project',
+                        author_name: 'Anycode',
+                        author_email: 'demo@anycode.dev',
+                        timestamp: 1735516800,
+                        timezone_offset: 0,
+                    },
+                ];
+                callback?.({ success: true, commits, has_more: false });
+                break;
+            }
+
+            case 'git:history-files': {
+                const firstFile = Object.keys(ORIGINAL_VFS_CONTENTS)[0];
+                callback?.({
+                    success: true,
+                    files: firstFile ? [{ path: firstFile, status: 'added', added: 1, removed: 0, binary: false }] : [],
+                });
+                break;
+            }
+
+            case 'git:history-file': {
+                const targetPath = payload?.path || '';
+                callback?.({
+                    success: true,
+                    old_content: '',
+                    new_content: ORIGINAL_VFS_CONTENTS[targetPath] ?? '',
+                    old_binary: false,
+                    new_binary: false,
+                });
+                break;
+            }
+
             case 'git:stage': {
                 const targetPath = payload?.path;
                 if (targetPath && DEMO_CHANGED_FILES.has(targetPath)) {

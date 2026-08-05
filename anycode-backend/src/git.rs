@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
-use git2::{Repository, Status, StatusOptions};
+use git2::{Delta, DiffFindOptions, DiffOptions, Repository, Status, StatusOptions};
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use tracing::info;
@@ -117,6 +117,43 @@ pub struct GitBranchInfo {
     pub is_current: bool,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+pub struct GitHistoryCommit {
+    pub hash: String,
+    pub tags: Vec<String>,
+    pub parents: Vec<String>,
+    pub summary: String,
+    pub message: String,
+    pub author_name: String,
+    pub author_email: String,
+    pub timestamp: i64,
+    pub timezone_offset: i32,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+pub struct GitHistoryPage {
+    pub commits: Vec<GitHistoryCommit>,
+    pub has_more: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+pub struct GitHistoryFile {
+    pub path: String,
+    pub old_path: Option<String>,
+    pub status: FileStatus,
+    pub added: usize,
+    pub removed: usize,
+    pub binary: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+pub struct GitHistoryFileContent {
+    pub old_content: Option<String>,
+    pub new_content: Option<String>,
+    pub old_binary: bool,
+    pub new_binary: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct GitMetadataSnapshot {
     index: Option<FileStamp>,
@@ -222,6 +259,159 @@ impl GitManager {
         let r = Repository::discover(&self.workdir).context("Failed to discover git repository")?;
         let _ = self.repo_cache.set(r);
         Ok(self.repo_cache.get().unwrap())
+    }
+
+    /// Return commits reachable from HEAD in the revwalk's fast default order.
+    ///
+    /// Topological sorting forces libgit2 to inspect the entire reachable graph
+    /// before yielding a small page, which is prohibitively expensive for large
+    /// repositories such as Linux. Tags are intentionally omitted from history:
+    /// resolving every tag for every commit made this method O(page_size * refs).
+    pub fn history(&self, offset: usize, limit: usize) -> Result<GitHistoryPage> {
+        let repo = self.repo()?;
+        if repo.is_empty()? {
+            return Ok(GitHistoryPage {
+                commits: Vec::new(),
+                has_more: false,
+            });
+        }
+
+        let limit = limit.clamp(1, 100);
+        let mut walk = repo.revwalk()?;
+        walk.push_head()?;
+        let mut commits = Vec::with_capacity(limit);
+        let mut has_more = false;
+
+        for oid in walk.skip(offset).take(limit + 1) {
+            if commits.len() == limit {
+                has_more = true;
+                break;
+            }
+            let commit = repo.find_commit(oid?)?;
+            let author = commit.author();
+            let time = commit.time();
+            commits.push(GitHistoryCommit {
+                hash: commit.id().to_string(),
+                tags: Vec::new(),
+                parents: commit.parent_ids().map(|id| id.to_string()).collect(),
+                summary: commit.summary().unwrap_or("").to_string(),
+                message: commit.message().unwrap_or("").to_string(),
+                author_name: author.name().unwrap_or("").to_string(),
+                author_email: author.email().unwrap_or("").to_string(),
+                timestamp: time.seconds(),
+                timezone_offset: time.offset_minutes(),
+            });
+        }
+
+        Ok(GitHistoryPage { commits, has_more })
+    }
+
+    /// Diff a commit against its first parent. Root commits are diffed against an empty tree.
+    pub fn history_files(&self, hash: &str) -> Result<Vec<GitHistoryFile>> {
+        let repo = self.repo()?;
+        let commit = repo.find_commit(git2::Oid::from_str(hash)?)?;
+        let new_tree = commit.tree()?;
+        let old_tree = if commit.parent_count() > 0 {
+            Some(commit.parent(0)?.tree()?)
+        } else {
+            None
+        };
+        let mut options = DiffOptions::new();
+        let mut diff =
+            repo.diff_tree_to_tree(old_tree.as_ref(), Some(&new_tree), Some(&mut options))?;
+        let mut find = DiffFindOptions::new();
+        find.renames(true);
+        diff.find_similar(Some(&mut find))?;
+
+        let mut files = Vec::<GitHistoryFile>::new();
+        for (index, delta) in diff.deltas().enumerate() {
+            let status = match delta.status() {
+                Delta::Added => FileStatus::Added,
+                Delta::Deleted => FileStatus::Deleted,
+                Delta::Renamed | Delta::Copied => FileStatus::Renamed,
+                _ => FileStatus::Modified,
+            };
+            let old_path = delta
+                .old_file()
+                .path()
+                .map(|p| p.to_string_lossy().to_string());
+            let new_path = delta
+                .new_file()
+                .path()
+                .map(|p| p.to_string_lossy().to_string());
+            let path = if status == FileStatus::Deleted {
+                old_path.clone()
+            } else {
+                new_path
+            }
+            .unwrap_or_default();
+            files.push(GitHistoryFile {
+                path,
+                old_path: if status == FileStatus::Renamed {
+                    old_path
+                } else {
+                    None
+                },
+                status,
+                added: 0,
+                removed: 0,
+                binary: delta.flags().contains(git2::DiffFlags::BINARY),
+            });
+
+            // libgit2 exposes line counts while walking patches. Binary files simply have no lines.
+            if let Some(patch) = git2::Patch::from_diff(&diff, index)? {
+                let (_, added, removed) = patch.line_stats()?;
+                files[index].added = added;
+                files[index].removed = removed;
+                files[index].binary =
+                    files[index].binary || patch.delta().flags().contains(git2::DiffFlags::BINARY);
+            }
+        }
+        files.sort_by(|a, b| a.path.cmp(&b.path));
+        Ok(files)
+    }
+
+    pub fn history_file_content(
+        &self,
+        hash: &str,
+        path: &str,
+        old_path: Option<&str>,
+    ) -> Result<GitHistoryFileContent> {
+        let repo = self.repo()?;
+        let commit = repo.find_commit(git2::Oid::from_str(hash)?)?;
+        let new_tree = commit.tree()?;
+        let old_tree = if commit.parent_count() > 0 {
+            Some(commit.parent(0)?.tree()?)
+        } else {
+            None
+        };
+
+        let read_blob =
+            |tree: Option<&git2::Tree<'_>>, blob_path: &str| -> Result<(Option<String>, bool)> {
+                let Some(tree) = tree else {
+                    return Ok((Some(String::new()), false));
+                };
+                let Ok(entry) = tree.get_path(Path::new(blob_path)) else {
+                    return Ok((Some(String::new()), false));
+                };
+                let blob = repo.find_blob(entry.id())?;
+                if blob.is_binary() {
+                    return Ok((None, true));
+                }
+                match std::str::from_utf8(blob.content()) {
+                    Ok(content) => Ok((Some(content.to_string()), false)),
+                    Err(_) => Ok((None, true)),
+                }
+            };
+
+        let (old_content, old_binary) = read_blob(old_tree.as_ref(), old_path.unwrap_or(path))?;
+        let (new_content, new_binary) = read_blob(Some(&new_tree), path)?;
+        Ok(GitHistoryFileContent {
+            old_content,
+            new_content,
+            old_binary,
+            new_binary,
+        })
     }
 
     fn git_metadata_snapshot(&self) -> Result<GitMetadataSnapshot> {

@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import type { Socket } from 'socket.io-client';
 import type { ChangedFile } from '../components';
 
@@ -37,6 +37,36 @@ type GitBranch = {
     name: string;
     is_current: boolean;
 };
+
+export type GitHistoryCommit = {
+    hash: string;
+    tags?: string[];
+    parents: string[];
+    summary: string;
+    message: string;
+    author_name: string;
+    author_email: string;
+    timestamp: number;
+    timezone_offset: number;
+};
+
+export type GitHistoryFile = {
+    path: string;
+    old_path?: string | null;
+    status: ChangedFile['status'];
+    added: number;
+    removed: number;
+    binary: boolean;
+};
+
+export type GitHistoryFileContent = {
+    old_content: string | null;
+    new_content: string | null;
+    old_binary: boolean;
+    new_binary: boolean;
+};
+
+const HISTORY_PAGE_SIZE = 50;
 
 const areChangedFilesEqual = (prev: ChangedFile, next: ChangedFile): boolean => (
     prev.path === next.path
@@ -85,6 +115,67 @@ export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
     const [gitBranch, setGitBranch] = useState<string>('');
     const [branches, setBranches] = useState<GitBranch[]>([]);
     const [isSwitchingBranch, setIsSwitchingBranch] = useState(false);
+    const [historyCommits, setHistoryCommits] = useState<GitHistoryCommit[]>([]);
+    const [historyFiles, setHistoryFiles] = useState<Record<string, GitHistoryFile[]>>({});
+    const [historyHasMore, setHistoryHasMore] = useState(false);
+    const [isHistoryLoading, setIsHistoryLoading] = useState(false);
+    const [isHistoryLoaded, setIsHistoryLoaded] = useState(false);
+    const [historyFilesLoading, setHistoryFilesLoading] = useState<Record<string, boolean>>({});
+    const isHistoryLoadingRef = useRef(false);
+    const historyFilesLoadingRef = useRef(new Set<string>());
+
+    const fetchHistory = useCallback((reset = true) => {
+        if (!wsRef.current || !isConnected || isHistoryLoadingRef.current) return;
+        const offset = reset ? 0 : historyCommits.length;
+        isHistoryLoadingRef.current = true;
+        setIsHistoryLoading(true);
+        wsRef.current.emit('git:history', { offset, limit: HISTORY_PAGE_SIZE }, (response: any) => {
+            isHistoryLoadingRef.current = false;
+            setIsHistoryLoading(false);
+            setIsHistoryLoaded(true);
+            if (response.success) {
+                const commits = response.commits || [];
+                setHistoryCommits((prev) => reset ? commits : [...prev, ...commits]);
+                if (reset) setHistoryFiles({});
+                setHistoryHasMore(!!response.has_more);
+            } else if (reset) {
+                setHistoryCommits([]);
+                setHistoryFiles({});
+                setHistoryHasMore(false);
+            }
+        });
+    }, [historyCommits.length, isConnected, wsRef]);
+
+    const fetchHistoryFiles = useCallback((hash: string) => {
+        if (!wsRef.current || !isConnected || historyFiles[hash] || historyFilesLoadingRef.current.has(hash)) return;
+        historyFilesLoadingRef.current.add(hash);
+        setHistoryFilesLoading((prev) => ({ ...prev, [hash]: true }));
+        wsRef.current.emit('git:history-files', { hash }, (response: any) => {
+            historyFilesLoadingRef.current.delete(hash);
+            setHistoryFilesLoading((prev) => ({ ...prev, [hash]: false }));
+            if (response.success) {
+                setHistoryFiles((prev) => ({ ...prev, [hash]: response.files || [] }));
+            }
+        });
+    }, [historyFiles, isConnected, wsRef]);
+
+    const fetchHistoryFileContent = useCallback((hash: string, file: GitHistoryFile): Promise<GitHistoryFileContent | null> => (
+        new Promise((resolve) => {
+            if (!wsRef.current || !isConnected) return resolve(null);
+            wsRef.current.emit('git:history-file', {
+                hash,
+                path: file.path,
+                old_path: file.old_path || undefined,
+            }, (response: any) => {
+                if (!response.success) {
+                    alert('Failed to open historical diff: ' + response.error);
+                    resolve(null);
+                    return;
+                }
+                resolve(response as GitHistoryFileContent);
+            });
+        })
+    ), [isConnected, wsRef]);
 
     const fetchGitStatus = useCallback(() => {
         if (!wsRef.current || !isConnected) return;
@@ -203,6 +294,7 @@ export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
             wsRef.current.emit('git:commit', { message }, (response: any) => {
                 if (response.success) {
                     fetchGitStatus();
+                    fetchHistory(true);
                     resolve(true);
                 } else {
                     alert('Commit failed: ' + response.error);
@@ -210,7 +302,7 @@ export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
                 }
             });
         });
-    }, [wsRef, isConnected, fetchGitStatus]);
+    }, [wsRef, isConnected, fetchGitStatus, fetchHistory]);
 
     const push = useCallback(() => {
         if (!wsRef.current || !isConnected) return;
@@ -243,11 +335,12 @@ export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
                 }
 
                 fetchGitStatus();
+                if (status !== 'conflict') fetchHistory(true);
             } else {
                 alert('Pull failed: ' + response.error);
             }
         });
-    }, [wsRef, isConnected, fetchGitStatus]);
+    }, [wsRef, isConnected, fetchGitStatus, fetchHistory]);
 
     const revert = useCallback((path: string) => {
         if (!wsRef.current || !isConnected) return;
@@ -274,6 +367,7 @@ export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
                 if (response.success) {
                     fetchGitStatus();
                     fetchBranches();
+                    fetchHistory(true);
                     resolve(true);
                 } else {
                     alert(response.error || 'Failed to change branch');
@@ -281,7 +375,7 @@ export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
                 }
             });
         });
-    }, [wsRef, isConnected, fetchGitStatus, fetchBranches]);
+    }, [wsRef, isConnected, fetchGitStatus, fetchBranches, fetchHistory]);
 
     const stage = useCallback((path: string) => {
         if (!wsRef.current || !isConnected) return;
@@ -310,8 +404,17 @@ export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
         gitBranch,
         branches,
         isSwitchingBranch,
+        historyCommits,
+        historyFiles,
+        historyHasMore,
+        isHistoryLoading,
+        isHistoryLoaded,
+        historyFilesLoading,
         fetchGitStatus,
         fetchBranches,
+        fetchHistory,
+        fetchHistoryFiles,
+        fetchHistoryFileContent,
         handleGitStatusUpdate,
         commit,
         push,

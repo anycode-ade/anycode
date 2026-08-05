@@ -456,7 +456,6 @@ const ChangesPanelImpl: React.FC<ChangesPanelProps> = ({
 
     return (
         <div className="changes-panel">
-            {/*<div className="changes-panel-title">Changes</div>*/}
             <div className="changes-message-container">
                 <div className="changes-message-mirror" aria-hidden="true">
                     {message + '\u200b'}
