@@ -1006,10 +1006,15 @@ export const useEditors = ({ wsRef, isConnected, onFileClosed }: UseEditorsParam
 
         editor.setOnChange((change: Change) => handleChange(filename, change));
         editor.setOnCursorChange((newState: any, oldState: any) => handleCursorChange(filename, newState, oldState));
-        editor.setCompletionProvider(handleCompletion);
-        editor.setHoverProvider(handleHover);
-        editor.setGoToDefinitionProvider(handleGoToDefinition);
-        editor.setReferencesPeekProvider(openReferencesPeek);
+        // Historical Git revisions are virtual editor files, not filesystem paths.
+        // Do not attach LSP providers: sending their `git:<revision>:<path>` IDs to
+        // the backend makes it try to open them as regular files.
+        if (!isHistoricalFileId(filename)) {
+            editor.setCompletionProvider(handleCompletion);
+            editor.setHoverProvider(handleHover);
+            editor.setGoToDefinitionProvider(handleGoToDefinition);
+            editor.setReferencesPeekProvider(openReferencesPeek);
+        }
         editor.setErrors(errors || []);
 
         return editor;
