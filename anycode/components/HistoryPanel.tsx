@@ -55,9 +55,19 @@ const formatRelativeTime = (timestamp: number): string => {
 };
 
 const getAvatarUrl = (email: string): string | null => {
-    const normalizedEmail = email.trim().replace(/^<|>$/g, '');
-    if (!normalizedEmail || normalizedEmail.endsWith('[bot]@users.noreply.github.com')) return null;
-    return `https://avatars.githubusercontent.com/u/e?email=${encodeURIComponent(normalizedEmail)}&s=128`;
+    const match = email.trim().match(
+        /^(?:\d+\+)?([^@]+)@users\.noreply\.github\.com$/i,
+    );
+
+    if (!match) {
+        const normalizedEmail = email.trim();
+        return normalizedEmail
+            ? `https://avatars.githubusercontent.com/u/e?email=${encodeURIComponent(normalizedEmail)}&s=128`
+            : null;
+    }
+
+    const username = match[1];
+    return `https://github.com/${encodeURIComponent(username)}.png?size=128`;
 };
 
 const statusTextColors: Record<GitHistoryFile['status'], string> = {

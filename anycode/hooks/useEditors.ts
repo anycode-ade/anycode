@@ -46,9 +46,6 @@ type EditorOpenRequest = {
 };
 
 const DEFAULT_EDITOR_PANE_ID = 'editor';
-// Internal editor keys are opaque; Git metadata lives in FileState.source.
-// Keep recognizing the old prefix so persisted sessions migrate cleanly.
-const isHistoricalFileId = (fileId: string) => fileId.startsWith('git:') || fileId.startsWith('git-history/');
 const createGitFileId = (revision: string, path: string): string => (
     `git:${encodeURIComponent(revision)}:${encodeURIComponent(path)}`
 );
@@ -129,6 +126,9 @@ const getPersistedActiveFileId = (files: FileState[], activeFileId: string | nul
 export const useEditors = ({ wsRef, isConnected, onFileClosed }: UseEditorsParams) => {
     const [files, setFiles] = useState<FileState[]>(() => persistedEditorState.files);
     const filesRef = useRef<FileState[]>(persistedEditorState.files);
+    const isHistoricalFileId = useCallback((fileId: string): boolean => (
+        filesRef.current.find((file) => file.id === fileId)?.source?.type === 'git'
+    ), []);
     const [activeEditorPaneId, setActiveEditorPaneId] = useState<string>(DEFAULT_EDITOR_PANE_ID);
     const activeEditorPaneIdRef = useRef<string>(DEFAULT_EDITOR_PANE_ID);
     const [paneActiveFileIds, setPaneActiveFileIds] = useState<Record<string, string | null>>(() => persistedPaneActiveFileIds);
@@ -210,7 +210,7 @@ export const useEditors = ({ wsRef, isConnected, onFileClosed }: UseEditorsParam
 
     useEffect(() => { filesRef.current = files; }, [files]);
     useEffect(() => {
-        const persistedFiles = files.filter((file) => !isHistoricalFileId(file.id));
+        const persistedFiles = files.filter((file) => file.source?.type !== 'git');
         const persistedPaneActiveFileIds = Object.fromEntries(
             Object.entries(paneActiveFileIds).map(([paneId, fileId]) => [
                 paneId,
@@ -225,7 +225,7 @@ export const useEditors = ({ wsRef, isConnected, onFileClosed }: UseEditorsParam
             paneActiveFileIds: persistedPaneActiveFileIds,
             cursorByFileId: cursor2FileRef.current,
         });
-    }, [activeFileId, files, paneActiveFileIds]);
+    }, [activeFileId, files, isHistoricalFileId, paneActiveFileIds]);
     useEffect(() => { activeEditorPaneIdRef.current = activeEditorPaneId; }, [activeEditorPaneId]);
     useEffect(() => {
         if (activeEditorPaneId !== DEFAULT_EDITOR_PANE_ID) {
@@ -259,7 +259,7 @@ export const useEditors = ({ wsRef, isConnected, onFileClosed }: UseEditorsParam
         }
 
         return editor.getSelectedText();
-    }, [getActiveFileIdForPane, getEditorState]);
+    }, [getActiveFileIdForPane, getEditorState, isHistoricalFileId]);
 
     const setActiveFileId = useCallback((fileId: string | null, paneId?: string) => {
         if (fileId && !paneId && !hasVisibleEditorPane()) {
@@ -378,13 +378,13 @@ export const useEditors = ({ wsRef, isConnected, onFileClosed }: UseEditorsParam
         const oldContent = savedFileContentsRef.current.get(file.id);
         if (!oldContent) return;
 
-    }, [flushChanges, wsRef, isConnected]);
+    }, [flushChanges, isHistoricalFileId, wsRef, isConnected]);
 
     const handleCursorChange = useCallback((filename: string, newCursor: Position, oldCursor: Position) => {
         if (newCursor.line === oldCursor.line && newCursor.column === oldCursor.column) return;
 
         cursor2FileRef.current[filename] = { line: newCursor.line, column: newCursor.column };
-        const persistedFiles = filesRef.current.filter((file) => !isHistoricalFileId(file.id));
+        const persistedFiles = filesRef.current.filter((file) => file.source?.type !== 'git');
         const persistedPaneActiveFileIds = Object.fromEntries(
             Object.entries(paneActiveFileIdsRef.current).map(([paneId, fileId]) => [
                 paneId,
@@ -402,7 +402,7 @@ export const useEditors = ({ wsRef, isConnected, onFileClosed }: UseEditorsParam
 
         cursorHistory.current.undoStack.push({ file: filename, cursor: oldCursor });
         cursorHistory.current.redoStack = [];
-    }, []);
+    }, [isHistoricalFileId]);
 
     const handleCompletion = useCallback((completionRequest: CompletionRequest): Promise<Completion[]> => {
         return new Promise((resolve, reject) => {
@@ -896,6 +896,7 @@ export const useEditors = ({ wsRef, isConnected, onFileClosed }: UseEditorsParam
         });
     }, [
         isConnected,
+        isHistoricalFileId,
         resolveFileContentForPreview,
         updateReferencesPeekForPane,
         getFileContentForPreviewSync,
@@ -994,9 +995,10 @@ export const useEditors = ({ wsRef, isConnected, onFileClosed }: UseEditorsParam
         filename: string,
         errors?: { line: number; message: string }[],
         history?: History,
+        historical = false,
     ): Promise<AnycodeEditor> => {
         const editor = new AnycodeEditor(content, filename, language, {
-            ignoreEdits: isHistoricalFileId(filename),
+            ignoreEdits: historical,
         });
         await editor.init();
 
@@ -1009,7 +1011,7 @@ export const useEditors = ({ wsRef, isConnected, onFileClosed }: UseEditorsParam
         // Historical Git revisions are virtual editor files, not filesystem paths.
         // Do not attach LSP providers: sending their `git:<revision>:<path>` IDs to
         // the backend makes it try to open them as regular files.
-        if (!isHistoricalFileId(filename)) {
+        if (!historical) {
             editor.setCompletionProvider(handleCompletion);
             editor.setHoverProvider(handleHover);
             editor.setGoToDefinitionProvider(handleGoToDefinition);
@@ -1038,7 +1040,14 @@ export const useEditors = ({ wsRef, isConnected, onFileClosed }: UseEditorsParam
 
                     let editorPromise = initializingEditorsRef.current.get(file.id);
                     if (!editorPromise) {
-                        editorPromise = createEditor(content, file.language, file.id, errors, file.history);
+                        editorPromise = createEditor(
+                            content,
+                            file.language,
+                            file.id,
+                            errors,
+                            file.history,
+                            file.source?.type === 'git',
+                        );
                         initializingEditorsRef.current.set(file.id, editorPromise);
                     }
 
@@ -1143,7 +1152,7 @@ export const useEditors = ({ wsRef, isConnected, onFileClosed }: UseEditorsParam
         savedFileContentsRef.current.delete(fileId);
         editorOpenRequestsRef.current.delete(fileId);
         onFileClosed?.(fileId);
-    }, [flushChanges, wsRef, isConnected, onFileClosed]);
+    }, [flushChanges, isHistoricalFileId, wsRef, isConnected, onFileClosed]);
 
     const saveFile = useCallback((fileId: string) => {
         if (isHistoricalFileId(fileId)) return;
@@ -1167,7 +1176,7 @@ export const useEditors = ({ wsRef, isConnected, onFileClosed }: UseEditorsParam
                 }
             });
         }
-    }, [flushChanges, wsRef, isConnected]);
+    }, [flushChanges, isHistoricalFileId, wsRef, isConnected]);
 
     const handleDiagnostics = useCallback((diagnosticsResponse: DiagnosticResponse) => {
         const uri = diagnosticsResponse.uri || '';
