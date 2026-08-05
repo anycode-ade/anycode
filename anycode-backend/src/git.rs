@@ -4,6 +4,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use tokio::sync::{mpsc, oneshot};
+use tokio_util::sync::CancellationToken;
 use tracing::info;
 
 use crate::utils::format_path;
@@ -134,6 +136,259 @@ pub struct GitHistoryCommit {
 pub struct GitHistoryPage {
     pub commits: Vec<GitHistoryCommit>,
     pub has_more: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GitHistorySearchOutcome {
+    Complete(GitHistoryPage),
+    Cancelled,
+}
+
+pub enum SearchHistorySessionCommand {
+    NextPage {
+        limit: usize,
+        batches: Option<mpsc::UnboundedSender<Vec<GitHistoryCommit>>>,
+        response: oneshot::Sender<Result<GitHistorySearchOutcome>>,
+    },
+    Cancel,
+}
+
+pub struct SearchHistorySession {
+    root_path: PathBuf,
+    mode: GitHistorySearchMode,
+    query: String,
+    cancel: CancellationToken,
+}
+
+impl SearchHistorySession {
+    pub fn new(
+        root_path: PathBuf,
+        mode: GitHistorySearchMode,
+        query: String,
+        cancel: CancellationToken,
+    ) -> Self {
+        Self {
+            root_path,
+            mode,
+            query,
+            cancel,
+        }
+    }
+
+    pub fn run(self, mut commands: mpsc::UnboundedReceiver<SearchHistorySessionCommand>) {
+        info!("SearchHistorySession started");
+        let repo = match Repository::discover(&self.root_path) {
+            Ok(repo) => repo,
+            Err(error) => {
+                if let Some(SearchHistorySessionCommand::NextPage { response, .. }) =
+                    commands.blocking_recv()
+                {
+                    let _ = response.send(Err(error.into()));
+                }
+                return;
+            }
+        };
+        let query = self.query.trim().to_string();
+        let needle = query.to_lowercase();
+        let repo_empty = repo.is_empty().unwrap_or(false);
+        let mut walk = if self.mode == GitHistorySearchMode::Hash || query.is_empty() || repo_empty
+        {
+            None
+        } else {
+            match repo.revwalk().and_then(|mut walk| {
+                walk.push_head()?;
+                Ok(walk)
+            }) {
+                Ok(walk) => Some(walk),
+                Err(error) => {
+                    if let Some(SearchHistorySessionCommand::NextPage { response, .. }) =
+                        commands.blocking_recv()
+                    {
+                        let _ = response.send(Err(error.into()));
+                    }
+                    return;
+                }
+            }
+        };
+        let mut pending = None;
+        let mut exhausted = query.is_empty() || repo_empty;
+        let mut hash_consumed = false;
+
+        while let Some(command) = commands.blocking_recv() {
+            match command {
+                SearchHistorySessionCommand::Cancel => break,
+                SearchHistorySessionCommand::NextPage {
+                    limit,
+                    batches,
+                    response,
+                } => {
+                    let result = if self.cancel.is_cancelled() {
+                        Ok(GitHistorySearchOutcome::Cancelled)
+                    } else if self.mode == GitHistorySearchMode::Hash {
+                        search_history_hash_page(&repo, &query, &self.cancel, &mut hash_consumed)
+                    } else {
+                        search_history_walk_page(
+                            &repo,
+                            walk.as_mut().expect("revwalk exists for text search"),
+                            self.mode,
+                            &needle,
+                            limit,
+                            &self.cancel,
+                            &mut pending,
+                            &mut exhausted,
+                            batches.as_ref(),
+                        )
+                    };
+                    if let (Some(batches), Ok(GitHistorySearchOutcome::Complete(page))) =
+                        (batches.as_ref(), &result)
+                    {
+                        if self.mode == GitHistorySearchMode::Hash && !page.commits.is_empty() {
+                            let _ = batches.send(page.commits.clone());
+                        }
+                    }
+                    // Close the batch channel before completing the request so the
+                    // handler can drain every queued batch without racing the response.
+                    drop(batches);
+                    let should_stop = match &result {
+                        Ok(GitHistorySearchOutcome::Complete(_)) => false,
+                        Ok(GitHistorySearchOutcome::Cancelled) | Err(_) => true,
+                    };
+                    let _ = response.send(result);
+                    if should_stop {
+                        break;
+                    }
+                }
+            }
+        }
+
+        info!("SearchHistorySession stopped");
+    }
+}
+
+fn search_history_hash_page(
+    repo: &Repository,
+    query: &str,
+    cancel: &CancellationToken,
+    consumed: &mut bool,
+) -> Result<GitHistorySearchOutcome> {
+    if cancel.is_cancelled() {
+        return Ok(GitHistorySearchOutcome::Cancelled);
+    }
+    if *consumed
+        || query.len() < 4
+        || query.len() > 40
+        || !query.bytes().all(|byte| byte.is_ascii_hexdigit())
+    {
+        return Ok(GitHistorySearchOutcome::Complete(GitHistoryPage {
+            commits: Vec::new(),
+            has_more: false,
+        }));
+    }
+    *consumed = true;
+    let commit = repo
+        .revparse_single(query)
+        .ok()
+        .and_then(|object| object.peel_to_commit().ok())
+        .map(GitManager::history_commit);
+    if cancel.is_cancelled() {
+        return Ok(GitHistorySearchOutcome::Cancelled);
+    }
+    Ok(GitHistorySearchOutcome::Complete(GitHistoryPage {
+        commits: commit.into_iter().collect(),
+        has_more: false,
+    }))
+}
+
+fn search_history_walk_page(
+    repo: &Repository,
+    walk: &mut git2::Revwalk<'_>,
+    mode: GitHistorySearchMode,
+    needle: &str,
+    limit: usize,
+    cancel: &CancellationToken,
+    pending: &mut Option<GitHistoryCommit>,
+    exhausted: &mut bool,
+    batches: Option<&mpsc::UnboundedSender<Vec<GitHistoryCommit>>>,
+) -> Result<GitHistorySearchOutcome> {
+    let limit = limit.clamp(1, 100);
+    let mut commits = Vec::with_capacity(limit);
+    let mut batch = Vec::with_capacity(25);
+    let mut last_batch = std::time::Instant::now();
+    if let Some(commit) = pending.take() {
+        batch.push(commit.clone());
+        commits.push(commit);
+    }
+
+    while commits.len() < limit && !*exhausted {
+        match next_history_search_match(repo, walk, mode, needle, cancel)? {
+            Some(commit) => {
+                batch.push(commit.clone());
+                commits.push(commit);
+                if batch.len() >= 25 || last_batch.elapsed() >= std::time::Duration::from_millis(100)
+                {
+                    if let Some(batches) = batches {
+                        let _ = batches.send(std::mem::take(&mut batch));
+                    }
+                    last_batch = std::time::Instant::now();
+                }
+            }
+            None => *exhausted = true,
+        }
+        if cancel.is_cancelled() {
+            return Ok(GitHistorySearchOutcome::Cancelled);
+        }
+    }
+    if let Some(batches) = batches {
+        if !batch.is_empty() {
+            let _ = batches.send(batch);
+        }
+    }
+
+    if commits.len() == limit && !*exhausted {
+        match next_history_search_match(repo, walk, mode, needle, cancel)? {
+            Some(commit) => *pending = Some(commit),
+            None => *exhausted = true,
+        }
+    }
+    if cancel.is_cancelled() {
+        return Ok(GitHistorySearchOutcome::Cancelled);
+    }
+    Ok(GitHistorySearchOutcome::Complete(GitHistoryPage {
+        commits,
+        has_more: pending.is_some(),
+    }))
+}
+
+fn next_history_search_match(
+    repo: &Repository,
+    walk: &mut git2::Revwalk<'_>,
+    mode: GitHistorySearchMode,
+    needle: &str,
+    cancel: &CancellationToken,
+) -> Result<Option<GitHistoryCommit>> {
+    for oid in walk.by_ref() {
+        if cancel.is_cancelled() {
+            return Ok(None);
+        }
+        let commit = repo.find_commit(oid?)?;
+        let is_match = match mode {
+            GitHistorySearchMode::Message => commit
+                .message()
+                .unwrap_or("")
+                .to_lowercase()
+                .contains(needle),
+            GitHistorySearchMode::Author => {
+                let author = commit.author();
+                author.name().unwrap_or("").to_lowercase().contains(needle)
+                    || author.email().unwrap_or("").to_lowercase().contains(needle)
+            }
+            GitHistorySearchMode::Hash => unreachable!(),
+        };
+        if is_match {
+            return Ok(Some(GitManager::history_commit(commit)));
+        }
+    }
+    Ok(None)
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
@@ -298,103 +553,6 @@ impl GitManager {
             commits.push(Self::history_commit(repo.find_commit(oid?)?));
         }
 
-        Ok(GitHistoryPage { commits, has_more })
-    }
-
-    /// Search commits without building an in-memory index. Message and author
-    /// search commits reachable from HEAD and stop after the requested page
-    /// plus the extra `has_more` match. Hash search uses libgit2's repository-
-    /// wide abbreviated-object lookup instead of walking the history graph.
-    pub fn search_history(
-        &self,
-        mode: GitHistorySearchMode,
-        query: &str,
-        offset: usize,
-        limit: usize,
-    ) -> Result<GitHistoryPage> {
-        let repo = self.repo()?;
-        let query = query.trim();
-        if query.is_empty() || repo.is_empty()? {
-            return Ok(GitHistoryPage {
-                commits: Vec::new(),
-                has_more: false,
-            });
-        }
-
-        let limit = limit.clamp(1, 100);
-        if mode == GitHistorySearchMode::Hash {
-            if offset > 0
-                || query.len() < 4
-                || query.len() > 40
-                || !query.bytes().all(|byte| byte.is_ascii_hexdigit())
-            {
-                return Ok(GitHistoryPage {
-                    commits: Vec::new(),
-                    has_more: false,
-                });
-            }
-            let object = match repo.revparse_single(query) {
-                Ok(object) => object,
-                Err(_) => {
-                    return Ok(GitHistoryPage {
-                        commits: Vec::new(),
-                        has_more: false,
-                    });
-                }
-            };
-            let commit = match object.peel_to_commit() {
-                Ok(commit) => commit,
-                Err(_) => {
-                    return Ok(GitHistoryPage {
-                        commits: Vec::new(),
-                        has_more: false,
-                    });
-                }
-            };
-            return Ok(GitHistoryPage {
-                commits: vec![Self::history_commit(commit)],
-                has_more: false,
-            });
-        }
-
-        let needle = query.to_lowercase();
-        let mut walk = repo.revwalk()?;
-        walk.push_head()?;
-        let mut matched = 0usize;
-        let mut commits = Vec::with_capacity(limit);
-        let mut has_more = false;
-        for oid in walk {
-            let commit = repo.find_commit(oid?)?;
-            let is_match = match mode {
-                GitHistorySearchMode::Message => commit
-                    .message()
-                    .unwrap_or("")
-                    .to_lowercase()
-                    .contains(&needle),
-                GitHistorySearchMode::Author => {
-                    let author = commit.author();
-                    author.name().unwrap_or("").to_lowercase().contains(&needle)
-                        || author
-                            .email()
-                            .unwrap_or("")
-                            .to_lowercase()
-                            .contains(&needle)
-                }
-                GitHistorySearchMode::Hash => unreachable!(),
-            };
-            if !is_match {
-                continue;
-            }
-            if matched < offset {
-                matched += 1;
-                continue;
-            }
-            if commits.len() == limit {
-                has_more = true;
-                break;
-            }
-            commits.push(Self::history_commit(commit));
-        }
         Ok(GitHistoryPage { commits, has_more })
     }
 
@@ -1188,8 +1346,8 @@ impl GitManager {
         // collapse untracked directories and return no exact match for a nested
         // path. A path absent from HEAD is an added/untracked path regardless of
         // whether it has already been staged.
-        let is_new_file = !tracked_in_head
-            && (tracked_in_index || std::fs::symlink_metadata(&full_path).is_ok());
+        let is_new_file =
+            !tracked_in_head && (tracked_in_index || std::fs::symlink_metadata(&full_path).is_ok());
 
         if is_new_file {
             // A newly added file can be either untracked or already staged.
@@ -1229,12 +1387,16 @@ impl GitManager {
                 .is_some();
             still_in_index || std::fs::symlink_metadata(&full_path).is_ok()
         } else {
-            !repo.status_file(&relative_path)
+            !repo
+                .status_file(&relative_path)
                 .context("Failed to verify file status after revert")?
                 .is_empty()
         };
         if still_changed {
-            anyhow::bail!("Git revert completed, but the path is still changed: {}", path);
+            anyhow::bail!(
+                "Git revert completed, but the path is still changed: {}",
+                path
+            );
         }
 
         Ok(())

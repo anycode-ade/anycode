@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Socket } from 'socket.io-client';
 import type { ChangedFile } from '../components';
 
@@ -128,46 +128,106 @@ export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
     const historyCommitsRef = useRef<GitHistoryCommit[]>([]);
     const historySearchRef = useRef<{ mode: GitHistorySearchMode; query: string } | null>(null);
     const historyRequestIdRef = useRef(0);
+    const activeHistorySearchRequestIdRef = useRef<number | null>(null);
+
+    const cancelHistorySearch = useCallback(() => {
+        const requestId = activeHistorySearchRequestIdRef.current;
+        if (historySearchRef.current && wsRef.current && isConnected) {
+            wsRef.current.emit('git:history-search-cancel', {
+                request_id: requestId,
+            });
+        }
+        activeHistorySearchRequestIdRef.current = null;
+        // Invalidate the active callback even when the server acknowledgement
+        // races with the next normal-history request.
+        historyRequestIdRef.current += 1;
+        isHistoryLoadingRef.current = false;
+        setIsHistoryLoading(false);
+        setHistoryHasMore(false);
+    }, [isConnected, wsRef]);
+
+    useEffect(() => () => {
+        const requestId = activeHistorySearchRequestIdRef.current;
+        if (historySearchRef.current && wsRef.current?.connected) {
+            wsRef.current.emit('git:history-search-cancel', {
+                request_id: requestId,
+            });
+        }
+    }, [wsRef]);
 
     const requestHistoryPage = useCallback((reset: boolean, search: { mode: GitHistorySearchMode; query: string } | null) => {
         if (!wsRef.current || !isConnected || (!reset && isHistoryLoadingRef.current)) return;
         const offset = reset ? 0 : historyCommitsRef.current.length;
-        const requestId = reset ? ++historyRequestIdRef.current : historyRequestIdRef.current;
+        if (!search && historySearchRef.current) {
+            wsRef.current.emit('git:history-search-cancel', {
+                request_id: activeHistorySearchRequestIdRef.current,
+            });
+            activeHistorySearchRequestIdRef.current = null;
+            historySearchRef.current = null;
+        }
+        const requestId = ++historyRequestIdRef.current;
+        if (search) activeHistorySearchRequestIdRef.current = requestId;
         isHistoryLoadingRef.current = true;
         setIsHistoryLoading(true);
+        if (reset) {
+            historyCommitsRef.current = [];
+            setHistoryCommits([]);
+            setHistoryHasMore(false);
+            setHistoryFiles({});
+        }
         const event = search ? 'git:history-search' : 'git:history';
         const payload = search
-            ? { ...search, offset, limit: HISTORY_PAGE_SIZE }
+            ? {
+                mode: search.mode,
+                query: search.query,
+                request_id: requestId,
+                offset,
+                limit: HISTORY_PAGE_SIZE,
+            }
             : { offset, limit: HISTORY_PAGE_SIZE };
         wsRef.current.emit(event, payload, (response: any) => {
             if (requestId !== historyRequestIdRef.current) return;
+            if (search && response.request_id !== requestId) return;
+            if (activeHistorySearchRequestIdRef.current === requestId) {
+                activeHistorySearchRequestIdRef.current = null;
+            }
             isHistoryLoadingRef.current = false;
             setIsHistoryLoading(false);
             setIsHistoryLoaded(true);
             if (response.success) {
                 const commits = response.commits || [];
+                if (search && response.streamed) {
+                    setHistoryHasMore(!!response.has_more);
+                    return;
+                }
                 const nextCommits = reset ? commits : [...historyCommitsRef.current, ...commits];
                 historyCommitsRef.current = nextCommits;
                 setHistoryCommits(nextCommits);
                 if (reset) setHistoryFiles({});
                 setHistoryHasMore(!!response.has_more);
-            } else if (reset) {
-                historyCommitsRef.current = [];
-                setHistoryCommits([]);
-                setHistoryFiles({});
-                setHistoryHasMore(false);
             }
         });
     }, [isConnected, wsRef]);
 
+    const handleHistorySearchResults = useCallback((data: { request_id?: number; commits?: GitHistoryCommit[] }) => {
+        if (data.request_id !== historyRequestIdRef.current || !activeHistorySearchRequestIdRef.current) return;
+        const commits = data.commits || [];
+        if (!commits.length) return;
+        const nextCommits = [...historyCommitsRef.current, ...commits];
+        historyCommitsRef.current = nextCommits;
+        setHistoryCommits(nextCommits);
+    }, []);
+
     const fetchHistory = useCallback((reset = true) => {
+        if (reset && historySearchRef.current) cancelHistorySearch();
         if (reset) historySearchRef.current = null;
         requestHistoryPage(reset, null);
-    }, [requestHistoryPage]);
+    }, [cancelHistorySearch, requestHistoryPage]);
 
     const searchHistory = useCallback((mode: GitHistorySearchMode, query: string) => {
         const trimmedQuery = query.trim();
         if (!trimmedQuery) {
+            cancelHistorySearch();
             historySearchRef.current = null;
             requestHistoryPage(true, null);
             return;
@@ -175,15 +235,21 @@ export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
         const search = { mode, query: trimmedQuery };
         historySearchRef.current = search;
         requestHistoryPage(true, search);
-    }, [requestHistoryPage]);
+    }, [cancelHistorySearch, requestHistoryPage]);
 
     const clearHistorySearch = useCallback(() => {
+        cancelHistorySearch();
         historySearchRef.current = null;
         requestHistoryPage(true, null);
-    }, [requestHistoryPage]);
+    }, [cancelHistorySearch, requestHistoryPage]);
 
     const refreshHistory = useCallback(() => {
-        requestHistoryPage(true, historySearchRef.current);
+        const current = historySearchRef.current;
+        if (!current) {
+            requestHistoryPage(true, null);
+            return;
+        }
+        requestHistoryPage(true, current);
     }, [requestHistoryPage]);
 
     const loadMoreHistory = useCallback(() => {
@@ -459,11 +525,13 @@ export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
         fetchHistory,
         searchHistory,
         clearHistorySearch,
+        cancelHistorySearch,
         refreshHistory,
         loadMoreHistory,
         fetchHistoryFiles,
         fetchHistoryFileContent,
         handleGitStatusUpdate,
+        handleHistorySearchResults,
         commit,
         push,
         pull,

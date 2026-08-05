@@ -2,7 +2,7 @@ use crate::acp::AcpManager;
 use crate::acp_fs;
 use crate::code::Code;
 use crate::config::Config;
-use crate::git::GitManager;
+use crate::git::{GitManager, SearchHistorySessionCommand};
 use crate::lsp::LspManager;
 use crate::search::FileSearchResult;
 use crate::terminal::Terminal;
@@ -34,6 +34,7 @@ pub struct SocketData {
     pub search_pattern: Option<String>,
     pub search_last_file_result: Option<FileSearchResult>,
     pub files_search_cancel: Option<CancellationToken>,
+    pub git_history_search: Option<ActiveGitHistorySearch>,
 }
 
 #[derive(Clone)]
@@ -150,4 +151,29 @@ pub async fn is_language_opened(lang: &str, state: &State<AppState>) -> bool {
             .map(|code| code.lang == lang)
             .unwrap_or(false)
     })
+}
+
+#[derive(Clone)]
+pub struct ActiveGitHistorySearch {
+    pub sender: mpsc::UnboundedSender<SearchHistorySessionCommand>,
+    pub cancel: CancellationToken,
+}
+
+impl SocketData {
+    pub fn replace_git_history_search(&mut self, active: ActiveGitHistorySearch) {
+        if let Some(active) = self.git_history_search.replace(active) {
+            active.cancel.cancel();
+            let _ = active.sender.send(SearchHistorySessionCommand::Cancel);
+        }
+    }
+
+    pub fn cancel_git_history_search(&mut self) -> bool {
+        if let Some(active) = self.git_history_search.take() {
+            active.cancel.cancel();
+            let _ = active.sender.send(SearchHistorySessionCommand::Cancel);
+            true
+        } else {
+            false
+        }
+    }
 }

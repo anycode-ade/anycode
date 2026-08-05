@@ -27,56 +27,95 @@ fn commit_all_as(repo: &Repository, message: &str, name: &str, email: &str) -> g
 }
 
 #[test]
-fn history_search_supports_message_author_hash_and_pagination() {
+fn search_history_session_reuses_its_worker_cursor_across_pages() {
+    let temp_dir = tempfile::TempDir::new().unwrap();
+    let repo = Repository::init(temp_dir.path()).unwrap();
+    let mut expected = Vec::new();
+    for index in 0..5 {
+        std::fs::write(temp_dir.path().join("file.txt"), format!("{index}\n")).unwrap();
+        expected.push(commit_all(&repo, &format!("match {index}")).to_string());
+    }
+
+    let cancel = tokio_util::sync::CancellationToken::new();
+    let session = SearchHistorySession::new(
+        temp_dir.path().to_path_buf(),
+        GitHistorySearchMode::Message,
+        "match".to_string(),
+        cancel,
+    );
+    let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
+    let worker = std::thread::spawn(move || session.run(receiver));
+
+    let page = || {
+        let (response, result) = tokio::sync::oneshot::channel();
+        sender
+            .send(SearchHistorySessionCommand::NextPage {
+                limit: 2,
+                batches: None,
+                response,
+            })
+            .unwrap();
+        match result.blocking_recv().unwrap().unwrap() {
+            GitHistorySearchOutcome::Complete(page) => page,
+            GitHistorySearchOutcome::Cancelled => panic!("session was unexpectedly cancelled"),
+        }
+    };
+
+    let first = page();
+    let second = page();
+    assert_eq!(
+        first
+            .commits
+            .iter()
+            .map(|commit| &commit.hash)
+            .collect::<Vec<_>>(),
+        expected.iter().rev().take(2).collect::<Vec<_>>()
+    );
+    assert_eq!(
+        second
+            .commits
+            .iter()
+            .map(|commit| &commit.hash)
+            .collect::<Vec<_>>(),
+        expected.iter().rev().skip(2).take(2).collect::<Vec<_>>()
+    );
+    assert!(first.has_more);
+    assert!(second.has_more);
+
+    sender.send(SearchHistorySessionCommand::Cancel).unwrap();
+    worker.join().unwrap();
+}
+
+#[test]
+fn search_history_session_reports_cancellation_to_the_pending_page() {
     let temp_dir = tempfile::TempDir::new().unwrap();
     let repo = Repository::init(temp_dir.path()).unwrap();
     std::fs::write(temp_dir.path().join("file.txt"), "one\n").unwrap();
-    let first_fix = commit_all_as(&repo, "Fix parser", "Alice Example", "alice@example.com");
-    std::fs::write(temp_dir.path().join("file.txt"), "two\n").unwrap();
-    commit_all_as(&repo, "Documentation", "Bob Writer", "bob@example.com");
-    std::fs::write(temp_dir.path().join("file.txt"), "three\n").unwrap();
-    commit_all_as(&repo, "FIX renderer", "Alice Example", "alice@example.com");
-    std::fs::write(temp_dir.path().join("file.txt"), "four\n").unwrap();
-    commit_all_as(&repo, "Another fix", "Carol", "carol@example.com");
+    commit_all(&repo, "initial commit");
 
-    let manager = GitManager::new(temp_dir.path().to_path_buf());
-    let first_page = manager
-        .search_history(GitHistorySearchMode::Message, "fIx", 0, 2)
-        .unwrap();
-    assert_eq!(first_page.commits.len(), 2);
-    assert!(first_page.has_more);
-    let second_page = manager
-        .search_history(GitHistorySearchMode::Message, "fix", 2, 2)
-        .unwrap();
-    assert_eq!(second_page.commits.len(), 1);
-    assert_eq!(second_page.commits[0].hash, first_fix.to_string());
-    assert!(!second_page.has_more);
-
-    let author = manager
-        .search_history(GitHistorySearchMode::Author, "ALICE@", 0, 50)
-        .unwrap();
-    assert_eq!(author.commits.len(), 2);
-    assert!(
-        author
-            .commits
-            .iter()
-            .all(|commit| commit.author_name == "Alice Example")
+    let cancel = tokio_util::sync::CancellationToken::new();
+    let session = SearchHistorySession::new(
+        temp_dir.path().to_path_buf(),
+        GitHistorySearchMode::Message,
+        "not present".to_string(),
+        cancel.clone(),
     );
-
-    let hash_prefix = &first_fix.to_string()[..8];
-    let hash = manager
-        .search_history(GitHistorySearchMode::Hash, hash_prefix, 0, 50)
+    let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
+    let worker = std::thread::spawn(move || session.run(receiver));
+    cancel.cancel();
+    let (response, result) = tokio::sync::oneshot::channel();
+    sender
+        .send(SearchHistorySessionCommand::NextPage {
+            limit: 50,
+            batches: None,
+            response,
+        })
         .unwrap();
-    assert_eq!(hash.commits.len(), 1);
-    assert_eq!(hash.commits[0].hash, first_fix.to_string());
-    assert!(!hash.has_more);
-    assert!(
-        manager
-            .search_history(GitHistorySearchMode::Hash, hash_prefix, 1, 50)
-            .unwrap()
-            .commits
-            .is_empty()
+    assert_eq!(
+        result.blocking_recv().unwrap().unwrap(),
+        GitHistorySearchOutcome::Cancelled
     );
+    worker.join().unwrap();
 }
 
 #[test]

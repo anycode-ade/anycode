@@ -18,6 +18,7 @@ interface HistoryPanelProps {
     onLoadMore: () => void;
     onSearch: (mode: GitHistorySearchMode, query: string) => void;
     onClearSearch: () => void;
+    onCancelSearch: () => void;
     onCommitExpand: (hash: string) => void;
     onFileClick: (hash: string, file: GitHistoryFile) => void;
 }
@@ -80,6 +81,7 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = ({
     onLoadMore,
     onSearch,
     onClearSearch,
+    onCancelSearch,
     onCommitExpand,
     onFileClick,
 }) => {
@@ -159,12 +161,13 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = ({
     const handleToggleSearch = useCallback(() => {
         if (isSearchOpen) {
             if (searchQuery || appliedQuery) handleClearSearch();
+            else onCancelSearch();
             setIsSearchOpen(false);
         } else {
             setShouldRenderSearch(true);
             setIsSearchOpen(true);
         }
-    }, [appliedQuery, handleClearSearch, isSearchOpen, searchQuery]);
+    }, [appliedQuery, handleClearSearch, isSearchOpen, onCancelSearch, searchQuery]);
 
     const handleSearchModeChange = useCallback((mode: GitHistorySearchMode) => {
         if (mode === searchMode) return;
@@ -234,6 +237,8 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = ({
         return rows.filter((row) => row.top + row.height >= start && row.top <= end);
     }, [rows, scrollTop, viewportHeight]);
 
+    const isSearching = loading && !!appliedQuery;
+
     return (
         <div className="history-panel">
             <div className="history-header">
@@ -268,12 +273,16 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = ({
                             if (event.key === 'Enter') {
                                 event.preventDefault();
                                 handleSearch();
+                            } else if (event.key === 'Escape' && isSearching) {
+                                event.preventDefault();
+                                onCancelSearch();
                             } else if (event.key === 'Escape' && (searchQuery || appliedQuery)) {
                                 event.preventDefault();
                                 handleClearSearch();
                                 setIsSearchOpen(false);
                             } else if (event.key === 'Escape') {
                                 event.preventDefault();
+                                onCancelSearch();
                                 setIsSearchOpen(false);
                             }
                         }}
@@ -302,10 +311,13 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = ({
                     <button
                         className="history-search-submit"
                         type="button"
-                        onClick={handleSearch}
-                        disabled={!searchQuery.trim() || loading}
+                        onClick={isSearching ? onCancelSearch : handleSearch}
+                        disabled={!isSearching && (!searchQuery.trim() || loading)}
+                        aria-live="polite"
+                        aria-busy={isSearching}
                     >
-                        Search
+                        {isSearching ? <span className="history-search-spinner" aria-hidden="true" /> : null}
+                        {isSearching ? 'Cancel' : 'Search'}
                     </button>
                 </div>
             </div> : null}

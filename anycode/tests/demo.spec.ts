@@ -84,6 +84,44 @@ test.describe('Anycode Live Demo Mode E2E Tests', () => {
         }
     });
 
+    test('should browse, search, and open a commit from Git history', async ({ page }) => {
+        const historyTab = page.getByText(/^History$/i).first();
+        await expect(historyTab).toBeVisible({ timeout: 10000 });
+        await historyTab.click();
+
+        const historyPanel = page.locator('.history-panel');
+        const historyList = historyPanel.getByRole('list', { name: 'Git history' });
+        const commitRows = historyList.locator('.history-commit-row');
+
+        await expect(historyPanel).toBeVisible();
+        await expect(commitRows).toHaveCount(3);
+        await expect(historyList.getByText('Welcome to the Anycode demo')).toBeVisible();
+        await expect(historyList.getByText('Initial project')).toBeVisible();
+
+        await historyPanel.getByRole('button', { name: 'Search history' }).click();
+        const searchInput = historyPanel.getByRole('textbox', { name: 'Search Git history' });
+        await searchInput.fill('terminal');
+        await searchInput.press('Enter');
+
+        await expect(commitRows).toHaveCount(1);
+        await expect(historyList.getByText('Add editor and terminal panels')).toBeVisible();
+        await expect(historyList.getByText('Welcome to the Anycode demo')).not.toBeVisible();
+
+        await historyPanel.getByRole('button', { name: 'Clear history search' }).click();
+        await expect(commitRows).toHaveCount(3);
+
+        const firstCommit = commitRows.filter({ hasText: 'Welcome to the Anycode demo' });
+        await firstCommit.click();
+        await expect(firstCommit).toHaveAttribute('aria-expanded', 'true');
+
+        const historicalFile = historyList.locator('.history-file-row').filter({ hasText: 'main.rs' });
+        await expect(historicalFile).toBeVisible();
+        await historicalFile.click();
+
+        await expect(page.getByText('main.rs (de000000)', { exact: true }).first()).toBeVisible();
+        await expect(page.getByRole('button', { name: /^Diff mode diff\./ }).first()).toBeVisible();
+    });
+
     test('should trigger LSP completions and render non-empty completion popup', async ({ page }) => {
         const readme = page.getByText('README.md').first();
         await expect(readme).toBeVisible({ timeout: 10000 });

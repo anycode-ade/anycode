@@ -102,6 +102,7 @@ const App: React.FC = () => {
             ['watcher:remove', handleWatcherRemove],
             ['file:renamed', handleFileRenamed],
             ['git:update', git.handleGitStatusUpdate],
+            ['git:history-search:results', git.handleHistorySearchResults],
             ['git:update', editors.handleGitUpdate],
             ['acp:message', agents.handleAcpMessage],
             ['acp:history', agents.handleAcpHistory],
@@ -123,6 +124,7 @@ const App: React.FC = () => {
         handleWatcherRemove,
         handleFileRenamed,
         git.handleGitStatusUpdate,
+        git.handleHistorySearchResults,
         agents.handleAcpMessage,
         agents.handleAcpHistory,
         search.handleSearchResults,
@@ -448,6 +450,7 @@ const App: React.FC = () => {
                         onLoadMore={git.loadMoreHistory}
                         onSearch={git.searchHistory}
                         onClearSearch={git.clearHistorySearch}
+                        onCancelSearch={git.cancelHistorySearch}
                         onCommitExpand={git.fetchHistoryFiles}
                         onFileClick={handleOpenHistoryDiff}
                         fileIconsStyle={fileIconsStyle}

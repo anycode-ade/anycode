@@ -475,6 +475,7 @@ export class DemoSocket {
             }
 
             case 'git:history-search': {
+                const requestId = payload?.request_id;
                 const query = String(payload?.query ?? '').trim().toLowerCase();
                 const mode = payload?.mode ?? 'message';
                 const offset = payload?.offset ?? 0;
@@ -489,8 +490,18 @@ export class DemoSocket {
                 });
                 callback?.({
                     success: true,
+                    request_id: requestId,
                     commits: matches.slice(offset, offset + limit),
                     has_more: offset + limit < matches.length,
+                });
+                break;
+            }
+
+            case 'git:history-search-cancel': {
+                callback?.({
+                    success: true,
+                    cancelled: true,
+                    request_id: payload?.request_id,
                 });
                 break;
             }
