@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FileIcon } from './FileIcon';
 import { Icons } from './Icons';
-import type { GitHistoryCommit, GitHistoryFile } from '../hooks/useGit';
+import type { GitHistoryCommit, GitHistoryFile, GitHistorySearchMode } from '../hooks/useGit';
 import { usePersistedScroll } from '../hooks/usePersistedScroll';
 import './HistoryPanel.css';
 
@@ -16,6 +16,8 @@ interface HistoryPanelProps {
     fileIconsStyle?: 'colored' | 'monochrome' | 'disabled';
     onRefresh: () => void;
     onLoadMore: () => void;
+    onSearch: (mode: GitHistorySearchMode, query: string) => void;
+    onClearSearch: () => void;
     onCommitExpand: (hash: string) => void;
     onFileClick: (hash: string, file: GitHistoryFile) => void;
 }
@@ -76,6 +78,8 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = ({
     fileIconsStyle = 'colored',
     onRefresh,
     onLoadMore,
+    onSearch,
+    onClearSearch,
     onCommitExpand,
     onFileClick,
 }) => {
@@ -83,6 +87,12 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = ({
     const [isAnimating, setIsAnimating] = useState(false);
     const [scrollTop, setScrollTop] = useState(0);
     const [viewportHeight, setViewportHeight] = useState(0);
+    const [searchQuery, setSearchQuery] = useState('');
+    const [searchMode, setSearchMode] = useState<GitHistorySearchMode>('message');
+    const [appliedQuery, setAppliedQuery] = useState('');
+    const [isSearchOpen, setIsSearchOpen] = useState(false);
+    const [shouldRenderSearch, setShouldRenderSearch] = useState(false);
+    const searchInputRef = useRef<HTMLInputElement>(null);
     const listRef = usePersistedScroll<HTMLDivElement>('history-panel', 'session', [commits.length]);
 
     useEffect(() => {
@@ -103,6 +113,12 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = ({
         return () => observer.disconnect();
     }, [commits.length]);
 
+    useEffect(() => {
+        if (!isSearchOpen) return;
+        const frame = requestAnimationFrame(() => searchInputRef.current?.focus());
+        return () => cancelAnimationFrame(frame);
+    }, [isSearchOpen]);
+
     const handleToggleCommit = useCallback((hash: string) => {
         const isExpanded = expandedHashes.has(hash);
         setIsAnimating(true);
@@ -120,6 +136,44 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = ({
         setExpandedHashes(new Set());
         onRefresh();
     }, [onRefresh]);
+
+    const handleSearch = useCallback(() => {
+        const query = searchQuery.trim();
+        if (!query) {
+            setAppliedQuery('');
+            onClearSearch();
+        } else {
+            setAppliedQuery(query);
+            onSearch(searchMode, query);
+        }
+        if (listRef.current) listRef.current.scrollTop = 0;
+    }, [listRef, onClearSearch, onSearch, searchMode, searchQuery]);
+
+    const handleClearSearch = useCallback(() => {
+        setSearchQuery('');
+        setAppliedQuery('');
+        onClearSearch();
+        if (listRef.current) listRef.current.scrollTop = 0;
+    }, [listRef, onClearSearch]);
+
+    const handleToggleSearch = useCallback(() => {
+        if (isSearchOpen) {
+            if (searchQuery || appliedQuery) handleClearSearch();
+            setIsSearchOpen(false);
+        } else {
+            setShouldRenderSearch(true);
+            setIsSearchOpen(true);
+        }
+    }, [appliedQuery, handleClearSearch, isSearchOpen, searchQuery]);
+
+    const handleSearchModeChange = useCallback((mode: GitHistorySearchMode) => {
+        if (mode === searchMode) return;
+        setSearchMode(mode);
+        if (appliedQuery && searchQuery.trim() === appliedQuery) {
+            onSearch(mode, appliedQuery);
+            if (listRef.current) listRef.current.scrollTop = 0;
+        }
+    }, [appliedQuery, listRef, onSearch, searchMode, searchQuery]);
 
     const { rows, totalHeight } = useMemo(() => {
         const nextRows: HistoryRow[] = [];
@@ -156,10 +210,15 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = ({
             }
         }
 
-        if (commits.length === 0 && !loading) {
-            push({ key: 'empty-history', kind: 'message', text: 'No commits', height: MESSAGE_ROW_HEIGHT });
+        if (commits.length === 0 && (loaded || !loading)) {
+            push({
+                key: 'empty-history',
+                kind: 'message',
+                text: appliedQuery ? 'No matching commits' : 'No commits',
+                height: MESSAGE_ROW_HEIGHT,
+            });
         }
-        if (loading) {
+        if (loading && (commits.length > 0 || !loaded)) {
             // Keep the footer height stable while loading more so the browser
             // cannot compensate by moving the user's scroll position.
             push({ key: 'loading-history', kind: 'message', text: 'Loading history…', height: LOAD_MORE_ROW_HEIGHT });
@@ -167,7 +226,7 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = ({
             push({ key: 'load-more', kind: 'load-more', height: LOAD_MORE_ROW_HEIGHT });
         }
         return { rows: nextRows, totalHeight: top };
-    }, [commits, expandedHashes, filesByCommit, filesLoading, hasMore, loading]);
+    }, [appliedQuery, commits, expandedHashes, filesByCommit, filesLoading, hasMore, loaded, loading]);
 
     const visibleRows = useMemo(() => {
         const start = Math.max(0, scrollTop - OVERSCAN_PX);
@@ -182,10 +241,74 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = ({
                     <span className="history-branch-icon"><Icons.Git /></span>
                     <span className="history-branch-name">{branch || 'HEAD'}</span>
                 </div>
-                <button className="history-refresh" type="button" onClick={handleRefresh} disabled={loading} title="Refresh history" aria-label="Refresh history">
-                    <Icons.Refresh />
-                </button>
+                <div className="history-header-actions">
+                    <button className={`history-header-button ${isSearchOpen ? 'active' : ''}`} type="button" onClick={handleToggleSearch} title={isSearchOpen ? 'Close history search' : 'Search history'} aria-label={isSearchOpen ? 'Close history search' : 'Search history'} aria-expanded={isSearchOpen}>
+                        <Icons.Search />
+                    </button>
+                    <button className="history-header-button" type="button" onClick={handleRefresh} disabled={loading} title="Refresh history" aria-label="Refresh history">
+                        <Icons.Refresh />
+                    </button>
+                </div>
             </div>
+            {shouldRenderSearch ? <div
+                className={`history-search ${isSearchOpen ? 'open' : 'closing'}`}
+                onAnimationEnd={() => {
+                    if (!isSearchOpen) setShouldRenderSearch(false);
+                }}
+                aria-hidden={!isSearchOpen}
+            >
+                <div className="history-search-input-wrapper">
+                    <span className="history-search-icon"><Icons.Search /></span>
+                    <input
+                        ref={searchInputRef}
+                        className="history-search-input"
+                        value={searchQuery}
+                        onChange={(event) => setSearchQuery(event.target.value)}
+                        onKeyDown={(event) => {
+                            if (event.key === 'Enter') {
+                                event.preventDefault();
+                                handleSearch();
+                            } else if (event.key === 'Escape' && (searchQuery || appliedQuery)) {
+                                event.preventDefault();
+                                handleClearSearch();
+                                setIsSearchOpen(false);
+                            } else if (event.key === 'Escape') {
+                                event.preventDefault();
+                                setIsSearchOpen(false);
+                            }
+                        }}
+                        placeholder={`Search by ${searchMode}`}
+                        aria-label="Search Git history"
+                    />
+                    {searchQuery ? (
+                        <button className="history-search-clear" type="button" onClick={handleClearSearch} title="Clear search" aria-label="Clear history search">
+                            <Icons.Close size={10} />
+                        </button>
+                    ) : null}
+                </div>
+                <div className="history-search-mode-toggle" role="tablist" aria-label="History search field">
+                    {(['message', 'hash', 'author'] as const).map((mode) => (
+                        <button
+                            key={mode}
+                            type="button"
+                            className={`search-mode-button ${searchMode === mode ? 'active' : ''}`}
+                            onClick={() => handleSearchModeChange(mode)}
+                            role="tab"
+                            aria-selected={searchMode === mode}
+                        >
+                            {mode[0].toUpperCase() + mode.slice(1)}
+                        </button>
+                    ))}
+                    <button
+                        className="history-search-submit"
+                        type="button"
+                        onClick={handleSearch}
+                        disabled={!searchQuery.trim() || loading}
+                    >
+                        Search
+                    </button>
+                </div>
+            </div> : null}
             <div
                 ref={listRef}
                 className="history-list"

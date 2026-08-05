@@ -444,8 +444,10 @@ const App: React.FC = () => {
                         loading={git.isHistoryLoading}
                         loaded={git.isHistoryLoaded}
                         filesLoading={git.historyFilesLoading}
-                        onRefresh={() => git.fetchHistory(true)}
-                        onLoadMore={() => git.fetchHistory(false)}
+                        onRefresh={git.refreshHistory}
+                        onLoadMore={git.loadMoreHistory}
+                        onSearch={git.searchHistory}
+                        onClearSearch={git.clearHistorySearch}
                         onCommitExpand={git.fetchHistoryFiles}
                         onFileClick={handleOpenHistoryDiff}
                         fileIconsStyle={fileIconsStyle}

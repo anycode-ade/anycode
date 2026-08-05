@@ -1,4 +1,5 @@
 use crate::app_state::{AppState, send_response};
+use crate::git::GitHistorySearchMode;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use socketioxide::extract::{AckSender, Data, SocketRef, State};
@@ -26,6 +27,16 @@ pub struct GitCheckoutRequest {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct GitHistoryRequest {
+    #[serde(default)]
+    pub offset: usize,
+    #[serde(default = "default_history_limit")]
+    pub limit: usize,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct GitHistorySearchRequest {
+    pub mode: GitHistorySearchMode,
+    pub query: String,
     #[serde(default)]
     pub offset: usize,
     #[serde(default = "default_history_limit")]
@@ -93,6 +104,23 @@ pub async fn handle_git_history(
                 "has_more": page.has_more,
             })
         })
+    };
+    send_response(ack, result);
+}
+
+pub async fn handle_git_history_search(
+    Data(request): Data<GitHistorySearchRequest>,
+    ack: AckSender,
+    state: State<AppState>,
+) {
+    info!(
+        "Received git:history-search: mode={:?}, offset={}, limit={}",
+        request.mode, request.offset, request.limit
+    );
+    let result = {
+        let git = state.git_manager.lock().await;
+        git.search_history(request.mode, &request.query, request.offset, request.limit)
+            .map(|page| json!({ "commits": page.commits, "has_more": page.has_more }))
     };
     send_response(ack, result);
 }

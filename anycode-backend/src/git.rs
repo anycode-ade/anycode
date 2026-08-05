@@ -136,6 +136,14 @@ pub struct GitHistoryPage {
     pub has_more: bool,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum GitHistorySearchMode {
+    Message,
+    Hash,
+    Author,
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct GitHistoryFile {
     pub path: String,
@@ -287,23 +295,123 @@ impl GitManager {
                 has_more = true;
                 break;
             }
-            let commit = repo.find_commit(oid?)?;
-            let author = commit.author();
-            let time = commit.time();
-            commits.push(GitHistoryCommit {
-                hash: commit.id().to_string(),
-                tags: Vec::new(),
-                parents: commit.parent_ids().map(|id| id.to_string()).collect(),
-                summary: commit.summary().unwrap_or("").to_string(),
-                message: commit.message().unwrap_or("").to_string(),
-                author_name: author.name().unwrap_or("").to_string(),
-                author_email: author.email().unwrap_or("").to_string(),
-                timestamp: time.seconds(),
-                timezone_offset: time.offset_minutes(),
-            });
+            commits.push(Self::history_commit(repo.find_commit(oid?)?));
         }
 
         Ok(GitHistoryPage { commits, has_more })
+    }
+
+    /// Search commits without building an in-memory index. Message and author
+    /// search commits reachable from HEAD and stop after the requested page
+    /// plus the extra `has_more` match. Hash search uses libgit2's repository-
+    /// wide abbreviated-object lookup instead of walking the history graph.
+    pub fn search_history(
+        &self,
+        mode: GitHistorySearchMode,
+        query: &str,
+        offset: usize,
+        limit: usize,
+    ) -> Result<GitHistoryPage> {
+        let repo = self.repo()?;
+        let query = query.trim();
+        if query.is_empty() || repo.is_empty()? {
+            return Ok(GitHistoryPage {
+                commits: Vec::new(),
+                has_more: false,
+            });
+        }
+
+        let limit = limit.clamp(1, 100);
+        if mode == GitHistorySearchMode::Hash {
+            if offset > 0
+                || query.len() < 4
+                || query.len() > 40
+                || !query.bytes().all(|byte| byte.is_ascii_hexdigit())
+            {
+                return Ok(GitHistoryPage {
+                    commits: Vec::new(),
+                    has_more: false,
+                });
+            }
+            let object = match repo.revparse_single(query) {
+                Ok(object) => object,
+                Err(_) => {
+                    return Ok(GitHistoryPage {
+                        commits: Vec::new(),
+                        has_more: false,
+                    });
+                }
+            };
+            let commit = match object.peel_to_commit() {
+                Ok(commit) => commit,
+                Err(_) => {
+                    return Ok(GitHistoryPage {
+                        commits: Vec::new(),
+                        has_more: false,
+                    });
+                }
+            };
+            return Ok(GitHistoryPage {
+                commits: vec![Self::history_commit(commit)],
+                has_more: false,
+            });
+        }
+
+        let needle = query.to_lowercase();
+        let mut walk = repo.revwalk()?;
+        walk.push_head()?;
+        let mut matched = 0usize;
+        let mut commits = Vec::with_capacity(limit);
+        let mut has_more = false;
+        for oid in walk {
+            let commit = repo.find_commit(oid?)?;
+            let is_match = match mode {
+                GitHistorySearchMode::Message => commit
+                    .message()
+                    .unwrap_or("")
+                    .to_lowercase()
+                    .contains(&needle),
+                GitHistorySearchMode::Author => {
+                    let author = commit.author();
+                    author.name().unwrap_or("").to_lowercase().contains(&needle)
+                        || author
+                            .email()
+                            .unwrap_or("")
+                            .to_lowercase()
+                            .contains(&needle)
+                }
+                GitHistorySearchMode::Hash => unreachable!(),
+            };
+            if !is_match {
+                continue;
+            }
+            if matched < offset {
+                matched += 1;
+                continue;
+            }
+            if commits.len() == limit {
+                has_more = true;
+                break;
+            }
+            commits.push(Self::history_commit(commit));
+        }
+        Ok(GitHistoryPage { commits, has_more })
+    }
+
+    fn history_commit(commit: git2::Commit<'_>) -> GitHistoryCommit {
+        let author = commit.author();
+        let time = commit.time();
+        GitHistoryCommit {
+            hash: commit.id().to_string(),
+            tags: Vec::new(),
+            parents: commit.parent_ids().map(|id| id.to_string()).collect(),
+            summary: commit.summary().unwrap_or("").to_string(),
+            message: commit.message().unwrap_or("").to_string(),
+            author_name: author.name().unwrap_or("").to_string(),
+            author_email: author.email().unwrap_or("").to_string(),
+            timestamp: time.seconds(),
+            timezone_offset: time.offset_minutes(),
+        }
     }
 
     /// Diff a commit against its first parent. Root commits are diffed against an empty tree.

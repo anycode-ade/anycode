@@ -2,6 +2,10 @@ use super::*;
 use std::time::Instant;
 
 fn commit_all(repo: &Repository, message: &str) -> git2::Oid {
+    commit_all_as(repo, message, "Anycode Test", "test@anycode.dev")
+}
+
+fn commit_all_as(repo: &Repository, message: &str, name: &str, email: &str) -> git2::Oid {
     let mut index = repo.index().unwrap();
     index
         .add_all(["*"].iter(), git2::IndexAddOption::DEFAULT, None)
@@ -10,7 +14,7 @@ fn commit_all(repo: &Repository, message: &str) -> git2::Oid {
     index.write().unwrap();
     let tree_id = index.write_tree().unwrap();
     let tree = repo.find_tree(tree_id).unwrap();
-    let sig = git2::Signature::now("Anycode Test", "test@anycode.dev").unwrap();
+    let sig = git2::Signature::now(name, email).unwrap();
     let parents = repo
         .head()
         .ok()
@@ -20,6 +24,59 @@ fn commit_all(repo: &Repository, message: &str) -> git2::Oid {
     let parent_refs = parents.iter().collect::<Vec<_>>();
     repo.commit(Some("HEAD"), &sig, &sig, message, &tree, &parent_refs)
         .unwrap()
+}
+
+#[test]
+fn history_search_supports_message_author_hash_and_pagination() {
+    let temp_dir = tempfile::TempDir::new().unwrap();
+    let repo = Repository::init(temp_dir.path()).unwrap();
+    std::fs::write(temp_dir.path().join("file.txt"), "one\n").unwrap();
+    let first_fix = commit_all_as(&repo, "Fix parser", "Alice Example", "alice@example.com");
+    std::fs::write(temp_dir.path().join("file.txt"), "two\n").unwrap();
+    commit_all_as(&repo, "Documentation", "Bob Writer", "bob@example.com");
+    std::fs::write(temp_dir.path().join("file.txt"), "three\n").unwrap();
+    commit_all_as(&repo, "FIX renderer", "Alice Example", "alice@example.com");
+    std::fs::write(temp_dir.path().join("file.txt"), "four\n").unwrap();
+    commit_all_as(&repo, "Another fix", "Carol", "carol@example.com");
+
+    let manager = GitManager::new(temp_dir.path().to_path_buf());
+    let first_page = manager
+        .search_history(GitHistorySearchMode::Message, "fIx", 0, 2)
+        .unwrap();
+    assert_eq!(first_page.commits.len(), 2);
+    assert!(first_page.has_more);
+    let second_page = manager
+        .search_history(GitHistorySearchMode::Message, "fix", 2, 2)
+        .unwrap();
+    assert_eq!(second_page.commits.len(), 1);
+    assert_eq!(second_page.commits[0].hash, first_fix.to_string());
+    assert!(!second_page.has_more);
+
+    let author = manager
+        .search_history(GitHistorySearchMode::Author, "ALICE@", 0, 50)
+        .unwrap();
+    assert_eq!(author.commits.len(), 2);
+    assert!(
+        author
+            .commits
+            .iter()
+            .all(|commit| commit.author_name == "Alice Example")
+    );
+
+    let hash_prefix = &first_fix.to_string()[..8];
+    let hash = manager
+        .search_history(GitHistorySearchMode::Hash, hash_prefix, 0, 50)
+        .unwrap();
+    assert_eq!(hash.commits.len(), 1);
+    assert_eq!(hash.commits[0].hash, first_fix.to_string());
+    assert!(!hash.has_more);
+    assert!(
+        manager
+            .search_history(GitHistorySearchMode::Hash, hash_prefix, 1, 50)
+            .unwrap()
+            .commits
+            .is_empty()
+    );
 }
 
 #[test]

@@ -66,6 +66,8 @@ export type GitHistoryFileContent = {
     new_binary: boolean;
 };
 
+export type GitHistorySearchMode = 'message' | 'hash' | 'author';
+
 const HISTORY_PAGE_SIZE = 50;
 
 const areChangedFilesEqual = (prev: ChangedFile, next: ChangedFile): boolean => (
@@ -123,28 +125,70 @@ export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
     const [historyFilesLoading, setHistoryFilesLoading] = useState<Record<string, boolean>>({});
     const isHistoryLoadingRef = useRef(false);
     const historyFilesLoadingRef = useRef(new Set<string>());
+    const historyCommitsRef = useRef<GitHistoryCommit[]>([]);
+    const historySearchRef = useRef<{ mode: GitHistorySearchMode; query: string } | null>(null);
+    const historyRequestIdRef = useRef(0);
 
-    const fetchHistory = useCallback((reset = true) => {
-        if (!wsRef.current || !isConnected || isHistoryLoadingRef.current) return;
-        const offset = reset ? 0 : historyCommits.length;
+    const requestHistoryPage = useCallback((reset: boolean, search: { mode: GitHistorySearchMode; query: string } | null) => {
+        if (!wsRef.current || !isConnected || (!reset && isHistoryLoadingRef.current)) return;
+        const offset = reset ? 0 : historyCommitsRef.current.length;
+        const requestId = reset ? ++historyRequestIdRef.current : historyRequestIdRef.current;
         isHistoryLoadingRef.current = true;
         setIsHistoryLoading(true);
-        wsRef.current.emit('git:history', { offset, limit: HISTORY_PAGE_SIZE }, (response: any) => {
+        const event = search ? 'git:history-search' : 'git:history';
+        const payload = search
+            ? { ...search, offset, limit: HISTORY_PAGE_SIZE }
+            : { offset, limit: HISTORY_PAGE_SIZE };
+        wsRef.current.emit(event, payload, (response: any) => {
+            if (requestId !== historyRequestIdRef.current) return;
             isHistoryLoadingRef.current = false;
             setIsHistoryLoading(false);
             setIsHistoryLoaded(true);
             if (response.success) {
                 const commits = response.commits || [];
-                setHistoryCommits((prev) => reset ? commits : [...prev, ...commits]);
+                const nextCommits = reset ? commits : [...historyCommitsRef.current, ...commits];
+                historyCommitsRef.current = nextCommits;
+                setHistoryCommits(nextCommits);
                 if (reset) setHistoryFiles({});
                 setHistoryHasMore(!!response.has_more);
             } else if (reset) {
+                historyCommitsRef.current = [];
                 setHistoryCommits([]);
                 setHistoryFiles({});
                 setHistoryHasMore(false);
             }
         });
-    }, [historyCommits.length, isConnected, wsRef]);
+    }, [isConnected, wsRef]);
+
+    const fetchHistory = useCallback((reset = true) => {
+        if (reset) historySearchRef.current = null;
+        requestHistoryPage(reset, null);
+    }, [requestHistoryPage]);
+
+    const searchHistory = useCallback((mode: GitHistorySearchMode, query: string) => {
+        const trimmedQuery = query.trim();
+        if (!trimmedQuery) {
+            historySearchRef.current = null;
+            requestHistoryPage(true, null);
+            return;
+        }
+        const search = { mode, query: trimmedQuery };
+        historySearchRef.current = search;
+        requestHistoryPage(true, search);
+    }, [requestHistoryPage]);
+
+    const clearHistorySearch = useCallback(() => {
+        historySearchRef.current = null;
+        requestHistoryPage(true, null);
+    }, [requestHistoryPage]);
+
+    const refreshHistory = useCallback(() => {
+        requestHistoryPage(true, historySearchRef.current);
+    }, [requestHistoryPage]);
+
+    const loadMoreHistory = useCallback(() => {
+        requestHistoryPage(false, historySearchRef.current);
+    }, [requestHistoryPage]);
 
     const fetchHistoryFiles = useCallback((hash: string) => {
         if (!wsRef.current || !isConnected || historyFiles[hash] || historyFilesLoadingRef.current.has(hash)) return;
@@ -294,7 +338,7 @@ export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
             wsRef.current.emit('git:commit', { message }, (response: any) => {
                 if (response.success) {
                     fetchGitStatus();
-                    fetchHistory(true);
+                    refreshHistory();
                     resolve(true);
                 } else {
                     alert('Commit failed: ' + response.error);
@@ -302,7 +346,7 @@ export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
                 }
             });
         });
-    }, [wsRef, isConnected, fetchGitStatus, fetchHistory]);
+    }, [wsRef, isConnected, fetchGitStatus, refreshHistory]);
 
     const push = useCallback(() => {
         if (!wsRef.current || !isConnected) return;
@@ -335,12 +379,12 @@ export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
                 }
 
                 fetchGitStatus();
-                if (status !== 'conflict') fetchHistory(true);
+                if (status !== 'conflict') refreshHistory();
             } else {
                 alert('Pull failed: ' + response.error);
             }
         });
-    }, [wsRef, isConnected, fetchGitStatus, fetchHistory]);
+    }, [wsRef, isConnected, fetchGitStatus, refreshHistory]);
 
     const revert = useCallback((path: string) => {
         if (!wsRef.current || !isConnected) return;
@@ -367,7 +411,7 @@ export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
                 if (response.success) {
                     fetchGitStatus();
                     fetchBranches();
-                    fetchHistory(true);
+                    refreshHistory();
                     resolve(true);
                 } else {
                     alert(response.error || 'Failed to change branch');
@@ -375,7 +419,7 @@ export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
                 }
             });
         });
-    }, [wsRef, isConnected, fetchGitStatus, fetchBranches, fetchHistory]);
+    }, [wsRef, isConnected, fetchGitStatus, fetchBranches, refreshHistory]);
 
     const stage = useCallback((path: string) => {
         if (!wsRef.current || !isConnected) return;
@@ -413,6 +457,10 @@ export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
         fetchGitStatus,
         fetchBranches,
         fetchHistory,
+        searchHistory,
+        clearHistorySearch,
+        refreshHistory,
+        loadMoreHistory,
         fetchHistoryFiles,
         fetchHistoryFileContent,
         handleGitStatusUpdate,
