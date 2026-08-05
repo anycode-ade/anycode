@@ -129,6 +129,7 @@ export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
     const historySearchRef = useRef<{ mode: GitHistorySearchMode; query: string } | null>(null);
     const historyRequestIdRef = useRef(0);
     const activeHistorySearchRequestIdRef = useRef<number | null>(null);
+    const gitHeadHashRef = useRef<string | undefined>(undefined);
 
     const cancelHistorySearch = useCallback(() => {
         const requestId = activeHistorySearchRequestIdRef.current;
@@ -294,9 +295,11 @@ export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
             if (response.success) {
                 setChangedFiles(sortChangedFiles(response.files || []));
                 setGitBranch(response.branch || '');
+                gitHeadHashRef.current = response.head_hash;
             } else {
                 setChangedFiles([]);
                 setGitBranch('');
+                gitHeadHashRef.current = undefined;
             }
         });
     }, [wsRef, isConnected]);
@@ -363,6 +366,11 @@ export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
             return;
         }
 
+        const headChanged = data.head_hash !== undefined
+            && gitHeadHashRef.current !== undefined
+            && gitHeadHashRef.current !== data.head_hash;
+        gitHeadHashRef.current = data.head_hash;
+
         setGitBranch(data.branch || '');
         setChangedFiles((prev) => {
             const nextFiles = sortChangedFiles(data.files || []);
@@ -392,7 +400,11 @@ export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
             }
             return prev;
         });
-    }, []);
+
+        if (headChanged) {
+            refreshHistory();
+        }
+    }, [refreshHistory]);
 
     const commit = useCallback((message: string): Promise<boolean> => {
         return new Promise((resolve) => {
