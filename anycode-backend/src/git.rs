@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 use tracing::info;
@@ -554,6 +555,92 @@ impl GitManager {
         }
 
         Ok(GitHistoryPage { commits, has_more })
+    }
+
+    /// Return commits whose first-parent diff touches `path`.
+    pub fn file_history(&self, path: &str, offset: usize, limit: usize) -> Result<GitHistoryPage> {
+        let repo = self.repo()?;
+        if repo.is_empty()? {
+            return Ok(GitHistoryPage {
+                commits: Vec::new(),
+                has_more: false,
+            });
+        }
+
+        let limit = limit.clamp(1, 100);
+        let Some(root) = repo.workdir().and_then(|path| path.canonicalize().ok()) else {
+            return Ok(GitHistoryPage {
+                commits: Vec::new(),
+                has_more: false,
+            });
+        };
+        let requested_path = Path::new(path);
+        let absolute_path = if requested_path.is_absolute() { requested_path.to_path_buf() } else { root.join(requested_path) };
+        let normalized_path = absolute_path.canonicalize().unwrap_or(absolute_path);
+        let Ok(relative_path) = normalized_path.strip_prefix(&root) else {
+            return Ok(GitHistoryPage {
+                commits: Vec::new(),
+                has_more: false,
+            });
+        };
+        let path = relative_path.to_string_lossy().replace('\\', "/");
+        if path.is_empty() {
+            return Ok(GitHistoryPage {
+                commits: Vec::new(),
+                has_more: false,
+            });
+        }
+        let max_count = offset.saturating_add(limit).saturating_add(1).to_string();
+        let output = Command::new("git")
+            .arg("-C")
+            .arg(&root)
+            .args(["log", "--no-color", "--date=default"])
+            .arg(format!("--max-count={max_count}"))
+            .arg("--format=%H%x00%P%x00%an%x00%ae%x00%at%x00%z%x00%s%x00%b%x1e")
+            .arg("--")
+            .arg(&path)
+            .output()
+            .context("Failed to read Git file history")?;
+        if !output.status.success() {
+            anyhow::bail!("Git file history failed: {}", String::from_utf8_lossy(&output.stderr));
+        }
+        let matching = String::from_utf8_lossy(&output.stdout)
+            .split('\u{1e}')
+            .filter_map(Self::parse_history_commit)
+            .collect::<Vec<_>>();
+        let has_more = matching.len() > offset + limit;
+        let commits = matching.into_iter().skip(offset).take(limit).collect();
+        Ok(GitHistoryPage { commits, has_more })
+    }
+
+    fn parse_history_commit(record: &str) -> Option<GitHistoryCommit> {
+        let mut fields = record.split('\0');
+        let hash = fields.next()?.trim().to_string();
+        if hash.is_empty() {
+            return None;
+        }
+        let parents = fields
+            .next()?
+            .split_whitespace()
+            .map(str::to_string)
+            .collect();
+        let author_name = fields.next()?.to_string();
+        let author_email = fields.next()?.to_string();
+        let timestamp = fields.next()?.parse().ok()?;
+        let timezone_offset = fields.next().and_then(parse_timezone_offset).unwrap_or(0);
+        let summary = fields.next()?.to_string();
+        let message = fields.next().unwrap_or("").trim().to_string();
+        Some(GitHistoryCommit {
+            hash,
+            tags: Vec::new(),
+            parents,
+            summary,
+            message,
+            author_name,
+            author_email,
+            timestamp,
+            timezone_offset,
+        })
     }
 
     fn history_commit(commit: git2::Commit<'_>) -> GitHistoryCommit {
@@ -1961,6 +2048,16 @@ impl GitManager {
     fn status_for_relative_path(&mut self, relative_path: &str) -> Result<Option<GitFileStatus>> {
         self.status_file_custom(relative_path)
     }
+}
+
+fn parse_timezone_offset(value: &str) -> Option<i32> {
+    let sign = if value.starts_with('-') { -1 } else { 1 };
+    let digits = value.trim_start_matches(['+', '-']);
+    (digits.len() == 4).then(|| {
+        let hours: i32 = digits[..2].parse().ok()?;
+        let minutes: i32 = digits[2..].parse().ok()?;
+        Some(sign * (hours * 60 + minutes))
+    })?
 }
 
 #[cfg(test)]

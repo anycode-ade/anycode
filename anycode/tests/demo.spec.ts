@@ -122,6 +122,28 @@ test.describe('Anycode Live Demo Mode E2E Tests', () => {
         await expect(page.getByRole('button', { name: /^Diff mode diff\./ }).first()).toBeVisible();
     });
 
+    test('should filter demo Git history to the active file and reveal all commit files', async ({ page }) => {
+        const readmeFile = page.getByText('README.md').first();
+        await expect(readmeFile).toBeVisible({ timeout: 10000 });
+        await readmeFile.click();
+
+        const historyTab = page.getByText(/^History$/i).first();
+        await historyTab.click();
+        const historyPanel = page.locator('.history-panel');
+        const historyList = historyPanel.getByRole('list', { name: 'Git history' });
+
+        await historyPanel.getByRole('tab', { name: 'File' }).click();
+        await expect(historyList.locator('.history-commit-row')).toHaveCount(2);
+
+        const firstCommit = historyList.locator('.history-commit-row').first();
+        await firstCommit.click();
+        await expect(historyList.locator('.history-file-row').filter({ hasText: 'README.md' })).toBeVisible();
+        await expect(historyList.locator('.history-file-row').filter({ hasText: 'main.rs' })).not.toBeVisible();
+
+        await historyPanel.getByRole('button', { name: 'Show all (2)' }).click();
+        await expect(historyList.locator('.history-file-row').filter({ hasText: 'README.md' })).toBeVisible();
+    });
+
     test('should trigger LSP completions and render non-empty completion popup', async ({ page }) => {
         const readme = page.getByText('README.md').first();
         await expect(readme).toBeVisible({ timeout: 10000 });

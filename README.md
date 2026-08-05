@@ -15,6 +15,7 @@
 - **LSP integration**: LSP support for intelligent code completion, go-to-definition, hover information and real-time diagnostics.
 - **File system integration**: WebSocket-based backend for browsing and editing files from your local filesystem.
 - **Changes**: Built-in git Changes panel, per-file revert, commit, push, and pull.
+- **History**: Browse Git commit history for the repository or current file, inspect changes, and open previous versions.
 - **Free layout**: Flexible pane layout for arranging the workspace the way you want.
 - **Integrated terminal**: Full-featured terminal emulator with WebSocket-based communication, supporting real-time command execution and output.
 - **Search functionality**: Powerful search capabilities including local search within files and global search across project.
@@ -49,11 +50,6 @@ Windows installer details:
 - Supports overrides via `ANYCODE_VERSION`, `ANYCODE_INSTALL_DIR`, and `ANYCODE_REPO`
 - Current release installer targets Windows x64; Windows ARM64 can still build from source
 
-If you want a specific release:
-```powershell
-$env:ANYCODE_VERSION="v0.0.26"
-irm https://raw.githubusercontent.com/anycode-ade/anycode/main/install.ps1 | iex
-```
 
 ## Development
 
@@ -86,12 +82,6 @@ Prerequisites:
    ```
 
 5. **Open your browser** and navigate to the frontend URL
-
-### Windows notes
-
-- Run the commands in PowerShell, Windows Terminal, or another shell with `cargo`, `node`, and `pnpm` on `PATH`.
-- The backend already uses `cmd.exe` as the integrated terminal shell on Windows.
-- Release-based installation on Windows depends on the published `anycode-windows-x86_64.zip` asset.
 
 ## Contributing
 

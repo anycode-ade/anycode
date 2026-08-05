@@ -122,11 +122,14 @@ export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
     const [historyHasMore, setHistoryHasMore] = useState(false);
     const [isHistoryLoading, setIsHistoryLoading] = useState(false);
     const [isHistoryLoaded, setIsHistoryLoaded] = useState(false);
+    const [historyPath, setHistoryPath] = useState<string | null>(null);
     const [historyFilesLoading, setHistoryFilesLoading] = useState<Record<string, boolean>>({});
     const isHistoryLoadingRef = useRef(false);
     const historyFilesLoadingRef = useRef(new Set<string>());
     const historyCommitsRef = useRef<GitHistoryCommit[]>([]);
     const historySearchRef = useRef<{ mode: GitHistorySearchMode; query: string } | null>(null);
+    const historyPathRef = useRef<string | null>(null);
+    const historyResetTimerRef = useRef<number | null>(null);
     const historyRequestIdRef = useRef(0);
     const activeHistorySearchRequestIdRef = useRef<number | null>(null);
     const gitHeadHashRef = useRef<string | undefined>(undefined);
@@ -171,10 +174,19 @@ export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
         isHistoryLoadingRef.current = true;
         setIsHistoryLoading(true);
         if (reset) {
+            if (historyResetTimerRef.current !== null) {
+                window.clearTimeout(historyResetTimerRef.current);
+                historyResetTimerRef.current = null;
+            }
             historyCommitsRef.current = [];
-            setHistoryCommits([]);
             setHistoryHasMore(false);
-            setHistoryFiles({});
+            historyResetTimerRef.current = window.setTimeout(() => {
+                historyResetTimerRef.current = null;
+                if (requestId === historyRequestIdRef.current) {
+                    setHistoryCommits([]);
+                    setHistoryFiles({});
+                }
+            }, 180);
         }
         const event = search ? 'git:history-search' : 'git:history';
         const payload = search
@@ -185,12 +197,16 @@ export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
                 offset,
                 limit: HISTORY_PAGE_SIZE,
             }
-            : { offset, limit: HISTORY_PAGE_SIZE };
+            : { offset, limit: HISTORY_PAGE_SIZE, path: historyPathRef.current || undefined };
         wsRef.current.emit(event, payload, (response: any) => {
             if (requestId !== historyRequestIdRef.current) return;
             if (search && response.request_id !== requestId) return;
             if (activeHistorySearchRequestIdRef.current === requestId) {
                 activeHistorySearchRequestIdRef.current = null;
+            }
+            if (historyResetTimerRef.current !== null) {
+                window.clearTimeout(historyResetTimerRef.current);
+                historyResetTimerRef.current = null;
             }
             isHistoryLoadingRef.current = false;
             setIsHistoryLoading(false);
@@ -224,6 +240,20 @@ export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
         if (reset) historySearchRef.current = null;
         requestHistoryPage(reset, null);
     }, [cancelHistorySearch, requestHistoryPage]);
+
+    const showFileHistory = useCallback((path: string) => {
+        cancelHistorySearch();
+        historySearchRef.current = null;
+        historyPathRef.current = path;
+        setHistoryPath(path);
+        requestHistoryPage(true, null);
+    }, [cancelHistorySearch, requestHistoryPage]);
+
+    const showRepositoryHistory = useCallback(() => {
+        historyPathRef.current = null;
+        setHistoryPath(null);
+        requestHistoryPage(true, null);
+    }, [requestHistoryPage]);
 
     const searchHistory = useCallback((mode: GitHistorySearchMode, query: string) => {
         const trimmedQuery = query.trim();
@@ -532,9 +562,12 @@ export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
         isHistoryLoading,
         isHistoryLoaded,
         historyFilesLoading,
+        historyPath,
         fetchGitStatus,
         fetchBranches,
         fetchHistory,
+        showFileHistory,
+        showRepositoryHistory,
         searchHistory,
         clearHistorySearch,
         cancelHistorySearch,

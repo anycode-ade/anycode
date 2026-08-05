@@ -7,13 +7,13 @@ export default defineConfig({
     workers: 1,
     reporter: 'list',
     use: {
-        baseURL: 'http://localhost:5173',
+        baseURL: 'http://localhost:5174',
         trace: 'on-first-retry',
     },
     webServer: {
-        command: 'pnpm dev:demo',
-        url: 'http://localhost:5173',
-        reuseExistingServer: true,
+        command: 'pnpm dev:demo -- --port 5174',
+        url: 'http://localhost:5174',
+        reuseExistingServer: false,
         timeout: 120 * 1000,
     },
     projects: [

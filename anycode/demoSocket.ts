@@ -124,6 +124,33 @@ const DEMO_HISTORY_COMMITS = [
         timezone_offset: 0,
     },
 ];
+let demoCommitSequence = 4;
+
+type DemoHistoryFile = {
+    path: string;
+    status: 'modified' | 'added' | 'deleted';
+    added: number;
+    removed: number;
+    binary: boolean;
+};
+
+const DEMO_HISTORY_FILES: Record<string, DemoHistoryFile[]> = {
+    [DEMO_HISTORY_COMMITS[0].hash]: [
+        { path: 'src/main.rs', status: 'modified', added: 4, removed: 1, binary: false },
+        { path: 'README.md', status: 'modified', added: 3, removed: 0, binary: false },
+    ],
+    [DEMO_HISTORY_COMMITS[1].hash]: [
+        { path: 'src/main.rs', status: 'modified', added: 8, removed: 2, binary: false },
+        { path: 'src/App.tsx', status: 'modified', added: 12, removed: 1, binary: false },
+    ],
+    [DEMO_HISTORY_COMMITS[2].hash]: Object.keys(ORIGINAL_VFS_CONTENTS).map((path) => ({
+        path,
+        status: 'added' as const,
+        added: 1,
+        removed: 0,
+        binary: false,
+    })),
+};
 
 const notifyGitChange = (socket: DemoSocket, targetPath: string) => {
     const node = DEMO_VFS[targetPath];
@@ -469,7 +496,11 @@ export class DemoSocket {
             case 'git:history': {
                 const offset = payload?.offset ?? 0;
                 const limit = payload?.limit ?? 50;
-                const commits = DEMO_HISTORY_COMMITS.slice(offset, offset + limit);
+                const requestedPath = String(payload?.path ?? '').replace(/\\/g, '/').replace(/^\.\//, '');
+                const matchingCommits = requestedPath
+                    ? DEMO_HISTORY_COMMITS.filter((commit) => DEMO_HISTORY_FILES[commit.hash]?.some((file) => file.path === requestedPath || requestedPath.endsWith(`/${file.path}`)))
+                    : DEMO_HISTORY_COMMITS;
+                const commits = matchingCommits.slice(offset, offset + limit);
                 callback?.({ success: true, commits, has_more: false });
                 break;
             }
@@ -507,10 +538,10 @@ export class DemoSocket {
             }
 
             case 'git:history-files': {
-                const firstFile = Object.keys(ORIGINAL_VFS_CONTENTS)[0];
+                const files = DEMO_HISTORY_FILES[String(payload?.hash ?? '')] || [];
                 callback?.({
                     success: true,
-                    files: firstFile ? [{ path: firstFile, status: 'added', added: 1, removed: 0, binary: false }] : [],
+                    files,
                 });
                 break;
             }
@@ -559,6 +590,28 @@ export class DemoSocket {
             }
 
             case 'git:commit': {
+                const changedFiles = Array.from(DEMO_CHANGED_FILES.values());
+                const message = String(payload?.message ?? '').trim() || 'Update demo files';
+                if (changedFiles.length > 0) {
+                    const hash = `de${String(demoCommitSequence++).padStart(38, '0')}`;
+                    DEMO_HISTORY_COMMITS.unshift({
+                        hash,
+                        parents: [DEMO_HISTORY_COMMITS[0]?.hash ?? ''],
+                        summary: message,
+                        message,
+                        author_name: 'You',
+                        author_email: 'demo@anycode.dev',
+                        timestamp: Math.floor(Date.now() / 1000),
+                        timezone_offset: 0,
+                    });
+                    DEMO_HISTORY_FILES[hash] = changedFiles.map((file) => ({
+                        path: file.path,
+                        status: file.status,
+                        added: file.status === 'deleted' ? 0 : 1,
+                        removed: file.status === 'added' ? 0 : 1,
+                        binary: false,
+                    }));
+                }
                 DEMO_CHANGED_FILES.forEach((_, path) => {
                     if (DEMO_VFS[path] && DEMO_VFS[path].content !== undefined) {
                         ORIGINAL_VFS_CONTENTS[path] = DEMO_VFS[path].content!;
@@ -567,6 +620,12 @@ export class DemoSocket {
                 DEMO_CHANGED_FILES.clear();
                 this.emitLocal('git:update', { kind: 'full', branch: 'main', files: [] });
                 callback?.({ success: true });
+                break;
+            }
+
+            case 'git:push':
+            case 'git:pull': {
+                callback?.({ success: true, status: 'up_to_date' });
                 break;
             }
 

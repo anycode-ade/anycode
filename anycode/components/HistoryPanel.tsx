@@ -13,6 +13,8 @@ interface HistoryPanelProps {
     loading: boolean;
     loaded: boolean;
     filesLoading: Record<string, boolean>;
+    historyPath: string | null;
+    activeFilePath: string | null;
     fileIconsStyle?: 'colored' | 'monochrome' | 'disabled';
     onRefresh: () => void;
     onLoadMore: () => void;
@@ -21,11 +23,13 @@ interface HistoryPanelProps {
     onCancelSearch: () => void;
     onCommitExpand: (hash: string) => void;
     onFileClick: (hash: string, file: GitHistoryFile) => void;
+    onShowRepository: () => void;
+    onShowFile: (path: string) => void;
 }
 
 type HistoryRow =
     | { key: string; kind: 'commit'; commit: GitHistoryCommit; height: number; top: number }
-    | { key: string; kind: 'commit-stats'; fileCount: number; added: number; removed: number; height: number; top: number }
+    | { key: string; kind: 'commit-stats'; hash: string; fileCount: number; allFileCount: number; showingAll: boolean; added: number; removed: number; height: number; top: number }
     | { key: string; kind: 'file'; hash: string; file: GitHistoryFile; height: number; top: number }
     | { key: string; kind: 'message'; text: string; height: number; top: number }
     | { key: string; kind: 'load-more'; height: number; top: number };
@@ -36,10 +40,18 @@ const FILE_ROW_HEIGHT = 32;
 const MESSAGE_ROW_HEIGHT = 38;
 const LOAD_MORE_ROW_HEIGHT = 48;
 const OVERSCAN_PX = 240;
+const LOADING_INDICATOR_DELAY_MS = 180;
 
 const getDisplayName = (path: string): string => {
     const parts = path.replace(/\\/g, '/').split('/');
     return parts[parts.length - 1] || path;
+};
+
+const matchesHistoryPath = (filePath: string | null | undefined, historyPath: string): boolean => {
+    if (!filePath) return false;
+    const file = filePath.replace(/\\/g, '/');
+    const history = historyPath.replace(/\\/g, '/');
+    return history === file || history.endsWith(`/${file}`);
 };
 
 const formatRelativeTime = (timestamp: number): string => {
@@ -86,6 +98,8 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = ({
     loading,
     loaded,
     filesLoading,
+    historyPath,
+    activeFilePath,
     fileIconsStyle = 'colored',
     onRefresh,
     onLoadMore,
@@ -94,8 +108,11 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = ({
     onCancelSearch,
     onCommitExpand,
     onFileClick,
+    onShowRepository,
+    onShowFile,
 }) => {
     const [expandedHashes, setExpandedHashes] = useState<Set<string>>(() => new Set());
+    const [showAllFilesHashes, setShowAllFilesHashes] = useState<Set<string>>(() => new Set());
     const [isAnimating, setIsAnimating] = useState(false);
     const [scrollTop, setScrollTop] = useState(0);
     const [viewportHeight, setViewportHeight] = useState(0);
@@ -104,6 +121,7 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = ({
     const [appliedQuery, setAppliedQuery] = useState('');
     const [isSearchOpen, setIsSearchOpen] = useState(false);
     const [shouldRenderSearch, setShouldRenderSearch] = useState(false);
+    const [showLoadingIndicator, setShowLoadingIndicator] = useState(!loaded);
     const searchInputRef = useRef<HTMLInputElement>(null);
     const listRef = usePersistedScroll<HTMLDivElement>('history-panel', 'session', [commits.length]);
 
@@ -112,6 +130,10 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = ({
             onRefresh();
         }
     }, [loaded, loading, onRefresh]);
+
+    useEffect(() => {
+        setShowAllFilesHashes(new Set());
+    }, [historyPath]);
 
     useEffect(() => {
         const element = listRef.current;
@@ -131,6 +153,19 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = ({
         return () => cancelAnimationFrame(frame);
     }, [isSearchOpen]);
 
+    useEffect(() => {
+        if (!loading) {
+            setShowLoadingIndicator(false);
+            return;
+        }
+        if (!loaded) {
+            setShowLoadingIndicator(true);
+            return;
+        }
+        const timer = window.setTimeout(() => setShowLoadingIndicator(true), LOADING_INDICATOR_DELAY_MS);
+        return () => window.clearTimeout(timer);
+    }, [loaded, loading]);
+
     const handleToggleCommit = useCallback((hash: string) => {
         const isExpanded = expandedHashes.has(hash);
         setIsAnimating(true);
@@ -146,8 +181,26 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = ({
 
     const handleRefresh = useCallback(() => {
         setExpandedHashes(new Set());
+        setShowAllFilesHashes(new Set());
         onRefresh();
     }, [onRefresh]);
+
+    const handleShowAllFiles = useCallback((hash: string) => {
+        setShowAllFilesHashes((current) => {
+            const next = new Set(current);
+            next.add(hash);
+            return next;
+        });
+    }, []);
+
+    const handleShowFile = useCallback(() => {
+        if (!activeFilePath || historyPath === activeFilePath) return;
+        setExpandedHashes(new Set());
+        setSearchQuery('');
+        setAppliedQuery('');
+        setIsSearchOpen(false);
+        onShowFile(activeFilePath);
+    }, [activeFilePath, historyPath, onShowFile]);
 
     const handleSearch = useCallback(() => {
         const query = searchQuery.trim();
@@ -199,7 +252,9 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = ({
         for (const commit of commits) {
             push({ key: `commit:${commit.hash}`, kind: 'commit', commit, height: COMMIT_ROW_HEIGHT });
             if (!expandedHashes.has(commit.hash)) continue;
-            const files = filesByCommit[commit.hash];
+            const allFiles = filesByCommit[commit.hash];
+            const showingAll = !historyPath || showAllFilesHashes.has(commit.hash);
+            const files = allFiles?.filter((file) => showingAll || matchesHistoryPath(file.path, historyPath) || matchesHistoryPath(file.old_path, historyPath));
             if (!files) {
                 push({ key: `loading:${commit.hash}`, kind: 'message', text: filesLoading[commit.hash] ? 'Loading files…' : 'Files unavailable', height: MESSAGE_ROW_HEIGHT });
             } else if (files.length === 0) {
@@ -212,7 +267,10 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = ({
                 push({
                     key: `stats:${commit.hash}`,
                     kind: 'commit-stats',
+                    hash: commit.hash,
                     fileCount: files.length,
+                    allFileCount: allFiles.length,
+                    showingAll,
                     added: totals.added,
                     removed: totals.removed,
                     height: COMMIT_STATS_ROW_HEIGHT,
@@ -223,7 +281,7 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = ({
             }
         }
 
-        if (commits.length === 0 && (loaded || !loading)) {
+        if (commits.length === 0 && !loading && loaded) {
             push({
                 key: 'empty-history',
                 kind: 'message',
@@ -231,15 +289,14 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = ({
                 height: MESSAGE_ROW_HEIGHT,
             });
         }
-        if (loading && (commits.length > 0 || !loaded)) {
-            // Keep the footer height stable while loading more so the browser
-            // cannot compensate by moving the user's scroll position.
+        if (loading && showLoadingIndicator) {
+            // Keep a stable loading row during scope changes and pagination.
             push({ key: 'loading-history', kind: 'message', text: 'Loading history…', height: LOAD_MORE_ROW_HEIGHT });
         } else if (hasMore) {
             push({ key: 'load-more', kind: 'load-more', height: LOAD_MORE_ROW_HEIGHT });
         }
         return { rows: nextRows, totalHeight: top };
-    }, [appliedQuery, commits, expandedHashes, filesByCommit, filesLoading, hasMore, loaded, loading]);
+    }, [appliedQuery, commits, expandedHashes, filesByCommit, filesLoading, hasMore, historyPath, loaded, loading, showAllFilesHashes, showLoadingIndicator]);
 
     const visibleRows = useMemo(() => {
         const start = Math.max(0, scrollTop - OVERSCAN_PX);
@@ -252,14 +309,18 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = ({
     return (
         <div className="history-panel">
             <div className="history-header">
-                <div className="history-title">
-                    <span className="history-branch-icon"><Icons.Git /></span>
-                    <span className="history-branch-name">{branch || 'HEAD'}</span>
+                <div className="history-scope" role="tablist" aria-label="History scope">
+                    <button type="button" className={!historyPath ? 'active' : ''} onClick={onShowRepository} role="tab" aria-selected={!historyPath}>Repository</button>
+                    <button type="button" className={historyPath ? 'active' : ''} onClick={handleShowFile} disabled={!activeFilePath} role="tab" aria-selected={!!historyPath} title={activeFilePath || 'Open a file to view its history'}>File</button>
+                    <span title={historyPath || branch || 'HEAD'}>{historyPath ? getDisplayName(historyPath) : branch || 'HEAD'}</span>
                 </div>
                 <div className="history-header-actions">
-                    <button className={`history-header-button ${isSearchOpen ? 'active' : ''}`} type="button" onClick={handleToggleSearch} title={isSearchOpen ? 'Close history search' : 'Search history'} aria-label={isSearchOpen ? 'Close history search' : 'Search history'} aria-expanded={isSearchOpen}>
+                    {historyPath ? <button className="history-header-button active" type="button" onClick={handleShowFile} disabled={!activeFilePath} title={activeFilePath ? 'Show history for current file' : 'Open a file to view its history'} aria-label="Show history for current file" aria-pressed="true">
+                        <Icons.Crosshair />
+                    </button> : null}
+                    {!historyPath ? <button className={`history-header-button ${isSearchOpen ? 'active' : ''}`} type="button" onClick={handleToggleSearch} title={isSearchOpen ? 'Close history search' : 'Search history'} aria-label={isSearchOpen ? 'Close history search' : 'Search history'} aria-expanded={isSearchOpen}>
                         <Icons.Search />
-                    </button>
+                    </button> : null}
                     <button className="history-header-button" type="button" onClick={handleRefresh} disabled={loading} title="Refresh history" aria-label="Refresh history">
                         <Icons.Refresh />
                     </button>
@@ -391,6 +452,7 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = ({
                             return (
                                 <div key={row.key} style={style} className="history-virtual-row history-commit-stats" role="listitem">
                                     <span>{row.fileCount} {row.fileCount === 1 ? 'file' : 'files'} changed</span>
+                                    {historyPath && !row.showingAll && row.allFileCount > row.fileCount ? <button type="button" className="history-show-all-files" onClick={() => handleShowAllFiles(row.hash)}>Show all ({row.allFileCount})</button> : null}
                                     <span className="history-stat-added history-commit-stat-added">+{row.added}</span>
                                     <span className="history-stat-removed">-{row.removed}</span>
                                 </div>

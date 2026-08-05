@@ -36,6 +36,8 @@ pub struct GitHistoryRequest {
     pub offset: usize,
     #[serde(default = "default_history_limit")]
     pub limit: usize,
+    #[serde(default)]
+    pub path: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -105,17 +107,24 @@ pub async fn handle_git_history(
     state: State<AppState>,
 ) {
     info!(
-        "Received git:history: offset={}, limit={}",
-        request.offset, request.limit
+        "Received git:history: offset={}, limit={}, path={:?}",
+        request.offset, request.limit, request.path
     );
     let result = {
         let git = state.git_manager.lock().await;
-        git.history(request.offset, request.limit).map(|page| {
-            json!({
-                "commits": page.commits,
-                "has_more": page.has_more,
+        request
+            .path
+            .as_deref()
+            .map_or_else(
+                || git.history(request.offset, request.limit),
+                |path| git.file_history(path, request.offset, request.limit),
+            )
+            .map(|page| {
+                json!({
+                    "commits": page.commits,
+                    "has_more": page.has_more,
+                })
             })
-        })
     };
     send_response(ack, result);
 }

@@ -446,6 +446,8 @@ const App: React.FC = () => {
                         loading={git.isHistoryLoading}
                         loaded={git.isHistoryLoaded}
                         filesLoading={git.historyFilesLoading}
+                        historyPath={git.historyPath}
+                        activeFilePath={editors.activeFile?.source?.type === 'filesystem' ? editors.activeFile.source.path : null}
                         onRefresh={git.refreshHistory}
                         onLoadMore={git.loadMoreHistory}
                         onSearch={git.searchHistory}
@@ -453,6 +455,8 @@ const App: React.FC = () => {
                         onCancelSearch={git.cancelHistorySearch}
                         onCommitExpand={git.fetchHistoryFiles}
                         onFileClick={handleOpenHistoryDiff}
+                        onShowRepository={git.showRepositoryHistory}
+                        onShowFile={git.showFileHistory}
                         fileIconsStyle={fileIconsStyle}
                     />
                 );

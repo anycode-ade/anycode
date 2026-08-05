@@ -148,6 +148,43 @@ fn history_is_paginated_and_root_commit_is_diffed_against_empty_tree() {
 }
 
 #[test]
+fn file_history_only_returns_commits_that_touch_the_path() {
+    let temp_dir = tempfile::TempDir::new().unwrap();
+    let repo = Repository::init(temp_dir.path()).unwrap();
+    std::fs::write(temp_dir.path().join("one.txt"), "one\n").unwrap();
+    let first = commit_all(&repo, "add one");
+    std::fs::write(temp_dir.path().join("two.txt"), "two\n").unwrap();
+    commit_all(&repo, "add two");
+    std::fs::write(temp_dir.path().join("one.txt"), "changed\n").unwrap();
+    let last = commit_all(&repo, "change one");
+
+    let manager = GitManager::new(temp_dir.path().to_path_buf());
+    let page = manager.file_history("one.txt", 0, 10).unwrap();
+    let expected = [last.to_string(), first.to_string()];
+    assert_eq!(
+        page.commits
+            .iter()
+            .map(|commit| &commit.hash)
+            .collect::<Vec<_>>(),
+        expected.iter().collect::<Vec<_>>()
+    );
+    assert!(!page.has_more);
+
+    let first_page = manager.file_history("one.txt", 0, 1).unwrap();
+    let second_page = manager
+        .file_history(temp_dir.path().join("one.txt").to_str().unwrap(), 1, 1)
+        .unwrap();
+    assert_eq!(first_page.commits[0].hash, last.to_string());
+    assert!(first_page.has_more);
+    assert_eq!(second_page.commits[0].hash, first.to_string());
+    assert!(!second_page.has_more);
+
+    let outside_path = tempfile::TempDir::new().unwrap().path().join("outside.txt");
+    let outside_page = manager.file_history(outside_path.to_str().unwrap(), 0, 10).unwrap();
+    assert!(outside_page.commits.is_empty());
+}
+
+#[test]
 #[ignore = "manual benchmark; set ANYCODE_GIT_BENCH_REPO or use ~/dev/linux"]
 fn benchmark_history_pages() {
     let repo_path = std::env::var_os("ANYCODE_GIT_BENCH_REPO")
