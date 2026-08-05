@@ -11,7 +11,7 @@ export default defineConfig({
         trace: 'on-first-retry',
     },
     webServer: {
-        command: 'pnpm dev:demo -- --port 5174',
+        command: 'pnpm exec vite --mode demo --host 0.0.0.0 --port 5174',
         url: 'http://localhost:5174',
         reuseExistingServer: false,
         timeout: 120 * 1000,
