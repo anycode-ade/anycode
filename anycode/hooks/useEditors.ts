@@ -49,6 +49,7 @@ const DEFAULT_EDITOR_PANE_ID = 'editor';
 const createGitFileId = (revision: string, path: string): string => (
     `git:${encodeURIComponent(revision)}:${encodeURIComponent(path)}`
 );
+export const getHistoricalFileId = createGitFileId;
 const persistedEditorState = loadOpenFiles();
 const persistedPaneActiveFileIds: Record<string, string | null> = {
     [DEFAULT_EDITOR_PANE_ID]: persistedEditorState.activeFileId,

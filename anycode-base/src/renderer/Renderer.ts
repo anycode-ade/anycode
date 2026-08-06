@@ -125,6 +125,10 @@ export class Renderer {
         this.diffEnabled = enabled;
     }
 
+    public getVisualRowCount(): number {
+        return this.visualRows.length;
+    }
+
     public setFocusedDiffMode(enabled: boolean, contextLines: number = 3) {
         this.diffRenderer.setFocusedDiffMode(enabled, contextLines);
     }

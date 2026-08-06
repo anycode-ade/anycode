@@ -20,7 +20,7 @@ import { useGit, type GitHistoryFile } from './hooks/useGit';
 import { useSearch } from './hooks/useSearch';
 import { useFileTree } from './hooks/useFileTree';
 import { useTerminals } from './hooks/useTerminals';
-import { useEditors } from './hooks/useEditors';
+import { getHistoricalFileId, useEditors } from './hooks/useEditors';
 import { useAgents } from './hooks/useAgents';
 import { useLayout } from './hooks/useLayout';
 import { useTheme } from './hooks/useTheme';
@@ -29,6 +29,7 @@ import { useTerminalPanes } from './features/terminal/useTerminalPanes';
 import { useAgentPanes } from './features/agents/useAgentPanes';
 import { FilesPanel } from './features/files/FilesPanel';
 import { EditorPanel } from './features/editor/EditorPanel';
+import type { MultibufferFile } from './features/editor/MultibufferPanel';
 import { TerminalPanel } from './features/terminal/TerminalPanel';
 import { AgentPanel } from './features/agents/AgentPanel';
 import { BrowserPanel } from './features/browser/BrowserPanel';
@@ -66,6 +67,9 @@ const App: React.FC = () => {
     const agents = useAgents({ wsRef, isConnected });
     const { currentThemeId, handleThemeChange } = useTheme({ wsRef, isConnected });
     const layoutActionsRef = useRef<LayoutActions | null>(null);
+    const [multibufferPaneId, setMultibufferPaneId] = React.useState<string | null>(null);
+    const [multibufferFiles, setMultibufferFiles] = React.useState<MultibufferFile[]>([]);
+    const [multibufferTitle, setMultibufferTitle] = React.useState('Review changes');
 
     useEffect(() => {
         if (connectionStatus === 'connected') {
@@ -196,6 +200,29 @@ const App: React.FC = () => {
         editors.openFile(path, line, column, paneId, mode, keepPreviousEditor);
     });
 
+    const handleOpenMultibuffer = useEvent(() => {
+        if (git.changedFiles.length === 0) return;
+
+        const paneId = layoutActionsRef.current?.ensureEditorPanel(editors.activeEditorPaneId);
+        if (!paneId) return;
+
+        editors.setActiveEditorPaneId(paneId);
+        setMultibufferFiles(git.changedFiles.map((file) => ({
+            id: file.path,
+            path: file.path,
+            added: file.added,
+            removed: file.removed,
+            status: file.status,
+        })));
+        setMultibufferTitle('Review changes');
+        setMultibufferPaneId(paneId);
+        for (const file of git.changedFiles) {
+            if (file.status !== 'deleted') {
+                editors.openFile(file.path, undefined, undefined, paneId, 'diff', true);
+            }
+        }
+    });
+
     const handleSelectFile = useEvent((fileId: string) => {
         const paneId = resolveEditorPaneId();
         if (!paneId) return;
@@ -228,6 +255,43 @@ const App: React.FC = () => {
             content.new_content,
             editors.activeEditorPaneId,
         );
+    });
+
+    const handleOpenHistoryMultibuffer = useEvent(async (hash: string, files: GitHistoryFile[]) => {
+        const paneId = layoutActionsRef.current?.ensureEditorPanel(editors.activeEditorPaneId);
+        if (!paneId || files.length === 0) return;
+
+        const contents = await Promise.all(files.map(async (file) => {
+            if (file.binary) return null;
+            const content = await git.fetchHistoryFileContent(hash, file);
+            if (!content || content.old_binary || content.new_binary) return null;
+            return { file, content };
+        }));
+        const textFiles = contents.filter((entry): entry is NonNullable<typeof entry> => entry !== null);
+        if (textFiles.length === 0) {
+            window.alert('This commit has no text diffs to review.');
+            return;
+        }
+
+        editors.setActiveEditorPaneId(paneId);
+        for (const { file, content } of textFiles) {
+            editors.openHistoricalDiff(
+                hash,
+                file.path,
+                content.old_content ?? '',
+                content.new_content ?? '',
+                paneId,
+            );
+        }
+        setMultibufferFiles(textFiles.map(({ file }) => ({
+            id: getHistoricalFileId(hash, file.path),
+            path: file.path,
+            added: file.added,
+            removed: file.removed,
+            status: file.status,
+        })));
+        setMultibufferTitle(`Review ${hash.slice(0, 7)}`);
+        setMultibufferPaneId(paneId);
     });
 
     const activeChangedFile = useMemo<ChangedFile | null>(() => {
@@ -433,6 +497,7 @@ const App: React.FC = () => {
                         onRevert={git.revert}
                         onStage={git.stage}
                         onUnstage={git.unstage}
+                        onOpenMultibuffer={handleOpenMultibuffer}
                         fileIconsStyle={fileIconsStyle}
                     />
                 );
@@ -455,13 +520,23 @@ const App: React.FC = () => {
                         onCancelSearch={git.cancelHistorySearch}
                         onCommitExpand={git.fetchHistoryFiles}
                         onFileClick={handleOpenHistoryDiff}
+                        onReviewCommit={handleOpenHistoryMultibuffer}
                         onShowRepository={git.showRepositoryHistory}
                         onShowFile={git.showFileHistory}
                         fileIconsStyle={fileIconsStyle}
                     />
                 );
             case 'editor':
-                return <EditorPanel panelKey={panelKey} editors={editors} />;
+                return (
+                    <EditorPanel
+                        panelKey={panelKey}
+                        editors={editors}
+                        multibufferOpen={multibufferPaneId === panelKey}
+                        multibufferFiles={multibufferFiles}
+                        multibufferTitle={multibufferTitle}
+                        onCloseMultibuffer={() => setMultibufferPaneId(null)}
+                    />
+                );
             case 'terminal':
                 return (
                     <TerminalPanel

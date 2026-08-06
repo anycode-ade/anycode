@@ -366,6 +366,10 @@ export class AnycodeEditor {
         return this.container;
     }
 
+    public getContentHeight(): number {
+        return this.renderer.getVisualRowCount() * this.settings.lineHeight;
+    }
+
     public getCursor(): { line: number, column: number } {
         return this.code.getPosition(this.offset);
     }

@@ -59,6 +59,8 @@
 .history-commit-stats { display: flex; align-items: center; gap: 5px; padding: 4px 10px 4px 28px; color: var(--theme-tab-foreground, #999); font-size: .78em; font-weight: 500; }
 .history-show-all-files { margin-left: auto; padding: 2px 5px; border: 0; color: var(--theme-accent-background, #4fc3f7); background: transparent; font: inherit; font-size: .9em; cursor: pointer; }
 .history-show-all-files:hover { text-decoration: underline; }
+.history-review-button { padding: 3px 7px; border: 1px solid var(--theme-border, rgba(255, 255, 255, .16)); border-radius: 4px; color: var(--theme-foreground, #e0e0e0); background: var(--hover-bg, rgba(255, 255, 255, .04)); font: inherit; font-size: .9em; cursor: pointer; }
+.history-review-button:hover { background: var(--hover-bg, rgba(255, 255, 255, .1)); }
 .history-commit-stat-added { margin-left: auto; }
 .history-file-icon { flex: 0 0 auto; width: 16px; height: 16px; }
 .history-file-name { min-width: 40px; }

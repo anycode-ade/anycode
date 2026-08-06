@@ -239,6 +239,34 @@
     pointer-events: none;
 }
 
+.changes-review-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    flex: 0 0 auto;
+    border: 1px solid var(--theme-border, rgba(255, 255, 255, 0.16));
+    border-radius: 5px;
+    padding: 4px 8px;
+    color: var(--theme-foreground, var(--foreground-color, #e0e0e0));
+    background: var(--hover-bg, rgba(255, 255, 255, 0.04));
+    font-family: var(--interface-font-family);
+    font-size: 0.82em;
+    font-weight: var(--interface-font-weight, 700);
+    line-height: 1;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.changes-review-btn:hover {
+    background: var(--hover-bg, rgba(255, 255, 255, 0.1));
+}
+
+.changes-review-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
 .changes-select-all {
     cursor: pointer;
     color: var(--theme-accent-background, #4fc3f7);
