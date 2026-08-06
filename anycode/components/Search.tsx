@@ -804,6 +804,9 @@ const Search = ({ id, wsRef, isConnected, focusRequestToken, inputValue, onInput
             <div
                 className="search-input-wrapper"
             >
+                <span className="search-input-icon" aria-hidden="true">
+                    <Icons.Search />
+                </span>
                 <textarea
                     className="search-input"
                     value={inputValue}
