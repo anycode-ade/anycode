@@ -345,10 +345,26 @@ const App: React.FC = () => {
         });
     }, [git.changedFiles]);
 
+    const focusReviewFile = useEvent((paneId: string, pathOrId: string) => {
+        const review = multibufferReviews[paneId];
+        const file = review?.files.find((f) => f.id === pathOrId || f.path === pathOrId);
+        if (!file) return false;
+
+        setMultibufferReviews((prev) => ({
+            ...prev,
+            [paneId]: {
+                ...prev[paneId],
+                focusRequest: { path: file.id, token: Date.now() },
+            },
+        }));
+        return true;
+    });
+
     const handleSelectFile = useEvent((fileId: string) => {
         const paneId = resolveEditorPaneId();
         if (!paneId) return;
         editors.setActiveFileId(fileId, paneId);
+        focusReviewFile(paneId, fileId);
     });
 
     const handleSearchResultClick = (filePath: string, match: SearchMatch) => {
@@ -359,29 +375,16 @@ const App: React.FC = () => {
         path: string, line?: number, column?: number,
     ) => {
         const paneId = editors.activeEditorPaneId;
-        const review = multibufferReviews[paneId];
-        if (review && !review.ignoreEdits && review.files.some((file) => file.path === path)) {
-            setMultibufferReviews((previous) => {
-                const current = previous[paneId];
-                if (!current || current.ignoreEdits) return previous;
-                return {
-                    ...previous,
-                    [paneId]: {
-                        ...current,
-                        focusRequest: {
-                            path,
-                            token: (current.focusRequest?.token ?? 0) + 1,
-                        },
-                    },
-                };
-            });
-            return;
-        }
+        if (focusReviewFile(paneId, path)) return;
+
         const mode = editors.getEditorDiffMode(paneId);
         handleOpenFile(path, line, column, mode);
     });
 
     const handleOpenHistoryDiff = useEvent(async (hash: string, file: GitHistoryFile) => {
+        const paneId = editors.activeEditorPaneId;
+        if (focusReviewFile(paneId, file.path)) return;
+
         const content = await git.fetchHistoryFileContent(hash, file);
         if (!content) return;
         if (content.old_binary || content.new_binary || content.old_content === null || content.new_content === null) {

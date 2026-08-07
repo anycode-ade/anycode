@@ -924,6 +924,7 @@ export class Renderer {
         const tolerance = 2;
         if (Math.abs(targetScrollTop - viewportTop) > tolerance) {
             this.container.scrollTo({ top: targetScrollTop });
+            this.renderScroll(state);
             return true;
         }
 
@@ -954,6 +955,7 @@ export class Renderer {
         const clampedScrollTop = Math.max(0, Math.min(targetScrollTop, maxScroll));
 
         this.container.scrollTo({ top: clampedScrollTop });
+        this.renderScroll(state);
 
         return true;
     }
