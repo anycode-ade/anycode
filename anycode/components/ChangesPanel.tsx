@@ -544,7 +544,6 @@ const ChangesPanelImpl: React.FC<ChangesPanelProps> = ({
                     title="Review all changes"
                     aria-label="Review all changes"
                 >
-                    <span aria-hidden="true">▤</span>
                     <span>Review</span>
                 </button>
                 <div className="changes-list-header-right">

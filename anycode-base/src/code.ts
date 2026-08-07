@@ -175,6 +175,7 @@ export class Code {
     private changeStateAfter?: EditState;
 
     private onChange: ((t: Change) => void) | null = null
+    private readonly changeListeners = new Set<(t: Change) => void>();
 
     private injection_parsers: Map<string, TreeSitterParser> = new Map()
     private injection_queries: Map<string, Query> = new Map()
@@ -390,6 +391,18 @@ export class Code {
         this.onChange = onTx;
     }
 
+    public addChangeListener(listener: (change: Change) => void): () => void {
+        this.changeListeners.add(listener);
+        return () => this.changeListeners.delete(listener);
+    }
+
+    public notifyChange(change: Change): void {
+        this.onChange?.(change);
+        for (const listener of this.changeListeners) {
+            listener(change);
+        }
+    }
+
     public getOffset(line: number, column: number): number {
         return this.buffer.getOffsetAt(line + 1, column + 1)
     }
@@ -402,6 +415,14 @@ export class Code {
     public getLineByOffset(offset: number): number {
         let p = this.buffer.getPositionAt(offset);
         return p.lineNumber - 1;
+    }
+
+    public getPrevLine(line: number): number {
+        return line - 1;
+    }
+
+    public getNextLine(line: number): number {
+        return line + 1;
     }
 
     public length(): number {
@@ -581,7 +602,7 @@ export class Code {
 
             this.history.push(change);
 
-            if (this.onChange) this.onChange(change);
+            this.notifyChange(change);
 
             this.changeActive = false;
             this.changeEdits = [];
@@ -618,7 +639,7 @@ export class Code {
             }
         }
 
-        if (this.onChange) this.onChange(undoChange);
+        this.notifyChange(undoChange);
 
         return change;
     }
@@ -648,7 +669,7 @@ export class Code {
             }
         }
 
-        if (this.onChange) this.onChange(redoChange);
+        this.notifyChange(redoChange);
 
         return change;
     }

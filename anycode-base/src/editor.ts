@@ -42,6 +42,8 @@ export interface EditorOptions {
     codeFoldingEnabled?: boolean;
     wordHighlightEnabled?: boolean;
     scrollbarMarkersEnabled?: boolean;
+    code?: Code;
+    originalCode?: Code;
 }
 
 export interface EditorState {
@@ -89,6 +91,7 @@ export class AnycodeEditor {
     private runLines: number[] = [];
     private errorLines: Map<number, string> = new Map();
 
+    private pendingOriginalContent: string | null = null;
     private isCompletionOpen = false;
     private selectedCompletionIndex = 0;
     private completions: Completion[] = [];
@@ -125,7 +128,7 @@ export class AnycodeEditor {
         language: string = '',
         options: EditorOptions = {}
     ) {
-        this.code = new Code(initialText, filename, language);
+        this.code = options.code ?? new Code(initialText, filename, language);
         this.readOnly = options.readOnly ?? false;
         this.ignoreEdits = options.ignoreEdits ?? false;
         this.focusedDiffEnabled = options.focusedDiffEnabled ?? false;
@@ -133,6 +136,7 @@ export class AnycodeEditor {
         this.codeFoldingEnabled = options.codeFoldingEnabled ?? true;
         this.wordHighlightEnabled = options.wordHighlightEnabled ?? true;
         this.scrollbarMarkersEnabled = options.scrollbarMarkersEnabled ?? true;
+        this.originalCode = options.originalCode;
         // Set initial cursor position
         if (options.line !== undefined && options.column !== undefined) {
             this.offset = this.code.getOffset(options.line, options.column);
@@ -237,6 +241,20 @@ export class AnycodeEditor {
         this.code.setOnChange(func);
     }
 
+    public getCodeModel(): Code {
+        return this.code;
+    }
+
+    public addOnChangeListener(listener: (change: Change) => void): () => void {
+        return this.code.addChangeListener(listener);
+    }
+
+    public notifyExternalChange(change: Change): void {
+        if (this.readOnly) return;
+        this.code.notifyChange(change);
+        this.refreshAfterExternalChange();
+    }
+
     public setHistory(changes: Change[], index: number) {
         if (this.readOnly) return;
         this.code.setHistory(changes, index);
@@ -299,6 +317,32 @@ export class AnycodeEditor {
 
     public getText(): string {
         return this.code.getContent();
+    }
+
+    public refreshAfterExternalChange(): void {
+        this.recomputeDiffs();
+
+        if (this.search.isActive()) {
+            this.search.setMatches(this.code.search(this.search.getPattern()));
+        }
+
+        this.renderer.renderChanges(this.getEditorState());
+    }
+
+    public getOriginalText(): string | null {
+        return this.originalCode?.getContent() ?? this.pendingOriginalContent;
+    }
+
+    public getOriginalCodeModel(): Code | undefined {
+        return this.originalCode;
+    }
+
+    public setOriginalCodeModel(code: Code): void {
+        this.originalCode = code;
+        if (this.diffEnabled) {
+            this.recomputeDiffs();
+            this.renderer.render(this.getEditorState());
+        }
     }
 
     public getSelectedText(): string {
@@ -718,6 +762,25 @@ export class AnycodeEditor {
 
         const pos = getPosFromMouse(e);
         if (!pos) { return; }
+
+        const multibufferCode = this.code as Code & {
+            getMultibufferHeader?: (line: number) => string | null;
+            toggleMultibufferFileAtLine?: (line: number) => boolean;
+        };
+        if (
+            multibufferCode.getMultibufferHeader?.(pos.row) !== null
+            && multibufferCode.getMultibufferHeader !== undefined
+            && multibufferCode.toggleMultibufferFileAtLine?.(pos.row)
+        ) {
+            this.offset = Math.min(this.code.getOffset(pos.row, 0), this.code.getContentLength());
+            this.selection = null;
+            this.recomputeDiffs();
+            this.renderer.render(this.getEditorState());
+            if (this.onCursorChangeCallback) {
+                this.onCursorChangeCallback(this.code.getPosition(this.offset), oldCursor);
+            }
+            return;
+        }
 
 
         const o = this.code.getOffset(pos.row, pos.col);
@@ -1775,7 +1838,9 @@ export class AnycodeEditor {
     }
 
     public setOriginalCode(content: string): void {
+        this.pendingOriginalContent = content;
         void this.initOriginalCode(content).then((updated) => {
+            this.pendingOriginalContent = null;
             if (!this.diffEnabled || !updated) return;
             this.recomputeDiffs();
             this.renderer.render(this.getEditorState());
@@ -1784,10 +1849,15 @@ export class AnycodeEditor {
 
     private recomputeDiffs(): void {
         if (this.diffEnabled && this.originalCode) {
-            this.diffs = computeGitChanges(
-                this.originalCode.getLines(),
-                this.code.getLines()
-            );
+            const multibufferCode = this.code as Code & {
+                getMultibufferDiffs?: () => Map<number, DiffInfo>;
+            };
+            this.diffs = multibufferCode.getMultibufferDiffs
+                ? multibufferCode.getMultibufferDiffs()
+                : computeGitChanges(
+                    this.originalCode.getLines(),
+                    this.code.getLines()
+                );
         } else {
             this.diffs = undefined;
         }

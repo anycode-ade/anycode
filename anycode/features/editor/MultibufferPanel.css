@@ -14,7 +14,6 @@
     flex: 0 0 auto;
     min-height: 38px;
     padding: 0 12px;
-    border-bottom: 1px solid var(--theme-border, rgba(255, 255, 255, 0.1));
     background: var(--theme-tab-background, rgba(255, 255, 255, 0.025));
     font-family: var(--interface-font-family);
     font-size: var(--interface-font-size, 13px);
@@ -32,37 +31,17 @@
     gap: 8px;
 }
 
-.multibuffer-toolbar-icon {
-    color: var(--theme-tab-foreground, #aeb7c4);
-}
-
 .multibuffer-toolbar-count {
     color: var(--theme-tab-foreground, #8b929c);
     font-size: 0.9em;
     font-weight: 500;
 }
 
-.multibuffer-close {
-    border: 1px solid transparent;
-    border-radius: 5px;
-    padding: 4px 8px;
-    color: var(--theme-tab-foreground, #9aa2ad);
-    background: transparent;
-    cursor: pointer;
-    font: inherit;
-    font-size: 0.9em;
-}
-
-.multibuffer-close:hover {
-    color: var(--theme-foreground, #e0e0e0);
-    background: var(--hover-bg, rgba(255, 255, 255, 0.08));
-}
-
 .multibuffer-scroll {
     flex: 1 1 auto;
     min-height: 0;
-    overflow: auto;
-    padding: 0 6px 24px;
+    overflow: hidden;
+    padding: 0;
     background: var(--background-color, #1e1e1e);
 }
 
@@ -138,15 +117,16 @@
 }
 
 .multibuffer-added {
-    color: var(--theme-diff-added, #3fb950);
+    color: var(--theme-git-added, #79c97d);
 }
 
 .multibuffer-removed {
-    color: var(--theme-diff-removed, #f85149);
+    color: var(--theme-git-removed, rgba(248, 65, 61, 1));
 }
 
 .multibuffer-editor-shell {
-    min-height: 120px;
+    height: 100%;
+    min-height: 0;
     width: 100%;
     overflow: hidden;
 }
@@ -157,7 +137,8 @@
 }
 
 .multibuffer-editor-shell .anyeditor {
-    overflow: hidden;
+    overflow: auto;
+    overscroll-behavior: contain;
 }
 
 .multibuffer-file-loading,
@@ -169,5 +150,5 @@
 }
 
 .multibuffer-deleted-section .multibuffer-file-header {
-    color: var(--theme-diff-removed, #f85149);
+    color: var(--theme-git-removed, rgba(248, 65, 61, 1));
 }

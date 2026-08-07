@@ -37,6 +37,22 @@ import { type DiffMode } from './types/diffMode';
 import { normalizePath } from './utils';
 import { useSettings } from './hooks/useSettings';
 
+const toMultibufferFiles = (files: ChangedFile[]): MultibufferFile[] => files.map((file) => ({
+    id: file.path,
+    path: file.path,
+    added: file.added,
+    removed: file.removed,
+    status: file.status,
+}));
+
+type ReviewSession = {
+    files: MultibufferFile[];
+    title: string;
+    ignoreEdits: boolean;
+    openedByReview: string[];
+    focusRequest?: { path: string; token: number };
+};
+
 const App: React.FC = () => {
     const { wsRef, isConnected, connectionStatus, connectToBackend } = useSocket({});
     const [showConnectionBanner, setShowConnectionBanner] = React.useState(false);
@@ -67,9 +83,7 @@ const App: React.FC = () => {
     const agents = useAgents({ wsRef, isConnected });
     const { currentThemeId, handleThemeChange } = useTheme({ wsRef, isConnected });
     const layoutActionsRef = useRef<LayoutActions | null>(null);
-    const [multibufferPaneId, setMultibufferPaneId] = React.useState<string | null>(null);
-    const [multibufferFiles, setMultibufferFiles] = React.useState<MultibufferFile[]>([]);
-    const [multibufferTitle, setMultibufferTitle] = React.useState('Review changes');
+    const [multibufferReviews, setMultibufferReviews] = React.useState<Record<string, ReviewSession>>({});
 
     useEffect(() => {
         if (connectionStatus === 'connected') {
@@ -88,6 +102,52 @@ const App: React.FC = () => {
         fileTree.handleWatcherRemove(data);
         if (data.isFile) editors.closeFile(data.path);
         else editors.closeFilesUnderPath(data.path);
+        git.fetchGitStatus();
+
+        setMultibufferReviews((previous) => {
+            let changed = false;
+            const next = { ...previous };
+            for (const [paneId, review] of Object.entries(previous)) {
+                if (review.ignoreEdits) continue;
+                const files = review.files.filter((file) => file.id !== data.path);
+                if (files.length === review.files.length) continue;
+                next[paneId] = {
+                    ...review,
+                    files,
+                    openedByReview: review.openedByReview.filter((fileId) => fileId !== data.path),
+                };
+                changed = true;
+            }
+            return changed ? next : previous;
+        });
+    });
+
+    const handleWatcherCreate = useEvent((data: { path: string; isFile: boolean }) => {
+        fileTree.handleWatcherCreate(data);
+        if (!data.isFile) return;
+
+        setMultibufferReviews((previous) => {
+            let changed = false;
+            const next = { ...previous };
+            for (const [paneId, review] of Object.entries(previous)) {
+                if (review.ignoreEdits || review.files.some((file) => file.id === data.path)) continue;
+                next[paneId] = {
+                    ...review,
+                    files: [...review.files, {
+                        id: data.path,
+                        path: data.path,
+                        status: 'added',
+                        added: 0,
+                        removed: 0,
+                    }],
+                    openedByReview: editors.editorStates.has(data.path)
+                        ? review.openedByReview
+                        : [...review.openedByReview, data.path],
+                };
+                changed = true;
+            }
+            return changed ? next : previous;
+        });
     });
 
     const handleFileRenamed = useEvent((data: { old: string; new: string }) => {
@@ -102,7 +162,7 @@ const App: React.FC = () => {
         const events = [
             ['lsp:diagnostics', editors.handleDiagnostics],
             ['watcher:edits', editors.handleWatcherEdits],
-            ['watcher:create', fileTree.handleWatcherCreate],
+            ['watcher:create', handleWatcherCreate],
             ['watcher:remove', handleWatcherRemove],
             ['file:renamed', handleFileRenamed],
             ['git:update', git.handleGitStatusUpdate],
@@ -124,7 +184,7 @@ const App: React.FC = () => {
         editors.handleDiagnostics,
         editors.handleWatcherEdits,
         editors.handleGitUpdate,
-        fileTree.handleWatcherCreate,
+        handleWatcherCreate,
         handleWatcherRemove,
         handleFileRenamed,
         git.handleGitStatusUpdate,
@@ -200,28 +260,90 @@ const App: React.FC = () => {
         editors.openFile(path, line, column, paneId, mode, keepPreviousEditor);
     });
 
+    const closeReview = useEvent((paneId: string) => {
+        const review = multibufferReviews[paneId];
+        if (!review) return;
+
+        const usedByOtherReview = new Set(
+            Object.entries(multibufferReviews)
+                .filter(([otherPaneId]) => otherPaneId !== paneId)
+                .flatMap(([, otherReview]) => otherReview.files.map((file) => file.id)),
+        );
+
+        for (const fileId of review.openedByReview) {
+            if (usedByOtherReview.has(fileId)) continue;
+            if (editors.getPaneIdsForFile(fileId).some((otherPaneId) => otherPaneId !== paneId)) continue;
+            editors.closeFile(fileId);
+        }
+
+        setMultibufferReviews((previous) => {
+            if (!previous[paneId]) return previous;
+            const next = { ...previous };
+            delete next[paneId];
+            return next;
+        });
+    });
+
     const handleOpenMultibuffer = useEvent(() => {
         if (git.changedFiles.length === 0) return;
 
         const paneId = layoutActionsRef.current?.ensureEditorPanel(editors.activeEditorPaneId);
         if (!paneId) return;
 
+        closeReview(paneId);
         editors.setActiveEditorPaneId(paneId);
-        setMultibufferFiles(git.changedFiles.map((file) => ({
-            id: file.path,
-            path: file.path,
-            added: file.added,
-            removed: file.removed,
-            status: file.status,
-        })));
-        setMultibufferTitle('Review changes');
-        setMultibufferPaneId(paneId);
-        for (const file of git.changedFiles) {
-            if (file.status !== 'deleted') {
-                editors.openFile(file.path, undefined, undefined, paneId, 'diff', true);
+        const files = toMultibufferFiles(git.changedFiles);
+        setMultibufferReviews((previous) => ({
+            ...previous,
+            [paneId]: {
+                files,
+                title: 'Review changes',
+                ignoreEdits: false,
+                openedByReview: files
+                    .filter((file) => !editors.editorStates.has(file.id))
+                    .map((file) => file.id),
+            },
+        }));
+    });
+
+    useEffect(() => {
+        for (const [paneId, review] of Object.entries(multibufferReviews)) {
+            if (review.ignoreEdits) continue;
+            const paths = review.files
+                .filter((file) => file.status !== 'deleted' && !editors.editorStates.has(file.id))
+                .map((file) => file.path);
+            if (paths.length > 0) {
+                void editors.openFiles(paths, { paneId, diffMode: 'diff', keepPreviousEditor: true });
             }
         }
-    });
+    }, [editors.openFiles, multibufferReviews]);
+
+    useEffect(() => {
+        const nextFiles = toMultibufferFiles(git.changedFiles);
+        setMultibufferReviews((previous) => {
+            let changed = false;
+            const next = { ...previous };
+
+            for (const [paneId, review] of Object.entries(previous)) {
+                if (review.ignoreEdits) continue;
+                const sameFiles = review.files.length === nextFiles.length
+                    && review.files.every((file, index) => {
+                        const nextFile = nextFiles[index];
+                        return nextFile
+                            && file.id === nextFile.id
+                            && file.added === nextFile.added
+                            && file.removed === nextFile.removed
+                            && file.status === nextFile.status;
+                    });
+                if (!sameFiles) {
+                    next[paneId] = { ...review, files: nextFiles };
+                    changed = true;
+                }
+            }
+
+            return changed ? next : previous;
+        });
+    }, [git.changedFiles]);
 
     const handleSelectFile = useEvent((fileId: string) => {
         const paneId = resolveEditorPaneId();
@@ -237,6 +359,24 @@ const App: React.FC = () => {
         path: string, line?: number, column?: number,
     ) => {
         const paneId = editors.activeEditorPaneId;
+        const review = multibufferReviews[paneId];
+        if (review && !review.ignoreEdits && review.files.some((file) => file.path === path)) {
+            setMultibufferReviews((previous) => {
+                const current = previous[paneId];
+                if (!current || current.ignoreEdits) return previous;
+                return {
+                    ...previous,
+                    [paneId]: {
+                        ...current,
+                        focusRequest: {
+                            path,
+                            token: (current.focusRequest?.token ?? 0) + 1,
+                        },
+                    },
+                };
+            });
+            return;
+        }
         const mode = editors.getEditorDiffMode(paneId);
         handleOpenFile(path, line, column, mode);
     });
@@ -273,6 +413,7 @@ const App: React.FC = () => {
             return;
         }
 
+        closeReview(paneId);
         editors.setActiveEditorPaneId(paneId);
         for (const { file, content } of textFiles) {
             editors.openHistoricalDiff(
@@ -281,17 +422,26 @@ const App: React.FC = () => {
                 content.old_content ?? '',
                 content.new_content ?? '',
                 paneId,
+                false,
             );
         }
-        setMultibufferFiles(textFiles.map(({ file }) => ({
-            id: getHistoricalFileId(hash, file.path),
-            path: file.path,
-            added: file.added,
-            removed: file.removed,
-            status: file.status,
-        })));
-        setMultibufferTitle(`Review ${hash.slice(0, 7)}`);
-        setMultibufferPaneId(paneId);
+        setMultibufferReviews((previous) => ({
+            ...previous,
+            [paneId]: {
+                files: textFiles.map(({ file }) => ({
+                    id: getHistoricalFileId(hash, file.path),
+                    path: file.path,
+                    added: file.added,
+                    removed: file.removed,
+                    status: file.status,
+                })),
+                title: `Review ${hash.slice(0, 7)}`,
+                ignoreEdits: true,
+                openedByReview: textFiles
+                    .map(({ file }) => getHistoricalFileId(hash, file.path))
+                    .filter((fileId) => !editors.editorStates.has(fileId)),
+            },
+        }));
     });
 
     const activeChangedFile = useMemo<ChangedFile | null>(() => {
@@ -527,14 +677,17 @@ const App: React.FC = () => {
                     />
                 );
             case 'editor':
+                const multibufferReview = multibufferReviews[panelKey];
                 return (
                     <EditorPanel
                         panelKey={panelKey}
                         editors={editors}
-                        multibufferOpen={multibufferPaneId === panelKey}
-                        multibufferFiles={multibufferFiles}
-                        multibufferTitle={multibufferTitle}
-                        onCloseMultibuffer={() => setMultibufferPaneId(null)}
+                        multibufferOpen={multibufferReview !== undefined}
+                        multibufferFiles={multibufferReview?.files ?? []}
+                        multibufferTitle={multibufferReview?.title}
+                        multibufferIgnoreEdits={multibufferReview?.ignoreEdits ?? false}
+                        multibufferFocusRequest={multibufferReview?.focusRequest}
+                        onCloseMultibuffer={() => closeReview(panelKey)}
                     />
                 );
             case 'terminal':
@@ -648,6 +801,7 @@ const App: React.FC = () => {
         layout.handlePanelRemoved(panelId, panelKey);
 
         if (panelId === 'editor') {
+            closeReview(panelKey);
             editors.unregisterEditorPane(panelKey);
             return;
         }

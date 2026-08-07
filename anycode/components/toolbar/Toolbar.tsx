@@ -303,6 +303,7 @@ export const Toolbar = ({
         if (fileIndexSorted < 0) return;
         sortedFiles.slice(fileIndexSorted + 1).forEach((f) => {
             if (!pinnedFileIds.includes(f.id)) {
+                setFileIdsOrder((prev) => prev.filter((id) => id !== f.id));
                 onCloseFile(f.id);
             }
         });
@@ -311,6 +312,7 @@ export const Toolbar = ({
     const handleCloseOtherFiles = (fileId: string) => {
         files.forEach((f) => {
             if (f.id !== fileId && !pinnedFileIds.includes(f.id)) {
+                setFileIdsOrder((prev) => prev.filter((id) => id !== f.id));
                 onCloseFile(f.id);
             }
         });
@@ -319,6 +321,7 @@ export const Toolbar = ({
     const handleCloseAllFiles = () => {
         files.forEach((f) => {
             if (!pinnedFileIds.includes(f.id)) {
+                setFileIdsOrder((prev) => prev.filter((id) => id !== f.id));
                 onCloseFile(f.id);
             }
         });
@@ -392,7 +395,14 @@ export const Toolbar = ({
                         { key: 'pin-file', label: isPinned ? 'Unpin' : 'Pin', onClick: () => togglePinFile(file.id) },
                     ],
                     [
-                        { key: 'close', label: 'Close', onClick: () => onCloseFile(file.id) },
+                        {
+                            key: 'close',
+                            label: 'Close',
+                            onClick: () => {
+                                setFileIdsOrder((prev) => prev.filter((id) => id !== file.id));
+                                onCloseFile(file.id);
+                            },
+                        },
                         {
                             key: 'close-others',
                             label: 'Close others',
@@ -515,7 +525,10 @@ export const Toolbar = ({
                             pinned={pinnedFileIds.includes(file.id)}
                             onUnpin={() => togglePinFile(file.id)}
                             onSelect={() => onSelectFile(file.id)}
-                            onClose={() => onCloseFile(file.id)}
+                            onClose={() => {
+                                setFileIdsOrder((prev) => prev.filter((id) => id !== file.id));
+                                onCloseFile(file.id);
+                            }}
                             onContextMenu={(event) => openMenu(event, 'file', file.id)}
                             draggable={true}
                             dragging={draggedItem?.type === 'file' && draggedItem?.id === file.id}

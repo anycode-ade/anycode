@@ -24,6 +24,8 @@ type EditorPanelProps = {
     multibufferOpen?: boolean;
     multibufferFiles?: MultibufferFile[];
     multibufferTitle?: string;
+    multibufferIgnoreEdits?: boolean;
+    multibufferFocusRequest?: { path: string; token: number };
     onCloseMultibuffer?: () => void;
 };
 
@@ -33,6 +35,8 @@ export const EditorPanel = ({
     multibufferOpen = false,
     multibufferFiles = [],
     multibufferTitle,
+    multibufferIgnoreEdits = false,
+    multibufferFocusRequest,
     onCloseMultibuffer,
 }: EditorPanelProps) => {
     const layoutVersion = useContext(LayoutVersionContext);
@@ -81,6 +85,8 @@ export const EditorPanel = ({
                     onSelectFile={editors.setActiveFileId}
                     onClose={onCloseMultibuffer ?? (() => undefined)}
                     title={multibufferTitle}
+                    ignoreEdits={multibufferIgnoreEdits}
+                    focusRequest={multibufferFocusRequest}
                 />
             </div>
         );

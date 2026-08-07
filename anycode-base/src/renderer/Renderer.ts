@@ -142,7 +142,7 @@ export class Renderer {
         // Build unified visual rows model (real lines + ghost lines)
         const totalRealLines = code.linesLength();
         this.visualRows = this.diffEnabled
-            ? this.buildVisualRows(totalRealLines, diffs)
+            ? this.buildVisualRows(totalRealLines, diffs, code)
             : this.buildRealOnlyRows(totalRealLines);
 
         const totalVisualRows = this.visualRows.length;
@@ -236,11 +236,17 @@ export class Renderer {
      */
     private buildVisualRows(
         totalLines: number,
-        diffs: Map<number, DiffInfo> | undefined
+        diffs: Map<number, DiffInfo> | undefined,
+        code: Code
     ): VisualRow[] {
         const rows: VisualRow[] = [];
         const processedHunks = new Set<number>();
         const visibleRealLines = this.diffRenderer.computeVisibleLines(totalLines, diffs);
+        const multibufferCode = this.getMultibufferCode(code);
+        const alwaysVisibleLines = multibufferCode?.getMultibufferAlwaysVisibleLines(totalLines);
+        if (visibleRealLines && alwaysVisibleLines) {
+            for (const line of alwaysVisibleLines) visibleRealLines.add(line);
+        }
 
         // Collect ghost info by anchor line for efficient lookup
         const ghostsByAnchor = new Map<number, { hunkId: number; oldLineNumbers: number[] }[]>();
@@ -319,6 +325,18 @@ export class Renderer {
             totalLines,
             (lineIndex) => this.isHiddenByFold(lineIndex)
         );
+    }
+
+    private getMultibufferCode(code: Code): {
+        getMultibufferAlwaysVisibleLines: (totalLines: number) => Set<number>;
+    } | null {
+        const candidate = code as Code & {
+            getMultibufferAlwaysVisibleLines?: (totalLines: number) => Set<number>;
+        };
+        const getAlwaysVisibleLines = candidate.getMultibufferAlwaysVisibleLines;
+        return getAlwaysVisibleLines
+            ? { getMultibufferAlwaysVisibleLines: getAlwaysVisibleLines.bind(candidate) }
+            : null;
     }
 
     public expandFocusedHiddenRange(
@@ -402,7 +420,7 @@ export class Renderer {
         // Rebuild visual rows if diffs changed (otherwise use cached)
         const totalRealLines = code.linesLength();
         this.visualRows = this.diffEnabled
-            ? this.buildVisualRows(totalRealLines, diffs)
+            ? this.buildVisualRows(totalRealLines, diffs, code)
             : this.buildRealOnlyRows(totalRealLines);
 
         const totalVisualRows = this.visualRows.length;
@@ -550,11 +568,26 @@ export class Renderer {
         let elements: RowElements;
 
         if (row.kind === 'real') {
+            const multibufferCode = code as Code & {
+                getMultibufferHeader?: (line: number) => string | null;
+                getMultibufferLineNumber?: (line: number) => number | null;
+            };
             const syntaxNodes = precomputedNodes || code.getLineNodes(row.lineIndex);
+            const displayLineNumber = multibufferCode.getMultibufferLineNumber?.(row.lineIndex) ?? undefined;
             elements = this.lineRenderer.createLineElements(
                 row.lineIndex, syntaxNodes, errorLines, settings,
-                diffs, runLines, this.getFoldIndicator(row.lineIndex), state.wordHighlight
+                diffs, runLines, this.getFoldIndicator(row.lineIndex), state.wordHighlight,
+                displayLineNumber,
             );
+            const header = multibufferCode.getMultibufferHeader?.(row.lineIndex);
+            if (header !== null && header !== undefined) {
+                elements.code.classList.add('multibuffer-file-header-row');
+                elements.code.contentEditable = 'false';
+                elements.gutter.classList.add('multibuffer-file-header-gutter');
+                elements.gutter.textContent = '';
+                elements.btn.classList.add('multibuffer-file-header-gutter');
+                elements.fold.classList.add('multibuffer-file-header-gutter');
+            }
         } else if (row.kind === 'ghost') {
             const originalNodes = state.originalCode?.getLineNodes(row.originalLineIndex);
             const originalText = state.originalCode?.line(row.originalLineIndex) ?? '';
@@ -612,7 +645,7 @@ export class Renderer {
         // Rebuild visual rows - structure may have changed
         const totalRealLines = code.linesLength();
         const newVisualRows = this.diffEnabled
-            ? this.buildVisualRows(totalRealLines, diffs)
+            ? this.buildVisualRows(totalRealLines, diffs, code)
             : this.buildRealOnlyRows(totalRealLines);
 
         if (newVisualRows.length !== oldVisualRows.length) {

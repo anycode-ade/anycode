@@ -1,7 +1,22 @@
 import { describe, it, expect } from 'vitest';
-import { computeGitChanges } from '../src/diff';
+import { computeGitChanges, computeGitChangesWithStats } from '../src/diff';
 
 describe('computeGitChanges', () => {
+    it('returns exact added and removed line counts from diff blocks', () => {
+        const result = computeGitChangesWithStats(
+            'line1\nold\nline3',
+            'line1\nnew1\nnew2\nline3\nnew4',
+        );
+
+        expect(result.added).toBe(3);
+        expect(result.removed).toBe(1);
+        expect(result.diffs.get(2)).toEqual({
+            changeType: 'modified',
+            oldLineNumbers: [2],
+            hunkId: 0,
+        });
+    });
+
     it('should handle simple addition', () => {
         const original = 'line1\nline2';
         const current = 'line1\nadded\nline2';
