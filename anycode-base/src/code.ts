@@ -50,6 +50,12 @@ import vue from './langs/vue';
 import dockerfile from './langs/dockerfile';
 import sql from './langs/sql';
 
+export type FilePosition = {
+    file: string;
+    line: number;
+    column: number;
+};
+
 export enum Operation {
     Insert = "insert",
     Remove = "remove"
@@ -193,6 +199,10 @@ export class Code {
         this.language = language;
         this.filename = filename;
         this.input = this.input.bind(this);
+    }
+
+    public resolvePosition(row: number, column: number): FilePosition {
+        return { file: this.filename, line: row, column };
     }
 
     private clearSyntaxState() {
@@ -962,6 +972,14 @@ export class Code {
 
         let width = indent.width || 2;
         return Math.ceil(indentation / width);
+    }
+
+    public isSameFileBody(_lineA: number, _lineB: number): boolean {
+        return true;
+    }
+
+    public getAlwaysVisibleLines(_totalLines: number): Set<number> | null {
+        return null;
     }
 
     public isOnlyIndentationBefore(line: number, column: number): boolean {

@@ -1,4 +1,4 @@
-import { Code, type Change, type Edit, type FoldRange, type HighlighedNode, type Position, type WordHighlight, Operation } from './code';
+import { Code, type Change, type Edit, type FoldRange, type HighlighedNode, type Position, type WordHighlight, type FilePosition, Operation } from './code';
 import type { Selection } from './selection';
 import { computeGitChangesWithStats, type DiffInfo } from './diff';
 import History from './history';
@@ -128,18 +128,35 @@ export class MultiBufferCode extends Code {
 
     public getFirstLineForFile(fileId: string): number | null {
         this.ensureIndex();
-        const fileIndex = this.entries.findIndex((entry) => entry.id === fileId);
+        const fileIndex = this.entries.findIndex((entry) => entry.id === fileId || entry.path === fileId);
         if (fileIndex < 0) return null;
-        const rowIndex = this.rows.findIndex((row) => row.fileIndex === fileIndex && row.kind === 'file');
-        if (rowIndex >= 0) return rowIndex;
-        const headerIndex = this.rows.findIndex((row) => row.fileIndex === fileIndex && row.kind === 'header');
-        return headerIndex >= 0 ? headerIndex : null;
+        const rowIndex = this.rows.findIndex((row) => row.fileIndex === fileIndex);
+        return rowIndex >= 0 ? rowIndex : null;
     }
 
     public getMultibufferLineNumber(line: number): number | null {
         this.ensureIndex();
         const row = this.rows[line];
         return row?.kind === 'file' ? row.localLine : null;
+    }
+
+    public getMultibufferLineForLocalLine(fileId: string, localLine: number): number | null {
+        this.ensureIndex();
+        const fileIndex = this.entries.findIndex((entry) => entry.id === fileId || entry.path === fileId);
+        if (fileIndex < 0) return null;
+        const rowIndex = this.rows.findIndex(
+            (row) => row.fileIndex === fileIndex && row.kind === 'file' && row.localLine === localLine,
+        );
+        return rowIndex >= 0 ? rowIndex : null;
+    }
+
+    public override resolvePosition(row: number, column: number): FilePosition {
+        const fileId = this.getFileIdAtLine(row);
+        const localLine = this.getMultibufferLineNumber(row);
+        if (!fileId || localLine === null) {
+            return { file: this.filename, line: row, column };
+        }
+        return { file: fileId, line: localLine, column };
     }
 
     public getPrevLine(line: number): number {
@@ -226,9 +243,34 @@ export class MultiBufferCode extends Code {
         return row?.kind === 'header' ? row.text : null;
     }
 
-    public getMultibufferAlwaysVisibleLines(_totalLines: number): Set<number> {
+    public override isSameFileBody(lineA: number, lineB: number): boolean {
         this.ensureIndex();
-        return new Set(this.rows.flatMap((row, index) => row.kind === 'header' ? [index] : []));
+        const rowA = this.rows[lineA];
+        const rowB = this.rows[lineB];
+        if (!rowA || !rowB) return false;
+        if (rowA.kind !== 'file' || rowB.kind !== 'file') return false;
+        return rowA.fileIndex === rowB.fileIndex;
+    }
+
+    public isMultibufferSameFileBody(lineA: number, lineB: number): boolean {
+        return this.isSameFileBody(lineA, lineB);
+    }
+
+    public override getAlwaysVisibleLines(_totalLines: number): Set<number> {
+        const headers = new Set<number>();
+        let rowIndex = 0;
+        for (const entry of this.entries) {
+            headers.add(rowIndex);
+            rowIndex += 1;
+            if (!this.collapsedFiles.has(entry.id)) {
+                rowIndex += Math.max(1, entry.code.linesLength());
+            }
+        }
+        return headers;
+    }
+
+    public getMultibufferAlwaysVisibleLines(totalLines: number): Set<number> {
+        return this.getAlwaysVisibleLines(totalLines);
     }
 
     public getLines(): string[] {

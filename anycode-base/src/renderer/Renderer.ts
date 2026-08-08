@@ -237,13 +237,12 @@ export class Renderer {
     private buildVisualRows(
         totalLines: number,
         diffs: Map<number, DiffInfo> | undefined,
-        code: Code
+        code: Code,
     ): VisualRow[] {
         const rows: VisualRow[] = [];
         const processedHunks = new Set<number>();
-        const visibleRealLines = this.diffRenderer.computeVisibleLines(totalLines, diffs);
-        const multibufferCode = this.getMultibufferCode(code);
-        const alwaysVisibleLines = multibufferCode?.getMultibufferAlwaysVisibleLines(totalLines);
+        const visibleRealLines = this.diffRenderer.computeVisibleLines(totalLines, diffs, code);
+        const alwaysVisibleLines = code.getAlwaysVisibleLines(totalLines);
         if (visibleRealLines && alwaysVisibleLines) {
             for (const line of alwaysVisibleLines) visibleRealLines.add(line);
         }
@@ -327,16 +326,8 @@ export class Renderer {
         );
     }
 
-    private getMultibufferCode(code: Code): {
-        getMultibufferAlwaysVisibleLines: (totalLines: number) => Set<number>;
-    } | null {
-        const candidate = code as Code & {
-            getMultibufferAlwaysVisibleLines?: (totalLines: number) => Set<number>;
-        };
-        const getAlwaysVisibleLines = candidate.getMultibufferAlwaysVisibleLines;
-        return getAlwaysVisibleLines
-            ? { getMultibufferAlwaysVisibleLines: getAlwaysVisibleLines.bind(candidate) }
-            : null;
+    public clearExpandedDiffRanges(): void {
+        this.diffRenderer.clearExpandedRanges();
     }
 
     public expandFocusedHiddenRange(

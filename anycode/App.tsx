@@ -50,7 +50,7 @@ type ReviewSession = {
     title: string;
     ignoreEdits: boolean;
     openedByReview: string[];
-    focusRequest?: { path: string; token: number };
+    focusRequest?: { path: string; line?: number; column?: number; token: number };
 };
 
 const App: React.FC = () => {
@@ -345,19 +345,34 @@ const App: React.FC = () => {
         });
     }, [git.changedFiles]);
 
-    const focusReviewFile = useEvent((paneId: string, pathOrId: string) => {
+    const focusReviewFile = useEvent((paneId: string, pathOrId: string, line?: number, column?: number) => {
         const review = multibufferReviews[paneId];
-        const file = review?.files.find((f) => f.id === pathOrId || f.path === pathOrId);
+        const file = review?.files.find((f) => (
+            f.id === pathOrId || f.path === pathOrId || pathOrId.endsWith('/' + f.id) || pathOrId.endsWith('/' + f.path)
+        ));
         if (!file) return false;
 
         setMultibufferReviews((prev) => ({
             ...prev,
             [paneId]: {
                 ...prev[paneId],
-                focusRequest: { path: file.id, token: Date.now() },
+                focusRequest: { path: file.id, line, column, token: Date.now() },
             },
         }));
         return true;
+    });
+
+    const handleGoToDefinition = useEvent(async (request: DefinitionRequest) => {
+        const paneId = editors.activeEditorPaneId;
+        const response = await editors.handleGoToDefinition(request);
+        const definition = Array.isArray(response) ? response[0] : response;
+        if (definition && definition.uri && definition.range) {
+            const filePath = definition.uri.replace('file://', '');
+            const line = definition.range.start.line;
+            const column = definition.range.start.character;
+            focusReviewFile(paneId, filePath, line, column);
+        }
+        return response;
     });
 
     const handleSelectFile = useEvent((fileId: string) => {
@@ -691,6 +706,7 @@ const App: React.FC = () => {
                         multibufferIgnoreEdits={multibufferReview?.ignoreEdits ?? false}
                         multibufferFocusRequest={multibufferReview?.focusRequest}
                         onCloseMultibuffer={() => closeReview(panelKey)}
+                        onGoToDefinition={handleGoToDefinition}
                     />
                 );
             case 'terminal':

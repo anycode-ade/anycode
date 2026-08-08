@@ -2,7 +2,7 @@ import { AnycodeLine, GhostElement, GutterElement } from "../types";
 import { isGhostElement } from "../utils";
 import { EditorSettings } from "../editor";
 import { DiffInfo, ChangeType } from "../diff";
-import { HighlighedNode, WordHighlight } from "../code";
+import { Code, HighlighedNode, WordHighlight } from "../code";
 import type { GhostRow, SeparatorRow, VisualRow } from "./Renderer";
 
 export type ExpandDirection = 'up' | 'down' | 'both' | 'all';
@@ -190,6 +190,10 @@ export class DiffRenderer {
         }
     }
 
+    public clearExpandedRanges(): void {
+        this.focusedDiffExpandedRanges = [];
+    }
+
     /**
      * Returns the set of 0-indexed real line indices that should be rendered,
      * or `undefined` when focused diff is disabled (meaning "show all lines").
@@ -197,6 +201,7 @@ export class DiffRenderer {
     public computeVisibleLines(
         totalLines: number,
         diffs: Map<number, DiffInfo> | undefined,
+        code?: Code,
     ): Set<number> | undefined {
         if (!this.focusedDiffEnabled) {
             return undefined;
@@ -212,10 +217,20 @@ export class DiffRenderer {
 
         for (const [lineNumber] of diffs) {
             const center = lineNumber - 1;
-            const start = clamp(center - this.focusedDiffContextLines);
-            const end = clamp(center + this.focusedDiffContextLines);
-            for (let i = start; i <= end; i++) {
-                visible.add(i);
+            visible.add(center);
+
+            for (let step = 1; step <= this.focusedDiffContextLines; step++) {
+                const candidate = center - step;
+                if (candidate < 0) break;
+                if (code && !code.isSameFileBody(center, candidate)) break;
+                visible.add(candidate);
+            }
+
+            for (let step = 1; step <= this.focusedDiffContextLines; step++) {
+                const candidate = center + step;
+                if (candidate >= totalLines) break;
+                if (code && !code.isSameFileBody(center, candidate)) break;
+                visible.add(candidate);
             }
         }
 
@@ -249,6 +264,7 @@ export class DiffRenderer {
 
         const addSeparatorsForRange = (start: number, end: number) => {
             let currentStart: number | null = null;
+
             for (let i = start; i <= end; i++) {
                 const folded = isHiddenByFold ? isHiddenByFold(i) : false;
                 if (!folded) {
@@ -257,23 +273,33 @@ export class DiffRenderer {
                     }
                 } else {
                     if (currentStart !== null) {
-                        result.push({
-                            kind: 'separator',
-                            hiddenStart: currentStart,
-                            hiddenEnd: i - 1,
-                            hiddenCount: i - currentStart,
-                        });
+                        const count = i - currentStart;
+                        if (count === 1) {
+                            result.push({ kind: 'real', lineIndex: currentStart });
+                        } else if (count > 1) {
+                            result.push({
+                                kind: 'separator',
+                                hiddenStart: currentStart,
+                                hiddenEnd: i - 1,
+                                hiddenCount: count,
+                            });
+                        }
                         currentStart = null;
                     }
                 }
             }
             if (currentStart !== null) {
-                result.push({
-                    kind: 'separator',
-                    hiddenStart: currentStart,
-                    hiddenEnd: end,
-                    hiddenCount: end - currentStart + 1,
-                });
+                const count = end - currentStart + 1;
+                if (count === 1) {
+                    result.push({ kind: 'real', lineIndex: currentStart });
+                } else if (count > 1) {
+                    result.push({
+                        kind: 'separator',
+                        hiddenStart: currentStart,
+                        hiddenEnd: end,
+                        hiddenCount: count,
+                    });
+                }
             }
         };
 

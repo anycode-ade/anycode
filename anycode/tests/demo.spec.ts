@@ -388,4 +388,103 @@ test.describe('Anycode Live Demo Mode E2E Tests', () => {
             await expect(page.locator('.search-container').getByText('App.tsx').first()).toBeVisible({ timeout: 10000 });
         }
     });
+
+    test('should open Multibuffer Review and display header rows', async ({ page }) => {
+        const historyTab = page.getByText(/^History$/i).first();
+        await historyTab.click();
+        const historyPanel = page.locator('.history-panel');
+        const historyList = historyPanel.getByRole('list', { name: 'Git history' });
+        const firstCommit = historyList.locator('.history-commit-row').first();
+        await firstCommit.click();
+
+        const reviewBtn = historyList.locator('.history-review-button, button:has-text("Review")').first();
+        if (await reviewBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
+            await reviewBtn.click();
+            await expect(page.locator('.multibuffer-panel, .multibuffer-file-header-row').first()).toBeVisible({ timeout: 10000 });
+        }
+    });
+
+    test('should focus file in Multibuffer Review when each file row in history list is clicked', async ({ page }) => {
+        const historyTab = page.getByText(/^History$/i).first();
+        await historyTab.click();
+        const historyPanel = page.locator('.history-panel');
+        const historyList = historyPanel.getByRole('list', { name: 'Git history' });
+        const firstCommit = historyList.locator('.history-commit-row').first();
+        await firstCommit.click();
+
+        const reviewBtn = historyList.locator('.history-review-button, button:has-text("Review")').first();
+        if (await reviewBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
+            await reviewBtn.click();
+            await expect(page.locator('.multibuffer-panel').first()).toBeVisible({ timeout: 10000 });
+
+            const historyFileRows = historyList.locator('.history-file-row');
+            const count = await historyFileRows.count();
+            expect(count).toBeGreaterThan(0);
+
+            for (let i = 0; i < count; i++) {
+                const targetFileRow = historyFileRows.nth(i);
+                const rawText = await targetFileRow.innerText();
+                const fileName = rawText.split('\n')[0].trim();
+                await targetFileRow.click();
+
+                const headerRow = page.locator('.multibuffer-file-header-row').filter({ hasText: fileName }).first();
+                await expect(headerRow).toBeVisible({ timeout: 10000 });
+                await page.waitForTimeout(500);
+            }
+        }
+    });
+
+    test('should collapse and expand file in Multibuffer Review when header is clicked', async ({ page }) => {
+        const historyTab = page.getByText(/^History$/i).first();
+        await historyTab.click();
+        const historyList = page.locator('.history-panel').getByRole('list', { name: 'Git history' });
+        const firstCommit = historyList.locator('.history-commit-row').first();
+        await firstCommit.click();
+
+        const reviewBtn = historyList.locator('.history-review-button, button:has-text("Review")').first();
+        if (await reviewBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
+            await reviewBtn.click();
+            const headerRow = page.locator('.multibuffer-file-header-row').first();
+            await expect(headerRow).toBeVisible({ timeout: 10000 });
+            await expect(headerRow).toContainText('▾');
+
+            const firstBodyLine = page.locator('.line:not(.multibuffer-file-header-row)').first();
+            await expect(firstBodyLine).toBeVisible({ timeout: 10000 });
+            const lineTextBefore = (await firstBodyLine.innerText()).trim();
+
+            // Collapse
+            await headerRow.click();
+            await expect(headerRow).toContainText('▸');
+
+            // Compare DOM line contents during collapse
+            const currentBodyLinesText = await page.locator('.line:not(.multibuffer-file-header-row)').allInnerTexts();
+            const trimmedTexts = currentBodyLinesText.map((t) => t.trim());
+            if (lineTextBefore.length > 0) {
+                expect(trimmedTexts).not.toContain(lineTextBefore);
+            }
+
+            // Expand again
+            await headerRow.click();
+            await expect(headerRow).toContainText('▾');
+            const lineTextAfter = (await firstBodyLine.innerText()).trim();
+            expect(lineTextAfter).toBe(lineTextBefore);
+        }
+    });
+
+    test('should render single unmodified lines as code instead of 1-line gap buttons', async ({ page }) => {
+        const historyTab = page.getByText(/^History$/i).first();
+        await historyTab.click();
+        const historyList = page.locator('.history-panel').getByRole('list', { name: 'Git history' });
+        const firstCommit = historyList.locator('.history-commit-row').first();
+        await firstCommit.click();
+
+        const reviewBtn = historyList.locator('.history-review-button, button:has-text("Review")').first();
+        if (await reviewBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
+            await reviewBtn.click();
+            await expect(page.locator('.multibuffer-file-header-row').first()).toBeVisible({ timeout: 10000 });
+
+            const singleLineGaps = page.locator('.diff-gap-expand-btn').filter({ hasText: /^1 unmodified line$/ });
+            await expect(singleLineGaps).toHaveCount(0);
+        }
+    });
 });

@@ -1,6 +1,7 @@
 import { useContext, useEffect, useState } from 'react';
 import { AnycodeEditor, AnycodeEditorReact } from 'anycode-react';
 import { LayoutVersionContext } from '../../components/layout/Layout';
+import type { DefinitionRequest, DefinitionResponse, HoverRequest } from 'anycode-base';
 import type { FileState, ReferencesPeekState } from '../../types';
 import { ReferencesPeek } from './ReferencesPeek';
 import MultibufferPanel, { type MultibufferFile } from './MultibufferPanel';
@@ -20,13 +21,16 @@ type EditorPanelProps = {
         setSelectedReferenceInPeek: (paneId: string, nextIndex: number) => void;
         openReferenceFromPeek: (paneId: string, itemIndex?: number) => void;
         setActiveFileId: (fileId: string | null, paneId?: string) => void;
+        handleHover?: (request: HoverRequest) => Promise<string | null>;
+        handleGoToDefinition?: (request: DefinitionRequest) => Promise<DefinitionResponse>;
     };
     multibufferOpen?: boolean;
     multibufferFiles?: MultibufferFile[];
     multibufferTitle?: string;
     multibufferIgnoreEdits?: boolean;
-    multibufferFocusRequest?: { path: string; token: number };
+    multibufferFocusRequest?: { path: string; line?: number; column?: number; token: number };
     onCloseMultibuffer?: () => void;
+    onGoToDefinition?: (request: DefinitionRequest) => Promise<DefinitionResponse>;
 };
 
 export const EditorPanel = ({
@@ -38,6 +42,7 @@ export const EditorPanel = ({
     multibufferIgnoreEdits = false,
     multibufferFocusRequest,
     onCloseMultibuffer,
+    onGoToDefinition,
 }: EditorPanelProps) => {
     const layoutVersion = useContext(LayoutVersionContext);
     const paneFileId = editors.getActiveFileIdForPane(panelKey);
@@ -87,6 +92,8 @@ export const EditorPanel = ({
                     title={multibufferTitle}
                     ignoreEdits={multibufferIgnoreEdits}
                     focusRequest={multibufferFocusRequest}
+                    onGoToDefinition={onGoToDefinition}
+                    onHover={editors.handleHover}
                 />
             </div>
         );

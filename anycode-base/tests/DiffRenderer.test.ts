@@ -7,19 +7,19 @@ describe('DiffRenderer.insertSeparators', () => {
         const renderer = new DiffRenderer({} as any, {} as any, {} as any, {} as any);
         renderer.setFocusedDiffMode(true);
 
-        // Case 1: Gap at start only (line 0 is hidden, lines 1 and 2 are visible)
+        // Case 1: Gap at start only (line 0 is single hidden line -> rendered as real line)
         const rows1: VisualRow[] = [
             { kind: 'real', lineIndex: 1 },
             { kind: 'real', lineIndex: 2 },
         ];
         const result1 = renderer.insertSeparators(rows1, 3);
         expect(result1).toEqual([
-            { kind: 'separator', hiddenStart: 0, hiddenEnd: 0, hiddenCount: 1 },
+            { kind: 'real', lineIndex: 0 },
             { kind: 'real', lineIndex: 1 },
             { kind: 'real', lineIndex: 2 },
         ]);
 
-        // Case 2: Gap at end only (lines 0 and 1 are visible, line 2 is hidden)
+        // Case 2: Gap at end only (line 2 is single hidden line -> rendered as real line)
         const rows2: VisualRow[] = [
             { kind: 'real', lineIndex: 0 },
             { kind: 'real', lineIndex: 1 },
@@ -28,7 +28,7 @@ describe('DiffRenderer.insertSeparators', () => {
         expect(result2).toEqual([
             { kind: 'real', lineIndex: 0 },
             { kind: 'real', lineIndex: 1 },
-            { kind: 'separator', hiddenStart: 2, hiddenEnd: 2, hiddenCount: 1 },
+            { kind: 'real', lineIndex: 2 },
         ]);
 
         // Case 3: Gaps at both start and end
@@ -99,6 +99,46 @@ describe('DiffRenderer.insertSeparators', () => {
             { kind: 'separator', hiddenStart: 1, hiddenEnd: 3, hiddenCount: 3 },
             { kind: 'real', lineIndex: 4 },
         ]);
+    });
+});
+
+describe('DiffRenderer.computeVisibleLines', () => {
+    it('should not let diff context lines cross file boundaries when isSameFileBody is provided', () => {
+        const renderer = new DiffRenderer({} as any, {} as any, {} as any, {} as any);
+        renderer.setFocusedDiffMode(true, 3); // 3 context lines
+
+        // Mock a multibuffer layout:
+        // row 0: file 0 header
+        // rows 1..10: file 0 body (lines 0..9)
+        // row 11: file 1 header
+        // row 12: file 1 body line 0 (has diff at 1-indexed line 13)
+        const isSameFileBody = (lineA: number, lineB: number): boolean => {
+            const getFile = (line: number) => {
+                if (line >= 1 && line <= 10) return 0;
+                if (line >= 12 && line <= 20) return 1;
+                return null;
+            };
+            const fA = getFile(lineA);
+            const fB = getFile(lineB);
+            return fA !== null && fA === fB;
+        };
+
+        const diffs = new Map([
+            [13, { changeType: 'modified' as const, hunkId: 0 }],
+        ]);
+
+        const mockCode = { isSameFileBody } as any;
+        const visible = renderer.computeVisibleLines(21, diffs, mockCode);
+        expect(visible).toBeDefined();
+
+        // Line 12 (0-indexed) has the diff.
+        // Expanding UP should STOP at row 12 because row 11 is a header (isSameFileBody returns false).
+        // It should NOT add row 10 (which is the last line of file 0).
+        expect(visible!.has(12)).toBe(true);
+        expect(visible!.has(10)).toBe(false); // Should NOT bleed into file 0!
+        expect(visible!.has(13)).toBe(true);  // Context down line 1
+        expect(visible!.has(14)).toBe(true);  // Context down line 2
+        expect(visible!.has(15)).toBe(true);  // Context down line 3
     });
 });
 

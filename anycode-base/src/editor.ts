@@ -90,6 +90,7 @@ export class AnycodeEditor {
 
     private runLines: number[] = [];
     private errorLines: Map<number, string> = new Map();
+    private errorListeners: Set<() => void> = new Set();
 
     private pendingOriginalContent: string | null = null;
     private isCompletionOpen = false;
@@ -511,12 +512,26 @@ export class AnycodeEditor {
         this.runLines = lines;
     }
 
+    public getErrorLines(): Map<number, string> {
+        return this.errorLines;
+    }
+
+    public addOnErrorListener(listener: () => void): () => void {
+        this.errorListeners.add(listener);
+        return () => {
+            this.errorListeners.delete(listener);
+        };
+    }
+
     public setErrors(errors: { line: number, message: string }[]) {
         this.errorLines.clear();
         for (const { line, message } of errors) {
             this.errorLines.set(line, message);
         }
         this.renderer.renderErrors(this.getEditorState());
+        for (const listener of this.errorListeners) {
+            listener();
+        }
     }
 
     public setCompletions(completions: Completion[]) {
@@ -772,6 +787,7 @@ export class AnycodeEditor {
             && multibufferCode.getMultibufferHeader !== undefined
             && multibufferCode.toggleMultibufferFileAtLine?.(pos.row)
         ) {
+            this.renderer.clearExpandedDiffRanges();
             this.offset = Math.min(this.code.getOffset(pos.row, 0), this.code.getContentLength());
             this.selection = null;
             this.recomputeDiffs();
@@ -844,10 +860,11 @@ export class AnycodeEditor {
         }
 
         try {
+            const { file, line, column } = this.code.resolvePosition(row, col);
             const definitionRequest: DefinitionRequest = {
-                file: this.code.filename,
-                row: row,
-                column: col
+                file,
+                row: line,
+                column,
             };
 
             await this.goToDefinitionProvider(definitionRequest);
@@ -1082,10 +1099,12 @@ export class AnycodeEditor {
 
         const requestToken = ++this.hoverRequestToken;
 
+        const { file, line, column } = this.code.resolvePosition(row, col);
+
         const hoverText = await this.hoverProvider({
-            file: this.code.filename,
-            row,
-            column: col,
+            file,
+            row: line,
+            column,
         });
 
         if (requestToken !== this.hoverRequestToken) return;

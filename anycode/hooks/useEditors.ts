@@ -1515,6 +1515,8 @@ export const useEditors = ({ wsRef, isConnected, onFileClosed }: UseEditorsParam
         openReferenceFromPeek,
         handleReferencesPeekKeyDown,
         handleDiagnostics,
+        handleGoToDefinition,
+        handleHover,
         handleWatcherEdits,
         handleGitUpdate,
         undoCursor,

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AnycodeEditorReact } from 'anycode-react';
-import { AnycodeEditor, Code, MultiBufferCode, type MultiBufferEntry } from 'anycode-base';
+import { AnycodeEditor, Code, MultiBufferCode, type MultiBufferEntry, type DefinitionRequest, type DefinitionResponse, type HoverRequest } from 'anycode-base';
 import type { FileState } from '../../types';
 import './MultibufferPanel.css';
 
@@ -23,6 +23,8 @@ type MultibufferPanelProps = {
     title?: string;
     ignoreEdits?: boolean;
     focusRequest?: { path: string; token: number };
+    onGoToDefinition?: (request: DefinitionRequest) => Promise<DefinitionResponse>;
+    onHover?: (request: HoverRequest) => Promise<string | null>;
 };
 
 type ReadyFile = {
@@ -42,6 +44,8 @@ const MultibufferPanel: React.FC<MultibufferPanelProps> = ({
     title = 'Review changes',
     ignoreEdits = false,
     focusRequest,
+    onGoToDefinition,
+    onHover,
 }) => {
     const [sharedEditor, setSharedEditor] = useState<AnycodeEditor | null>(null);
     const sharedEditorRef = useRef<AnycodeEditor | null>(null);
@@ -74,11 +78,38 @@ const MultibufferPanel: React.FC<MultibufferPanelProps> = ({
 
     useEffect(() => {
         if (!focusRequest || !sharedEditor) return;
-        const line = currentCodeRef.current?.getFirstLineForFile(focusRequest.path);
-        if (line === null || line === undefined) return;
-        sharedEditor.requestFocus(line, 0, true);
-        onSelectFileRef.current(focusRequest.path, panelKey);
-    }, [focusRequest, panelKey, sharedEditor]);
+        const currentCode = currentCodeRef.current;
+        if (!currentCode) return;
+
+        let targetLine: number | null = null;
+        if (focusRequest.line !== undefined) {
+            targetLine = currentCode.getMultibufferLineForLocalLine(focusRequest.path, focusRequest.line);
+        }
+        if (targetLine === null) {
+            targetLine = currentCode.getFirstLineForFile(focusRequest.path);
+        }
+        if (targetLine === null) return;
+
+        const column = focusRequest.column ?? 0;
+        sharedEditor.requestFocus(targetLine, column, true);
+
+        const targetFile = reviewFiles.find((file) => (
+            file.id === focusRequest.path
+            || file.path === focusRequest.path
+            || focusRequest.path.endsWith('/' + file.id)
+            || focusRequest.path.endsWith('/' + file.path)
+        ));
+        onSelectFileRef.current(targetFile?.id ?? focusRequest.path, panelKey);
+    }, [focusRequest, panelKey, reviewFiles, sharedEditor]);
+
+    useEffect(() => {
+        if (sharedEditor && onGoToDefinition) {
+            sharedEditor.setGoToDefinitionProvider(onGoToDefinition);
+        }
+        if (sharedEditor && onHover) {
+            sharedEditor.setHoverProvider(onHover);
+        }
+    }, [onGoToDefinition, onHover, sharedEditor]);
 
     useEffect(() => {
         generationRef.current += 1;
@@ -113,9 +144,27 @@ const MultibufferPanel: React.FC<MultibufferPanelProps> = ({
             };
         };
 
+        const updateMultibufferErrors = () => {
+            const editor = sharedEditorRef.current;
+            const currentCode = currentCodeRef.current;
+            if (!editor || !currentCode) return;
+
+            const multibufferErrors: { line: number; message: string }[] = [];
+            for (const { file, editor: fileEditor } of readyFilesRef.current) {
+                const errorMap = fileEditor.getErrorLines();
+                for (const [localLine, message] of errorMap.entries()) {
+                    const mbLine = currentCode.getMultibufferLineForLocalLine(file.id, localLine);
+                    if (mbLine !== null && mbLine !== undefined) {
+                        multibufferErrors.push({ line: mbLine, message });
+                    }
+                }
+            }
+            editor.setErrors(multibufferErrors);
+        };
+
         const subscribeToFile = (readyFile: ReadyFile) => {
             if (unsubscribeFileChangesRef.current.has(readyFile.file.id)) return;
-            const unsubscribe = readyFile.editor.addOnChangeListener(() => {
+            const unsubscribeChange = readyFile.editor.addOnChangeListener(() => {
                 const currentCode = currentCodeRef.current;
                 const editor = sharedEditorRef.current;
                 if (!currentCode || !editor) return;
@@ -135,8 +184,15 @@ const MultibufferPanel: React.FC<MultibufferPanelProps> = ({
                     }
                 }
                 editor.refreshAfterExternalChange();
+                updateMultibufferErrors();
             });
-            unsubscribeFileChangesRef.current.set(readyFile.file.id, unsubscribe);
+            const unsubscribeError = readyFile.editor.addOnErrorListener(() => {
+                updateMultibufferErrors();
+            });
+            unsubscribeFileChangesRef.current.set(readyFile.file.id, () => {
+                unsubscribeChange();
+                unsubscribeError();
+            });
         };
 
         const sync = async () => {
@@ -189,9 +245,13 @@ const MultibufferPanel: React.FC<MultibufferPanelProps> = ({
                         editor.clean();
                         return;
                     }
+                    if (onGoToDefinition) {
+                        editor.setGoToDefinitionProvider(onGoToDefinition);
+                    }
                     editor.setDiffMode('diff');
                     setSharedEditor(editor);
                     initialFiles.forEach(({ file }) => loadedFileIdsRef.current.add(file.id));
+                    updateMultibufferErrors();
                 }
 
                 const currentFileIds = new Set(readyFilesRef.current.map(({ file }) => file.id));
@@ -206,14 +266,12 @@ const MultibufferPanel: React.FC<MultibufferPanelProps> = ({
                         loadedFileIdsRef.current.delete(fileId);
                     });
                     editor.refreshAfterExternalChange();
+                    updateMultibufferErrors();
                 }
 
-                while (generationRef.current === generation) {
-                    const pendingFiles = readyFilesRef.current.filter(({ file }) => (
-                        !loadedFileIdsRef.current.has(file.id)
-                    ));
-                    if (pendingFiles.length === 0) break;
-
+                const pendingFiles = readyFilesRef.current
+                    .filter(({ file }) => !loadedFileIdsRef.current.has(file.id));
+                if (pendingFiles.length > 0) {
                     for (const pendingFile of pendingFiles) {
                         const entry = toEntry(pendingFile);
                         const insertionIndex = reviewFiles.findIndex((file) => file.id === pendingFile.file.id);
@@ -229,6 +287,7 @@ const MultibufferPanel: React.FC<MultibufferPanelProps> = ({
                         loadedFileIdsRef.current.add(pendingFile.file.id);
                     }
                     editor.refreshAfterExternalChange();
+                    updateMultibufferErrors();
                 }
             } finally {
                 syncingRef.current = false;
