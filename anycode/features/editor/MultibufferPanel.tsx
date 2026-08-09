@@ -14,38 +14,47 @@ export type MultibufferFile = {
 
 type MultibufferPanelProps = {
     panelKey: string;
+    active: boolean;
     files: MultibufferFile[];
     openFiles: FileState[];
     editorStates: ReadonlyMap<string, AnycodeEditor>;
-    activeFileId: string | null;
-    onSelectFile: (fileId: string, paneId: string) => void;
     onClose: () => void;
     title?: string;
     ignoreEdits?: boolean;
-    focusRequest?: { path: string; token: number };
+    focusRequest?: { path: string; line?: number; column?: number; token: number };
+    onActiveFileChange?: (fileId: string) => void;
     onGoToDefinition?: (request: DefinitionRequest) => Promise<DefinitionResponse>;
     onHover?: (request: HoverRequest) => Promise<string | null>;
+    onLoadDeletedFile?: (path: string) => Promise<string | null>;
 };
 
 type ReadyFile = {
     file: MultibufferFile;
-    fileState: FileState;
-    editor: AnycodeEditor;
+    fileState?: FileState;
+    editor?: AnycodeEditor;
+    code?: Code;
+    originalCode?: Code;
+};
+
+type DeletedEntry = {
+    code: Code;
+    originalCode: Code;
 };
 
 const MultibufferPanel: React.FC<MultibufferPanelProps> = ({
     panelKey,
+    active,
     files,
     openFiles,
     editorStates,
-    activeFileId,
-    onSelectFile,
     onClose,
     title = 'Review changes',
     ignoreEdits = false,
     focusRequest,
+    onActiveFileChange,
     onGoToDefinition,
     onHover,
+    onLoadDeletedFile,
 }) => {
     const [sharedEditor, setSharedEditor] = useState<AnycodeEditor | null>(null);
     const sharedEditorRef = useRef<AnycodeEditor | null>(null);
@@ -53,28 +62,86 @@ const MultibufferPanel: React.FC<MultibufferPanelProps> = ({
     const originalCodeRef = useRef<MultiBufferCode | null>(null);
     const readyFilesRef = useRef<ReadyFile[]>([]);
     const editorStatesRef = useRef(editorStates);
-    const onSelectFileRef = useRef(onSelectFile);
+    const onActiveFileChangeRef = useRef(onActiveFileChange);
     const loadedFileIdsRef = useRef(new Set<string>());
     const unsubscribeFileChangesRef = useRef(new Map<string, () => void>());
+    const deletedEntriesRef = useRef(new Map<string, DeletedEntry>());
     const syncingRef = useRef(false);
     const generationRef = useRef(0);
+    const [deletedEntriesVersion, setDeletedEntriesVersion] = useState(0);
     const fileById = useMemo(() => new Map(openFiles.map((file) => [file.id, file])), [openFiles]);
-    const reviewFiles = useMemo(
-        () => files.filter((file) => file.status !== 'deleted'),
-        [files],
-    );
-    const readyFiles = useMemo<ReadyFile[]>(() => files
-        .filter((file) => file.status !== 'deleted')
-        .flatMap((file) => {
+    const reviewFiles = files;
+    const readyFiles = useMemo<ReadyFile[]>(() => files.flatMap((file) => {
             const fileState = fileById.get(file.id);
             const editor = editorStates.get(file.id);
-            return fileState && editor ? [{ file, fileState, editor }] : [];
-        }), [editorStates, fileById, files]);
+            if (fileState && editor) return [{ file, fileState, editor }];
+
+            const deletedEntry = deletedEntriesRef.current.get(file.id);
+            return deletedEntry
+                ? [{ file, code: deletedEntry.code, originalCode: deletedEntry.originalCode }]
+                : [];
+        }), [deletedEntriesVersion, editorStates, fileById, files]);
+
+    useEffect(() => {
+        const deletedFiles = files.filter((file) => file.status === 'deleted');
+        const deletedIds = new Set(deletedFiles.map((file) => file.id));
+        let entriesChanged = false;
+
+        for (const fileId of deletedEntriesRef.current.keys()) {
+            if (deletedIds.has(fileId)) continue;
+            deletedEntriesRef.current.delete(fileId);
+            entriesChanged = true;
+        }
+
+        if (entriesChanged) {
+            setDeletedEntriesVersion((version) => version + 1);
+        }
+        if (ignoreEdits || !onLoadDeletedFile) return;
+
+        const missingFiles = deletedFiles.filter((file) => !deletedEntriesRef.current.has(file.id));
+        if (missingFiles.length === 0) return;
+
+        let cancelled = false;
+        void Promise.all(missingFiles.map(async (file) => ({
+            file,
+            content: await onLoadDeletedFile(file.path),
+        }))).then((results) => {
+            if (cancelled) return;
+
+            let loaded = false;
+            for (const { file, content } of results) {
+                if (content === null || deletedEntriesRef.current.has(file.id)) continue;
+                deletedEntriesRef.current.set(file.id, {
+                    code: new Code('', file.path, ''),
+                    originalCode: new Code(content, file.path, ''),
+                });
+                loaded = true;
+            }
+            if (loaded) {
+                setDeletedEntriesVersion((version) => version + 1);
+            }
+        });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [files, ignoreEdits, onLoadDeletedFile, panelKey]);
+
     useEffect(() => {
         readyFilesRef.current = readyFiles;
         editorStatesRef.current = editorStates;
-        onSelectFileRef.current = onSelectFile;
-    }, [editorStates, onSelectFile, readyFiles]);
+        onActiveFileChangeRef.current = onActiveFileChange;
+    }, [editorStates, onActiveFileChange, readyFiles]);
+
+    useEffect(() => {
+        if (!sharedEditor) return;
+        if (active) {
+            sharedEditor.activateCursor();
+        } else {
+            sharedEditor.deactivateCursor();
+        }
+        return () => sharedEditor.deactivateCursor();
+    }, [active, sharedEditor]);
 
     useEffect(() => {
         if (!focusRequest || !sharedEditor) return;
@@ -99,8 +166,8 @@ const MultibufferPanel: React.FC<MultibufferPanelProps> = ({
             || focusRequest.path.endsWith('/' + file.id)
             || focusRequest.path.endsWith('/' + file.path)
         ));
-        onSelectFileRef.current(targetFile?.id ?? focusRequest.path, panelKey);
-    }, [focusRequest, panelKey, reviewFiles, sharedEditor]);
+        onActiveFileChangeRef.current?.(targetFile?.id ?? focusRequest.path);
+    }, [focusRequest, reviewFiles, sharedEditor]);
 
     useEffect(() => {
         if (sharedEditor && onGoToDefinition) {
@@ -122,13 +189,29 @@ const MultibufferPanel: React.FC<MultibufferPanelProps> = ({
             currentCodeRef.current = null;
             originalCodeRef.current = null;
             loadedFileIdsRef.current.clear();
+            deletedEntriesRef.current.clear();
             setSharedEditor(null);
         };
     }, [ignoreEdits, panelKey]);
 
     useEffect(() => {
         const generation = generationRef.current;
-        const toEntry = ({ file, fileState, editor }: ReadyFile): MultiBufferEntry => {
+        const toEntry = ({ file, fileState, editor, code, originalCode }: ReadyFile): MultiBufferEntry => {
+            if (code && originalCode) {
+                return {
+                    id: file.id,
+                    path: file.path,
+                    added: file.added,
+                    removed: file.removed,
+                    readOnly: true,
+                    code,
+                    originalCode,
+                };
+            }
+
+            if (!fileState || !editor) {
+                throw new Error(`Multibuffer file is not ready: ${file.path}`);
+            }
             const originalContent = editor.getOriginalText();
             const originalText = originalContent !== null
                 ? originalContent
@@ -138,6 +221,7 @@ const MultibufferPanel: React.FC<MultibufferPanelProps> = ({
                 path: file.path,
                 added: file.added,
                 removed: file.removed,
+                readOnly: file.status === 'deleted',
                 code: editor.getCodeModel(),
                 originalCode: editor.getOriginalCodeModel()
                     ?? new Code(originalText, file.path, fileState.language),
@@ -151,6 +235,7 @@ const MultibufferPanel: React.FC<MultibufferPanelProps> = ({
 
             const multibufferErrors: { line: number; message: string }[] = [];
             for (const { file, editor: fileEditor } of readyFilesRef.current) {
+                if (!fileEditor) continue;
                 const errorMap = fileEditor.getErrorLines();
                 for (const [localLine, message] of errorMap.entries()) {
                     const mbLine = currentCode.getMultibufferLineForLocalLine(file.id, localLine);
@@ -163,6 +248,7 @@ const MultibufferPanel: React.FC<MultibufferPanelProps> = ({
         };
 
         const subscribeToFile = (readyFile: ReadyFile) => {
+            if (!readyFile.editor) return;
             if (unsubscribeFileChangesRef.current.has(readyFile.file.id)) return;
             const unsubscribeChange = readyFile.editor.addOnChangeListener(() => {
                 const currentCode = currentCodeRef.current;
@@ -236,7 +322,7 @@ const MultibufferPanel: React.FC<MultibufferPanelProps> = ({
                     });
                     editor.setOnCursorChange((position) => {
                         const fileId = currentCodeRef.current?.getFileIdAtLine(position.line);
-                        if (fileId) onSelectFileRef.current(fileId, panelKey);
+                        if (fileId) onActiveFileChangeRef.current?.(fileId);
                     });
                     initialFiles.forEach(subscribeToFile);
 

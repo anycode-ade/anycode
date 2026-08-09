@@ -50,6 +50,7 @@ type ReviewSession = {
     title: string;
     ignoreEdits: boolean;
     openedByReview: string[];
+    activeFileId: string | null;
     focusRequest?: { path: string; line?: number; column?: number; token: number };
 };
 
@@ -84,6 +85,10 @@ const App: React.FC = () => {
     const { currentThemeId, handleThemeChange } = useTheme({ wsRef, isConnected });
     const layoutActionsRef = useRef<LayoutActions | null>(null);
     const [multibufferReviews, setMultibufferReviews] = React.useState<Record<string, ReviewSession>>({});
+    const activeReview = multibufferReviews[editors.activeEditorPaneId];
+    const activeReviewFile = activeReview?.files.find((file) => file.id === activeReview.activeFileId);
+    const activeContextFileId = activeReviewFile?.id ?? editors.activeFileId;
+    const activeContextFilePath = activeReviewFile?.path ?? editors.activeFileId;
 
     useEffect(() => {
         if (connectionStatus === 'connected') {
@@ -115,6 +120,9 @@ const App: React.FC = () => {
                     ...review,
                     files,
                     openedByReview: review.openedByReview.filter((fileId) => fileId !== data.path),
+                    activeFileId: review.activeFileId === data.path
+                        ? (files[0]?.id ?? null)
+                        : review.activeFileId,
                 };
                 changed = true;
             }
@@ -214,16 +222,16 @@ const App: React.FC = () => {
     }, [editors.flushAllPendingChanges]);
 
     useEffect(() => {
-        fileTree.setActiveNode(editors.activeFileId);
-    }, [editors.activeFileId, fileTree.setActiveNode]);
+        fileTree.setActiveNode(activeContextFilePath);
+    }, [activeContextFilePath, fileTree.setActiveNode]);
 
     useEffect(() => {
-        if (!editors.activeFileId) {
+        if (!activeContextFilePath) {
             fileTree.clearFileSelection();
             return;
         }
 
-        const node = fileTree.findNodeByPath(fileTree.fileTree, editors.activeFileId);
+        const node = fileTree.findNodeByPath(fileTree.fileTree, activeContextFilePath);
         if (!node) {
             fileTree.clearFileSelection();
             return;
@@ -234,7 +242,7 @@ const App: React.FC = () => {
         }
 
         fileTree.selectNode(node.id);
-    }, [editors.activeFileId, fileTree.fileTree,
+    }, [activeContextFilePath, fileTree.fileTree,
         fileTree.findNodeByPath, fileTree.selectNode, fileTree.clearFileSelection]);
 
     useEffect(() => {
@@ -299,6 +307,9 @@ const App: React.FC = () => {
                 files,
                 title: 'Review changes',
                 ignoreEdits: false,
+                activeFileId: files.find((file) => file.id === editors.activeFileId)?.id
+                    ?? files[0]?.id
+                    ?? null,
                 openedByReview: files
                     .filter((file) => !editors.editorStates.has(file.id))
                     .map((file) => file.id),
@@ -336,7 +347,13 @@ const App: React.FC = () => {
                             && file.status === nextFile.status;
                     });
                 if (!sameFiles) {
-                    next[paneId] = { ...review, files: nextFiles };
+                    next[paneId] = {
+                        ...review,
+                        files: nextFiles,
+                        activeFileId: nextFiles.some((file) => file.id === review.activeFileId)
+                            ? review.activeFileId
+                            : (nextFiles[0]?.id ?? null),
+                    };
                     changed = true;
                 }
             }
@@ -356,10 +373,24 @@ const App: React.FC = () => {
             ...prev,
             [paneId]: {
                 ...prev[paneId],
+                activeFileId: file.id,
                 focusRequest: { path: file.id, line, column, token: Date.now() },
             },
         }));
         return true;
+    });
+
+    const handleReviewActiveFileChange = useEvent((paneId: string, fileId: string) => {
+        setMultibufferReviews((previous) => {
+            const review = previous[paneId];
+            if (!review || review.activeFileId === fileId || !review.files.some((file) => file.id === fileId)) {
+                return previous;
+            }
+            return {
+                ...previous,
+                [paneId]: { ...review, activeFileId: fileId },
+            };
+        });
     });
 
     const handleGoToDefinition = useEvent(async (request: DefinitionRequest) => {
@@ -378,8 +409,8 @@ const App: React.FC = () => {
     const handleSelectFile = useEvent((fileId: string) => {
         const paneId = resolveEditorPaneId();
         if (!paneId) return;
+        if (focusReviewFile(paneId, fileId)) return;
         editors.setActiveFileId(fileId, paneId);
-        focusReviewFile(paneId, fileId);
     });
 
     const handleSearchResultClick = (filePath: string, match: SearchMatch) => {
@@ -443,18 +474,20 @@ const App: React.FC = () => {
                 false,
             );
         }
+        const reviewFiles = textFiles.map(({ file }) => ({
+            id: getHistoricalFileId(hash, file.path),
+            path: file.path,
+            added: file.added,
+            removed: file.removed,
+            status: file.status,
+        }));
         setMultibufferReviews((previous) => ({
             ...previous,
             [paneId]: {
-                files: textFiles.map(({ file }) => ({
-                    id: getHistoricalFileId(hash, file.path),
-                    path: file.path,
-                    added: file.added,
-                    removed: file.removed,
-                    status: file.status,
-                })),
+                files: reviewFiles,
                 title: `Review ${hash.slice(0, 7)}`,
                 ignoreEdits: true,
+                activeFileId: reviewFiles[0]?.id ?? null,
                 openedByReview: textFiles
                     .map(({ file }) => getHistoricalFileId(hash, file.path))
                     .filter((fileId) => !editors.editorStates.has(fileId)),
@@ -463,12 +496,12 @@ const App: React.FC = () => {
     });
 
     const activeChangedFile = useMemo<ChangedFile | null>(() => {
-        if (!editors.activeFileId) {
+        if (!activeContextFilePath) {
             return null;
         }
-        const normalizedActivePath = normalizePath(editors.activeFileId).replace(/^\.\/+/, '');
+        const normalizedActivePath = normalizePath(activeContextFilePath).replace(/^\.\/+/, '');
         return git.changedFiles.find((file) => normalizePath(file.path).replace(/^\.\/+/, '') === normalizedActivePath) ?? null;
-    }, [editors.activeFileId, git.changedFiles]);
+    }, [activeContextFilePath, git.changedFiles]);
 
     const isEditorDiffEnabled = useCallback((panelKey: string) => {
         return editors.getEditorDiffMode(panelKey) !== 'plain';
@@ -706,7 +739,9 @@ const App: React.FC = () => {
                         multibufferIgnoreEdits={multibufferReview?.ignoreEdits ?? false}
                         multibufferFocusRequest={multibufferReview?.focusRequest}
                         onCloseMultibuffer={() => closeReview(panelKey)}
+                        onMultibufferActiveFileChange={handleReviewActiveFileChange}
                         onGoToDefinition={handleGoToDefinition}
+                        onLoadDeletedFile={git.fetchOriginalFileContent}
                     />
                 );
             case 'terminal':
@@ -752,7 +787,7 @@ const App: React.FC = () => {
                 return (
                     <Toolbar
                         files={editors.files}
-                        activeFileId={editors.activeFileId}
+                        activeFileId={activeContextFileId}
                         terminals={terminals.terminals}
                         activeTerminalId={activeTerminalId}
                         agentSessions={sessionsArray}

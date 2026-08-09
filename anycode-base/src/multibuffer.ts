@@ -8,6 +8,7 @@ export type MultiBufferEntry = {
     path: string;
     added?: number;
     removed?: number;
+    readOnly?: boolean;
     code: Code;
     originalCode: Code;
 };
@@ -509,6 +510,7 @@ export class MultiBufferCode extends Code {
         if (!resolved || resolved.row.kind === 'header') return;
 
         const entry = this.entries[resolved.fileIndex];
+        if (entry.readOnly) return;
         const localOffset = Math.min(resolved.localOffset, entry.code.getContentLength());
         entry.code.insert(text, localOffset);
         this.fileVersions[resolved.fileIndex] += 1;
@@ -527,6 +529,7 @@ export class MultiBufferCode extends Code {
         if (!start || !end || start.row.kind === 'header' || start.fileIndex !== end.fileIndex) return;
 
         const entry = this.entries[start.fileIndex];
+        if (entry.readOnly) return;
         const maxLength = Math.max(0, entry.code.getContentLength() - start.localOffset);
         const removeLength = Math.min(length, maxLength);
         if (removeLength <= 0) return;

@@ -51,6 +51,7 @@ export interface EditorState {
     originalCode?: Code;
     offset: number;
     selection: Selection | null;
+    cursorActive: boolean;
     runLines: number[];
     errorLines: Map<number, string>;
     settings: EditorSettings;
@@ -106,6 +107,7 @@ export class AnycodeEditor {
     private hoverOffset: number | null = null;
 
     private needFocus = false;
+    private cursorActive = true;
 
     private search: Search = new Search();
 
@@ -668,12 +670,25 @@ export class AnycodeEditor {
         this.renderer.renderCursorOrSelection(state);
     }
 
+    public activateCursor(): void {
+        if (this.cursorActive) return;
+        this.cursorActive = true;
+        if (this.container.isConnected) {
+            this.renderer.renderCursorOrSelection(this.getEditorState());
+        }
+    }
+
+    public deactivateCursor(): void {
+        this.cursorActive = false;
+    }
+
     private getEditorState(): EditorState {
         return {
             code: this.code,
             originalCode: this.originalCode,
             offset: this.offset,
             selection: this.selection,
+            cursorActive: this.cursorActive,
             runLines: this.runLines,
             errorLines: this.errorLines,
             settings: {
@@ -921,6 +936,7 @@ export class AnycodeEditor {
 
     private handleFocus(e: FocusEvent) {
         // console.log('Editor focus');
+        this.activateCursor();
         this.search.setNeedsFocus(false);
     }
 
@@ -937,6 +953,7 @@ export class AnycodeEditor {
             return;
         }
         if (isInsideDiagnostic(e.target as Node)) return;
+        this.activateCursor();
         e.preventDefault();
         this.clearPendingHover();
         this.closeHover();

@@ -134,7 +134,7 @@ export class Renderer {
     }
 
     public render(state: EditorState) {
-        const { code, offset, selection, settings, diffs, readOnly, search } = state;
+        const { code, settings, diffs, readOnly, search } = state;
         this.codeFoldingEnabled = state.codeFoldingEnabled ?? true;
         this.updateFoldableStarts(state);
         this.updateCollapsedMap(state);
@@ -188,12 +188,7 @@ export class Renderer {
 
         // Render cursor or selection
         if (!readOnly && (!search.isActive() || !search.isFocused())) {
-            if (!selection || selection.isEmpty()) {
-                const { line, column } = code.getPosition(offset);
-                this.renderCursor(line, column, false);
-            } else {
-                this.renderSelection(code, selection!);
-            }
+            this.renderCursorOrSelection(state);
         }
 
         // Render search highlights
@@ -402,7 +397,7 @@ export class Renderer {
     }
 
     public renderScroll(state: EditorState) {
-        const { code, offset, selection, settings, diffs, readOnly, search } = state;
+        const { code, settings, diffs, readOnly, search } = state;
         this.updateFoldableStarts(state);
         this.updateCollapsedMap(state);
         const lineHeight = settings.lineHeight;
@@ -515,12 +510,7 @@ export class Renderer {
 
         // Render cursor or selection
         if (!readOnly && (!search.isActive() || !search.isFocused())) {
-            if (!selection || selection.isEmpty()) {
-                const { line, column } = code.getPosition(offset);
-                this.renderCursor(line, column, false);
-            } else {
-                this.renderSelection(code, selection!);
-            }
+            this.renderCursorOrSelection(state);
         }
 
         // Render search highlights
@@ -807,7 +797,7 @@ export class Renderer {
     }
 
     public renderCursorOrSelection(state: EditorState, focus: boolean = false) {
-        if (state.readOnly) return;
+        if (!state.cursorActive || state.readOnly) return;
 
         const { code, offset, selection } = state;
         if (!selection || selection.isEmpty()) {

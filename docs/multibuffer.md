@@ -104,4 +104,3 @@ Instead of forcing developers to switch back and forth between separate file tab
    При обновлении индекса из-за внешних изменений `MultibufferPanel` запоминает `fileId` и `localLine` курсора и восстанавливает его в том же файле и на той же строке.
 5. **Асинхронная инициализация оригиналов**:
    В `AnycodeEditor` добавлен `pendingOriginalContent`, благодаря чему `getOriginalText()` сразу отдаёт эталонный текст из Git HEAD, даже если Tree-Sitter WASM-парсер ещё загружается в фоне.
-
