@@ -76,7 +76,9 @@ export class Renderer {
         gutter: HTMLDivElement,
         foldsColumn: HTMLDivElement,
         codeContent: HTMLDivElement,
-        scrollbarMarkersEnabled: boolean = true
+        scrollbarMarkersEnabled: boolean = true,
+        onImmediateScroll?: () => void,
+        wrapper?: HTMLDivElement
     ) {
         this.container = container;
         this.buttonsColumn = buttonsColumn;
@@ -119,12 +121,18 @@ export class Renderer {
                 state.search.setSelected(index);
                 this.searchRenderer.updateSearchHighlights(state.search);
             },
-            scrollbarMarkersEnabled
+            onImmediateScroll,
+            scrollbarMarkersEnabled,
+            wrapper
         );
     }
 
     public setDiffEnabled(enabled: boolean) {
         this.diffEnabled = enabled;
+    }
+
+    public clean() {
+        this.scrollbarMarkersRenderer.clean();
     }
 
     public getVisualRowCount(): number {
@@ -148,6 +156,8 @@ export class Renderer {
             : this.buildRealOnlyRows(totalRealLines);
 
         this.renderViewport(state);
+        const wordLines = this.wordHighlightRenderer.render(state, state.scrollbarMarkersEnabled);
+        this.renderScrollbarMarkers(state, true, wordLines);
         this.updateContentMinWidth(state);
     }
 
@@ -204,8 +214,6 @@ export class Renderer {
         if (!readOnly && search.isActive()) {
             this.searchRenderer.updateSearchHighlights(search);
         }
-        const wordLines = this.wordHighlightRenderer.render(state, state.scrollbarMarkersEnabled);
-        this.renderScrollbarMarkers(state, true, wordLines);
     }
 
     private renderScrollbarMarkers(
@@ -213,13 +221,19 @@ export class Renderer {
         includeSearch: boolean = true,
         wordLines?: number[]
     ) {
-        const enabled = (state?.scrollbarMarkersEnabled ?? false)
-            && state !== null
-            && state.code.linesLength() <= MAX_SCROLLBAR_MARKER_LINES;
+        const enabled = (state?.scrollbarMarkersEnabled ?? true) && state !== null;
         this.scrollbarMarkersRenderer.setEnabled(enabled);
-        if (!enabled) return;
+        if (!enabled || !state) return;
 
-        this.scrollbarMarkersRenderer.render(state, includeSearch, wordLines, this.visualRows);
+        const limitMarkers = state.code.linesLength() > MAX_SCROLLBAR_MARKER_LINES;
+        const effectiveWordLines = limitMarkers ? [] : wordLines;
+        const effectiveIncludeSearch = limitMarkers ? false : includeSearch;
+
+        this.scrollbarMarkersRenderer.updateGeometry(
+            this.container.clientHeight,
+            this.visualRows.length * state.settings.lineHeight
+        );
+        this.scrollbarMarkersRenderer.render(state, effectiveIncludeSearch, effectiveWordLines, this.visualRows);
     }
 
     /**
@@ -406,6 +420,7 @@ export class Renderer {
     }
 
     public renderScroll(state: EditorState) {
+        const currentScrollTop = this.container.scrollTop;
         const { settings, readOnly, search } = state;
         const lineHeight = settings.lineHeight;
         const buffer = settings.buffer;
@@ -543,6 +558,12 @@ export class Renderer {
         btnBottomSpacer.style.height = `${bottomHeight}px`;
         foldsTopSpacer.style.height = `${topHeight}px`;
         foldsBottomSpacer.style.height = `${bottomHeight}px`;
+
+        this.scrollbarMarkersRenderer.updateThumbPosition(currentScrollTop);
+    }
+
+    public updateScrollbarThumb() {
+        this.scrollbarMarkersRenderer.updateThumbPosition(this.container.scrollTop);
     }
 
     /**

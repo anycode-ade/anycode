@@ -31,11 +31,13 @@ function arraysEqual<T>(
 
 export class ScrollbarMarkersRenderer {
     private container: HTMLDivElement;
+    private wrapper: HTMLDivElement;
     private element: HTMLDivElement;
     private diffLayer: HTMLDivElement;
     private wordLayer: HTMLDivElement;
     private searchLayer: HTMLDivElement;
     private errorLayer: HTMLDivElement;
+    private thumb: HTMLDivElement;
     private state: EditorState | null = null;
     private includeSearch = true;
     private wordLines: number[] = [];
@@ -49,21 +51,33 @@ export class ScrollbarMarkersRenderer {
     private enabled = true;
     private revealLineCenter: (state: EditorState, line: number) => void;
     private selectSearchMatch: (state: EditorState, index: number) => void;
+    private onImmediateScroll?: () => void;
+
+    private resizeObserver: ResizeObserver | null = null;
 
     constructor(
         container: HTMLDivElement,
         revealLineCenter: (state: EditorState, line: number) => void,
         selectSearchMatch: (state: EditorState, index: number) => void,
-        enabled: boolean = true
+        onImmediateScroll?: () => void,
+        enabled: boolean = true,
+        wrapper?: HTMLDivElement
     ) {
         this.container = container;
+        this.wrapper = wrapper || container;
         this.revealLineCenter = revealLineCenter;
         this.selectSearchMatch = selectSearchMatch;
+        this.onImmediateScroll = onImmediateScroll;
         this.enabled = enabled;
 
         this.element = document.createElement('div');
         this.element.className = 'smr';
         this.element.setAttribute('aria-label', 'Scrollbar markers');
+
+        this.thumb = document.createElement('div');
+        this.thumb.className = 'smrt';
+        this.thumb.setAttribute('aria-label', 'Scrollbar thumb');
+
         this.element.addEventListener('pointerdown', this.handlePointer);
 
         this.diffLayer = this.createLayer('smrdl');
@@ -74,9 +88,54 @@ export class ScrollbarMarkersRenderer {
             this.diffLayer,
             this.wordLayer,
             this.searchLayer,
-            this.errorLayer
+            this.errorLayer,
+            this.thumb
         );
-        if (this.enabled) this.container.appendChild(this.element);
+        if (this.enabled) this.wrapper.appendChild(this.element);
+
+        this.setupResizeObserver();
+    }
+
+    private setupResizeObserver() {
+        if (typeof ResizeObserver !== 'undefined') {
+            this.resizeObserver = new ResizeObserver(() => {
+                this.updateGeometry();
+                this.updateThumbPosition();
+            });
+            if (this.wrapper) this.resizeObserver.observe(this.wrapper);
+            if (this.container && this.container !== this.wrapper) {
+                this.resizeObserver.observe(this.container);
+            }
+        }
+    }
+
+    private fadeTimer: number | null = null;
+
+    public triggerFadeIn() {
+        if (!this.element) return;
+        this.element.classList.add('visible');
+
+        if (this.fadeTimer !== null) {
+            window.clearTimeout(this.fadeTimer);
+        }
+
+        this.fadeTimer = window.setTimeout(() => {
+            if (this.element && !this.element.classList.contains('dragging')) {
+                this.element.classList.remove('visible');
+            }
+            this.fadeTimer = null;
+        }, 1000);
+    }
+
+    public clean() {
+        if (this.fadeTimer !== null) {
+            window.clearTimeout(this.fadeTimer);
+            this.fadeTimer = null;
+        }
+        if (this.resizeObserver) {
+            this.resizeObserver.disconnect();
+            this.resizeObserver = null;
+        }
     }
 
     public setEnabled(enabled: boolean) {
@@ -90,7 +149,7 @@ export class ScrollbarMarkersRenderer {
         }
 
         if (!this.element.isConnected) {
-            this.container.appendChild(this.element);
+            this.wrapper.appendChild(this.element);
         }
     }
 
@@ -111,6 +170,8 @@ export class ScrollbarMarkersRenderer {
             return;
         }
 
+        this.applyScrollbarSettings(state);
+
         const search = state.search;
         const searchMatches = includeSearch && search.isActive() && search.getPattern()
             ? search.getMatches()
@@ -130,21 +191,6 @@ export class ScrollbarMarkersRenderer {
             selected: index === selected,
         }));
 
-        if (
-            nextSearchMarkers.length === 0
-            && nextWordLines.length === 0
-            && nextErrorLines.length === 0
-            && nextDiffRanges.length === 0
-        ) {
-            this.clear();
-            return;
-        }
-
-        const containerHeight = this.container.clientHeight;
-        if (containerHeight > 0) {
-            this.element.style.height = `${containerHeight}px`;
-        }
-
         const scaleChanged = totalRows !== this.totalRows;
         if (rightOffset !== this.rightOffset) {
             this.rightOffset = rightOffset;
@@ -152,45 +198,158 @@ export class ScrollbarMarkersRenderer {
         }
 
         if (
-            scaleChanged
-            || !arraysEqual(nextDiffRanges, this.diffRanges, (a, b) =>
-                a.startRow === b.startRow
-                && a.endRow === b.endRow
-                && a.targetLine === b.targetLine
-                && a.type === b.type
-            )
+            nextSearchMarkers.length === 0
+            && nextWordLines.length === 0
+            && nextErrorLines.length === 0
+            && nextDiffRanges.length === 0
         ) {
-            this.diffRanges = nextDiffRanges;
-            this.renderDiffLayer(totalRows);
-        }
-        if (
-            scaleChanged || layoutChanged
-            || !arraysEqual(nextWordLines, this.wordLines, (a, b) => a === b)
-        ) {
-            this.wordLines = [...nextWordLines];
-            this.renderLineLayer(this.wordLayer, 'smrw', this.wordLines, totalRows);
-        }
-        if (
-            scaleChanged || layoutChanged
-            || !arraysEqual(nextSearchMarkers, this.searchMarkers, (a, b) =>
-                a.line === b.line
-                && a.column === b.column
-                && a.selected === b.selected
-            )
-        ) {
-            this.searchMarkers = nextSearchMarkers;
-            this.renderSearchLayer(totalRows);
-        }
-        if (
-            scaleChanged || layoutChanged
-            || !arraysEqual(nextErrorLines, this.errorLines, (a, b) => a === b)
-        ) {
-            this.errorLines = nextErrorLines;
-            this.renderLineLayer(this.errorLayer, 'smre', this.errorLines, totalRows);
+            this.wordLines = [];
+            this.diffRanges = [];
+            this.errorLines = [];
+            this.searchMarkers = [];
+            this.diffLayer.replaceChildren();
+            this.wordLayer.replaceChildren();
+            this.searchLayer.replaceChildren();
+            this.errorLayer.replaceChildren();
+        } else {
+            if (
+                scaleChanged
+                || !arraysEqual(nextDiffRanges, this.diffRanges, (a, b) =>
+                    a.startRow === b.startRow
+                    && a.endRow === b.endRow
+                    && a.targetLine === b.targetLine
+                    && a.type === b.type
+                )
+            ) {
+                this.diffRanges = nextDiffRanges;
+                this.renderDiffLayer(totalRows);
+            }
+            if (
+                scaleChanged || layoutChanged
+                || !arraysEqual(nextWordLines, this.wordLines, (a, b) => a === b)
+            ) {
+                this.wordLines = [...nextWordLines];
+                this.renderLineLayer(this.wordLayer, 'smrw', this.wordLines, totalRows);
+            }
+            if (
+                scaleChanged || layoutChanged
+                || !arraysEqual(nextSearchMarkers, this.searchMarkers, (a, b) =>
+                    a.line === b.line
+                    && a.column === b.column
+                    && a.selected === b.selected
+                )
+            ) {
+                this.searchMarkers = nextSearchMarkers;
+                this.renderSearchLayer(totalRows);
+            }
+            if (
+                scaleChanged || layoutChanged
+                || !arraysEqual(nextErrorLines, this.errorLines, (a, b) => a === b)
+            ) {
+                this.errorLines = nextErrorLines;
+                this.renderLineLayer(this.errorLayer, 'smre', this.errorLines, totalRows);
+            }
         }
 
         this.totalRows = totalRows;
         this.element.classList.add('active');
+        this.updateThumbPosition();
+    }
+
+    private cachedClientHeight = 0;
+    private cachedScrollHeight = 0;
+
+    public updateGeometry(clientHeight?: number, scrollHeight?: number) {
+        const trackRect = this.element ? this.element.getBoundingClientRect() : null;
+        const trackHeight = trackRect ? trackRect.height : 0;
+        if (trackHeight > 0) {
+            this.cachedClientHeight = trackHeight;
+        } else if (clientHeight && clientHeight > 0) {
+            this.cachedClientHeight = clientHeight;
+        } else if (this.container) {
+            const containerRect = this.container.getBoundingClientRect();
+            this.cachedClientHeight = containerRect.height || this.container.clientHeight;
+        }
+
+        if (scrollHeight && scrollHeight > 0) {
+            this.cachedScrollHeight = scrollHeight;
+        } else if (this.container) {
+            this.cachedScrollHeight = this.container.scrollHeight;
+        }
+    }
+
+    private applyScrollbarSettings(state: EditorState) {
+        const scrollbarSettings = state.settings?.scrollbar;
+        const style = scrollbarSettings?.style || 'rounded';
+
+        this.element.classList.remove('style-rounded', 'style-flat');
+        this.element.classList.add(`style-${style}`);
+        if (scrollbarSettings?.style !== undefined) {
+            this.element.dataset.scrollbarStyle = style;
+        } else {
+            delete this.element.dataset.scrollbarStyle;
+        }
+
+        if (scrollbarSettings?.width !== undefined && scrollbarSettings.width > 0) {
+            this.element.style.setProperty('--smr-custom-width', `${scrollbarSettings.width}px`);
+        } else {
+            this.element.style.removeProperty('--smr-custom-width');
+        }
+
+        if (scrollbarSettings?.minSize !== undefined && scrollbarSettings.minSize > 0) {
+            this.element.style.setProperty('--smr-min-size', `${scrollbarSettings.minSize}px`);
+        } else {
+            this.element.style.removeProperty('--smr-min-size');
+        }
+    }
+
+    private getMinimumSliderSize(): number {
+        if (this.state?.settings?.scrollbar?.minSize !== undefined && this.state.settings.scrollbar.minSize > 0) {
+            return this.state.settings.scrollbar.minSize;
+        }
+        if (typeof window !== 'undefined') {
+            const cssMinimumSize = Number.parseFloat(
+                window.getComputedStyle(this.element).getPropertyValue('--smr-min-size')
+            );
+            if (Number.isFinite(cssMinimumSize) && cssMinimumSize > 0) {
+                return cssMinimumSize;
+            }
+        }
+        if (typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(pointer: coarse)').matches) {
+            return 28;
+        }
+        return 20;
+    }
+
+    public updateThumbPosition(scrollTopOverride?: number) {
+        if (!this.enabled || !this.thumb || !this.container) return;
+        const scrollTop = scrollTopOverride !== undefined ? scrollTopOverride : this.container.scrollTop;
+        const clientHeight = this.cachedClientHeight || this.container.clientHeight;
+        const scrollHeight = this.cachedScrollHeight || this.container.scrollHeight;
+
+        if (scrollHeight <= clientHeight || clientHeight <= 0) {
+            this.thumb.style.display = 'none';
+            return;
+        }
+
+        this.thumb.style.display = 'block';
+
+        // Monaco Editor Scrollbar Math with 2px inset
+        const INSET = 2;
+        const availableHeight = Math.max(1, clientHeight - INSET * 2);
+        const MINIMUM_SLIDER_SIZE = this.getMinimumSliderSize();
+        const sliderSize = Math.round(Math.max(MINIMUM_SLIDER_SIZE, Math.floor((availableHeight * availableHeight) / scrollHeight)));
+        const maxSliderPosition = Math.max(0, availableHeight - sliderSize);
+        const maxScrollTop = Math.max(1, scrollHeight - clientHeight);
+        const sliderRatio = maxSliderPosition / maxScrollTop;
+
+        // Clamp scrollTop to [0, maxScrollTop] to prevent macOS elastic overscroll from pulling thumb out of bounds
+        const clampedScrollTop = Math.max(0, Math.min(maxScrollTop, scrollTop));
+        const sliderPosition = INSET + Math.max(0, Math.min(maxSliderPosition, Math.round(clampedScrollTop * sliderRatio)));
+
+        this.thumb.style.height = `${sliderSize}px`;
+        this.thumb.style.transform = `translateY(${sliderPosition}px)`;
+        this.triggerFadeIn();
     }
 
     private clear() {
@@ -213,6 +372,7 @@ export class ScrollbarMarkersRenderer {
         this.errorLayer.replaceChildren();
         this.element.style.height = '';
         this.element.classList.remove('active');
+        if (this.thumb) this.thumb.style.display = 'none';
     }
 
     private createLayer(className: string): HTMLDivElement {
@@ -266,13 +426,7 @@ export class ScrollbarMarkersRenderer {
     }
 
     private getScrollbarOffset(): number {
-        const measuredWidth = Math.max(
-            0,
-            this.container.offsetWidth - this.container.clientWidth
-                - this.container.clientLeft * 2
-        );
-        const hasVerticalScrollbar = this.container.scrollHeight > this.container.clientHeight;
-        return measuredWidth || (hasVerticalScrollbar ? 12 : 0);
+        return 0;
     }
 
     private getVisualRowByLine(visualRows: VisualRow[]): Map<number, number> {
@@ -364,6 +518,77 @@ export class ScrollbarMarkersRenderer {
 
     private handlePointer = (event: PointerEvent) => {
         if (!this.state || !this.element.classList.contains('active')) return;
+
+        const target = event.target as HTMLElement | null;
+        const isMarker = target?.classList.contains('smrm') || target?.classList.contains('smrd');
+
+        if (target === this.thumb || !isMarker) {
+            event.preventDefault();
+            event.stopPropagation();
+            this.element.setPointerCapture(event.pointerId);
+            this.thumb.classList.add('dragging');
+            this.element.classList.add('dragging');
+
+            const startY = event.clientY;
+            const startX = event.clientX;
+            const clientHeight = this.container.clientHeight;
+            const scrollHeight = this.container.scrollHeight;
+            const maxScrollTop = Math.max(0, scrollHeight - clientHeight);
+
+            if (maxScrollTop <= 0 || clientHeight <= 0) return;
+
+            const INSET = 2;
+            const availableHeight = Math.max(1, clientHeight - INSET * 2);
+            const MINIMUM_SLIDER_SIZE = this.getMinimumSliderSize();
+            const sliderSize = Math.round(Math.max(MINIMUM_SLIDER_SIZE, Math.floor((availableHeight * availableHeight) / scrollHeight)));
+            const maxSliderPosition = Math.max(1, availableHeight - sliderSize);
+            const sliderRatio = maxSliderPosition / maxScrollTop;
+
+            let startScrollTop = this.container.scrollTop;
+
+            // Track click: Monaco centers the slider under the pointer
+            if (target !== this.thumb) {
+                const trackRect = this.element.getBoundingClientRect();
+                const offsetWithinTrack = event.clientY - trackRect.top - INSET;
+                const desiredSliderPos = Math.max(0, Math.min(maxSliderPosition, offsetWithinTrack - sliderSize / 2));
+                startScrollTop = Math.round(desiredSliderPos / sliderRatio);
+
+                this.container.scrollTop = startScrollTop;
+                if (this.onImmediateScroll) {
+                    this.onImmediateScroll();
+                }
+                this.thumb.style.transform = `translateY(${INSET + Math.round(startScrollTop * sliderRatio)}px)`;
+            }
+
+            const initialScrollTop = startScrollTop;
+
+            const handleThumbMove = (moveEvent: PointerEvent) => {
+                const deltaY = moveEvent.clientY - startY;
+                const initialSliderPos = initialScrollTop * sliderRatio;
+                const targetSliderPos = Math.max(0, Math.min(maxSliderPosition, initialSliderPos + deltaY));
+                const targetScrollTop = Math.round(targetSliderPos / sliderRatio);
+
+                this.container.scrollTop = targetScrollTop;
+                if (this.onImmediateScroll) {
+                    this.onImmediateScroll();
+                }
+                this.thumb.style.transform = `translateY(${INSET + Math.round(targetSliderPos)}px)`;
+            };
+
+            const handleThumbUp = (upEvent: PointerEvent) => {
+                this.element.releasePointerCapture(upEvent.pointerId);
+                this.thumb.classList.remove('dragging');
+                this.element.classList.remove('dragging');
+                this.element.removeEventListener('pointermove', handleThumbMove);
+                this.element.removeEventListener('pointerup', handleThumbUp);
+                this.element.removeEventListener('pointercancel', handleThumbUp);
+            };
+
+            this.element.addEventListener('pointermove', handleThumbMove);
+            this.element.addEventListener('pointerup', handleThumbUp);
+            this.element.addEventListener('pointercancel', handleThumbUp);
+            return;
+        }
 
         event.preventDefault();
         event.stopPropagation();

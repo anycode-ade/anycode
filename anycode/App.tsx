@@ -833,6 +833,8 @@ const App: React.FC = () => {
                         onFileIconsOpacityChange={handleFileIconsOpacityChange}
                         fontSettings={settings.fontSettings}
                         onFontSettingsChange={settings.updateFontSettings}
+                        scrollbarSettings={settings.scrollbarSettings}
+                        onScrollbarSettingsChange={settings.updateScrollbarSettings}
                     />
                 );
             default:

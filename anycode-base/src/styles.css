@@ -1,9 +1,30 @@
+.anyeditor-wrapper {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+:root {
+  --smr-thumb-radius: 4px;
+  --smr-thumb-shadow: 0 0 0 1px rgba(0, 0, 0, 0.1);
+}
+
+:root[data-scrollbar-style="flat"],
+.smr[data-scrollbar-style="flat"] {
+  --smr-thumb-radius: 0px;
+  --smr-thumb-shadow: none;
+}
+
 .anyeditor {
   --anycode-line-height: 20px;
   display: flex;
   height: 100%;
+  width: 100%;
   overflow: auto;
   overflow-anchor: none;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
   font-family: var(--editor-font-family, monospace);
   font-size: var(--editor-font-size, 14px);
   font-weight: var(--editor-font-weight, 700);
@@ -14,38 +35,134 @@
   position: relative;
 }
 
+.anyeditor::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
 .anyeditor * {
   font-family: inherit;
 }
 
-.anyeditor .smr {
-  position: sticky;
+.anyeditor-wrapper .smr {
+  position: absolute;
   top: 0;
   right: 0;
-  align-self: flex-start;
-  flex: 0 0 14px;
+  height: 100%;
   width: 14px;
-  margin-left: -14px;
-  z-index: 20;
+  z-index: 100;
   pointer-events: none;
   overflow: hidden;
+  transition: background-color 150ms ease;
 }
 
-.anyeditor .smr.active {
+.smr.active {
   pointer-events: auto;
   cursor: default;
 }
 
-.anyeditor .smrdl,
-.anyeditor .smrwl,
-.anyeditor .smrsl,
-.anyeditor .smrel {
+.smr:hover {
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+.smrt {
+  position: absolute;
+  right: calc((14px - var(--smr-custom-width, 8px)) / 2);
+  top: 0;
+  width: var(--smr-custom-width, 8px);
+  min-height: var(--smr-min-size, 20px);
+  border-radius: var(--smr-thumb-radius, 4px);
+  background: rgba(160, 160, 160, 0.45);
+  z-index: 10;
+  pointer-events: auto;
+  cursor: pointer;
+  box-shadow: var(--smr-thumb-shadow, 0 0 0 1px rgba(0, 0, 0, 0.1));
+  opacity: 0;
+  transition: opacity 300ms ease, background-color 100ms ease, width 100ms ease, right 100ms ease;
+}
+
+/* --- Scrollbar Style Presets --- */
+
+/* Mac (Rounded pill - default) */
+.smr.style-rounded .smrt {
+  border-radius: var(--smr-thumb-radius, 4px);
+}
+
+/* Windows (Flat sharp rectangle) */
+.smr.style-flat .smrt {
+  border-radius: var(--smr-thumb-radius, 0px);
+  box-shadow: var(--smr-thumb-shadow, none);
+}
+
+.smr:hover .smrt,
+.smr.visible .smrt,
+.smrt:hover,
+.smrt.dragging,
+.smr.dragging .smrt {
+  opacity: 1;
+  transition: opacity 0ms, background-color 100ms ease, width 100ms ease, right 100ms ease;
+}
+
+:root[data-scrollbar-always-show="true"] .smr .smrt {
+  opacity: 1;
+}
+
+:root[data-scrollbar-preview="true"] .smr .smrt {
+  opacity: 1;
+}
+
+.smr:hover .smrt {
+  background: rgba(180, 180, 180, 0.7);
+  width: var(--smr-custom-width, 10px);
+  right: calc((14px - var(--smr-custom-width, 10px)) / 2);
+}
+
+.smr.style-flat:hover .smrt {
+  width: var(--smr-custom-width, 10px);
+  border-radius: var(--smr-thumb-radius, 0px);
+}
+
+.smrt:hover,
+.smrt.dragging,
+.smr.dragging .smrt {
+  background: rgba(220, 220, 220, 0.9);
+  width: var(--smr-custom-width, 12px);
+  right: calc((14px - var(--smr-custom-width, 12px)) / 2);
+}
+
+@media (pointer: coarse), (max-width: 768px) {
+  .anyeditor-wrapper .smr {
+    width: 16px;
+  }
+
+  .smrt {
+    width: var(--smr-custom-width, 10px);
+    right: calc((16px - var(--smr-custom-width, 10px)) / 2);
+    min-height: 28px;
+    border-radius: 5px;
+  }
+
+  .smr:hover .smrt,
+  .smr.visible .smrt,
+  .smrt:hover,
+  .smrt.dragging,
+  .smr.dragging .smrt {
+    width: var(--smr-custom-width, 12px);
+    right: calc((16px - var(--smr-custom-width, 12px)) / 2);
+  }
+}
+
+.smrdl,
+.smrwl,
+.smrsl,
+.smrel {
   position: absolute;
   inset: 0;
   pointer-events: none;
 }
 
-.anyeditor .smrm {
+.smrm {
   position: absolute;
   right: 0;
   width: 14px;
@@ -55,7 +172,7 @@
   cursor: pointer;
 }
 
-.anyeditor .smrm::after {
+.smrm::after {
   content: "";
   position: absolute;
   top: 50%;
@@ -68,28 +185,28 @@
   transition: width 80ms ease, height 80ms ease, right 80ms ease, filter 80ms ease;
 }
 
-.anyeditor .smrm:hover::after,
-.anyeditor .smrm.smr-active::after {
+.smrm:hover::after,
+.smrm.smr-active::after {
   right: 0;
   width: 12px;
   height: 5px;
   filter: brightness(1.15);
 }
 
-.anyeditor .smrw {
+.smrw {
   --smr-color: #6ecbff;
 }
 
-.anyeditor .smrs {
+.smrs {
   --smr-color: #ffd166;
 }
 
-.anyeditor .smre {
+.smre {
   --smr-color: #f14c4c;
   z-index: 1;
 }
 
-.anyeditor .smrs.selected::after {
+.smrs.selected::after {
   right: 1px;
   width: 10px;
   height: 4px;
@@ -97,14 +214,14 @@
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25);
 }
 
-.anyeditor .smrs.selected:hover::after,
-.anyeditor .smrs.selected.smr-active::after {
+.smrs.selected:hover::after,
+.smrs.selected.smr-active::after {
   right: 0;
   width: 13px;
   height: 6px;
 }
 
-.anyeditor .smrd {
+.smrd {
   position: absolute;
   right: 1px;
   width: 4px;
@@ -116,17 +233,17 @@
   transition: width 80ms ease, opacity 80ms ease;
 }
 
-.anyeditor .smrd:hover,
-.anyeditor .smrd.smr-active {
+.smrd:hover,
+.smrd.smr-active {
   width: 8px;
   opacity: 1;
 }
 
-.anyeditor .smrd.added {
+.smrd.added {
   background: #2ea043;
 }
 
-.anyeditor .smrd.modified {
+.smrd.modified {
   background: #d29922;
 }
 
@@ -152,13 +269,16 @@
   justify-content: center;
 }
 
-.anyeditor .line {
+.anyeditor .line,
+.anyeditor .multibuffer-file-header-row {
   cursor: text;
+  height: var(--anycode-line-height);
   line-height: var(--anycode-line-height);
+  box-sizing: border-box;
+  overflow: hidden;
 }
 
 .anyeditor .multibuffer-file-header-row {
-  box-sizing: border-box;
   border-radius: 0 5px 5px 0;
   color: var(--theme-editor-foreground, #d5dbe3);
   background: var(--multibuffer-header-background);
@@ -466,7 +586,6 @@
   flex-direction: column;
   justify-content: center;
   gap: 4px;
-  border-radius: 8px 0 0 8px;
 }
 
 .diff-gap-gutter-btn {

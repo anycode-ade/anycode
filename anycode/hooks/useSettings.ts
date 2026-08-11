@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 export type FontSection = 'interface' | 'editor' | 'terminal';
 
@@ -85,8 +85,41 @@ const loadFontSettings = (): FontSettings => {
     }
 };
 
+export type ScrollbarStyle = 'rounded' | 'flat';
+
+export interface ScrollbarSettingsState {
+    style: ScrollbarStyle;
+    width: number;
+    minSize: number;
+    alwaysShow: boolean;
+}
+
+const DEFAULT_SCROLLBAR_SETTINGS: ScrollbarSettingsState = {
+    style: 'rounded',
+    width: 8,
+    minSize: 20,
+    alwaysShow: false,
+};
+
+const loadScrollbarSettings = (): ScrollbarSettingsState => {
+    try {
+        const saved = JSON.parse(localStorage.getItem('scrollbarSettings') || '{}');
+        return {
+            style: saved.style === 'flat' || saved.style === 'windows' ? 'flat' : 'rounded',
+            width: typeof saved.width === 'number' ? Math.max(2, Math.min(12, saved.width)) : 8,
+            minSize: typeof saved.minSize === 'number' ? Math.max(10, Math.min(100, saved.minSize)) : 20,
+            alwaysShow: saved.alwaysShow === true,
+        };
+    } catch {
+        return DEFAULT_SCROLLBAR_SETTINGS;
+    }
+};
+
 export const useSettings = () => {
     const [fontSettings, setFontSettings] = useState<FontSettings>(loadFontSettings);
+    const [scrollbarSettings, setScrollbarSettings] = useState<ScrollbarSettingsState>(loadScrollbarSettings);
+    const previousScrollbarSettingsRef = useRef<ScrollbarSettingsState | null>(null);
+    const scrollbarPreviewTimerRef = useRef<number | null>(null);
 
     useEffect(() => {
         const root = document.documentElement;
@@ -103,6 +136,48 @@ export const useSettings = () => {
         localStorage.setItem('fontSettings', JSON.stringify(fontSettings));
     }, [fontSettings]);
 
+    useEffect(() => {
+        const root = document.documentElement;
+        const previous = previousScrollbarSettingsRef.current;
+        const settingsChanged = previous !== null && (
+            previous.style !== scrollbarSettings.style
+            || previous.width !== scrollbarSettings.width
+            || previous.minSize !== scrollbarSettings.minSize
+            || previous.alwaysShow !== scrollbarSettings.alwaysShow
+        );
+        previousScrollbarSettingsRef.current = scrollbarSettings;
+
+        root.dataset.scrollbarStyle = scrollbarSettings.style;
+        root.dataset.scrollbarAlwaysShow = scrollbarSettings.alwaysShow ? 'true' : 'false';
+        root.style.setProperty('--smr-custom-width', `${scrollbarSettings.width}px`);
+        root.style.setProperty('--smr-min-size', `${scrollbarSettings.minSize}px`);
+        localStorage.setItem('scrollbarSettings', JSON.stringify(scrollbarSettings));
+
+        if (scrollbarPreviewTimerRef.current !== null) {
+            window.clearTimeout(scrollbarPreviewTimerRef.current);
+            scrollbarPreviewTimerRef.current = null;
+        }
+
+        if (!settingsChanged || scrollbarSettings.alwaysShow) {
+            delete root.dataset.scrollbarPreview;
+            return;
+        }
+
+        root.dataset.scrollbarPreview = 'true';
+        scrollbarPreviewTimerRef.current = window.setTimeout(() => {
+            delete root.dataset.scrollbarPreview;
+            scrollbarPreviewTimerRef.current = null;
+        }, 1500);
+
+        return () => {
+            if (scrollbarPreviewTimerRef.current !== null) {
+                window.clearTimeout(scrollbarPreviewTimerRef.current);
+                scrollbarPreviewTimerRef.current = null;
+            }
+            delete root.dataset.scrollbarPreview;
+        };
+    }, [scrollbarSettings]);
+
     const updateFontSettings = useCallback((
         section: FontSection,
         patch: Partial<FontConfig>,
@@ -113,5 +188,12 @@ export const useSettings = () => {
         }));
     }, []);
 
-    return { fontSettings, updateFontSettings };
+    const updateScrollbarSettings = useCallback((patch: Partial<ScrollbarSettingsState>) => {
+        setScrollbarSettings((current) => ({
+            ...current,
+            ...patch,
+        }));
+    }, []);
+
+    return { fontSettings, updateFontSettings, scrollbarSettings, updateScrollbarSettings };
 };
