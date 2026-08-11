@@ -9,6 +9,23 @@ interface VfsNode {
     content?: string;
 }
 
+const SCROLL_DEMO_CONTENT = Array.from({ length: 250 }, (_, section) => {
+    const start = section * 10;
+    return `# Section ${section + 1}: generated records\n\n` +
+        Array.from({ length: 10 }, (_, item) => {
+            const index = start + item + 1;
+            return `def process_record_${index}(payload: dict[str, object]) -> dict[str, object]:\n` +
+                `    """Normalize record ${index} for the demo pipeline."""\n` +
+                `    record = {\n` +
+                `        "id": ${index},\n` +
+                `        "name": payload.get("name", "record-${index}"),\n` +
+                `        "active": bool(payload.get("active", True)),\n` +
+                `        "score": round(float(payload.get("score", 0.0)), 2),\n` +
+                `    }\n` +
+                `    return record\n\n`;
+        }).join('');
+}).join('');
+
 const DEMO_VFS: Record<string, VfsNode> = {
     '.': { path: '.', name: '.', is_dir: true },
     'src': { path: 'src', name: 'src', is_dir: true },
@@ -58,6 +75,12 @@ if __name__ == "__main__":
     msg = greet("Developer")
     print(msg)
 `,
+    },
+    'scroll-demo.py': {
+        path: 'scroll-demo.py',
+        name: 'scroll-demo.py',
+        is_dir: false,
+        content: `"""Long file used to exercise virtual scrolling in the live demo."""\n\n${SCROLL_DEMO_CONTENT}`,
     },
     'README.md': {
         path: 'README.md',
