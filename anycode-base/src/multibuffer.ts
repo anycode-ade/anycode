@@ -1,7 +1,6 @@
 import { Code, type Change, type Edit, type FoldRange, type HighlighedNode, type Position, type WordHighlight, type FilePosition, Operation } from './code';
 import type { Selection } from './selection';
 import { computeGitChangesWithStats, type DiffInfo } from './diff';
-import History from './history';
 
 export type MultiBufferEntry = {
     id: string;
@@ -59,18 +58,12 @@ const formatFileStats = (added: number, removed: number) => ({
  */
 export class MultiBufferCode extends Code {
     private readonly entries: MultiBufferEntry[];
-    private readonly multiHistory = new History<Change>();
     private readonly fileVersions: number[];
     private readonly fileDiffs = new Map<string, CachedFileDiff>();
     private readonly collapsedFiles = new Set<string>();
     private rows: IndexedRow[] = [];
     private indexDirty = true;
     private activeFileIndex = 0;
-    private activeTransaction = false;
-    private transactionEdits: Edit[] = [];
-    private transactionFileEdits = new Map<string, Edit[]>();
-    private transactionStateBefore: unknown;
-    private transactionStateAfter: unknown;
     private onChangeCallback: ((change: Change) => void) | null = null;
     private onFileChangeCallback: ((change: MultiBufferFileChange) => void) | null = null;
 
@@ -434,66 +427,44 @@ export class MultiBufferCode extends Code {
         this.onChangeCallback = callback;
     }
 
-    public setHistory(changes: Change[], index: number): void {
-        this.multiHistory.setRawHistory(changes, index);
+    public override setHistory(_changes: Change[], _index: number): void {
+        // MultiBufferCode does not own history. Each file's Code does.
     }
 
-    public tx(): void {
-        this.activeTransaction = true;
-        this.transactionEdits = [];
-        this.transactionFileEdits.clear();
-    }
+    public override tx(): void {}
+    public override setStateBefore(_offset: number, _selection?: Selection): void {}
+    public override setStateAfter(_offset: number, _selection?: Selection): void {}
+    public override commit(): void {}
 
-    public setStateBefore(offset: number, selection?: Selection): void {
-        this.transactionStateBefore = {
-            offset,
-            selection: selection?.clone(),
-        };
-    }
+    public override undo(offset?: number): Change | undefined {
+        const resolved = offset === undefined ? undefined : this.resolveOffset(offset);
+        console.log('[MultiBufferCode.undo]', {
+            cursorOffset: offset,
+            activeFileIndex: this.activeFileIndex,
+            resolvedFileIndex: resolved?.fileIndex,
+            fileId: resolved ? this.entries[resolved.fileIndex]?.id : undefined,
+            localOffset: resolved?.localOffset,
+        });
+        if (!resolved) return undefined;
+        if (resolved.row.kind === 'header') return undefined;
 
-    public setStateAfter(offset: number, selection?: Selection): void {
-        this.transactionStateAfter = {
-            offset,
-            selection: selection?.clone(),
-        };
-    }
-
-    public commit(): void {
-        if (!this.activeTransaction) return;
-        const change: Change = {
-            edits: [...this.transactionEdits],
-            stateBefore: this.transactionStateBefore as Change['stateBefore'],
-            stateAfter: this.transactionStateAfter as Change['stateAfter'],
-        };
-        this.multiHistory.push(change);
-        this.emitChanges(change);
-        this.resetTransaction();
-    }
-
-    public undo(): Change | undefined {
-        const change = this.multiHistory.undo();
+        const fileIndex = resolved.fileIndex;
+        const change = this.entries[fileIndex]?.code.undo();
         if (!change) return undefined;
-        this.tx();
-        for (const edit of [...change.edits].reverse()) {
-            if (edit.operation === Operation.Insert) this.removeRaw(edit.start, edit.text.length);
-            else this.insertRaw(edit.text, edit.start);
-        }
-        this.emitChanges({ edits: [...this.transactionEdits], isUndo: true });
-        this.resetTransaction();
-        return change;
+        this.markFileChanged(fileIndex);
+        return this.toGlobalChange(change, fileIndex);
     }
 
-    public redo(): Change | null {
-        const change = this.multiHistory.redo();
+    public override redo(offset?: number): Change | null {
+        if (offset === undefined) return null;
+        const resolved = this.resolveOffset(offset);
+        if (!resolved || resolved.row.kind === 'header') return null;
+
+        const fileIndex = resolved.fileIndex;
+        const change = this.entries[fileIndex]?.code.redo() ?? null;
         if (!change) return null;
-        this.tx();
-        for (const edit of change.edits) {
-            if (edit.operation === Operation.Insert) this.insertRaw(edit.text, edit.start);
-            else this.removeRaw(edit.start, edit.text.length);
-        }
-        this.emitChanges({ edits: [...this.transactionEdits], isRedo: true });
-        this.resetTransaction();
-        return change;
+        this.markFileChanged(fileIndex);
+        return this.toGlobalChange(change, fileIndex);
     }
 
     public insert(text: string, offset: number): void {
@@ -512,10 +483,9 @@ export class MultiBufferCode extends Code {
         const entry = this.entries[resolved.fileIndex];
         if (entry.readOnly) return;
         const localOffset = Math.min(resolved.localOffset, entry.code.getContentLength());
-        entry.code.insert(text, localOffset);
-        this.fileVersions[resolved.fileIndex] += 1;
-        this.indexDirty = true;
-        this.recordEdit(
+        entry.code.insert(text, localOffset, true);
+        this.markFileChanged(resolved.fileIndex);
+        this.notifyEdit(
             resolved.fileIndex,
             { operation: Operation.Insert, start: localOffset, text },
             { operation: Operation.Insert, start: offset, text },
@@ -534,38 +504,19 @@ export class MultiBufferCode extends Code {
         const removeLength = Math.min(length, maxLength);
         if (removeLength <= 0) return;
         const text = entry.code.getIntervalContent2(start.localOffset, start.localOffset + removeLength);
-        entry.code.remove(start.localOffset, removeLength);
-        this.fileVersions[start.fileIndex] += 1;
-        this.indexDirty = true;
-        this.recordEdit(
+        entry.code.remove(start.localOffset, removeLength, true);
+        this.markFileChanged(start.fileIndex);
+        this.notifyEdit(
             start.fileIndex,
             { operation: Operation.Remove, start: start.localOffset, text },
             { operation: Operation.Remove, start: offset, text },
         );
     }
 
-    private recordEdit(fileIndex: number, localEdit: Edit, globalEdit: Edit): void {
-        if (!this.activeTransaction) return;
-        this.transactionEdits.push(globalEdit);
+    private notifyEdit(fileIndex: number, localEdit: Edit, globalEdit: Edit): void {
         const fileId = this.entries[fileIndex].id;
-        const edits = this.transactionFileEdits.get(fileId) ?? [];
-        edits.push(localEdit);
-        this.transactionFileEdits.set(fileId, edits);
-    }
-
-    private emitChanges(change: Change): void {
-        for (const [fileId, edits] of this.transactionFileEdits) {
-            this.onFileChangeCallback?.({ fileId, change: { edits, isUndo: change.isUndo, isRedo: change.isRedo } });
-        }
-        this.onChangeCallback?.(change);
-    }
-
-    private resetTransaction(): void {
-        this.activeTransaction = false;
-        this.transactionEdits = [];
-        this.transactionFileEdits.clear();
-        this.transactionStateBefore = undefined;
-        this.transactionStateAfter = undefined;
+        this.onFileChangeCallback?.({ fileId, change: { edits: [localEdit] } });
+        this.onChangeCallback?.({ edits: [globalEdit] });
     }
 
     private resolveLine(line: number): { fileIndex: number; localLine: number } | null {
@@ -687,5 +638,33 @@ export class MultiBufferCode extends Code {
             this.filename = entry.path;
             this.language = entry.code.language;
         }
+    }
+
+    private markFileChanged(fileIndex: number): void {
+        this.fileVersions[fileIndex] += 1;
+        this.indexDirty = true;
+    }
+
+    private toGlobalChange(change: Change, fileIndex: number): Change {
+        return {
+            ...change,
+            edits: change.edits.map((edit) => ({
+                ...edit,
+                start: this.toGlobalOffset(fileIndex, edit.start),
+            })),
+            // MultiBuffer does not record cursor state; local file state
+            // cannot be used as a global MultiBuffer offset.
+            stateBefore: undefined,
+            stateAfter: undefined,
+        };
+    }
+
+    private toGlobalOffset(fileIndex: number, localOffset: number): number {
+        const entry = this.entries[fileIndex];
+        if (!entry) return localOffset;
+
+        const position = entry.code.getPosition(localOffset);
+        const line = this.getMultibufferLineForLocalLine(entry.id, position.line);
+        return line === null ? localOffset : this.getOffset(line, position.column);
     }
 }

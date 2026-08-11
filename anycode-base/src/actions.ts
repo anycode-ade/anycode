@@ -215,7 +215,7 @@ export const handleEnter = (ctx: ActionContext): ActionResult => {
 };
 
 export const handleUndo = (ctx: ActionContext): ActionResult => {
-    const change = ctx.code.undo();
+    const change = ctx.code.undo(ctx.offset);
 
     if (change) {
         if (change.stateBefore) { 
@@ -240,7 +240,7 @@ export const handleUndo = (ctx: ActionContext): ActionResult => {
 };
 
 export const handleRedo = (ctx: ActionContext): ActionResult => {
-    const change = ctx.code.redo();
+    const change = ctx.code.redo(ctx.offset);
 
     if (change) {
         if (change.stateAfter) {

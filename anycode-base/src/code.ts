@@ -623,7 +623,7 @@ export class Code {
         }
     }
 
-    public undo(): Change | undefined {
+    public undo(_offset?: number): Change | undefined {
         const change = this.history.undo();
         if (!change) return undefined;
 
@@ -654,7 +654,7 @@ export class Code {
         return change;
     }
 
-    public redo(): Change | null {
+    public redo(_offset?: number): Change | null {
         const change = this.history.redo();
         if (!change) return null;
         const edits = change.edits;

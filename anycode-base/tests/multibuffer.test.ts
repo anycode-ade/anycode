@@ -13,10 +13,32 @@ describe('MultiBufferCode', () => {
             originalCode: new Code('export const removed = true;\n', 'deleted.ts', ''),
         }]);
 
-        multibuffer.tx();
         multibuffer.insert('unexpected', multibuffer.getOffset(1, 0));
-        multibuffer.commit();
 
         expect(currentCode.getContent()).toBe('');
+    });
+
+    it('uses the active file Code history for undo and redo', () => {
+        const firstCode = new Code('first', 'first.ts', '');
+        const secondCode = new Code('second', 'second.ts', '');
+        const multibuffer = new MultiBufferCode([
+            { id: 'first.ts', path: 'first.ts', code: firstCode, originalCode: new Code('', 'first.ts', '') },
+            { id: 'second.ts', path: 'second.ts', code: secondCode, originalCode: new Code('', 'second.ts', '') },
+        ]);
+
+        const firstOffset = multibuffer.getOffset(1, firstCode.getContentLength());
+        multibuffer.insert('!', firstOffset);
+        const secondOffset = multibuffer.getOffset(3, secondCode.getContentLength());
+        multibuffer.insert('?', secondOffset);
+
+        expect(multibuffer.undo(secondOffset)).toBeDefined();
+        expect(firstCode.getContent()).toBe('first!');
+        expect(secondCode.getContent()).toBe('second');
+        expect(multibuffer.undo(secondOffset)).toBeUndefined();
+
+        expect(multibuffer.undo(firstOffset)).toBeDefined();
+        expect(firstCode.getContent()).toBe('first');
+        expect(multibuffer.redo(firstOffset)).toBeDefined();
+        expect(firstCode.getContent()).toBe('first!');
     });
 });
