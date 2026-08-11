@@ -311,7 +311,7 @@ const MultibufferPanel: React.FC<MultibufferPanelProps> = ({
                         focusedDiffEnabled: true,
                         ignoreEdits,
                         codeFoldingEnabled: true,
-                        scrollbarMarkersEnabled: false,
+                        scrollbarMarkersEnabled: true,
                     });
 
                     currentCodeRef.current = currentCode;

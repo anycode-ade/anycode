@@ -72,6 +72,7 @@ export class AnycodeEditor {
     private settings: EditorSettings;
     private editorFontSettingsHandler: ((event: Event) => void) | null = null;
     private renderer!: Renderer;
+    private wrapper!: HTMLDivElement;
     private container!: HTMLDivElement;
     private buttonsColumn!: HTMLDivElement;
     private gutter!: HTMLDivElement;
@@ -181,12 +182,17 @@ export class AnycodeEditor {
             this.gutter,
             this.foldsColumn,
             this.codeContent,
-            this.scrollbarMarkersEnabled
+            this.scrollbarMarkersEnabled,
+            () => this.renderScrollImmediate(),
+            this.wrapper
         );
         this.renderer.setFocusedDiffMode(this.focusedDiffEnabled, this.focusedDiffContextLines);
     }
 
     private createDomElements() {
+        this.wrapper = document.createElement('div');
+        this.wrapper.className = 'anyeditor-wrapper';
+
         this.container = document.createElement('div');
         this.container.className = 'anyeditor';
         this.container.style.setProperty('--anycode-line-height', `${this.settings.lineHeight}px`);
@@ -217,10 +223,12 @@ export class AnycodeEditor {
         this.container.appendChild(this.gutter);
         this.container.appendChild(this.foldsColumn);
         this.container.appendChild(this.codeContent);
+        this.wrapper.appendChild(this.container);
     }
 
     public clean() {
         this.removeEventListeners();
+        this.renderer?.clean();
         if (this.editorFontSettingsHandler && typeof window !== 'undefined') {
             window.removeEventListener('anycode:editor-font-settings', this.editorFontSettingsHandler);
             this.editorFontSettingsHandler = null;
@@ -234,7 +242,9 @@ export class AnycodeEditor {
         this.offset = 0;
         this.selection = null;
 
-        if (this.container && this.container.parentElement) {
+        if (this.wrapper && this.wrapper.parentElement) {
+            this.wrapper.parentElement.removeChild(this.wrapper);
+        } else if (this.container && this.container.parentElement) {
             this.container.parentElement.removeChild(this.container);
         }
     }
@@ -410,7 +420,7 @@ export class AnycodeEditor {
     }
 
     public getContainer(): HTMLDivElement {
-        return this.container;
+        return this.wrapper || this.container;
     }
 
     public getContentHeight(): number {
@@ -634,11 +644,24 @@ export class AnycodeEditor {
         this.codeContent.removeEventListener('focus', this.handleFocus);
     }
 
+    public renderScrollImmediate() {
+        if (!this.container || !this.container.isConnected) return;
+        if (this.scrollAnimationFrameId !== null) {
+            cancelAnimationFrame(this.scrollAnimationFrameId);
+            this.scrollAnimationFrameId = null;
+        }
+        const state = this.getEditorState();
+        this.renderer.renderScroll(state);
+        this.lastScrollTop = this.container.scrollTop;
+    }
+
     private handleScroll(e: Event) {
         if (!this.container.isConnected) return;
 
         this.clearPendingHover();
         this.closeHover();
+
+        this.renderer.updateScrollbarThumb();
 
         if (this.scrollAnimationFrameId !== null) return;
 
