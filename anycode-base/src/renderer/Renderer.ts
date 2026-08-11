@@ -17,6 +17,8 @@ import { ScrollbarMarkersRenderer } from "./ScrollbarMarkersRenderer";
 import { WordHighlightRenderer } from "./WordHighlightRenderer";
 import { BracketMatchRenderer } from "./BracketMatchRenderer";
 
+const MAX_SCROLLBAR_MARKER_LINES = 5000;
+
 /**
  * A real line from the code
  */
@@ -134,7 +136,7 @@ export class Renderer {
     }
 
     public render(state: EditorState) {
-        const { code, settings, diffs, readOnly, search } = state;
+        const { code, diffs } = state;
         this.codeFoldingEnabled = state.codeFoldingEnabled ?? true;
         this.updateFoldableStarts(state);
         this.updateCollapsedMap(state);
@@ -144,6 +146,13 @@ export class Renderer {
         this.visualRows = this.diffEnabled
             ? this.buildVisualRows(totalRealLines, diffs, code)
             : this.buildRealOnlyRows(totalRealLines);
+
+        this.renderViewport(state);
+        this.updateContentMinWidth(state);
+    }
+
+    private renderViewport(state: EditorState) {
+        const { settings, readOnly, search } = state;
 
         const totalVisualRows = this.visualRows.length;
         const { startIndex, endIndex } = this.getVisibleRange(totalVisualRows, settings);
@@ -197,8 +206,6 @@ export class Renderer {
         }
         const wordLines = this.wordHighlightRenderer.render(state, state.scrollbarMarkersEnabled);
         this.renderScrollbarMarkers(state, true, wordLines);
-        this.updateContentMinWidth(state);
-
     }
 
     private renderScrollbarMarkers(
@@ -206,7 +213,9 @@ export class Renderer {
         includeSearch: boolean = true,
         wordLines?: number[]
     ) {
-        const enabled = state?.scrollbarMarkersEnabled ?? false;
+        const enabled = (state?.scrollbarMarkersEnabled ?? false)
+            && state !== null
+            && state.code.linesLength() <= MAX_SCROLLBAR_MARKER_LINES;
         this.scrollbarMarkersRenderer.setEnabled(enabled);
         if (!enabled) return;
 
@@ -397,17 +406,16 @@ export class Renderer {
     }
 
     public renderScroll(state: EditorState) {
-        const { code, settings, diffs, readOnly, search } = state;
-        this.updateFoldableStarts(state);
-        this.updateCollapsedMap(state);
+        const { settings, readOnly, search } = state;
         const lineHeight = settings.lineHeight;
         const buffer = settings.buffer;
 
-        // Rebuild visual rows if diffs changed (otherwise use cached)
-        const totalRealLines = code.linesLength();
-        this.visualRows = this.diffEnabled
-            ? this.buildVisualRows(totalRealLines, diffs, code)
-            : this.buildRealOnlyRows(totalRealLines);
+        // Structural changes rebuild this model through render()/renderChanges().
+        // Scrolling only consumes the cached visual rows.
+        if (this.visualRows.length === 0) {
+            this.render(state);
+            return;
+        }
 
         const totalVisualRows = this.visualRows.length;
         const { startIndex, endIndex } = this.getVisibleRange(totalVisualRows, settings);
@@ -441,7 +449,8 @@ export class Renderer {
             Math.abs(endIndex - currentEndIndex) > buffer * 2;
 
         if (needFullRerender) {
-            this.render(state);
+            // Rebuild only the viewport DOM; the structural row model stays cached.
+            this.renderViewport(state);
             return;
         }
 
