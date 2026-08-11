@@ -28,6 +28,7 @@ interface ChangesPanelProps {
     onBranchChange: (branch: string) => Promise<boolean>;
     onCommit: (message: string) => Promise<boolean>;
     onPush: () => void;
+    pushStatus: { state: 'idle' | 'pushing' | 'success' | 'error'; message?: string };
     onPull: () => void;
     onRevert: (path: string) => void;
     onStage: (path: string) => void;
@@ -204,6 +205,7 @@ const ChangesPanelImpl: React.FC<ChangesPanelProps> = ({
     onBranchChange,
     onCommit,
     onPush,
+    pushStatus,
     onPull,
     onRevert,
     onStage,
@@ -495,6 +497,12 @@ const ChangesPanelImpl: React.FC<ChangesPanelProps> = ({
                     </select>
                 </div>
                 <div className="changes-actions-right">
+                    {pushStatus.state !== 'idle' && (
+                        <span className={`changes-push-status changes-push-status-${pushStatus.state}`} role="status">
+                            {pushStatus.state === 'pushing' && <span className="changes-push-spinner" aria-hidden="true" />}
+                            {pushStatus.message}
+                        </span>
+                    )}
                     <button
                         className="changes-action-btn changes-action-btn-icon"
                         onClick={handleCommit}
@@ -515,6 +523,7 @@ const ChangesPanelImpl: React.FC<ChangesPanelProps> = ({
                     <button
                         className="changes-action-btn changes-action-btn-icon"
                         onClick={onPush}
+                        disabled={pushStatus.state === 'pushing'}
                         title="Push"
                         aria-label="Push"
                     >
@@ -709,6 +718,10 @@ const areBranchesEqual = (
 };
 
 const areEqual = (prev: ChangesPanelProps, next: ChangesPanelProps): boolean => {
+    if (prev.pushStatus.state !== next.pushStatus.state || prev.pushStatus.message !== next.pushStatus.message) {
+        return false;
+    }
+
     if (prev.onOpenMultibuffer !== next.onOpenMultibuffer) {
         return false;
     }
