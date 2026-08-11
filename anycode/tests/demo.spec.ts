@@ -94,7 +94,7 @@ test.describe('Anycode Live Demo Mode E2E Tests', () => {
         const commitRows = historyList.locator('.history-commit-row');
 
         await expect(historyPanel).toBeVisible();
-        await expect(commitRows).toHaveCount(3);
+        await expect(commitRows).toHaveCount(4);
         await expect(historyList.getByText('Welcome to the Anycode demo')).toBeVisible();
         await expect(historyList.getByText('Initial project')).toBeVisible();
 
@@ -108,7 +108,7 @@ test.describe('Anycode Live Demo Mode E2E Tests', () => {
         await expect(historyList.getByText('Welcome to the Anycode demo')).not.toBeVisible();
 
         await historyPanel.getByRole('button', { name: 'Clear history search' }).click();
-        await expect(commitRows).toHaveCount(3);
+        await expect(commitRows).toHaveCount(4);
 
         const firstCommit = commitRows.filter({ hasText: 'Welcome to the Anycode demo' });
         await firstCommit.click();
@@ -140,8 +140,8 @@ test.describe('Anycode Live Demo Mode E2E Tests', () => {
         await expect(historyList.locator('.history-file-row').filter({ hasText: 'README.md' })).toBeVisible();
         await expect(historyList.locator('.history-file-row').filter({ hasText: 'main.rs' })).not.toBeVisible();
 
-        await historyPanel.getByRole('button', { name: 'Show all (2)' }).click();
-        await expect(historyList.locator('.history-file-row').filter({ hasText: 'README.md' })).toBeVisible();
+        await historyPanel.getByRole('button', { name: 'Show all (6)' }).click();
+        await expect(historyList.locator('.history-file-row').filter({ hasText: 'main.rs' })).toBeVisible();
     });
 
     test('should trigger LSP completions and render non-empty completion popup', async ({ page }) => {
@@ -387,5 +387,291 @@ test.describe('Anycode Live Demo Mode E2E Tests', () => {
             await searchInput.press('Enter');
             await expect(page.locator('.search-container').getByText('App.tsx').first()).toBeVisible({ timeout: 10000 });
         }
+    });
+
+    test('should open Multibuffer Review and display header rows', async ({ page }) => {
+        const historyTab = page.getByText(/^History$/i).first();
+        await historyTab.click();
+        const historyPanel = page.locator('.history-panel');
+        const historyList = historyPanel.getByRole('list', { name: 'Git history' });
+        const firstCommit = historyList.locator('.history-commit-row').first();
+        await firstCommit.click();
+
+        const reviewBtn = historyList.locator('.history-review-button, button:has-text("Review")').first();
+        await expect(reviewBtn).toBeVisible({ timeout: 5000 });
+        await reviewBtn.click();
+        await expect(page.locator('.multibuffer-panel, .multibuffer-file-header-row').first()).toBeVisible({ timeout: 10000 });
+    });
+
+    test('should focus file in Multibuffer Review when each file row in history list is clicked', async ({ page }) => {
+        const historyTab = page.getByText(/^History$/i).first();
+        await historyTab.click();
+        const historyPanel = page.locator('.history-panel');
+        const historyList = historyPanel.getByRole('list', { name: 'Git history' });
+        const firstCommit = historyList.locator('.history-commit-row').first();
+        await firstCommit.click();
+
+        const reviewBtn = historyList.locator('.history-review-button, button:has-text("Review")').first();
+        await expect(reviewBtn).toBeVisible({ timeout: 5000 });
+        await reviewBtn.click();
+        await expect(page.locator('.multibuffer-panel').first()).toBeVisible({ timeout: 10000 });
+
+        const historyFileRows = historyList.locator('.history-file-row');
+        const count = await historyFileRows.count();
+        expect(count).toBeGreaterThan(0);
+
+        for (let i = 0; i < count; i++) {
+            const targetFileRow = historyFileRows.nth(i);
+            const rawText = await targetFileRow.innerText();
+            const fileName = rawText.split('\n')[0].trim();
+            await targetFileRow.click();
+
+            const headerRow = page.locator('.multibuffer-file-header-row').filter({ hasText: fileName }).first();
+            await expect(headerRow).toBeVisible({ timeout: 10000 });
+            await page.waitForTimeout(500);
+        }
+    });
+
+    test('should collapse and expand file in Multibuffer Review when header is clicked', async ({ page }) => {
+        const historyTab = page.getByText(/^History$/i).first();
+        await historyTab.click();
+        const historyList = page.locator('.history-panel').getByRole('list', { name: 'Git history' });
+        const firstCommit = historyList.locator('.history-commit-row').first();
+        await firstCommit.click();
+
+        const reviewBtn = historyList.locator('.history-review-button, button:has-text("Review")').first();
+        await expect(reviewBtn).toBeVisible({ timeout: 5000 });
+        await reviewBtn.click();
+        const headerRow = page.locator('.multibuffer-file-header-row').first();
+        await expect(headerRow).toBeVisible({ timeout: 10000 });
+        await expect(headerRow).toContainText('▾');
+
+        const firstBodyLine = page.locator('.line:not(.multibuffer-file-header-row)').first();
+        await expect(firstBodyLine).toBeVisible({ timeout: 10000 });
+        const lineTextBefore = (await firstBodyLine.innerText()).trim();
+        expect(lineTextBefore.length).toBeGreaterThan(0);
+
+        // Collapse
+        await headerRow.click();
+        await expect(headerRow).toContainText('▸');
+
+        // Compare DOM line contents during collapse
+        const currentBodyLinesText = await page.locator('.line:not(.multibuffer-file-header-row)').allInnerTexts();
+        const trimmedTexts = currentBodyLinesText.map((t) => t.trim());
+        expect(trimmedTexts).not.toContain(lineTextBefore);
+
+        // Expand again
+        await headerRow.click();
+        await expect(headerRow).toContainText('▾');
+        const lineTextAfter = (await firstBodyLine.innerText()).trim();
+        expect(lineTextAfter).toBe(lineTextBefore);
+    });
+
+    test('should render single unmodified lines as code instead of 1-line gap buttons', async ({ page }) => {
+        const historyTab = page.getByText(/^History$/i).first();
+        await historyTab.click();
+        const historyList = page.locator('.history-panel').getByRole('list', { name: 'Git history' });
+        const firstCommit = historyList.locator('.history-commit-row').first();
+        await firstCommit.click();
+
+        const reviewBtn = historyList.locator('.history-review-button, button:has-text("Review")').first();
+        await expect(reviewBtn).toBeVisible({ timeout: 5000 });
+        await reviewBtn.click();
+        await expect(page.locator('.multibuffer-file-header-row').first()).toBeVisible({ timeout: 10000 });
+
+        const singleLineGaps = page.locator('.diff-gap-expand-btn').filter({ hasText: /^1 unmodified line$/ });
+        await expect(singleLineGaps).toHaveCount(0);
+    });
+
+    test('should render a deleted-only commit in Multibuffer Review', async ({ page }) => {
+        await page.getByText(/^History$/i).first().click();
+        const historyList = page.locator('.history-panel').getByRole('list', { name: 'Git history' });
+        const deletedOnlyCommit = historyList.locator('.history-commit-row').filter({
+            hasText: 'Remove obsolete helper',
+        });
+
+        await expect(deletedOnlyCommit).toBeVisible({ timeout: 10000 });
+        await deletedOnlyCommit.click();
+        await historyList.locator('.history-review-button').click();
+
+        const multibuffer = page.locator('.multibuffer-panel');
+        await expect(multibuffer).toBeVisible({ timeout: 10000 });
+        await expect(multibuffer.locator('.multibuffer-file-header-row')).toContainText('obsolete-helper.ts');
+        await expect(multibuffer.locator('.line-deleted-ghost').first()).toBeVisible();
+    });
+
+    test('should render a deleted working-tree file in Multibuffer Review', async ({ page }) => {
+        page.on('dialog', (dialog) => dialog.accept());
+
+        const filesPanel = page.getByRole('region', { name: 'Files' });
+        const demoFile = filesPanel.getByText('demo.py').first();
+        await expect(demoFile).toBeVisible({ timeout: 10000 });
+        await demoFile.click({ button: 'right' });
+        await page.getByRole('button', { name: 'Delete File' }).click();
+
+        await page.getByText(/^Changes$/i).first().click();
+        const changesPanel = page.locator('.changes-panel');
+        await expect(changesPanel.getByText('demo.py').first()).toBeVisible({ timeout: 10000 });
+        await changesPanel.getByRole('button', { name: 'Review all changes' }).click();
+
+        const multibuffer = page.locator('.multibuffer-panel');
+        await expect(multibuffer.locator('.multibuffer-file-header-row')).toContainText('demo.py');
+        await expect(multibuffer.locator('.line-deleted-ghost').first()).toBeVisible();
+    });
+
+    test('should keep a review file open in another editor pane', async ({ page }) => {
+        const filesPanel = page.getByRole('region', { name: 'Files' });
+        const readmeFile = filesPanel.getByText('README.md').first();
+        await expect(readmeFile).toBeVisible({ timeout: 10000 });
+        await readmeFile.click();
+
+        const initialEditor = page.locator('.editor-container').filter({
+            hasNot: page.locator('.multibuffer-panel'),
+        }).first();
+        const initialLine = initialEditor.locator('.code .line').first();
+        await expect(initialLine).toBeVisible({ timeout: 10000 });
+        await initialLine.click();
+        await page.keyboard.type('review-change');
+
+        await page.getByText(/^Changes$/i).first().click();
+        const changesPanel = page.locator('.changes-panel');
+        await changesPanel.getByRole('button', { name: 'Review all changes' }).click();
+
+        const multibuffer = page.locator('.multibuffer-panel');
+        await expect(multibuffer).toBeVisible({ timeout: 10000 });
+        const reviewEditorRegion = page.getByRole('region', { name: 'Editor' }).filter({ has: multibuffer });
+        await reviewEditorRegion.getByRole('button', { name: 'Split Right' }).click({ force: true });
+        const picker = page.locator('.layout-panel-picker');
+        await expect(picker).toBeVisible();
+        await picker.getByRole('button', { name: 'Editor' }).click();
+
+        await page.getByRole('tab', { name: 'Files' }).click();
+        await filesPanel.getByText('README.md').first().click();
+        const fileEditorRegion = page.getByRole('region', { name: 'Editor' }).filter({
+            hasNot: multibuffer,
+        });
+        await expect(fileEditorRegion.locator('.anyeditor')).toBeVisible({ timeout: 10000 });
+
+        await multibuffer.locator('.multibuffer-toolbar').click();
+        await page.getByRole('tab', { name: 'Changes' }).click();
+        await changesPanel.locator('.changes-item').filter({ hasText: 'README.md' }).click();
+        await expect(fileEditorRegion.locator('.anyeditor')).toBeVisible();
+
+        await multibuffer.locator('.multibuffer-toolbar').click();
+        await page.locator('.toolbar-tabs .tab').filter({ hasText: 'README.md' }).click();
+        await expect(fileEditorRegion.locator('.anyeditor')).toBeVisible();
+    });
+
+    test('should activate a file when its header is clicked in Multibuffer Review', async ({ page }) => {
+        const filesPanel = page.getByRole('region', { name: 'Files' });
+
+        await filesPanel.getByText('README.md').first().click();
+        let editor = page.locator('.editor-container').filter({
+            hasNot: page.locator('.multibuffer-panel'),
+        }).first();
+        await editor.locator('.code .line').first().click();
+        await page.keyboard.type('readme-change');
+
+        await page.getByRole('tab', { name: 'Files' }).click();
+        await filesPanel.getByText('demo.py').first().click();
+        editor = page.locator('.editor-container').filter({
+            hasNot: page.locator('.multibuffer-panel'),
+        }).first();
+        await editor.locator('.code .line').first().click();
+        await page.keyboard.type('demo-change');
+
+        await page.getByRole('tab', { name: 'Changes' }).click();
+        const changesPanel = page.locator('.changes-panel');
+        await changesPanel.getByRole('button', { name: 'Review all changes' }).click();
+
+        const readmeHeader = page.locator('.multibuffer-file-header-row').filter({ hasText: 'README.md' });
+        await expect(readmeHeader).toBeVisible({ timeout: 10000 });
+        await readmeHeader.click();
+
+        const readmeChange = changesPanel.locator('.changes-item').filter({ hasText: 'README.md' });
+        await expect(readmeChange).toHaveClass(/active/);
+    });
+
+    test('should keep the cursor active and sync the same file between review and editor panes', async ({ page }) => {
+        const filesPanel = page.getByRole('region', { name: 'Files' });
+        await filesPanel.getByText('README.md').first().click();
+
+        const initialEditor = page.locator('.editor-container').filter({
+            hasNot: page.locator('.multibuffer-panel'),
+        }).first();
+        await initialEditor.locator('.code .line').first().click();
+        await page.keyboard.type('shared-change');
+
+        await page.getByRole('tab', { name: 'Changes' }).click();
+        await page.locator('.changes-panel').getByRole('button', { name: 'Review all changes' }).click();
+
+        const multibuffer = page.locator('.multibuffer-panel');
+        const reviewEditorRegion = page.getByRole('region', { name: 'Editor' }).filter({ has: multibuffer });
+        await reviewEditorRegion.getByRole('button', { name: 'Split Right' }).click({ force: true });
+        await page.locator('.layout-panel-picker').getByRole('button', { name: 'Editor' }).click();
+
+        await page.getByRole('tab', { name: 'Files' }).click();
+        await filesPanel.getByText('README.md').first().click();
+        const fileEditorRegion = page.getByRole('region', { name: 'Editor' }).filter({
+            hasNot: multibuffer,
+        });
+        await expect(fileEditorRegion.locator('.anyeditor')).toBeVisible({ timeout: 10000 });
+
+        const selectionIsInside = async (selector: typeof fileEditorRegion) => selector.evaluate((element) => {
+            const anchorNode = window.getSelection()?.anchorNode;
+            return anchorNode !== null && element.contains(anchorNode);
+        });
+        await page.evaluate(() => {
+            const testWindow = window as typeof window & {
+                cursorPaneTrace?: string[];
+                cursorTraceInstalled?: boolean;
+            };
+            testWindow.cursorPaneTrace = [];
+            if (testWindow.cursorTraceInstalled) return;
+            testWindow.cursorTraceInstalled = true;
+            const addRange = Selection.prototype.addRange;
+            Selection.prototype.addRange = function (range: Range) {
+                const anchorNode = range.startContainer;
+                const anchorElement = anchorNode instanceof Element ? anchorNode : anchorNode.parentElement;
+                const editorContainer = anchorElement?.closest('.editor-container');
+                if (editorContainer) {
+                    testWindow.cursorPaneTrace?.push(
+                        editorContainer.querySelector('.multibuffer-panel') ? 'review' : 'file',
+                    );
+                }
+                return addRange.call(this, range);
+            };
+        });
+
+        await fileEditorRegion.locator('.code .line').first().click();
+        await expect.poll(() => selectionIsInside(fileEditorRegion)).toBe(true);
+        await page.evaluate(() => {
+            (window as typeof window & { cursorPaneTrace?: string[] }).cursorPaneTrace = [];
+        });
+        await page.keyboard.press('End');
+        await page.keyboard.type('-file-sync');
+        await expect.poll(() => selectionIsInside(fileEditorRegion)).toBe(true);
+        expect(await page.evaluate(() => (
+            (window as typeof window & { cursorPaneTrace?: string[] }).cursorPaneTrace
+        ))).not.toContain('review');
+        await expect(
+            multibuffer.locator('.code .line').filter({ hasText: 'shared-change' }).first(),
+        ).toContainText('-file-sync');
+
+        const reviewLine = multibuffer.locator('.code .line').filter({ hasText: 'shared-change' }).first();
+        await reviewLine.click();
+        await expect.poll(() => selectionIsInside(reviewEditorRegion)).toBe(true);
+        await page.evaluate(() => {
+            (window as typeof window & { cursorPaneTrace?: string[] }).cursorPaneTrace = [];
+        });
+        await page.keyboard.press('End');
+        await page.keyboard.type('-review-sync');
+        await expect.poll(() => selectionIsInside(reviewEditorRegion)).toBe(true);
+        expect(await page.evaluate(() => (
+            (window as typeof window & { cursorPaneTrace?: string[] }).cursorPaneTrace
+        ))).not.toContain('file');
+        await expect(
+            fileEditorRegion.locator('.code .line').filter({ hasText: 'shared-change' }).first(),
+        ).toContainText('-review-sync');
     });
 });

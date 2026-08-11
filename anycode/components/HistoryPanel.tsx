@@ -23,13 +23,14 @@ interface HistoryPanelProps {
     onCancelSearch: () => void;
     onCommitExpand: (hash: string) => void;
     onFileClick: (hash: string, file: GitHistoryFile) => void;
+    onReviewCommit: (hash: string, files: GitHistoryFile[]) => void;
     onShowRepository: () => void;
     onShowFile: (path: string) => void;
 }
 
 type HistoryRow =
     | { key: string; kind: 'commit'; commit: GitHistoryCommit; height: number; top: number }
-    | { key: string; kind: 'commit-stats'; hash: string; fileCount: number; allFileCount: number; showingAll: boolean; added: number; removed: number; height: number; top: number }
+    | { key: string; kind: 'commit-stats'; hash: string; files: GitHistoryFile[]; fileCount: number; allFileCount: number; showingAll: boolean; added: number; removed: number; height: number; top: number }
     | { key: string; kind: 'file'; hash: string; file: GitHistoryFile; height: number; top: number }
     | { key: string; kind: 'message'; text: string; height: number; top: number }
     | { key: string; kind: 'load-more'; height: number; top: number };
@@ -108,6 +109,7 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = ({
     onCancelSearch,
     onCommitExpand,
     onFileClick,
+    onReviewCommit,
     onShowRepository,
     onShowFile,
 }) => {
@@ -268,6 +270,7 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = ({
                     key: `stats:${commit.hash}`,
                     kind: 'commit-stats',
                     hash: commit.hash,
+                    files,
                     fileCount: files.length,
                     allFileCount: allFiles.length,
                     showingAll,
@@ -453,6 +456,7 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = ({
                                 <div key={row.key} style={style} className="history-virtual-row history-commit-stats" role="listitem">
                                     <span>{row.fileCount} {row.fileCount === 1 ? 'file' : 'files'} changed</span>
                                     {historyPath && !row.showingAll && row.allFileCount > row.fileCount ? <button type="button" className="history-show-all-files" onClick={() => handleShowAllFiles(row.hash)}>Show all ({row.allFileCount})</button> : null}
+                                    <button type="button" className="history-review-button" onClick={() => onReviewCommit(row.hash, row.files)} title="Review all files in this commit">Review</button>
                                     <span className="history-stat-added history-commit-stat-added">+{row.added}</span>
                                     <span className="history-stat-removed">-{row.removed}</span>
                                 </div>

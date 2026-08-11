@@ -50,6 +50,12 @@ import vue from './langs/vue';
 import dockerfile from './langs/dockerfile';
 import sql from './langs/sql';
 
+export type FilePosition = {
+    file: string;
+    line: number;
+    column: number;
+};
+
 export enum Operation {
     Insert = "insert",
     Remove = "remove"
@@ -175,6 +181,7 @@ export class Code {
     private changeStateAfter?: EditState;
 
     private onChange: ((t: Change) => void) | null = null
+    private readonly changeListeners = new Set<(t: Change) => void>();
 
     private injection_parsers: Map<string, TreeSitterParser> = new Map()
     private injection_queries: Map<string, Query> = new Map()
@@ -192,6 +199,10 @@ export class Code {
         this.language = language;
         this.filename = filename;
         this.input = this.input.bind(this);
+    }
+
+    public resolvePosition(row: number, column: number): FilePosition {
+        return { file: this.filename, line: row, column };
     }
 
     private clearSyntaxState() {
@@ -390,6 +401,18 @@ export class Code {
         this.onChange = onTx;
     }
 
+    public addChangeListener(listener: (change: Change) => void): () => void {
+        this.changeListeners.add(listener);
+        return () => this.changeListeners.delete(listener);
+    }
+
+    public notifyChange(change: Change): void {
+        this.onChange?.(change);
+        for (const listener of this.changeListeners) {
+            listener(change);
+        }
+    }
+
     public getOffset(line: number, column: number): number {
         return this.buffer.getOffsetAt(line + 1, column + 1)
     }
@@ -402,6 +425,14 @@ export class Code {
     public getLineByOffset(offset: number): number {
         let p = this.buffer.getPositionAt(offset);
         return p.lineNumber - 1;
+    }
+
+    public getPrevLine(line: number): number {
+        return line - 1;
+    }
+
+    public getNextLine(line: number): number {
+        return line + 1;
     }
 
     public length(): number {
@@ -581,7 +612,7 @@ export class Code {
 
             this.history.push(change);
 
-            if (this.onChange) this.onChange(change);
+            this.notifyChange(change);
 
             this.changeActive = false;
             this.changeEdits = [];
@@ -592,7 +623,7 @@ export class Code {
         }
     }
 
-    public undo(): Change | undefined {
+    public undo(_offset?: number): Change | undefined {
         const change = this.history.undo();
         if (!change) return undefined;
 
@@ -618,12 +649,12 @@ export class Code {
             }
         }
 
-        if (this.onChange) this.onChange(undoChange);
+        this.notifyChange(undoChange);
 
         return change;
     }
 
-    public redo(): Change | null {
+    public redo(_offset?: number): Change | null {
         const change = this.history.redo();
         if (!change) return null;
         const edits = change.edits;
@@ -648,7 +679,7 @@ export class Code {
             }
         }
 
-        if (this.onChange) this.onChange(redoChange);
+        this.notifyChange(redoChange);
 
         return change;
     }
@@ -941,6 +972,14 @@ export class Code {
 
         let width = indent.width || 2;
         return Math.ceil(indentation / width);
+    }
+
+    public isSameFileBody(_lineA: number, _lineB: number): boolean {
+        return true;
+    }
+
+    public getAlwaysVisibleLines(_totalLines: number): Set<number> | null {
+        return null;
     }
 
     public isOnlyIndentationBefore(line: number, column: number): boolean {

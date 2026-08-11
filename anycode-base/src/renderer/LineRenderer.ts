@@ -104,12 +104,13 @@ export class LineRenderer {
     public createLineNumber(
         lineNumber: number,
         settings: EditorSettings,
-        diffs?: Map<number, DiffInfo>
+        diffs?: Map<number, DiffInfo>,
+        displayLineNumber: number = lineNumber,
     ): GutterElement {
         const div = document.createElement('div') as GutterElement;
         div.className = "ln";
         div.lineNumber = lineNumber;
-        div.textContent = (lineNumber + 1).toString();
+        div.textContent = (displayLineNumber + 1).toString();
 
         if (diffs) {
             const diffInfo = diffs.get(lineNumber + 1);
@@ -163,9 +164,10 @@ export class LineRenderer {
         runLines: number[],
         foldIndicator: { canFold: boolean; collapsed: boolean },
         wordHighlight?: WordHighlight | null,
+        displayLineNumber?: number,
     ): RealRowElements {
         const code = this.createLineWrapper(lineNumber, nodes, errorLines, settings, diffs, wordHighlight);
-        const gutter = this.createLineNumber(lineNumber, settings, diffs);
+        const gutter = this.createLineNumber(lineNumber, settings, diffs, displayLineNumber);
         const btn = this.createLineButtons(lineNumber, runLines, errorLines, settings);
         const fold = document.createElement('div') as FoldColumnElement;
         fold.className = 'fd';

@@ -1,0 +1,154 @@
+.multibuffer-panel {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+    color: var(--theme-foreground, var(--foreground-color, #e0e0e0));
+    background: var(--background-color, #1e1e1e);
+}
+
+.multibuffer-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex: 0 0 auto;
+    min-height: 38px;
+    padding: 0 12px;
+    background: var(--theme-tab-background, rgba(255, 255, 255, 0.025));
+    font-family: var(--interface-font-family);
+    font-size: var(--interface-font-size, 13px);
+    font-weight: var(--interface-font-weight, 700);
+}
+
+.multibuffer-toolbar-title,
+.multibuffer-file-header,
+.multibuffer-file-stats {
+    display: flex;
+    align-items: center;
+}
+
+.multibuffer-toolbar-title {
+    gap: 8px;
+}
+
+.multibuffer-toolbar-count {
+    color: var(--theme-tab-foreground, #8b929c);
+    font-size: 0.9em;
+    font-weight: 500;
+}
+
+.multibuffer-scroll {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+    padding: 0;
+    background: var(--background-color, #1e1e1e);
+}
+
+.multibuffer-section {
+    margin: 0 0 8px;
+    border: 1px solid var(--theme-border, rgba(255, 255, 255, 0.08));
+    border-radius: 5px;
+    overflow: hidden;
+    background: var(--background-color, #1e1e1e);
+}
+
+.multibuffer-section.is-active {
+    border-color: color-mix(in srgb, var(--theme-accent, #79c0ff) 38%, transparent);
+}
+
+.multibuffer-file-header {
+    width: 100%;
+    min-height: 40px;
+    gap: 8px;
+    border: 0;
+    border-bottom: 1px solid var(--theme-border, rgba(255, 255, 255, 0.08));
+    padding: 0 10px;
+    color: var(--theme-foreground, #e0e0e0);
+    background: var(--theme-tab-background, rgba(255, 255, 255, 0.025));
+    cursor: pointer;
+    text-align: left;
+    font-family: var(--interface-font-family);
+    font-size: var(--interface-font-size, 13px);
+    font-weight: var(--interface-font-weight, 700);
+}
+
+.multibuffer-file-header:hover {
+    background: var(--hover-bg, rgba(255, 255, 255, 0.07));
+}
+
+.multibuffer-file-header-static {
+    cursor: default;
+}
+
+.multibuffer-chevron {
+    width: 12px;
+    color: var(--theme-tab-foreground, #9aa2ad);
+    font-size: 16px;
+    line-height: 1;
+    text-align: center;
+}
+
+.multibuffer-file-icon {
+    width: 16px;
+    height: 16px;
+    flex: 0 0 auto;
+}
+
+.multibuffer-file-name {
+    flex: 0 0 auto;
+    color: var(--theme-editor-foreground, #d5dbe3);
+}
+
+.multibuffer-file-path {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--theme-tab-foreground, #8c949e);
+    font-weight: 500;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.multibuffer-file-stats {
+    gap: 6px;
+    margin-left: auto;
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+}
+
+.multibuffer-added {
+    color: var(--theme-git-added, #79c97d);
+}
+
+.multibuffer-removed {
+    color: var(--theme-git-removed, rgba(248, 65, 61, 1));
+}
+
+.multibuffer-editor-shell {
+    height: 100%;
+    min-height: 0;
+    width: 100%;
+    overflow: hidden;
+}
+
+.multibuffer-editor-shell > div,
+.multibuffer-editor-shell .anyeditor {
+    height: 100% !important;
+}
+
+.multibuffer-editor-shell .anyeditor {
+    overflow: auto;
+    overscroll-behavior: contain;
+}
+
+.multibuffer-file-loading,
+.multibuffer-empty {
+    padding: 18px 16px;
+    color: var(--theme-tab-foreground, #8c949e);
+    font-family: var(--interface-font-family);
+    font-size: 13px;
+}
+
+.multibuffer-deleted-section .multibuffer-file-header {
+    color: var(--theme-git-removed, rgba(248, 65, 61, 1));
+}

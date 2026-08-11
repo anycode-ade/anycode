@@ -334,6 +334,23 @@ export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
         });
     }, [wsRef, isConnected]);
 
+    const fetchOriginalFileContent = useCallback((path: string): Promise<string | null> => (
+        new Promise((resolve) => {
+            if (!wsRef.current || !isConnected) {
+                resolve(null);
+                return;
+            }
+
+            wsRef.current.emit('git:file-original', { path }, (response: any) => {
+                if (response?.success === false || typeof response?.content !== 'string') {
+                    resolve(null);
+                    return;
+                }
+                resolve(response.content);
+            });
+        })
+    ), [isConnected, wsRef]);
+
     const fetchBranches = useCallback(() => {
         if (!wsRef.current || !isConnected) return;
 
@@ -564,6 +581,7 @@ export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
         historyFilesLoading,
         historyPath,
         fetchGitStatus,
+        fetchOriginalFileContent,
         fetchBranches,
         fetchHistory,
         showFileHistory,

@@ -152,7 +152,52 @@
 }
 
 .anyeditor .line {
+  cursor: text;
   line-height: var(--anycode-line-height);
+}
+
+.anyeditor .multibuffer-file-header-row {
+  box-sizing: border-box;
+  border-radius: 0 5px 5px 0;
+  color: var(--theme-editor-foreground, #d5dbe3);
+  background: var(--multibuffer-header-background);
+  font-family: var(--interface-font-family, sans-serif);
+  font-size: var(--interface-font-size, 13px);
+  font-weight: var(--interface-font-weight, 700);
+}
+
+.anyeditor .multibuffer-file-header-row .multibuffer-header-added {
+  color: var(--theme-git-added, #79c97d);
+}
+
+.anyeditor .multibuffer-file-header-row .multibuffer-header-removed {
+  color: var(--theme-git-removed, rgba(248, 65, 61, 1));
+}
+
+.anyeditor .multibuffer-file-header-row,
+.anyeditor .gutter .ln.multibuffer-file-header-gutter,
+.anyeditor .buttons .bt.multibuffer-file-header-gutter,
+.anyeditor .folds .fd.multibuffer-file-header-gutter {
+
+}
+
+.anyeditor {
+  --multibuffer-header-background: color-mix(
+    in srgb,
+    var(--background-color, #1e1e1e) 88%,
+    #ffffff 12%
+  );
+}
+
+.anyeditor .gutter .ln.multibuffer-file-header-gutter,
+.anyeditor .buttons .bt.multibuffer-file-header-gutter,
+.anyeditor .folds .fd.multibuffer-file-header-gutter {
+  background: var(--multibuffer-header-background);
+  color: transparent;
+}
+
+.anyeditor .buttons .bt.multibuffer-file-header-gutter {
+  /*border-radius: 5px 0 0 5px;*/
 }
 
 .anyeditor .gutter .ln,

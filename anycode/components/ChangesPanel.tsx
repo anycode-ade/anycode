@@ -32,6 +32,7 @@ interface ChangesPanelProps {
     onRevert: (path: string) => void;
     onStage: (path: string) => void;
     onUnstage: (path: string) => void;
+    onOpenMultibuffer: () => void;
 }
 
 const statusTextColors: Record<ChangedFile['status'], string> = {
@@ -207,6 +208,7 @@ const ChangesPanelImpl: React.FC<ChangesPanelProps> = ({
     onRevert,
     onStage,
     onUnstage,
+    onOpenMultibuffer,
 }) => {
     const [message, setMessage] = useState(() => {
         if (typeof window === 'undefined') return '';
@@ -535,6 +537,15 @@ const ChangesPanelImpl: React.FC<ChangesPanelProps> = ({
                         {files.length} changed
                     </span>
                 </div>
+                <button
+                    className="changes-review-btn"
+                    onClick={onOpenMultibuffer}
+                    disabled={files.length === 0}
+                    title="Review all changes"
+                    aria-label="Review all changes"
+                >
+                    <span>Review</span>
+                </button>
                 <div className="changes-list-header-right">
                     {(totalAdded > 0 || totalRemoved > 0) && (
                         <span className="changes-list-stats">
@@ -698,6 +709,10 @@ const areBranchesEqual = (
 };
 
 const areEqual = (prev: ChangesPanelProps, next: ChangesPanelProps): boolean => {
+    if (prev.onOpenMultibuffer !== next.onOpenMultibuffer) {
+        return false;
+    }
+
     if (prev.fileIconsStyle !== next.fileIconsStyle) {
         return false;
     }

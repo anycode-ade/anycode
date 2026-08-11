@@ -125,12 +125,16 @@ export class Renderer {
         this.diffEnabled = enabled;
     }
 
+    public getVisualRowCount(): number {
+        return this.visualRows.length;
+    }
+
     public setFocusedDiffMode(enabled: boolean, contextLines: number = 3) {
         this.diffRenderer.setFocusedDiffMode(enabled, contextLines);
     }
 
     public render(state: EditorState) {
-        const { code, offset, selection, settings, diffs, readOnly, search } = state;
+        const { code, settings, diffs, readOnly, search } = state;
         this.codeFoldingEnabled = state.codeFoldingEnabled ?? true;
         this.updateFoldableStarts(state);
         this.updateCollapsedMap(state);
@@ -138,7 +142,7 @@ export class Renderer {
         // Build unified visual rows model (real lines + ghost lines)
         const totalRealLines = code.linesLength();
         this.visualRows = this.diffEnabled
-            ? this.buildVisualRows(totalRealLines, diffs)
+            ? this.buildVisualRows(totalRealLines, diffs, code)
             : this.buildRealOnlyRows(totalRealLines);
 
         const totalVisualRows = this.visualRows.length;
@@ -184,12 +188,7 @@ export class Renderer {
 
         // Render cursor or selection
         if (!readOnly && (!search.isActive() || !search.isFocused())) {
-            if (!selection || selection.isEmpty()) {
-                const { line, column } = code.getPosition(offset);
-                this.renderCursor(line, column, false);
-            } else {
-                this.renderSelection(code, selection!);
-            }
+            this.renderCursorOrSelection(state);
         }
 
         // Render search highlights
@@ -232,11 +231,16 @@ export class Renderer {
      */
     private buildVisualRows(
         totalLines: number,
-        diffs: Map<number, DiffInfo> | undefined
+        diffs: Map<number, DiffInfo> | undefined,
+        code: Code,
     ): VisualRow[] {
         const rows: VisualRow[] = [];
         const processedHunks = new Set<number>();
-        const visibleRealLines = this.diffRenderer.computeVisibleLines(totalLines, diffs);
+        const visibleRealLines = this.diffRenderer.computeVisibleLines(totalLines, diffs, code);
+        const alwaysVisibleLines = code.getAlwaysVisibleLines(totalLines);
+        if (visibleRealLines && alwaysVisibleLines) {
+            for (const line of alwaysVisibleLines) visibleRealLines.add(line);
+        }
 
         // Collect ghost info by anchor line for efficient lookup
         const ghostsByAnchor = new Map<number, { hunkId: number; oldLineNumbers: number[] }[]>();
@@ -317,6 +321,10 @@ export class Renderer {
         );
     }
 
+    public clearExpandedDiffRanges(): void {
+        this.diffRenderer.clearExpandedRanges();
+    }
+
     public expandFocusedHiddenRange(
         hiddenStart: number,
         hiddenEnd: number,
@@ -389,7 +397,7 @@ export class Renderer {
     }
 
     public renderScroll(state: EditorState) {
-        const { code, offset, selection, settings, diffs, readOnly, search } = state;
+        const { code, settings, diffs, readOnly, search } = state;
         this.updateFoldableStarts(state);
         this.updateCollapsedMap(state);
         const lineHeight = settings.lineHeight;
@@ -398,7 +406,7 @@ export class Renderer {
         // Rebuild visual rows if diffs changed (otherwise use cached)
         const totalRealLines = code.linesLength();
         this.visualRows = this.diffEnabled
-            ? this.buildVisualRows(totalRealLines, diffs)
+            ? this.buildVisualRows(totalRealLines, diffs, code)
             : this.buildRealOnlyRows(totalRealLines);
 
         const totalVisualRows = this.visualRows.length;
@@ -502,12 +510,7 @@ export class Renderer {
 
         // Render cursor or selection
         if (!readOnly && (!search.isActive() || !search.isFocused())) {
-            if (!selection || selection.isEmpty()) {
-                const { line, column } = code.getPosition(offset);
-                this.renderCursor(line, column, false);
-            } else {
-                this.renderSelection(code, selection!);
-            }
+            this.renderCursorOrSelection(state);
         }
 
         // Render search highlights
@@ -546,11 +549,26 @@ export class Renderer {
         let elements: RowElements;
 
         if (row.kind === 'real') {
+            const multibufferCode = code as Code & {
+                getMultibufferHeader?: (line: number) => string | null;
+                getMultibufferLineNumber?: (line: number) => number | null;
+            };
             const syntaxNodes = precomputedNodes || code.getLineNodes(row.lineIndex);
+            const displayLineNumber = multibufferCode.getMultibufferLineNumber?.(row.lineIndex) ?? undefined;
             elements = this.lineRenderer.createLineElements(
                 row.lineIndex, syntaxNodes, errorLines, settings,
-                diffs, runLines, this.getFoldIndicator(row.lineIndex), state.wordHighlight
+                diffs, runLines, this.getFoldIndicator(row.lineIndex), state.wordHighlight,
+                displayLineNumber,
             );
+            const header = multibufferCode.getMultibufferHeader?.(row.lineIndex);
+            if (header !== null && header !== undefined) {
+                elements.code.classList.add('multibuffer-file-header-row');
+                elements.code.contentEditable = 'false';
+                elements.gutter.classList.add('multibuffer-file-header-gutter');
+                elements.gutter.textContent = '';
+                elements.btn.classList.add('multibuffer-file-header-gutter');
+                elements.fold.classList.add('multibuffer-file-header-gutter');
+            }
         } else if (row.kind === 'ghost') {
             const originalNodes = state.originalCode?.getLineNodes(row.originalLineIndex);
             const originalText = state.originalCode?.line(row.originalLineIndex) ?? '';
@@ -608,7 +626,7 @@ export class Renderer {
         // Rebuild visual rows - structure may have changed
         const totalRealLines = code.linesLength();
         const newVisualRows = this.diffEnabled
-            ? this.buildVisualRows(totalRealLines, diffs)
+            ? this.buildVisualRows(totalRealLines, diffs, code)
             : this.buildRealOnlyRows(totalRealLines);
 
         if (newVisualRows.length !== oldVisualRows.length) {
@@ -779,7 +797,7 @@ export class Renderer {
     }
 
     public renderCursorOrSelection(state: EditorState, focus: boolean = false) {
-        if (state.readOnly) return;
+        if (!state.cursorActive || state.readOnly) return;
 
         const { code, offset, selection } = state;
         if (!selection || selection.isEmpty()) {
@@ -887,6 +905,7 @@ export class Renderer {
         const tolerance = 2;
         if (Math.abs(targetScrollTop - viewportTop) > tolerance) {
             this.container.scrollTo({ top: targetScrollTop });
+            this.renderScroll(state);
             return true;
         }
 
@@ -917,6 +936,7 @@ export class Renderer {
         const clampedScrollTop = Math.max(0, Math.min(targetScrollTop, maxScroll));
 
         this.container.scrollTo({ top: clampedScrollTop });
+        this.renderScroll(state);
 
         return true;
     }

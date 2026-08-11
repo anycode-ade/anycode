@@ -70,7 +70,6 @@
     font-size: 0.86em;
     font-weight: var(--interface-font-weight, 700);
     border-radius: 0;
-    padding: 2px 18px 2px 0;
     min-height: 24px;
     outline: none;
     cursor: pointer;
@@ -199,6 +198,7 @@
     position: relative;
     width: 78px;
     min-width: 78px;
+    min-height: 20px;
 }
 
 .changes-list-title {
@@ -237,6 +237,37 @@
     visibility: hidden;
     opacity: 0;
     pointer-events: none;
+    z-index: 1;
+}
+
+.changes-review-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    border: 0;
+    border-radius: 0;
+    padding: 2px 0;
+    color: var(--theme-accent-background, #4fc3f7);
+    background: transparent;
+    font-family: var(--interface-font-family);
+    font-size: 0.82em;
+    font-weight: var(--interface-font-weight, 700);
+    line-height: 1;
+    cursor: pointer;
+    text-decoration: none;
+    text-underline-offset: 2px;
+    white-space: nowrap;
+}
+
+.changes-review-btn:hover {
+    color: var(--theme-foreground, var(--foreground-color, #e0e0e0));
+    text-decoration: underline;
+}
+
+.changes-review-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
 }
 
 .changes-select-all {
@@ -472,18 +503,18 @@
     opacity: 1;
 }
 
-.changes-list-header:hover .changes-list-stats {
+.changes-list-header-right:hover .changes-list-stats {
     visibility: hidden;
     opacity: 0;
 }
 
-.changes-list-header:hover .changes-list-header-actions {
+.changes-list-header-right:hover .changes-list-header-actions {
     visibility: visible;
     opacity: 1;
     pointer-events: auto;
 }
 
-.changes-list-header:hover .changes-revert-all-btn {
+.changes-list-header-right:hover .changes-revert-all-btn {
     opacity: 1;
     pointer-events: auto;
 }

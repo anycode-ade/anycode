@@ -769,6 +769,7 @@ export const Layout: React.FC<LayoutProps> = ({
     const [visibility, setVisibility] = useState<PanelVisibility>(loadPanelVisibility);
     const [layoutVersion, setLayoutVersion] = useState(0);
     const listenersRef = useRef<Array<{ dispose: () => void }>>([]);
+    const lastActivePanelIdRef = useRef<string | null>(null);
     const parentGroupMap = useRef<Map<string, string>>(new Map(Object.entries(loadItem<Record<string, string>>('layoutParentGroups') ?? {})));
     const layoutSaveTimerRef = useRef<number | null>(null);
     const emptyPaneRestoreTimerRef = useRef<number | null>(null);
@@ -1388,6 +1389,9 @@ export const Layout: React.FC<LayoutProps> = ({
                 onPanelAdded?.(baseId, panel.id);
             }),
             api.onDidRemovePanel((panel) => {
+                if (lastActivePanelIdRef.current === panel.id) {
+                    lastActivePanelIdRef.current = null;
+                }
                 const baseId = getPanelBaseId(panel.id);
                 if (baseId) {
                     if (!isRestoringLayoutRef.current) {
@@ -1411,8 +1415,10 @@ export const Layout: React.FC<LayoutProps> = ({
                 if (!panel) return;
                 const baseId = getPanelBaseId(panel.id);
                 if (!baseId) return;
+                const panelChanged = lastActivePanelIdRef.current !== panel.id;
+                lastActivePanelIdRef.current = panel.id;
                 onPanelActivated?.(baseId, panel.id);
-                if (baseId === 'editor') {
+                if (baseId === 'editor' && panelChanged) {
                     setLayoutVersion((v) => v + 1);
                 }
             }),

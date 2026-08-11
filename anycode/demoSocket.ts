@@ -123,8 +123,18 @@ const DEMO_HISTORY_COMMITS = [
         timestamp: 1735516800,
         timezone_offset: 0,
     },
+    {
+        hash: 'de00000000000000000000000000000000000004',
+        parents: [],
+        summary: 'Remove obsolete helper',
+        message: 'Remove obsolete helper',
+        author_name: 'Anycode',
+        author_email: 'demo@anycode.dev',
+        timestamp: 1735430400,
+        timezone_offset: 0,
+    },
 ];
-let demoCommitSequence = 4;
+let demoCommitSequence = 5;
 
 type DemoHistoryFile = {
     path: string;
@@ -136,8 +146,12 @@ type DemoHistoryFile = {
 
 const DEMO_HISTORY_FILES: Record<string, DemoHistoryFile[]> = {
     [DEMO_HISTORY_COMMITS[0].hash]: [
-        { path: 'src/main.rs', status: 'modified', added: 4, removed: 1, binary: false },
-        { path: 'README.md', status: 'modified', added: 3, removed: 0, binary: false },
+        { path: 'src/main.rs', status: 'modified', added: 30, removed: 2, binary: false },
+        { path: 'README.md', status: 'modified', added: 15, removed: 0, binary: false },
+        { path: 'src/App.tsx', status: 'modified', added: 25, removed: 3, binary: false },
+        { path: 'src/utils.ts', status: 'modified', added: 30, removed: 1, binary: false },
+        { path: 'src/logger.ts', status: 'added', added: 40, removed: 0, binary: false },
+        { path: 'src/config.ts', status: 'modified', added: 20, removed: 2, binary: false },
     ],
     [DEMO_HISTORY_COMMITS[1].hash]: [
         { path: 'src/main.rs', status: 'modified', added: 8, removed: 2, binary: false },
@@ -150,6 +164,9 @@ const DEMO_HISTORY_FILES: Record<string, DemoHistoryFile[]> = {
         removed: 0,
         binary: false,
     })),
+    [DEMO_HISTORY_COMMITS[3].hash]: [
+        { path: 'src/obsolete-helper.ts', status: 'deleted', added: 0, removed: 4, binary: false },
+    ],
 };
 
 const notifyGitChange = (socket: DemoSocket, targetPath: string) => {
@@ -548,10 +565,17 @@ export class DemoSocket {
 
             case 'git:history-file': {
                 const targetPath = payload?.path || '';
+                const historyFile = DEMO_HISTORY_FILES[String(payload?.hash ?? '')]
+                    ?.find((file) => file.path === targetPath);
+                const baseContent = ORIGINAL_VFS_CONTENTS[targetPath] ?? `// File: ${targetPath}\nfunction process_${targetPath.replace(/[^a-zA-Z0-9]/g, '_')}() {\n  return "ok";\n}\n`;
+                const logs = Array.from({ length: 25 }, (_, i) => `    console.log("processing item index ${i}:", ${i});`).join('\n');
+                const generatedNewContent = `// File: ${targetPath}\n// Generated demo log pipeline\nexport function runDemoPipeline() {\nfor (let i = 0; i < 25; i++) {\n${logs}\n  }\n}\n\n${baseContent}`;
+                const generatedOldContent = `// File: ${targetPath}\n// Initial demo file\n${baseContent}`;
+
                 callback?.({
                     success: true,
-                    old_content: '',
-                    new_content: ORIGINAL_VFS_CONTENTS[targetPath] ?? '',
+                    old_content: historyFile?.status === 'added' ? '' : generatedOldContent,
+                    new_content: historyFile?.status === 'deleted' ? '' : generatedNewContent,
                     old_binary: false,
                     new_binary: false,
                 });

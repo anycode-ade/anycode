@@ -21,6 +21,12 @@ export type DiffInfo = {
     hunkId: number;
 };
 
+export type GitChangesResult = {
+    diffs: Map<number, DiffInfo>;
+    added: number;
+    removed: number;
+};
+
 function splitLines(str: string): string[] {
     if (str === '') {
         return [];
@@ -37,6 +43,13 @@ export function computeGitChanges(
     original: string[] | string,
     current: string[] | string
 ): Map<number, DiffInfo> {
+    return computeGitChangesWithStats(original, current).diffs;
+}
+
+export function computeGitChangesWithStats(
+    original: string[] | string,
+    current: string[] | string
+): GitChangesResult {
     const changes = new Map<number, DiffInfo>();
     const originalLines = normalizeLines(original);
     const currentLines = normalizeLines(current);
@@ -48,16 +61,21 @@ export function computeGitChanges(
     let newLine = 1;
     let hunkId = 0;
     let inChangeBlock = false;
+    let added = 0;
+    let removed = 0;
 
     for (let i = 0; i < diffs.length; i++) {
         const diff = diffs[i];
-        const { added, removed } = diff;
+        const { added: partAdded, removed: partRemoved } = diff;
         const count = diff.value.length;
 
-        if (added || removed) {
+        if (partAdded) added += count;
+        if (partRemoved) removed += count;
+
+        if (partAdded || partRemoved) {
             inChangeBlock = true;
 
-            if (removed) {
+            if (partRemoved) {
                 const deletedLineNumbers: number[] = [];
                 for (let j = 0; j < count; j++) {
                     deletedLineNumbers.push(oldLine + j);
@@ -67,6 +85,7 @@ export function computeGitChanges(
                 const next = diffs[i + 1];
                 if (next?.added) {
                     const addedCount = next.value.length;
+                    added += addedCount;
                     for (let j = 0; j < addedCount; j++) {
                         changes.set(newLine + j, {
                             changeType: 'modified',
@@ -112,5 +131,5 @@ export function computeGitChanges(
         hunkId++;
     }
 
-    return changes;
+    return { diffs: changes, added, removed };
 }

@@ -1,15 +1,18 @@
 import { useContext, useEffect, useState } from 'react';
 import { AnycodeEditor, AnycodeEditorReact } from 'anycode-react';
 import { LayoutVersionContext } from '../../components/layout/Layout';
-import type { ReferencesPeekState } from '../../types';
+import type { DefinitionRequest, DefinitionResponse, HoverRequest } from 'anycode-base';
+import type { FileState, ReferencesPeekState } from '../../types';
 import { ReferencesPeek } from './ReferencesPeek';
+import MultibufferPanel, { type MultibufferFile } from './MultibufferPanel';
 
 type EditorPanelProps = {
     panelKey: string;
     editors: {
-        files: Array<{ id: string }>;
+        files: FileState[];
         editorStates: ReadonlyMap<string, AnycodeEditor>;
         keepPreviousEditorByPane: Readonly<Record<string, boolean>>;
+        activeEditorPaneId: string;
         getActiveFileIdForPane: (paneId: string) => string | null;
         setActiveEditorPaneId: (paneId: string) => void;
         referencesPeekByPane?: Record<string, ReferencesPeekState | null>;
@@ -18,10 +21,33 @@ type EditorPanelProps = {
         focusEditorInPane: (paneId: string) => void;
         setSelectedReferenceInPeek: (paneId: string, nextIndex: number) => void;
         openReferenceFromPeek: (paneId: string, itemIndex?: number) => void;
+        handleHover?: (request: HoverRequest) => Promise<string | null>;
+        handleGoToDefinition?: (request: DefinitionRequest) => Promise<DefinitionResponse>;
     };
+    multibufferOpen?: boolean;
+    multibufferFiles?: MultibufferFile[];
+    multibufferTitle?: string;
+    multibufferIgnoreEdits?: boolean;
+    multibufferFocusRequest?: { path: string; line?: number; column?: number; token: number };
+    onCloseMultibuffer?: () => void;
+    onMultibufferActiveFileChange?: (paneId: string, fileId: string) => void;
+    onGoToDefinition?: (request: DefinitionRequest) => Promise<DefinitionResponse>;
+    onLoadDeletedFile?: (path: string) => Promise<string | null>;
 };
 
-export const EditorPanel = ({ panelKey, editors }: EditorPanelProps) => {
+export const EditorPanel = ({
+    panelKey,
+    editors,
+    multibufferOpen = false,
+    multibufferFiles = [],
+    multibufferTitle,
+    multibufferIgnoreEdits = false,
+    multibufferFocusRequest,
+    onCloseMultibuffer,
+    onMultibufferActiveFileChange,
+    onGoToDefinition,
+    onLoadDeletedFile,
+}: EditorPanelProps) => {
     const layoutVersion = useContext(LayoutVersionContext);
     const paneFileId = editors.getActiveFileIdForPane(panelKey);
     const paneFile = paneFileId ? editors.files.find((file) => file.id === paneFileId) : null;
@@ -51,6 +77,43 @@ export const EditorPanel = ({ panelKey, editors }: EditorPanelProps) => {
     const displayedEditor = paneFile && editorState
         ? { id: paneFile.id, state: editorState }
         : fallbackEditor;
+
+    useEffect(() => {
+        if (multibufferOpen || !displayedEditor) return;
+        const editor = displayedEditor.state;
+        if (editors.activeEditorPaneId === panelKey) {
+            editor.activateCursor();
+        } else {
+            editor.deactivateCursor();
+        }
+        return () => editor.deactivateCursor();
+    }, [displayedEditor?.id, displayedEditor?.state, editors.activeEditorPaneId, multibufferOpen, panelKey]);
+
+    if (multibufferOpen) {
+        return (
+            <div
+                className="editor-container"
+                onMouseDown={() => editors.setActiveEditorPaneId(panelKey)}
+                onWheelCapture={() => editors.setActiveEditorPaneId(panelKey)}
+            >
+                <MultibufferPanel
+                    panelKey={panelKey}
+                    active={editors.activeEditorPaneId === panelKey}
+                    files={multibufferFiles}
+                    openFiles={editors.files}
+                    editorStates={editors.editorStates}
+                    onClose={onCloseMultibuffer ?? (() => undefined)}
+                    title={multibufferTitle}
+                    ignoreEdits={multibufferIgnoreEdits}
+                    focusRequest={multibufferFocusRequest}
+                    onActiveFileChange={(fileId) => onMultibufferActiveFileChange?.(panelKey, fileId)}
+                    onGoToDefinition={onGoToDefinition}
+                    onHover={editors.handleHover}
+                    onLoadDeletedFile={onLoadDeletedFile}
+                />
+            </div>
+        );
+    }
 
     return (
         <div

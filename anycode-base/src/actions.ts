@@ -215,7 +215,7 @@ export const handleEnter = (ctx: ActionContext): ActionResult => {
 };
 
 export const handleUndo = (ctx: ActionContext): ActionResult => {
-    const change = ctx.code.undo();
+    const change = ctx.code.undo(ctx.offset);
 
     if (change) {
         if (change.stateBefore) { 
@@ -240,7 +240,7 @@ export const handleUndo = (ctx: ActionContext): ActionResult => {
 };
 
 export const handleRedo = (ctx: ActionContext): ActionResult => {
-    const change = ctx.code.redo();
+    const change = ctx.code.redo(ctx.offset);
 
     if (change) {
         if (change.stateAfter) {
@@ -691,7 +691,8 @@ export const moveArrowDown = (ctx: ActionContext): ActionResult => {
     const { line, column } = ctx.code.getPosition(ctx.offset);
     if (line >= ctx.code.linesLength() - 1) return { ctx, changed: false };
 
-    const nextLine = line + 1;
+    const nextLine = ctx.code.getNextLine(line);
+    if (nextLine >= ctx.code.linesLength()) return { ctx, changed: false };
     const nextCol = Math.min(column, ctx.code.lineLength(nextLine));
     const originalOffset = ctx.offset;
     ctx.offset = ctx.code.getOffset(nextLine, nextCol);
@@ -721,7 +722,9 @@ export const moveArrowUp = (ctx: ActionContext): ActionResult => {
         return { ctx, changed: false };
     }
 
-    const prevLine = line - 1;
+    const prevLine = ctx.code.getPrevLine(line);
+    if (prevLine < 0) return { ctx, changed: false };
+
     const prevCol = Math.min(column, ctx.code.lineLength(prevLine));
     const originalOffset = ctx.offset;
     ctx.offset = ctx.code.getOffset(prevLine, prevCol);
@@ -762,8 +765,9 @@ export const moveArrowRight = (ctx: ActionContext, alt: boolean): ActionResult =
         }
         if (col >= lineText.length) {
             // At end of line, jump to next line start if exists
-            if (line + 1 < ctx.code.linesLength()) {
-                ctx.offset = ctx.code.getOffset(line + 1, 0);
+            const nextLine = ctx.code.getNextLine(line);
+            if (nextLine < ctx.code.linesLength()) {
+                ctx.offset = ctx.code.getOffset(nextLine, 0);
             } else {
                 ctx.offset = ctx.code.getOffset(line, lineText.length);
             }
@@ -779,8 +783,9 @@ export const moveArrowRight = (ctx: ActionContext, alt: boolean): ActionResult =
             const lineText = ctx.code.line(line);
             if (column >= lineText.length) {
                 // at end of line -> go to start of next line if available
-                if (line + 1 < ctx.code.linesLength()) {
-                    ctx.offset = ctx.code.getOffset(line + 1, 0);
+                const nextLine = ctx.code.getNextLine(line);
+                if (nextLine < ctx.code.linesLength()) {
+                    ctx.offset = ctx.code.getOffset(nextLine, 0);
                 } else {
                     // already at end of buffer
                     return { ctx, changed: false };
@@ -834,8 +839,11 @@ export const moveArrowLeft = (ctx: ActionContext, alt: boolean): ActionResult =>
             const { line, column } = ctx.code.getPosition(ctx.offset);
             if (column === 0 && line > 0) {
                 // move to end of previous line
-                const prevLineLen = ctx.code.line(line - 1).length;
-                ctx.offset = ctx.code.getOffset(line - 1, prevLineLen);
+                const prevLine = ctx.code.getPrevLine(line);
+                if (prevLine >= 0) {
+                    const prevLineLen = ctx.code.line(prevLine).length;
+                    ctx.offset = ctx.code.getOffset(prevLine, prevLineLen);
+                }
             } else {
                 const lineText = ctx.code.line(line);
                 const prevCol = getPrevGraphemeIndex(lineText, column);
