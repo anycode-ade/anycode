@@ -117,6 +117,7 @@ export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
     const [gitBranch, setGitBranch] = useState<string>('');
     const [branches, setBranches] = useState<GitBranch[]>([]);
     const [isSwitchingBranch, setIsSwitchingBranch] = useState(false);
+    const [pushStatus, setPushStatus] = useState<{ state: 'idle' | 'pushing' | 'success' | 'error'; message?: string }>({ state: 'idle' });
     const [historyCommits, setHistoryCommits] = useState<GitHistoryCommit[]>([]);
     const [historyFiles, setHistoryFiles] = useState<Record<string, GitHistoryFile[]>>({});
     const [historyHasMore, setHistoryHasMore] = useState(false);
@@ -474,16 +475,19 @@ export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
     }, [wsRef, isConnected, fetchGitStatus, refreshHistory]);
 
     const push = useCallback(() => {
-        if (!wsRef.current || !isConnected) return;
+        if (!wsRef.current || !isConnected || pushStatus.state === 'pushing') return;
+
+        setPushStatus({ state: 'pushing', message: 'Pushing…' });
 
         wsRef.current.emit('git:push', {}, (response: any) => {
             if (response.success) {
+                setPushStatus({ state: 'success', message: `Pushed ${gitBranch || 'changes'}` });
                 fetchGitStatus();
             } else {
-                alert('Push failed: ' + response.error);
+                setPushStatus({ state: 'error', message: `Push failed: ${response.error}` });
             }
         });
-    }, [wsRef, isConnected, fetchGitStatus]);
+    }, [wsRef, isConnected, fetchGitStatus, gitBranch, pushStatus.state]);
 
     const pull = useCallback(() => {
         if (!wsRef.current || !isConnected) return;
@@ -571,6 +575,7 @@ export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
     return {
         changedFiles,
         gitBranch,
+        pushStatus,
         branches,
         isSwitchingBranch,
         historyCommits,

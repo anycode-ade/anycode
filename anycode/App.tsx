@@ -709,6 +709,7 @@ const App: React.FC = () => {
                         onBranchChange={git.checkoutBranch}
                         onCommit={git.commit}
                         onPush={git.push}
+                        pushStatus={git.pushStatus}
                         onPull={git.pull}
                         onRevert={git.revert}
                         onStage={git.stage}

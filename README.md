@@ -14,7 +14,7 @@
 - **Advanced code experience**: Utilizes a custom code component based on **web-tree-sitter** for efficient parsing, syntax highlighting, and real-time code analysis.
 - **LSP integration**: LSP support for intelligent code completion, go-to-definition, hover information and real-time diagnostics.
 - **File system integration**: WebSocket-based backend for browsing and editing files from your local filesystem.
-- **Changes**: Built-in git Changes panel, per-file revert, commit, push, and pull.
+- **Changes**: Built-in git Changes panel, per-file revert, commit, push, and pull with status feedback.
 - **History**: Browse Git commit history for the repository or current file, inspect changes, and open previous versions.
 - **Free layout**: Flexible pane layout for arranging the workspace the way you want.
 - **Integrated terminal**: Full-featured terminal emulator with WebSocket-based communication, supporting real-time command execution and output.
