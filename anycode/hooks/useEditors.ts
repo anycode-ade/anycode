@@ -632,6 +632,8 @@ export const useEditors = ({ wsRef, isConnected, onFileClosed }: UseEditorsParam
 
         if (request.mode !== 'plain') {
             editor.setOriginalCode(request.originalContent);
+        } else {
+            editor.setOriginalText(request.originalContent);
         }
         editor.setDiffMode(request.mode);
 

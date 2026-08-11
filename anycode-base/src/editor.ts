@@ -1883,6 +1883,10 @@ export class AnycodeEditor {
         });
     }
 
+    public setOriginalText(content: string): void {
+        this.pendingOriginalContent = content;
+    }
+
     private recomputeDiffs(): void {
         if (this.diffEnabled && this.originalCode) {
             const multibufferCode = this.code as Code & {
