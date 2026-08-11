@@ -83,6 +83,7 @@ export class AnycodeEditor {
     private offset: number;
     private settings: EditorSettings;
     private editorFontSettingsHandler: ((event: Event) => void) | null = null;
+    private scrollbarSettingsHandler: ((event: Event) => void) | null = null;
     private renderer!: Renderer;
     private wrapper!: HTMLDivElement;
     private container!: HTMLDivElement;
@@ -189,6 +190,13 @@ export class AnycodeEditor {
                 }
             };
             window.addEventListener('anycode:editor-font-settings', this.editorFontSettingsHandler);
+
+            this.scrollbarSettingsHandler = (event: Event) => {
+                const detail = (event as CustomEvent<ScrollbarSettings>).detail;
+                if (!detail) return;
+                this.setScrollbarSettings(detail);
+            };
+            window.addEventListener('anycode:scrollbar-settings', this.scrollbarSettingsHandler);
         }
 
         if (options.theme) {
@@ -252,6 +260,10 @@ export class AnycodeEditor {
         if (this.editorFontSettingsHandler && typeof window !== 'undefined') {
             window.removeEventListener('anycode:editor-font-settings', this.editorFontSettingsHandler);
             this.editorFontSettingsHandler = null;
+        }
+        if (this.scrollbarSettingsHandler && typeof window !== 'undefined') {
+            window.removeEventListener('anycode:scrollbar-settings', this.scrollbarSettingsHandler);
+            this.scrollbarSettingsHandler = null;
         }
         this.clearPendingHover();
         this.closeHover();
