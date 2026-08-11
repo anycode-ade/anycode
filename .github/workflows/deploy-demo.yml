@@ -56,8 +56,21 @@ jobs:
       - name: Build Live Demo Mode Bundle
         run: pnpm --filter anycode build:demo
 
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('anycode/package.json', 'pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-playwright-
+
+      - name: Install Playwright system dependencies
+        run: pnpm --filter anycode exec playwright install-deps chromium
+
       - name: Install Playwright Browsers
-        run: pnpm --filter anycode exec playwright install --with-deps chromium
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: pnpm --filter anycode exec playwright install chromium
 
       - name: Run Playwright E2E Tests
         run: pnpm --filter anycode test:demo
