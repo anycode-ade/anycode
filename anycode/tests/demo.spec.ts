@@ -1,4 +1,20 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
+
+const openSettingsPanel = async (page: Page) => {
+    const settingsPanel = page.locator('.layout-dock-panel--settings:visible').first();
+    if (await settingsPanel.count() === 0) {
+        await page
+            .getByRole('region', { name: 'Editor' })
+            .getByRole('button', { name: 'Split Right' })
+            .click({ force: true });
+        const picker = page.locator('.layout-panel-picker').last();
+        await expect(picker).toBeVisible();
+        await picker.getByRole('button', { name: 'Settings', exact: true }).click();
+    }
+
+    await expect(settingsPanel).toBeVisible();
+    return settingsPanel;
+};
 
 test.describe('Anycode Live Demo Mode E2E Tests', () => {
     test.beforeEach(async ({ page }) => {
@@ -715,5 +731,73 @@ test.describe('Anycode Live Demo Mode E2E Tests', () => {
         await expect(
             fileEditorRegion.locator('.code .line').filter({ hasText: 'shared-change' }).first(),
         ).toContainText('-review-sync');
+    });
+
+    test('should apply scrollbar settings to an open editor and persist them after reload', async ({ page }) => {
+        const readme = page.getByText('README.md').first();
+        await expect(readme).toBeVisible({ timeout: 10000 });
+        await readme.click();
+        await expect(page.locator('.code .line').first()).toBeVisible({ timeout: 10000 });
+
+        const scrollbar = page.locator('.smr:visible').first();
+        await expect(scrollbar).toBeVisible({ timeout: 10000 });
+
+        const settingsPanel = await openSettingsPanel(page);
+        const scrollbarSection = settingsPanel.locator('.settings-section').filter({ hasText: /^Scrollbar/ });
+        await expect(scrollbarSection.getByRole('button', { name: /^Rounded/ })).toHaveClass(/active/);
+        await expect(scrollbarSection.getByRole('button', { name: /^8px/ })).toHaveClass(/active/);
+        await expect(scrollbarSection.getByRole('button', { name: '20px (Default)' })).toHaveClass(/active/);
+        await expect(scrollbarSection.getByRole('button', { name: 'Always show scrollbar' })).toHaveAttribute('aria-pressed', 'false');
+
+        await scrollbarSection.getByRole('button', { name: /^Flat/ }).click();
+        await scrollbarSection.getByRole('button', { name: 'Always show scrollbar' }).click();
+        await scrollbarSection.getByRole('button', { name: /^12px/ }).click();
+        await scrollbarSection.getByRole('button', { name: '48px' }).click();
+
+        await expect(page.locator('html')).toHaveAttribute('data-scrollbar-style', 'flat');
+        await expect(page.locator('html')).toHaveAttribute('data-scrollbar-always-show', 'true');
+        await expect.poll(() => page.locator('html').evaluate((element) => ({
+            width: getComputedStyle(element).getPropertyValue('--smr-custom-width').trim(),
+            minSize: getComputedStyle(element).getPropertyValue('--smr-min-size').trim(),
+        }))).toEqual({ width: '12px', minSize: '48px' });
+
+        await expect.poll(() => scrollbar.locator('.smrt').evaluate((element) => {
+            const style = getComputedStyle(element);
+            return {
+                width: style.width,
+                minHeight: style.minHeight,
+                borderRadius: style.borderRadius,
+                opacity: style.opacity,
+            };
+        })).toEqual({
+            width: '12px',
+            minHeight: '48px',
+            borderRadius: '0px',
+            opacity: '1',
+        });
+
+        await page.reload();
+        await expect(page.locator('.code .line').first()).toBeVisible({ timeout: 10000 });
+        const settingsAfterReload = await openSettingsPanel(page);
+        const scrollbarSectionAfterReload = settingsAfterReload.locator('.settings-section').filter({ hasText: /^Scrollbar/ });
+        await expect(scrollbarSectionAfterReload.getByRole('button', { name: /^Flat/ })).toHaveClass(/active/);
+        await expect(scrollbarSectionAfterReload.getByRole('button', { name: 'Always show scrollbar' })).toHaveAttribute('aria-pressed', 'true');
+        await expect(scrollbarSectionAfterReload.getByRole('button', { name: /^12px/ })).toHaveClass(/active/);
+        await expect(scrollbarSectionAfterReload.getByRole('button', { name: '48px' })).toHaveClass(/active/);
+    });
+
+    test('should briefly preview the scrollbar after a setting changes', async ({ page }) => {
+        const readme = page.getByText('README.md').first();
+        await expect(readme).toBeVisible({ timeout: 10000 });
+        await readme.click();
+        await expect(page.locator('.code .line').first()).toBeVisible({ timeout: 10000 });
+
+        const settingsPanel = await openSettingsPanel(page);
+        const scrollbarSection = settingsPanel.locator('.settings-section').filter({ hasText: /^Scrollbar/ });
+        await expect(scrollbarSection.getByRole('button', { name: 'Always show scrollbar' })).toHaveAttribute('aria-pressed', 'false');
+
+        await scrollbarSection.getByRole('button', { name: /^Flat/ }).click();
+        await expect(page.locator('html')).toHaveAttribute('data-scrollbar-preview', 'true');
+        await expect(page.locator('html')).not.toHaveAttribute('data-scrollbar-preview', 'true', { timeout: 3000 });
     });
 });
