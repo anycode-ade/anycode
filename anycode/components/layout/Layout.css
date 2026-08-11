@@ -168,6 +168,14 @@
     padding: 0 !important;
 }
 
+/* Opening a search result activates another pane. Keep Dockview from
+   animating the pane/split transform and making the whole layout jump. */
+.layout .dv-pane-container.dv-animated .dv-view,
+.layout .dv-split-view-container.dv-animation .dv-view,
+.layout .dv-split-view-container.dv-animation .dv-sash {
+    transition: none !important;
+}
+
 .layout .dv-split-view-container .dv-sash-container .dv-sash,
 .layout .dv-split-view-container .dv-sash-container .dv-sash:not(.disabled):hover,
 .layout .dv-split-view-container .dv-sash-container .dv-sash:not(.disabled):active {

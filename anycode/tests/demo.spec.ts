@@ -371,7 +371,15 @@ test.describe('Anycode Live Demo Mode E2E Tests', () => {
         if (await searchInput.isVisible({ timeout: 5000 }).catch(() => false)) {
             await searchInput.fill('greet');
             await searchInput.press('Enter');
-            await expect(page.locator('.search-container').getByText('demo.py').first()).toBeVisible({ timeout: 10000 });
+            const searchPanel = page.locator('.search-container');
+            await expect(searchPanel.getByText('demo.py').first()).toBeVisible({ timeout: 10000 });
+
+            await searchPanel.locator('.file-path').filter({ hasText: 'demo.py' }).first().click();
+            const matchRow = searchPanel.locator('.search-item').first();
+            await expect(matchRow).toBeVisible({ timeout: 5000 });
+            await matchRow.click();
+
+            await expect.poll(() => page.evaluate(() => window.getSelection()?.toString() ?? '')).toBe('greet');
         }
     });
 

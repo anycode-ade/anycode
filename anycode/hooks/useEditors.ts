@@ -34,6 +34,13 @@ type UseEditorsParams = {
 
 type History = { changes: Change[]; index: number; };
 
+export type EditorSelectionRange = {
+    startLine: number;
+    startColumn: number;
+    endLine: number;
+    endColumn: number;
+};
+
 type EditorOpenRequest = {
     path: string;
     paneId: string;
@@ -42,6 +49,7 @@ type EditorOpenRequest = {
     mode: DiffMode;
     line?: number;
     column?: number;
+    selection?: EditorSelectionRange;
     history?: History;
 };
 
@@ -625,7 +633,11 @@ export const useEditors = ({ wsRef, isConnected, onFileClosed }: UseEditorsParam
         editor.setOriginalCode(request.originalContent);
         editor.setDiffMode(request.mode);
 
-        if (request.line !== undefined && request.column !== undefined) {
+        if (request.selection) {
+            const { startLine, startColumn, endLine, endColumn } = request.selection;
+            editor.requestFocus(startLine, startColumn, true);
+            editor.setSelectionRange(startLine, startColumn, endLine, endColumn, true);
+        } else if (request.line !== undefined && request.column !== undefined) {
             editor.requestFocus(request.line, request.column, true);
         } else {
             // const cursor = editor.getCursor();
@@ -670,6 +682,7 @@ export const useEditors = ({ wsRef, isConnected, onFileClosed }: UseEditorsParam
         keepPreviousEditor = true,
         activate = true,
         onComplete?: () => void,
+        selection?: EditorSelectionRange,
     ) => {
         if (!paneId && !hasVisibleEditorPane()) {
             onComplete?.();
@@ -698,6 +711,7 @@ export const useEditors = ({ wsRef, isConnected, onFileClosed }: UseEditorsParam
                     mode,
                     line,
                     column,
+                    selection,
                     history: existingFile.history,
                 });
                 if (activate) {
@@ -743,6 +757,7 @@ export const useEditors = ({ wsRef, isConnected, onFileClosed }: UseEditorsParam
                     mode,
                     line,
                     column,
+                    selection,
                     history: response.history,
                 });
                 setFiles((prev) => {

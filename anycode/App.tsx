@@ -20,7 +20,7 @@ import { useGit, type GitHistoryFile } from './hooks/useGit';
 import { useSearch } from './hooks/useSearch';
 import { useFileTree } from './hooks/useFileTree';
 import { useTerminals } from './hooks/useTerminals';
-import { getHistoricalFileId, useEditors } from './hooks/useEditors';
+import { getHistoricalFileId, useEditors, type EditorSelectionRange } from './hooks/useEditors';
 import { useAgents } from './hooks/useAgents';
 import { useLayout } from './hooks/useLayout';
 import { useTheme } from './hooks/useTheme';
@@ -259,13 +259,17 @@ const App: React.FC = () => {
     });
 
     const handleOpenFile = useEvent((
-        path: string, line?: number, column?: number, mode?: DiffMode,
+        path: string,
+        line?: number,
+        column?: number,
+        mode?: DiffMode,
+        selection?: EditorSelectionRange,
     ) => {
         const keepPreviousEditor = layoutActionsRef.current
             ?.isEditorPanelVisible(editors.activeEditorPaneId) ?? false;
         const paneId = resolveEditorPaneId();
         if (!paneId) return;
-        editors.openFile(path, line, column, paneId, mode, keepPreviousEditor);
+        editors.openFile(path, line, column, paneId, mode, keepPreviousEditor, true, undefined, selection);
     });
 
     const closeReview = useEvent((paneId: string) => {
@@ -413,8 +417,19 @@ const App: React.FC = () => {
         editors.setActiveFileId(fileId, paneId);
     });
 
-    const handleSearchResultClick = (filePath: string, match: SearchMatch) => {
-        handleOpenFile(filePath, match.line, match.column);
+    const handleSearchResultClick = (filePath: string, match: SearchMatch, pattern: string) => {
+        const patternLines = pattern.split(/\r?\n/);
+        const lastPatternLine = patternLines[patternLines.length - 1] ?? '';
+        const selection: EditorSelectionRange = {
+            startLine: match.line,
+            startColumn: match.column,
+            endLine: match.line + patternLines.length - 1,
+            endColumn: patternLines.length === 1
+                ? match.column + Array.from(pattern).length
+                : Array.from(lastPatternLine).length,
+        };
+
+        handleOpenFile(filePath, match.line, match.column, undefined, selection);
     };
 
     const handleOpenFileDiff = useEvent((

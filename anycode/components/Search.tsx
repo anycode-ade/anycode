@@ -98,7 +98,7 @@ interface SearchProps {
     onInputChange?: () => void;
     onCancel: () => void;
     onClear?: () => void;
-    onMatchClick: (filePath: string, match: SearchMatch) => void;
+    onMatchClick: (filePath: string, match: SearchMatch, pattern: string) => void;
     onFileClick: (filePath: string) => void;
     results: SearchResult[];
     searchEnded: boolean;
@@ -169,7 +169,7 @@ interface SearchMatchRowProps {
     searchPattern: string;
     itemRefs: React.MutableRefObject<Map<string, HTMLDivElement>>;
     onActivate: (itemKey: string | null) => void;
-    onMatchClick: (filePath: string, match: SearchMatch) => void;
+    onMatchClick: (filePath: string, match: SearchMatch, pattern: string) => void;
 }
 
 const SearchMatchRow = memo(({
@@ -194,7 +194,7 @@ const SearchMatchRow = memo(({
             }}
             onClick={() => {
                 onActivate(itemKey);
-                onMatchClick(filePath, match);
+                onMatchClick(filePath, match, searchPattern);
             }}
             role="option"
             aria-selected={activeItemKey === itemKey}
@@ -639,8 +639,8 @@ const Search = ({ id, wsRef, isConnected, focusRequestToken, inputValue, onInput
         }));
     }, []);
 
-    const handleMatchClick = useCallback((filePath: string, match: SearchMatch) => {
-        onMatchClick(filePath, match);
+    const handleMatchClick = useCallback((filePath: string, match: SearchMatch, pattern: string) => {
+        onMatchClick(filePath, match, pattern);
     }, [onMatchClick]);
 
     const navigateResultsByKey = useCallback((key: string): boolean => {
@@ -723,7 +723,7 @@ const Search = ({ id, wsRef, isConnected, focusRequestToken, inputValue, onInput
                 handleFileClick(selected.filePath);
             } else {
                 setVisibleMatches((prev) => ({ ...prev, [selected.filePath]: new Set() }));
-                onMatchClick(selected.filePath, selected.match);
+                onMatchClick(selected.filePath, selected.match, searchPatternRef.current);
                 resultsRef.current?.blur();
             }
             return true;
@@ -770,7 +770,7 @@ const Search = ({ id, wsRef, isConnected, focusRequestToken, inputValue, onInput
         setVisibleMatches((prev) => ({ ...prev, [nextMatch.filePath]: new Set() }));
         setActiveItemKey(nextMatch.key);
         shouldAutoScrollRef.current = true;
-        onMatchClick(nextMatch.filePath, nextMatch.match);
+        onMatchClick(nextMatch.filePath, nextMatch.match, searchPatternRef.current);
     }, [activeItemKey, matchItems, onMatchClick]);
 
     const handleExpandAll = useCallback(() => {
