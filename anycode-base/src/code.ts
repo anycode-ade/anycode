@@ -264,6 +264,14 @@ export class Code {
         // Loading those languages eagerly makes opening a Markdown file download
         // grammars for every possible fenced-code language. Only initialize
         // injections that are actually present in this document.
+        const declaredInjectionNames = this.query.captureNames.filter(
+            (name) => name.startsWith("injection.content."),
+        );
+        if (declaredInjectionNames.length === 0) {
+            this.hasInjections = false;
+            return;
+        }
+
         const injectionLanguages = new Set(
             this.query.captures(this.tree.rootNode)
                 .map((capture) => capture.name)

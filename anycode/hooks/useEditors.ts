@@ -630,7 +630,9 @@ export const useEditors = ({ wsRef, isConnected, onFileClosed }: UseEditorsParam
         const editor = editorArg ?? editorRefs.current.get(path);
         if (!editor) return;
 
-        editor.setOriginalCode(request.originalContent);
+        if (request.mode !== 'plain') {
+            editor.setOriginalCode(request.originalContent);
+        }
         editor.setDiffMode(request.mode);
 
         if (request.selection) {
