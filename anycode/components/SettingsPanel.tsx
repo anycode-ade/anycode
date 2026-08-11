@@ -7,6 +7,8 @@ import {
     type FontId,
     type FontSection,
     type FontSettings,
+    type ScrollbarSettingsState,
+    type ScrollbarStyle,
 } from '../hooks/useSettings';
 import './SettingsPanel.css';
 
@@ -28,6 +30,8 @@ interface SettingsPanelProps {
     onFileIconsOpacityChange?: (opacity: number) => void;
     fontSettings: FontSettings;
     onFontSettingsChange: (section: FontSection, patch: Partial<FontConfig>) => void;
+    scrollbarSettings?: ScrollbarSettingsState;
+    onScrollbarSettingsChange?: (patch: Partial<ScrollbarSettingsState>) => void;
 }
 
 type FontOption = { id: FontId; name: string };
@@ -251,6 +255,51 @@ const FileIconsStyleCard = React.memo(({
 });
 FileIconsStyleCard.displayName = 'FileIconsStyleCard';
 
+const SCROLLBAR_WIDTH_OPTIONS = [4, 6, 8, 10, 12, 14, 16];
+const SCROLLBAR_MIN_SIZE_OPTIONS = [15, 20, 28, 36, 48];
+
+interface ScrollbarStyleCardProps {
+    styleId: ScrollbarStyle;
+    name: string;
+    description: string;
+    badge: string;
+    isActive: boolean;
+    onSelect: (style: ScrollbarStyle) => void;
+}
+
+const ScrollbarStyleCard = React.memo(({
+    styleId,
+    name,
+    description,
+    badge,
+    isActive,
+    onSelect,
+}: ScrollbarStyleCardProps) => {
+    return (
+        <button
+            className={`settings-card scrollbar-style-card ${isActive ? 'active' : ''}`}
+            onClick={() => onSelect(styleId)}
+            type="button"
+        >
+            <div className="scrollbar-style-card-content">
+                <div className="settings-card-header">
+                    <span className="settings-card-name">{name}</span>
+                    <span className={`settings-card-badge ${isActive ? 'dark' : 'light'}`}>
+                        {badge}
+                    </span>
+                </div>
+                <div className="settings-card-file icon-style-desc">
+                    {description}
+                </div>
+            </div>
+            <div className="scrollbar-style-preview-track">
+                <div className={`scrollbar-style-preview-thumb preview-${styleId}`} />
+            </div>
+        </button>
+    );
+});
+ScrollbarStyleCard.displayName = 'ScrollbarStyleCard';
+
 const SettingsPanelComponent: React.FC<SettingsPanelProps> = ({
     wsRef,
     isConnected,
@@ -262,6 +311,8 @@ const SettingsPanelComponent: React.FC<SettingsPanelProps> = ({
     onFileIconsOpacityChange,
     fontSettings,
     onFontSettingsChange,
+    scrollbarSettings,
+    onScrollbarSettingsChange,
 }) => {
     const [themes, setThemes] = useState<ThemeItem[]>([]);
     const scrollRef = usePersistedScroll<HTMLDivElement>('settings-panel', 'session', [themes]);
@@ -381,6 +432,70 @@ const SettingsPanelComponent: React.FC<SettingsPanelProps> = ({
                         <span className="settings-slider-value">
                             {Math.round(fileIconsOpacity * 100)}%
                         </span>
+                    </div>
+                </div>
+            )}
+
+            {scrollbarSettings && onScrollbarSettingsChange && (
+                <div className="settings-section">
+                    <h3 className="settings-section-title">Scrollbar</h3>
+                    <div className="themes-grid">
+                        <ScrollbarStyleCard
+                            styleId="mac"
+                            name="Mac"
+                            badge="Rounded"
+                            description="Classic smooth rounded pill scrollbar thumb."
+                            isActive={scrollbarSettings.style === 'mac'}
+                            onSelect={(style) => onScrollbarSettingsChange({ style })}
+                        />
+                        <ScrollbarStyleCard
+                            styleId="windows"
+                            name="Windows"
+                            badge="Flat"
+                            description="Clean flat rectangular scrollbar thumb with sharp corners."
+                            isActive={scrollbarSettings.style === 'windows'}
+                            onSelect={(style) => onScrollbarSettingsChange({ style })}
+                        />
+                        <ScrollbarStyleCard
+                            styleId="minimal"
+                            name="Minimal"
+                            badge="Thin"
+                            description="Ultra-thin minimalist line scrollbar indicator."
+                            isActive={scrollbarSettings.style === 'minimal'}
+                            onSelect={(style) => onScrollbarSettingsChange({ style })}
+                        />
+                    </div>
+
+                    <div className="font-choice-group" style={{ marginTop: '8px' }}>
+                        <span className="font-choice-label">Scrollbar Width</span>
+                        <div className="font-choice-row">
+                            {SCROLLBAR_WIDTH_OPTIONS.map((w) => (
+                                <button
+                                    key={w}
+                                    className={`settings-card font-choice-card ${scrollbarSettings.width === w ? 'active' : ''}`}
+                                    onClick={() => onScrollbarSettingsChange({ width: w })}
+                                    type="button"
+                                >
+                                    <span className="font-choice-value">{w}px {w === 8 ? '(Default)' : ''}</span>
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    <div className="font-choice-group" style={{ marginTop: '4px' }}>
+                        <span className="font-choice-label">Min Height</span>
+                        <div className="font-choice-row">
+                            {SCROLLBAR_MIN_SIZE_OPTIONS.map((size) => (
+                                <button
+                                    key={size}
+                                    className={`settings-card font-choice-card ${scrollbarSettings.minSize === size ? 'active' : ''}`}
+                                    onClick={() => onScrollbarSettingsChange({ minSize: size })}
+                                    type="button"
+                                >
+                                    <span className="font-choice-value">{size}px {size === 20 ? '(Default)' : size === 28 ? '(Touch)' : ''}</span>
+                                </button>
+                            ))}
+                        </div>
                     </div>
                 </div>
             )}

@@ -85,8 +85,36 @@ const loadFontSettings = (): FontSettings => {
     }
 };
 
+export type ScrollbarStyle = 'mac' | 'windows' | 'minimal';
+
+export interface ScrollbarSettingsState {
+    style: ScrollbarStyle;
+    width: number;
+    minSize: number;
+}
+
+const DEFAULT_SCROLLBAR_SETTINGS: ScrollbarSettingsState = {
+    style: 'mac',
+    width: 8,
+    minSize: 20,
+};
+
+const loadScrollbarSettings = (): ScrollbarSettingsState => {
+    try {
+        const saved = JSON.parse(localStorage.getItem('scrollbarSettings') || '{}');
+        return {
+            style: ['mac', 'windows', 'minimal'].includes(saved.style) ? saved.style : 'mac',
+            width: typeof saved.width === 'number' ? Math.max(2, Math.min(24, saved.width)) : 8,
+            minSize: typeof saved.minSize === 'number' ? Math.max(10, Math.min(100, saved.minSize)) : 20,
+        };
+    } catch {
+        return DEFAULT_SCROLLBAR_SETTINGS;
+    }
+};
+
 export const useSettings = () => {
     const [fontSettings, setFontSettings] = useState<FontSettings>(loadFontSettings);
+    const [scrollbarSettings, setScrollbarSettings] = useState<ScrollbarSettingsState>(loadScrollbarSettings);
 
     useEffect(() => {
         const root = document.documentElement;
@@ -103,6 +131,13 @@ export const useSettings = () => {
         localStorage.setItem('fontSettings', JSON.stringify(fontSettings));
     }, [fontSettings]);
 
+    useEffect(() => {
+        window.dispatchEvent(new CustomEvent('anycode:scrollbar-settings', {
+            detail: scrollbarSettings,
+        }));
+        localStorage.setItem('scrollbarSettings', JSON.stringify(scrollbarSettings));
+    }, [scrollbarSettings]);
+
     const updateFontSettings = useCallback((
         section: FontSection,
         patch: Partial<FontConfig>,
@@ -113,5 +148,12 @@ export const useSettings = () => {
         }));
     }, []);
 
-    return { fontSettings, updateFontSettings };
+    const updateScrollbarSettings = useCallback((patch: Partial<ScrollbarSettingsState>) => {
+        setScrollbarSettings((current) => ({
+            ...current,
+            ...patch,
+        }));
+    }, []);
+
+    return { fontSettings, updateFontSettings, scrollbarSettings, updateScrollbarSettings };
 };
