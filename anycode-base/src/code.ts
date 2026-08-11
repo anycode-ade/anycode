@@ -23,6 +23,8 @@ import {
 } from './utils';
 import type { Lang } from './lang';
 
+const MAX_FOLDING_LINES = 5000;
+
 import javascript from './langs/javascript';
 import typescript from './langs/typescript';
 import tsx from './langs/tsx';
@@ -783,6 +785,12 @@ export class Code {
     }
 
     public getFoldRanges(): FoldRange[] {
+        if (this.linesLength() > MAX_FOLDING_LINES) {
+            this.foldRanges = [];
+            this.foldRangesInvalidated = false;
+            return this.foldRanges;
+        }
+
         if (this.foldRangesInvalidated) {
             this.updateFoldRanges();
             this.foldRangesInvalidated = false;
