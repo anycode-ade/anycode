@@ -483,8 +483,10 @@ export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
             if (response.success) {
                 setPushStatus({ state: 'success', message: `Pushed ${gitBranch || 'changes'}` });
                 fetchGitStatus();
+                window.setTimeout(() => setPushStatus({ state: 'idle' }), 4000);
             } else {
                 setPushStatus({ state: 'error', message: `Push failed: ${response.error}` });
+                window.setTimeout(() => setPushStatus({ state: 'idle' }), 6000);
             }
         });
     }, [wsRef, isConnected, fetchGitStatus, gitBranch, pushStatus.state]);
