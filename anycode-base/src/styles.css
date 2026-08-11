@@ -5,6 +5,17 @@
   overflow: hidden;
 }
 
+:root {
+  --smr-thumb-radius: 4px;
+  --smr-thumb-shadow: 0 0 0 1px rgba(0, 0, 0, 0.1);
+}
+
+:root[data-scrollbar-style="flat"],
+.smr[data-scrollbar-style="flat"] {
+  --smr-thumb-radius: 0px;
+  --smr-thumb-shadow: none;
+}
+
 .anyeditor {
   --anycode-line-height: 20px;
   display: flex;
@@ -57,16 +68,16 @@
 
 .smrt {
   position: absolute;
-  right: 2px;
+  right: calc((14px - var(--smr-custom-width, 8px)) / 2);
   top: 0;
   width: var(--smr-custom-width, 8px);
-  min-height: 20px;
-  border-radius: 4px;
+  min-height: var(--smr-min-size, 20px);
+  border-radius: var(--smr-thumb-radius, 4px);
   background: rgba(160, 160, 160, 0.45);
   z-index: 10;
   pointer-events: auto;
   cursor: pointer;
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.1);
+  box-shadow: var(--smr-thumb-shadow, 0 0 0 1px rgba(0, 0, 0, 0.1));
   opacity: 0;
   transition: opacity 300ms ease, background-color 100ms ease, width 100ms ease, right 100ms ease;
 }
@@ -74,26 +85,14 @@
 /* --- Scrollbar Style Presets --- */
 
 /* Mac (Rounded pill - default) */
-.smr.style-mac .smrt {
-  border-radius: 4px;
+.smr.style-rounded .smrt {
+  border-radius: var(--smr-thumb-radius, 4px);
 }
 
 /* Windows (Flat sharp rectangle) */
-.smr.style-windows .smrt {
-  border-radius: 0px;
-  box-shadow: none;
-}
-
-/* Minimal (Thin line) */
-.smr.style-minimal .smrt {
-  width: var(--smr-custom-width, 4px);
-  border-radius: 2px;
-  right: 1px;
-}
-
-.smr.style-minimal:hover .smrt {
-  width: var(--smr-custom-width, 6px);
-  right: 0px;
+.smr.style-flat .smrt {
+  border-radius: var(--smr-thumb-radius, 0px);
+  box-shadow: var(--smr-thumb-shadow, none);
 }
 
 .smr:hover .smrt,
@@ -105,15 +104,23 @@
   transition: opacity 0ms, background-color 100ms ease, width 100ms ease, right 100ms ease;
 }
 
+:root[data-scrollbar-always-show="true"] .smr .smrt {
+  opacity: 1;
+}
+
+:root[data-scrollbar-preview="true"] .smr .smrt {
+  opacity: 1;
+}
+
 .smr:hover .smrt {
   background: rgba(180, 180, 180, 0.7);
   width: var(--smr-custom-width, 10px);
-  right: 1px;
+  right: calc((14px - var(--smr-custom-width, 10px)) / 2);
 }
 
-.smr.style-windows:hover .smrt {
+.smr.style-flat:hover .smrt {
   width: var(--smr-custom-width, 10px);
-  border-radius: 0px;
+  border-radius: var(--smr-thumb-radius, 0px);
 }
 
 .smrt:hover,
@@ -121,7 +128,7 @@
 .smr.dragging .smrt {
   background: rgba(220, 220, 220, 0.9);
   width: var(--smr-custom-width, 12px);
-  right: 0px;
+  right: calc((14px - var(--smr-custom-width, 12px)) / 2);
 }
 
 @media (pointer: coarse), (max-width: 768px) {
@@ -130,8 +137,8 @@
   }
 
   .smrt {
-    width: 10px;
-    right: 3px;
+    width: var(--smr-custom-width, 10px);
+    right: calc((16px - var(--smr-custom-width, 10px)) / 2);
     min-height: 28px;
     border-radius: 5px;
   }
@@ -141,8 +148,8 @@
   .smrt:hover,
   .smrt.dragging,
   .smr.dragging .smrt {
-    width: 12px;
-    right: 2px;
+    width: var(--smr-custom-width, 12px);
+    right: calc((16px - var(--smr-custom-width, 12px)) / 2);
   }
 }
 

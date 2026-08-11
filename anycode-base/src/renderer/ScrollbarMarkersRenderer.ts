@@ -280,21 +280,40 @@ export class ScrollbarMarkersRenderer {
 
     private applyScrollbarSettings(state: EditorState) {
         const scrollbarSettings = state.settings?.scrollbar;
-        const style = scrollbarSettings?.style || 'mac';
+        const style = scrollbarSettings?.style || 'rounded';
 
-        this.element.classList.remove('style-mac', 'style-windows', 'style-minimal');
+        this.element.classList.remove('style-rounded', 'style-flat');
         this.element.classList.add(`style-${style}`);
+        if (scrollbarSettings?.style !== undefined) {
+            this.element.dataset.scrollbarStyle = style;
+        } else {
+            delete this.element.dataset.scrollbarStyle;
+        }
 
         if (scrollbarSettings?.width !== undefined && scrollbarSettings.width > 0) {
             this.element.style.setProperty('--smr-custom-width', `${scrollbarSettings.width}px`);
         } else {
             this.element.style.removeProperty('--smr-custom-width');
         }
+
+        if (scrollbarSettings?.minSize !== undefined && scrollbarSettings.minSize > 0) {
+            this.element.style.setProperty('--smr-min-size', `${scrollbarSettings.minSize}px`);
+        } else {
+            this.element.style.removeProperty('--smr-min-size');
+        }
     }
 
     private getMinimumSliderSize(): number {
         if (this.state?.settings?.scrollbar?.minSize !== undefined && this.state.settings.scrollbar.minSize > 0) {
             return this.state.settings.scrollbar.minSize;
+        }
+        if (typeof window !== 'undefined') {
+            const cssMinimumSize = Number.parseFloat(
+                window.getComputedStyle(this.element).getPropertyValue('--smr-min-size')
+            );
+            if (Number.isFinite(cssMinimumSize) && cssMinimumSize > 0) {
+                return cssMinimumSize;
+            }
         }
         if (typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(pointer: coarse)').matches) {
             return 28;

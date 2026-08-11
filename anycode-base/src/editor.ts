@@ -26,7 +26,7 @@ import { Search } from "./search";
 import { computeGitChanges, DiffInfo } from "./diff";
 import { getGapElementData } from "./renderer/DiffRenderer";
 
-export type ScrollbarStyle = 'mac' | 'windows' | 'minimal';
+export type ScrollbarStyle = 'rounded' | 'flat';
 
 export interface ScrollbarSettings {
     style?: ScrollbarStyle;
@@ -137,7 +137,6 @@ export class AnycodeEditor {
     private wordHighlightEnabled: boolean;
     private scrollbarMarkersEnabled: boolean;
     private wordHighlight: WordHighlight | null = null;
-    private scrollbarSettingsHandler: ((event: Event) => void) | null = null;
 
     constructor(
         initialText = '',
@@ -162,26 +161,13 @@ export class AnycodeEditor {
             this.offset = 0;
         }
 
-        let initialScrollbarStyle = options.scrollbarStyle;
-        let initialScrollbarMinSize = options.scrollbarMinSize;
-        let initialScrollbarWidth = options.scrollbarWidth;
-
-        if (typeof window !== 'undefined') {
-            try {
-                const saved = JSON.parse(localStorage.getItem('scrollbarSettings') || '{}');
-                if (!initialScrollbarStyle && saved.style) initialScrollbarStyle = saved.style;
-                if (initialScrollbarMinSize === undefined && typeof saved.minSize === 'number') initialScrollbarMinSize = saved.minSize;
-                if (initialScrollbarWidth === undefined && typeof saved.width === 'number') initialScrollbarWidth = saved.width;
-            } catch {}
-        }
-
         this.settings = {
             lineHeight: 20,
             buffer: 25,
             scrollbar: {
-                style: initialScrollbarStyle ?? 'mac',
-                minSize: initialScrollbarMinSize,
-                width: initialScrollbarWidth,
+                style: options.scrollbarStyle,
+                minSize: options.scrollbarMinSize,
+                width: options.scrollbarWidth,
             },
         };
         if (typeof window !== 'undefined') {
@@ -204,12 +190,6 @@ export class AnycodeEditor {
             };
             window.addEventListener('anycode:editor-font-settings', this.editorFontSettingsHandler);
 
-            this.scrollbarSettingsHandler = (event: Event) => {
-                const detail = (event as CustomEvent<ScrollbarSettings>).detail;
-                if (!detail) return;
-                this.setScrollbarSettings(detail);
-            };
-            window.addEventListener('anycode:scrollbar-settings', this.scrollbarSettingsHandler);
         }
 
         if (options.theme) {
@@ -273,10 +253,6 @@ export class AnycodeEditor {
         if (this.editorFontSettingsHandler && typeof window !== 'undefined') {
             window.removeEventListener('anycode:editor-font-settings', this.editorFontSettingsHandler);
             this.editorFontSettingsHandler = null;
-        }
-        if (this.scrollbarSettingsHandler && typeof window !== 'undefined') {
-            window.removeEventListener('anycode:scrollbar-settings', this.scrollbarSettingsHandler);
-            this.scrollbarSettingsHandler = null;
         }
         this.clearPendingHover();
         this.closeHover();

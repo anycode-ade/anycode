@@ -255,7 +255,7 @@ const FileIconsStyleCard = React.memo(({
 });
 FileIconsStyleCard.displayName = 'FileIconsStyleCard';
 
-const SCROLLBAR_WIDTH_OPTIONS = [4, 6, 8, 10, 12, 14, 16];
+const SCROLLBAR_WIDTH_OPTIONS = [4, 6, 8, 10, 12];
 const SCROLLBAR_MIN_SIZE_OPTIONS = [15, 20, 28, 36, 48];
 
 interface ScrollbarStyleCardProps {
@@ -441,29 +441,39 @@ const SettingsPanelComponent: React.FC<SettingsPanelProps> = ({
                     <h3 className="settings-section-title">Scrollbar</h3>
                     <div className="themes-grid">
                         <ScrollbarStyleCard
-                            styleId="mac"
-                            name="Mac"
+                            styleId="rounded"
+                            name="Rounded"
                             badge="Rounded"
                             description="Classic smooth rounded pill scrollbar thumb."
-                            isActive={scrollbarSettings.style === 'mac'}
+                            isActive={scrollbarSettings.style === 'rounded'}
                             onSelect={(style) => onScrollbarSettingsChange({ style })}
                         />
                         <ScrollbarStyleCard
-                            styleId="windows"
-                            name="Windows"
+                            styleId="flat"
+                            name="Flat"
                             badge="Flat"
                             description="Clean flat rectangular scrollbar thumb with sharp corners."
-                            isActive={scrollbarSettings.style === 'windows'}
+                            isActive={scrollbarSettings.style === 'flat'}
                             onSelect={(style) => onScrollbarSettingsChange({ style })}
                         />
-                        <ScrollbarStyleCard
-                            styleId="minimal"
-                            name="Minimal"
-                            badge="Thin"
-                            description="Ultra-thin minimalist line scrollbar indicator."
-                            isActive={scrollbarSettings.style === 'minimal'}
-                            onSelect={(style) => onScrollbarSettingsChange({ style })}
-                        />
+                    </div>
+
+                    <div className="settings-option">
+                        <div className="settings-option-info">
+                            <span className="settings-option-label">Always show</span>
+                            <span className="settings-option-desc">
+                                Keep the scrollbar thumb visible instead of fading it after scrolling.
+                            </span>
+                        </div>
+                        <button
+                            type="button"
+                            className={`settings-toggle-switch ${scrollbarSettings.alwaysShow ? 'active' : ''}`}
+                            aria-label="Always show scrollbar"
+                            aria-pressed={scrollbarSettings.alwaysShow}
+                            onClick={() => onScrollbarSettingsChange({ alwaysShow: !scrollbarSettings.alwaysShow })}
+                        >
+                            <span className="settings-toggle-knob" />
+                        </button>
                     </div>
 
                     <div className="font-choice-group" style={{ marginTop: '8px' }}>

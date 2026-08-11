@@ -580,19 +580,14 @@
     transition: all 0.2s ease;
 }
 
-.scrollbar-style-preview-thumb.preview-mac {
+.scrollbar-style-preview-thumb.preview-rounded {
     width: 8px;
     border-radius: 4px;
 }
 
-.scrollbar-style-preview-thumb.preview-windows {
+.scrollbar-style-preview-thumb.preview-flat {
     width: 10px;
     border-radius: 0px;
-}
-
-.scrollbar-style-preview-thumb.preview-minimal {
-    width: 4px;
-    border-radius: 2px;
 }
 
 .scrollbar-style-card.active .scrollbar-style-preview-thumb {
