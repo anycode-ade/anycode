@@ -10,19 +10,19 @@ interface VfsNode {
 }
 
 const SCROLL_DEMO_CONTENT = Array.from({ length: 250 }, (_, section) => {
-    const start = section * 10;
-    return `# Section ${section + 1}: generated records\n\n` +
+    return `// Section ${section + 1}: generated records\n\n` +
         Array.from({ length: 10 }, (_, item) => {
-            const index = start + item + 1;
-            return `def process_record_${index}(payload: dict[str, object]) -> dict[str, object]:\n` +
-                `    """Normalize record ${index} for the demo pipeline."""\n` +
-                `    record = {\n` +
-                `        "id": ${index},\n` +
-                `        "name": payload.get("name", "record-${index}"),\n` +
-                `        "active": bool(payload.get("active", True)),\n` +
-                `        "score": round(float(payload.get("score", 0.0)), 2),\n` +
-                `    }\n` +
-                `    return record\n\n`;
+            const index = section * 10 + item + 1;
+            return `export function processRecord${index}(payload: Record<string, unknown>): Record<string, unknown> {\n` +
+                `    /** Normalize record ${index} for the demo pipeline. */\n` +
+                `    const record: Record<string, unknown> = {\n` +
+                `        id: ${index},\n` +
+                `        name: payload.name ?? "record-${index}",\n` +
+                `        active: Boolean(payload.active ?? true),\n` +
+                `        score: Number(payload.score ?? 0),\n` +
+                `    };\n` +
+                `    return record;\n` +
+                `}\n\n`;
         }).join('');
 }).join('');
 
@@ -76,11 +76,11 @@ if __name__ == "__main__":
     print(msg)
 `,
     },
-    'scroll-demo.py': {
-        path: 'scroll-demo.py',
-        name: 'scroll-demo.py',
+    'scroll-demo.ts': {
+        path: 'scroll-demo.ts',
+        name: 'scroll-demo.ts',
         is_dir: false,
-        content: `"""Long file used to exercise virtual scrolling in the live demo."""\n\n${SCROLL_DEMO_CONTENT}`,
+        content: `/** Long file used to exercise virtual scrolling in the live demo. */\n\n${SCROLL_DEMO_CONTENT}`,
     },
     'README.md': {
         path: 'README.md',
