@@ -9,7 +9,7 @@ interface VfsNode {
     content?: string;
 }
 
-const SCROLL_DEMO_CONTENT = Array.from({ length: 250 }, (_, section) => {
+const SCROLL_DEMO_CONTENT = Array.from({ length: 25 }, (_, section) => {
     const start = section * 10;
     return `# Section ${section + 1}: generated records\n\n` +
         Array.from({ length: 10 }, (_, item) => {
