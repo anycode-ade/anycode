@@ -1194,12 +1194,22 @@ impl GitManager {
     }
 
     /// Push to remote
-    pub fn push(&self) -> Result<()> {
+    pub fn push(&self) -> Result<&'static str> {
         let repo = self.repo()?;
         let mut remote = repo.find_remote("origin")?;
         let head = repo.head()?;
 
         let branch_name = head.shorthand().context("Detached HEAD state")?;
+        let local_oid = head.target().context("HEAD has no target")?;
+        let remote_oid = repo
+            .find_reference(&format!("refs/remotes/origin/{}", branch_name))
+            .ok()
+            .and_then(|reference| reference.target());
+        let status = if remote_oid == Some(local_oid) {
+            "up_to_date"
+        } else {
+            "pushed"
+        };
 
         let refspec = format!("refs/heads/{}:refs/heads/{}", branch_name, branch_name);
 
@@ -1214,7 +1224,7 @@ impl GitManager {
         remote.push(&[&refspec], Some(&mut push_opts))?;
 
         info!("Pushed to origin/{}", branch_name);
-        Ok(())
+        Ok(status)
     }
 
     pub fn list_branches(&self) -> Result<Vec<GitBranchInfo>> {

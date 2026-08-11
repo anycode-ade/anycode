@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Socket } from 'socket.io-client';
+import { GitActionState } from '../components/ChangesPanel';
 import type { ChangedFile } from '../components';
 
 type UseGitParams = {
@@ -117,10 +118,10 @@ export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
     const [gitBranch, setGitBranch] = useState<string>('');
     const [branches, setBranches] = useState<GitBranch[]>([]);
     const [isSwitchingBranch, setIsSwitchingBranch] = useState(false);
-    const [pushStatus, setPushStatus] = useState<{ state: 'idle' | 'pushing' | 'success' | 'error'; message?: string }>({ state: 'idle' });
-    const showGitStatus = useCallback((state: 'pushing' | 'success' | 'error', message: string, timeout = 4000) => {
+    const [pushStatus, setPushStatus] = useState<{ state: GitActionState; message?: string }>({ state: GitActionState.Idle });
+    const showGitStatus = useCallback((state: GitActionState, message: string, timeout = 4000) => {
         setPushStatus({ state, message });
-        if (state !== 'pushing') window.setTimeout(() => setPushStatus({ state: 'idle' }), timeout);
+        if (state !== GitActionState.InProgress) window.setTimeout(() => setPushStatus({ state: GitActionState.Idle }), timeout);
     }, []);
     const [historyCommits, setHistoryCommits] = useState<GitHistoryCommit[]>([]);
     const [historyFiles, setHistoryFiles] = useState<Record<string, GitHistoryFile[]>>({});
@@ -465,15 +466,15 @@ export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
                 return;
             }
 
-            showGitStatus('pushing', 'Committing…');
+            showGitStatus(GitActionState.InProgress, 'Committing…');
             wsRef.current.emit('git:commit', { message }, (response: any) => {
                 if (response.success) {
-                    showGitStatus('success', 'Committed');
+                    showGitStatus(GitActionState.Success, 'Committed');
                     fetchGitStatus();
                     refreshHistory();
                     resolve(true);
                 } else {
-                    showGitStatus('error', 'Commit failed: ' + response.error, 6000);
+                    showGitStatus(GitActionState.Error, 'Commit failed: ' + response.error, 6000);
                     resolve(false);
                 }
             });
@@ -481,16 +482,19 @@ export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
     }, [wsRef, isConnected, fetchGitStatus, refreshHistory, showGitStatus]);
 
     const push = useCallback(() => {
-        if (!wsRef.current || !isConnected || pushStatus.state === 'pushing') return;
+        if (!wsRef.current || !isConnected || pushStatus.state === GitActionState.InProgress) return;
 
-        showGitStatus('pushing', 'Pushing…');
+            showGitStatus(GitActionState.InProgress, 'Pushing…');
 
         wsRef.current.emit('git:push', {}, (response: any) => {
             if (response.success) {
-                showGitStatus('success', `Pushed ${gitBranch || 'changes'}`);
+                showGitStatus(
+                    GitActionState.Success,
+                    response.status === 'up_to_date' ? 'Everything up-to-date' : `Pushed ${gitBranch || 'changes'}`,
+                );
                 fetchGitStatus();
             } else {
-                showGitStatus('error', `Push failed: ${response.error}`, 6000);
+                showGitStatus(GitActionState.Error, `Push failed: ${response.error}`, 6000);
             }
         });
     }, [wsRef, isConnected, fetchGitStatus, gitBranch, pushStatus.state, showGitStatus]);
@@ -498,28 +502,34 @@ export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
     const pull = useCallback(() => {
         if (!wsRef.current || !isConnected) return;
 
+        if (pushStatus.state === GitActionState.InProgress) return;
+        showGitStatus(GitActionState.InProgress, 'Pulling…');
         wsRef.current.emit('git:pull', {}, (response: any) => {
             if (response.success) {
                 const status = response.status;
 
                 if (status === 'up_to_date') {
-                    alert('Already up to date');
+                    showGitStatus(GitActionState.Success, 'Already up to date');
                 } else if (status === 'fast_forward') {
-                    alert('Fast-forwarded');
+                    showGitStatus(GitActionState.Success, 'Fast-forwarded');
                 } else if (status === 'merged') {
-                    alert('Merged successfully');
+                    showGitStatus(GitActionState.Success, 'Merged successfully');
                 } else if (status === 'conflict') {
                     const files = response.files || [];
-                    alert(`Merge conflicts in:\n${files.join('\n')}\n\nResolve conflicts and commit.`);
+                    showGitStatus(
+                        GitActionState.Error,
+                        `Merge conflicts: ${files.join(', ')}. Resolve and commit.`,
+                        8000,
+                    );
                 }
 
                 fetchGitStatus();
                 if (status !== 'conflict') refreshHistory();
             } else {
-                alert('Pull failed: ' + response.error);
+                showGitStatus(GitActionState.Error, 'Pull failed: ' + response.error, 6000);
             }
         });
-    }, [wsRef, isConnected, fetchGitStatus, refreshHistory]);
+    }, [wsRef, isConnected, fetchGitStatus, refreshHistory, pushStatus.state, showGitStatus]);
 
     const revert = useCallback((path: string) => {
         if (!wsRef.current || !isConnected) return;

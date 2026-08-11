@@ -323,7 +323,7 @@ pub async fn handle_git_push(ack: AckSender, state: State<AppState>) {
     info!("Received git:push");
     let result = {
         let git = state.git_manager.lock().await;
-        git.push().map(|_| json!({}))
+        git.push().map(|status| json!({ "status": status }))
     };
     send_response(ack, result);
 }

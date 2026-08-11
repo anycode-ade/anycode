@@ -6,6 +6,13 @@ import './ChangesPanel.css';
 
 const COMMIT_MESSAGE_STORAGE_KEY = 'commitMessage';
 
+export enum GitActionState {
+    Idle = 'idle',
+    InProgress = 'in_progress',
+    Success = 'success',
+    Error = 'error',
+}
+
 export interface ChangedFile {
     path: string;
     status: 'modified' | 'added' | 'deleted' | 'renamed' | 'conflict';
@@ -28,7 +35,7 @@ interface ChangesPanelProps {
     onBranchChange: (branch: string) => Promise<boolean>;
     onCommit: (message: string) => Promise<boolean>;
     onPush: () => void;
-    pushStatus: { state: 'idle' | 'pushing' | 'success' | 'error'; message?: string };
+    pushStatus: { state: GitActionState; message?: string };
     onPull: () => void;
     onRevert: (path: string) => void;
     onStage: (path: string) => void;
@@ -497,9 +504,9 @@ const ChangesPanelImpl: React.FC<ChangesPanelProps> = ({
                     </select>
                 </div>
                 <div className="changes-actions-right">
-                    {pushStatus.state !== 'idle' && (
+                    {pushStatus.state !== GitActionState.Idle && (
                         <span className={`changes-push-status changes-push-status-${pushStatus.state}`} role="status">
-                            {pushStatus.state === 'pushing' && <span className="changes-push-spinner" aria-hidden="true" />}
+                            {pushStatus.state === GitActionState.InProgress && <span className="changes-push-spinner" aria-hidden="true" />}
                             {pushStatus.message}
                         </span>
                     )}
@@ -523,7 +530,7 @@ const ChangesPanelImpl: React.FC<ChangesPanelProps> = ({
                     <button
                         className="changes-action-btn changes-action-btn-icon"
                         onClick={onPush}
-                        disabled={pushStatus.state === 'pushing'}
+                        disabled={pushStatus.state === GitActionState.InProgress}
                         title="Push"
                         aria-label="Push"
                     >
