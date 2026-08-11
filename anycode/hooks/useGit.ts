@@ -118,6 +118,10 @@ export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
     const [branches, setBranches] = useState<GitBranch[]>([]);
     const [isSwitchingBranch, setIsSwitchingBranch] = useState(false);
     const [pushStatus, setPushStatus] = useState<{ state: 'idle' | 'pushing' | 'success' | 'error'; message?: string }>({ state: 'idle' });
+    const showGitStatus = useCallback((state: 'pushing' | 'success' | 'error', message: string, timeout = 4000) => {
+        setPushStatus({ state, message });
+        if (state !== 'pushing') window.setTimeout(() => setPushStatus({ state: 'idle' }), timeout);
+    }, []);
     const [historyCommits, setHistoryCommits] = useState<GitHistoryCommit[]>([]);
     const [historyFiles, setHistoryFiles] = useState<Record<string, GitHistoryFile[]>>({});
     const [historyHasMore, setHistoryHasMore] = useState(false);
@@ -461,35 +465,35 @@ export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
                 return;
             }
 
+            showGitStatus('pushing', 'Committing…');
             wsRef.current.emit('git:commit', { message }, (response: any) => {
                 if (response.success) {
+                    showGitStatus('success', 'Committed');
                     fetchGitStatus();
                     refreshHistory();
                     resolve(true);
                 } else {
-                    alert('Commit failed: ' + response.error);
+                    showGitStatus('error', 'Commit failed: ' + response.error, 6000);
                     resolve(false);
                 }
             });
         });
-    }, [wsRef, isConnected, fetchGitStatus, refreshHistory]);
+    }, [wsRef, isConnected, fetchGitStatus, refreshHistory, showGitStatus]);
 
     const push = useCallback(() => {
         if (!wsRef.current || !isConnected || pushStatus.state === 'pushing') return;
 
-        setPushStatus({ state: 'pushing', message: 'Pushing…' });
+        showGitStatus('pushing', 'Pushing…');
 
         wsRef.current.emit('git:push', {}, (response: any) => {
             if (response.success) {
-                setPushStatus({ state: 'success', message: `Pushed ${gitBranch || 'changes'}` });
+                showGitStatus('success', `Pushed ${gitBranch || 'changes'}`);
                 fetchGitStatus();
-                window.setTimeout(() => setPushStatus({ state: 'idle' }), 4000);
             } else {
-                setPushStatus({ state: 'error', message: `Push failed: ${response.error}` });
-                window.setTimeout(() => setPushStatus({ state: 'idle' }), 6000);
+                showGitStatus('error', `Push failed: ${response.error}`, 6000);
             }
         });
-    }, [wsRef, isConnected, fetchGitStatus, gitBranch, pushStatus.state]);
+    }, [wsRef, isConnected, fetchGitStatus, gitBranch, pushStatus.state, showGitStatus]);
 
     const pull = useCallback(() => {
         if (!wsRef.current || !isConnected) return;
