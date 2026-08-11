@@ -61,7 +61,6 @@
   top: 0;
   width: var(--smr-custom-width, 8px);
   min-height: 20px;
-  border-radius: 4px;
   background: rgba(160, 160, 160, 0.45);
   z-index: 10;
   pointer-events: auto;
