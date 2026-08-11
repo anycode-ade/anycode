@@ -491,6 +491,12 @@ export const useAgents = ({
                         // send_prompt adds the complete user message before ACP
                         // echoes user_message_chunk for the live prompt.
                         if (lastMessage?.role === 'user') {
+                            if (lastMessage.client_id && lastMessage.content === projectedItem.content) {
+                                messages[messages.length - 1] = {
+                                    ...lastMessage,
+                                    client_id: undefined,
+                                };
+                            }
                             continue;
                         }
                     }
@@ -552,6 +558,18 @@ export const useAgents = ({
                     messages: [message],
                     isActive: true,
                 };
+            }
+
+            if (message.role === 'user') {
+                const lastMessage = existing.messages[existing.messages.length - 1];
+                if (lastMessage?.role === 'user' && lastMessage.client_id && lastMessage.content === message.content) {
+                    const updatedMessages = [...existing.messages];
+                    updatedMessages[updatedMessages.length - 1] = message;
+                    return {
+                        ...existing,
+                        messages: updatedMessages,
+                    };
+                }
             }
 
             if (isChunk && existing.messages.length > 0) {
@@ -692,13 +710,18 @@ export const useAgents = ({
                 activeAgents.forEach((agent: any) => {
                     const existing = newSessions.get(agent.id);
                     if (existing) {
-                        newSessions.set(agent.id, { ...existing, isActive: true });
+                        newSessions.set(agent.id, {
+                            ...existing,
+                            isActive: true,
+                            isProcessing: Boolean(agent.is_processing),
+                        });
                     } else {
                         newSessions.set(agent.id, {
                             agentId: agent.id,
                             agentName: agent.name,
                             messages: [],
                             isActive: true,
+                            isProcessing: Boolean(agent.is_processing),
                         });
                     }
 
@@ -805,6 +828,27 @@ export const useAgents = ({
     const sendPrompt = useCallback((agentId: string, prompt: string, attachments: AcpPromptAttachment[] = []) => {
         if (!wsRef.current || !isConnected) return;
 
+        const clientId = `optimistic-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        const optimisticMessage: AcpUserMessage = {
+            role: 'user',
+            content: prompt,
+            attachments: attachments.length > 0 ? attachments : undefined,
+            client_id: clientId,
+        };
+
+        updateSession(agentId, (existing) => ({
+            agentId,
+            agentName: existing?.agentName ?? '',
+            messages: [...(existing?.messages ?? []), optimisticMessage],
+            isActive: true,
+            isProcessing: true,
+            sessionId: existing?.sessionId,
+            agentConfigId: existing?.agentConfigId,
+            modelSelector: existing?.modelSelector,
+            reasoningSelector: existing?.reasoningSelector,
+            contextUsage: existing?.contextUsage,
+        }));
+
         wsRef.current.emit('acp:prompt', { agent_id: agentId, prompt, attachments }, (response: any) => {
             if (response.success) return;
 
@@ -813,11 +857,15 @@ export const useAgents = ({
                 const newSessions = new Map(prev);
                 const existing = newSessions.get(agentId);
                 if (!existing) return newSessions;
-                newSessions.set(agentId, { ...existing, isProcessing: false });
+                newSessions.set(agentId, {
+                    ...existing,
+                    messages: existing.messages.filter((message) => message.client_id !== clientId),
+                    isProcessing: false,
+                });
                 return newSessions;
             });
         });
-    }, [wsRef, isConnected]);
+    }, [wsRef, isConnected, updateSession]);
 
     const undoPrompt = useCallback((agentId: string, checkpointId?: string, prompt?: string) => {
         if (!wsRef.current || !isConnected) return;

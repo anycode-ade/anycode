@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { AcpIcons } from './AcpIcons';
 import './AcpWorkGroup.css';
 
@@ -20,28 +20,33 @@ export const AcpWorkGroup: React.FC<AcpWorkGroupProps> = ({
   children,
 }) => {
   const [isExpanded, setIsExpanded] = useState(isLatest);
+  const previousIsLatestRef = useRef(isLatest);
 
   useEffect(() => {
     // Search should reveal the matching group, but must not replace the
     // group's own state: the header remains interactive while searching.
-    if (isLatest || isSearchMatch) {
+    if (searchActive && (isLatest || isSearchMatch)) {
       setIsExpanded(true);
       if (isSearchMatch) {
         onExpansionChange?.();
       }
+    } else if (previousIsLatestRef.current && !isLatest) {
+      // A formerly active group becomes historical after the next user turn.
+      // Collapse it instead of carrying over the active group's open state.
+      setIsExpanded(false);
     }
-  }, [isLatest, isSearchMatch, onExpansionChange]);
+    previousIsLatestRef.current = isLatest;
+  }, [isLatest, isSearchMatch, onExpansionChange, searchActive]);
 
   if (isLatest && !searchActive) {
-    return (
-      <>
-        {children}
-      </>
-    )
+    return <>{children}</>;
   }
 
+  const collapsedAfterLatestTransition = previousIsLatestRef.current && !isLatest && !isSearchMatch;
+  const renderedExpanded = collapsedAfterLatestTransition ? false : isExpanded;
+
   return (
-    <div className={`acp-work-group ${isExpanded ? 'expanded' : 'collapsed'}`}>
+    <div className={`acp-work-group ${renderedExpanded ? 'expanded' : 'collapsed'}`}>
       <div 
         className="acp-work-group-header" 
         onClick={() => {
@@ -58,7 +63,7 @@ export const AcpWorkGroup: React.FC<AcpWorkGroupProps> = ({
           worked ({messageCount} step{messageCount !== 1 ? 's' : ''})
         </span>
       </div>
-      {isExpanded && (
+      {renderedExpanded && (
         <div className="acp-work-group-content">
           {children}
         </div>

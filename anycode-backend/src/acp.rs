@@ -472,6 +472,7 @@ pub struct AcpAgent {
     connection: Option<ConnectionTo<agent_client_protocol::Agent>>,
     session_id: Option<acp::SessionId>,
     ready: Arc<AtomicBool>,
+    is_processing: Arc<AtomicBool>,
     message_sender: Option<broadcast::Sender<AcpMessage>>,
     prompt_sender: Option<mpsc::Sender<AcpPromptPayload>>,
     config_sender: Option<mpsc::Sender<PendingConfigUpdate>>,
@@ -505,6 +506,7 @@ impl AcpAgent {
             connection: None,
             session_id: None,
             ready: Arc::new(AtomicBool::new(false)),
+            is_processing: Arc::new(AtomicBool::new(false)),
             message_sender: None,
             prompt_sender: None,
             config_sender: None,
@@ -548,6 +550,7 @@ impl AcpAgent {
 
         // Setup connection and run in LocalSet
         let ready_clone = self.ready.clone();
+        let is_processing_clone = self.is_processing.clone();
         let agent_id_clone = self.agent_id.clone();
         let history_clone = self.history.clone();
         let message_sender_clone = history_tx.clone();
@@ -561,6 +564,7 @@ impl AcpAgent {
                         Self::run_agent(
                             agent_id_clone,
                             ready_clone,
+                            is_processing_clone,
                             history_clone,
                             message_sender_clone,
                             fs_sender_clone,
@@ -670,6 +674,7 @@ impl AcpAgent {
     async fn run_agent(
         agent_id: String,
         ready: Arc<AtomicBool>,
+        is_processing: Arc<AtomicBool>,
         history: Arc<tokio::sync::Mutex<Vec<AcpMessage>>>,
         message_sender: broadcast::Sender<AcpMessage>,
         fs_sender: mpsc::Sender<AcpFsCommand>,
@@ -710,6 +715,7 @@ impl AcpAgent {
 
         let agent_id_for_conn = agent_id.clone();
         let agent_id_for_error = agent_id.clone();
+        let is_processing_for_conn = is_processing.clone();
         let run_result = Client
             .builder()
             .name(format!("anycode-{}", agent_id))
@@ -812,6 +818,7 @@ impl AcpAgent {
                 Self::run_prompt_loop(
                     &conn,
                     &agent_id,
+                    &is_processing_for_conn,
                     &message_sender,
                     history_for_prompt,
                     bootstrap.session_id,
@@ -831,6 +838,7 @@ impl AcpAgent {
                 agent_id_for_error, e
             );
         }
+        is_processing.store(false, Ordering::SeqCst);
     }
 
     fn spawn_stderr_reader(
@@ -1163,6 +1171,7 @@ impl AcpAgent {
     async fn run_prompt_loop(
         conn: &ConnectionTo<agent_client_protocol::Agent>,
         agent_id: &str,
+        is_processing: &AtomicBool,
         message_sender: &broadcast::Sender<AcpMessage>,
         history: Arc<tokio::sync::Mutex<Vec<AcpMessage>>>,
         session_id: acp::SessionId,
@@ -1187,6 +1196,8 @@ impl AcpAgent {
                         prompt.attachments.len()
                     );
 
+                    is_processing.store(true, Ordering::SeqCst);
+
                     // Send prompt state: processing started
                     let _ = message_sender.send(AcpMessage::PromptState(AcpPromptState {
                         is_processing: true,
@@ -1205,6 +1216,8 @@ impl AcpAgent {
                         cancel_rx,
                     )
                     .await;
+
+                    is_processing.store(false, Ordering::SeqCst);
 
                     // Send prompt state: processing finished
                     let _ = message_sender.send(AcpMessage::PromptState(AcpPromptState {
@@ -1704,6 +1717,10 @@ impl AcpAgent {
         &self.agent_name
     }
 
+    pub fn is_processing(&self) -> bool {
+        self.is_processing.load(Ordering::SeqCst)
+    }
+
     pub async fn get_history(&self) -> Vec<AcpMessage> {
         self.history.lock().await.clone()
     }
@@ -1826,6 +1843,12 @@ impl AcpManager {
             .iter()
             .map(|(id, agent)| (id.clone(), agent.agent_name().to_string()))
             .collect()
+    }
+
+    pub fn is_agent_processing(&self, agent_id: &str) -> bool {
+        self.agents
+            .get(agent_id)
+            .is_some_and(AcpAgent::is_processing)
     }
 
     pub async fn list_sessions(

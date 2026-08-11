@@ -29,6 +29,14 @@ export const AcpAgentsList: React.FC<AcpAgentsListProps> = ({
             className={`acp-agent-item ${isSelected ? 'selected' : ''} ${isActive ? 'active' : 'inactive'}`}
             onClick={() => onSelectAgent(agent.agentId)}
           >
+            {agent.isProcessing && (
+              <span
+                className="acp-agent-working-indicator"
+                role="status"
+                aria-label={`${agent.agentId} is working`}
+                title="Agent is working"
+              />
+            )}
             <span className="acp-agent-name">{agent.agentId}</span>
             <button
               className="acp-agent-close-btn"
@@ -46,4 +54,3 @@ export const AcpAgentsList: React.FC<AcpAgentsListProps> = ({
     </div>
   );
 };
-

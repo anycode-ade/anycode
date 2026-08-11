@@ -109,7 +109,6 @@ const AcpMessagesComponent: React.FC<AcpMessagesProps> = ({
     > = [];
 
     let currentGroup: Array<{ index: number; message: AcpMessageType }> | null = null;
-    let lastGroupItemIndex = -1;
 
     for (let i = 0; i < messages.length; i += 1) {
       const message = messages[i];
@@ -129,7 +128,6 @@ const AcpMessagesComponent: React.FC<AcpMessagesProps> = ({
         currentGroup.push({ index: i, message });
       } else {
         if (currentGroup && currentGroup.length > 0) {
-          lastGroupItemIndex = items.length;
           items.push({ type: 'group', messages: currentGroup, isLatest: false });
           currentGroup = null;
         }
@@ -138,12 +136,10 @@ const AcpMessagesComponent: React.FC<AcpMessagesProps> = ({
     }
 
     if (currentGroup && currentGroup.length > 0) {
-      lastGroupItemIndex = items.length;
-      items.push({ type: 'group', messages: currentGroup, isLatest: false });
-    }
-
-    if (lastGroupItemIndex !== -1) {
-      (items[lastGroupItemIndex] as any).isLatest = true;
+      // A group is latest only when it is the final item. If a user message
+      // was just sent, the previous work group must remain historical and
+      // collapse immediately while the new response is pending.
+      items.push({ type: 'group', messages: currentGroup, isLatest: true });
     }
 
     return items;

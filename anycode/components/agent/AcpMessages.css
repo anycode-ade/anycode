@@ -8,6 +8,47 @@
     font-weight: var(--interface-font-weight, 700);
 }
 
+.acp-chat-working {
+    display: inline-flex;
+    align-self: flex-start;
+    align-items: baseline;
+    gap: 1px;
+    margin: 7px 0 0 8px;
+    padding: 5px 9px;
+    border: none;
+    border-radius: 999px;
+    color: #65d68a;
+    background: transparent;
+    box-shadow: none;
+    font-size: 0.8em;
+    line-height: 1;
+    pointer-events: none;
+}
+
+.acp-chat-working-dots {
+    display: inline-block;
+    min-width: 15px;
+}
+
+.acp-chat-working-dots > span {
+    display: inline-block;
+    opacity: 0.2;
+    animation: acp-chat-working-dot 1.2s ease-in-out infinite;
+}
+
+.acp-chat-working-dots > span:nth-child(2) {
+    animation-delay: 0.15s;
+}
+
+.acp-chat-working-dots > span:nth-child(3) {
+    animation-delay: 0.3s;
+}
+
+@keyframes acp-chat-working-dot {
+    0%, 35%, 100% { opacity: 0.2; }
+    15% { opacity: 1; }
+}
+
 .acp-messages-inner {
     padding: 16px 16px calc(var(--acp-input-height, 0px) + 24px) 16px;
     display: flex;

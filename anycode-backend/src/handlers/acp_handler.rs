@@ -397,7 +397,13 @@ pub async fn handle_acp_list(ack: AckSender, state: State<AppState>) {
 
     let agents_json: Vec<serde_json::Value> = agents
         .iter()
-        .map(|(id, name)| json!({ "id": id, "name": name }))
+        .map(|(id, name)| {
+            json!({
+                "id": id,
+                "name": name,
+                "is_processing": acp_manager.is_agent_processing(id),
+            })
+        })
         .collect();
 
     ack.send(&json!({ "success": true, "agents": agents_json }))
@@ -465,7 +471,13 @@ pub async fn handle_acp_reconnect(socket: SocketRef, ack: AckSender, state: Stat
 
     let agents_json: Vec<serde_json::Value> = agents
         .iter()
-        .map(|(id, name)| json!({ "id": id, "name": name }))
+        .map(|(id, name)| {
+            json!({
+                "id": id,
+                "name": name,
+                "is_processing": acp_manager.is_agent_processing(id),
+            })
+        })
         .collect();
 
     ack.send(&json!({ "success": true, "agents": agents_json }))

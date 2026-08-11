@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   AcpMessage,
   type AcpContextUsageMessage,
@@ -43,6 +43,8 @@ const useAutoScroll = (messages: AcpMessage[], isProcessing: boolean, agentId: s
   const userScrollUpIntentRef = useRef(false);
   const isProgrammaticScrollRef = useRef(false);
   const pendingAutoScrollRafRef = useRef<number | null>(null);
+  const forceScrollAfterUpdateRef = useRef(false);
+  const wasProcessingRef = useRef(isProcessing);
   const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
 
   const checkIfScrolledToBottom = (element: HTMLElement): boolean => (
@@ -185,6 +187,31 @@ const useAutoScroll = (messages: AcpMessage[], isProcessing: boolean, agentId: s
     }
   }, [messages, isProcessing]);
 
+  useLayoutEffect(() => {
+    if (!forceScrollAfterUpdateRef.current) return;
+
+    forceScrollAfterUpdateRef.current = false;
+    scrollToBottom('auto');
+  }, [messages, isProcessing]);
+
+  useEffect(() => {
+    const justFinishedProcessing = wasProcessingRef.current && !isProcessing;
+    wasProcessingRef.current = isProcessing;
+    if (!justFinishedProcessing || !autoScrollEnabledRef.current) return;
+
+    let settleRaf = 0;
+    const scrollAfterLayoutSettles = () => {
+      settleRaf = requestAnimationFrame(() => {
+        if (autoScrollEnabledRef.current) {
+          scrollToBottom('auto');
+        }
+      });
+    };
+
+    settleRaf = requestAnimationFrame(scrollAfterLayoutSettles);
+    return () => cancelAnimationFrame(settleRaf);
+  }, [isProcessing]);
+
   useEffect(() => {
     const innerElement = innerRef.current;
     if (!innerElement) return;
@@ -199,6 +226,7 @@ const useAutoScroll = (messages: AcpMessage[], isProcessing: boolean, agentId: s
   }, []);
 
   const enableAutoScroll = () => {
+    forceScrollAfterUpdateRef.current = true;
     setAutoScroll(true);
 
     requestAnimationFrame(() => {
@@ -489,6 +517,7 @@ const AcpSessionComponent: React.FC<AcpSessionProps> = ({
 
   const handleSend = useCallback((attachments: AcpPromptAttachment[] = []) => {
     if ((inputValue.trim() || attachments.length > 0) && isConnected) {
+      enableAutoScroll();
       onSendPrompt(agentId, inputValue.trim(), attachments);
       setInputValues((prev) => {
         if ((prev[agentId] ?? '') === '') {
@@ -501,7 +530,7 @@ const AcpSessionComponent: React.FC<AcpSessionProps> = ({
         };
       });
     }
-  }, [agentId, inputValue, isConnected, onSendPrompt]);
+  }, [agentId, enableAutoScroll, inputValue, isConnected, onSendPrompt]);
 
   const handleCancel = useCallback(() => {
     onCancelPrompt(agentId);
@@ -605,6 +634,15 @@ const AcpSessionComponent: React.FC<AcpSessionProps> = ({
               onOpenFile={onOpenFile}
               onOpenFileDiff={onOpenFileDiff}
             />
+            {isProcessing && (
+              <div className="acp-chat-working" role="status" aria-live="polite" aria-label="Agent is working">
+                <span className="acp-chat-working-dots" aria-hidden="true">
+                <span>.</span>
+                <span>.</span>
+                <span>.</span>
+              </span>
+            </div>
+            )}
           </div>
         </div>
         {!autoScrollEnabled && (

@@ -196,6 +196,8 @@ export interface AcpUserMessage {
     is_chunk?: boolean;
     checkpoint_id?: string;
     attachments?: AcpPromptAttachment[];
+    /** Frontend-only ID used to reconcile an optimistic prompt with its ACP echo. */
+    client_id?: string;
 }
 
 export interface AcpAssistantMessage {

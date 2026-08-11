@@ -52,7 +52,7 @@ const ToolCallMessage: React.FC<{
 
   return (
     <div className="acp-message acp-message-tool_call">
-      <div className="acp-message-content">
+      <div className={`acp-message-content ${isExpanded ? 'acp-tool-call-content-expanded' : 'acp-tool-call-content-collapsed'}`}>
         <div className="acp-tool-call-toggle" onClick={onToggle} style={{ cursor: 'pointer' }}>
           <span className="acp-toggle-icon">{isExpanded ? '▼' : '▶'}</span>
           <div className="acp-tool-call-toggle-main">
@@ -1039,11 +1039,13 @@ const ThoughtMessage: React.FC<{
   if (!message.content || message.content.trim() === '') {
     return null;
   }
-  const isLong = message.content.length > 180;
-  const shouldToggle = isLong;
-  const expanded = shouldToggle ? isExpanded : true;
+  const shouldToggle = true;
+  const expanded = isExpanded;
   const lines = message.content.trim().split('\n');
   const previewLine = lines[0] || '';
+  const previewText = previewLine
+    .replace(/\*\*(.*?)\*\*/g, '$1')
+    .replace(/[`*_~]/g, '');
   return (
     <div className="acp-message acp-message-thought">
       <div className="acp-message-content">
@@ -1058,12 +1060,11 @@ const ThoughtMessage: React.FC<{
             </span>
           )}
           {expanded ? (
-            message.content.trim()
+            <div className="acp-thought-markdown">
+              <MarkdownTextBlock content={message.content.trim()} />
+            </div>
           ) : (
-            <>
-              {previewLine}
-              {'…'}
-            </>
+            <span className="acp-thought-preview">{previewText}…</span>
           )}
         </div>
       </div>
@@ -1164,4 +1165,11 @@ const AcpMessageComponent: React.FC<AcpMessageProps> = ({
   }
 };
 
-export const AcpMessage = React.memo(AcpMessageComponent);
+export const AcpMessage = React.memo(AcpMessageComponent, (previous, next) => (
+  previous.message === next.message
+  && previous.toolResult === next.toolResult
+  && previous.toolUpdates === next.toolUpdates
+  && previous.isExpanded === next.isExpanded
+  && previous.onOpenFile === next.onOpenFile
+  && previous.onOpenFileDiff === next.onOpenFileDiff
+));

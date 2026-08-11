@@ -51,6 +51,22 @@
     margin-left: 4px;
 }
 
+.acp-agent-working-indicator {
+    width: 7px;
+    height: 7px;
+    flex: 0 0 7px;
+    margin-left: 4px;
+    border-radius: 50%;
+    background: #65d68a;
+    box-shadow: 0 0 0 2px rgba(101, 214, 138, 0.16), 0 0 8px rgba(101, 214, 138, 0.7);
+    animation: acp-agent-working-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes acp-agent-working-pulse {
+    0%, 100% { opacity: 0.45; transform: scale(0.85); }
+    50% { opacity: 1; transform: scale(1); }
+}
+
 .acp-agent-close-btn {
     background: transparent;
     outline: none;

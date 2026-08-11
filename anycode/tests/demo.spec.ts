@@ -321,7 +321,7 @@ test.describe('Anycode Live Demo Mode E2E Tests', () => {
             // 3. Assert Thought reasoning block appears
             await expect(page.getByText(/Analyzing workspace VFS files/i).first()).toBeVisible({ timeout: 10000 });
 
-            // 4. Assert Tool Call Card appears and expands
+            // 4. Assert Tool Call Card appears and expands in the latest group
             const toolToggle = page.locator('.acp-tool-call-toggle').first();
             await expect(toolToggle).toBeVisible({ timeout: 10000 });
             await toolToggle.click();
@@ -345,6 +345,7 @@ test.describe('Anycode Live Demo Mode E2E Tests', () => {
 
             await promptInput.fill('second search turn');
             await promptInput.press('Enter');
+            await expect(page.locator('.acp-work-group').first()).toHaveClass(/collapsed/);
             await expect(page.locator('.acp-message-markdown blockquote')).toHaveCount(2, { timeout: 10000 });
 
             const selectedMessage = page.locator('.acp-message-user').filter({ hasText: 'first first search turn' });

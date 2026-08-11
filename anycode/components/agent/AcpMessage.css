@@ -20,7 +20,7 @@
 }
 
 .acp-message-role {
-    font-size: 0.79em;
+    font-size: 0.86em;
     font-weight: inherit;
     text-transform: uppercase;
     color: var(--text-color-secondary, #888);
@@ -279,7 +279,7 @@
     /* background-color: var(--assistant-message-bg, #2a2a2a); */
     color: var(--text-color-secondary, #888);
     /* border: 1px solid var(--border-color, #333); */
-    font-size: 0.79em;
+    font-size: 1em;
     font-style: normal;
 }
 
@@ -291,19 +291,24 @@
 }
 
 .acp-message-tool_call .acp-message-content {
-    background-color: rgba(127, 127, 127, 0.08);
     color: var(--text-color, #ccc); 
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.22);
     max-width: 100%;
     box-sizing: border-box;
     overflow-x: hidden;
 }
 
+.acp-tool-call-content-collapsed {
+    background-color: transparent;
+}
+
+.acp-tool-call-content-expanded {
+    background-color: rgba(127, 127, 127, 0.08);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.22);
+}
+
 .acp-tool-call-expanded {
     display: flex;
     flex-direction: column;
-    gap: 12px;
-    margin-top: 10px;
     animation: acp-tool-call-expand 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
     transform-origin: top;
 }
@@ -485,7 +490,7 @@
 .acp-tool-update-content {
     margin: 0;
     border-radius: 4px;
-    font-size: 0.86em;
+    font-size: 0.79em;
     overflow-x: auto;
     overflow-y: auto;
     box-sizing: border-box;
@@ -538,10 +543,24 @@
 }
 
 .acp-thought-text {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
     font-size: 0.79em;
     color: var(--text-color-secondary, #888);
     line-height: 1.4;
     white-space: pre-wrap;
+}
+
+.acp-thought-markdown,
+.acp-thought-text > p {
+    flex: 1 1 auto;
+    min-width: 0;
+    margin: 0;
+}
+
+.acp-thought-markdown > p {
+    margin: 0;
 }
 
 .acp-thought-text * {
@@ -556,7 +575,14 @@
 }
 
 .acp-thought-toggle-inline {
-    margin-right: 6px;
+    flex: 0 0 auto;
+    margin-top: 0.15em;
+}
+
+.acp-thought-preview {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 /* Error Message Styles */
