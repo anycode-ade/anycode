@@ -290,7 +290,6 @@ export class ScrollbarMarkersRenderer {
         } else {
             this.element.style.removeProperty('--smr-custom-width');
         }
-        this.updateThumbPosition();
     }
 
     private getMinimumSliderSize(): number {

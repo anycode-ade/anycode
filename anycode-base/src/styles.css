@@ -61,6 +61,7 @@
   top: 0;
   width: var(--smr-custom-width, 8px);
   min-height: 20px;
+  border-radius: 4px;
   background: rgba(160, 160, 160, 0.45);
   z-index: 10;
   pointer-events: auto;
@@ -73,31 +74,26 @@
 /* --- Scrollbar Style Presets --- */
 
 /* Mac (Rounded pill - default) */
-.smr.style-mac .smrt,
-.smr.style-mac:hover .smrt,
-.smr.style-mac.visible .smrt {
-  border-radius: 4px !important;
+.smr.style-mac .smrt {
+  border-radius: 4px;
 }
 
 /* Windows (Flat sharp rectangle) */
-.smr.style-windows .smrt,
-.smr.style-windows:hover .smrt,
-.smr.style-windows.visible .smrt {
-  border-radius: 0px !important;
-  box-shadow: none !important;
+.smr.style-windows .smrt {
+  border-radius: 0px;
+  box-shadow: none;
 }
 
 /* Minimal (Thin line) */
 .smr.style-minimal .smrt {
-  width: var(--smr-custom-width, 4px) !important;
-  border-radius: 2px !important;
-  right: 1px !important;
+  width: var(--smr-custom-width, 4px);
+  border-radius: 2px;
+  right: 1px;
 }
 
-.smr.style-minimal:hover .smrt,
-.smr.style-minimal.visible .smrt {
-  width: var(--smr-custom-width, 6px) !important;
-  right: 0px !important;
+.smr.style-minimal:hover .smrt {
+  width: var(--smr-custom-width, 6px);
+  right: 0px;
 }
 
 .smr:hover .smrt,
@@ -115,6 +111,11 @@
   right: 1px;
 }
 
+.smr.style-windows:hover .smrt {
+  width: var(--smr-custom-width, 10px);
+  border-radius: 0px;
+}
+
 .smrt:hover,
 .smrt.dragging,
 .smr.dragging .smrt {
@@ -123,15 +124,16 @@
   right: 0px;
 }
 
-@media (pointer: coarse) {
+@media (pointer: coarse), (max-width: 768px) {
   .anyeditor-wrapper .smr {
-    width: var(--smr-custom-width, 16px);
+    width: 16px;
   }
 
   .smrt {
-    width: var(--smr-custom-width, 10px);
+    width: 10px;
     right: 3px;
     min-height: 28px;
+    border-radius: 5px;
   }
 
   .smr:hover .smrt,
@@ -139,7 +141,7 @@
   .smrt:hover,
   .smrt.dragging,
   .smr.dragging .smrt {
-    width: var(--smr-custom-width, 12px);
+    width: 12px;
     right: 2px;
   }
 }

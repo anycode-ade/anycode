@@ -83,7 +83,6 @@ export class AnycodeEditor {
     private offset: number;
     private settings: EditorSettings;
     private editorFontSettingsHandler: ((event: Event) => void) | null = null;
-    private scrollbarSettingsHandler: ((event: Event) => void) | null = null;
     private renderer!: Renderer;
     private wrapper!: HTMLDivElement;
     private container!: HTMLDivElement;
@@ -138,6 +137,7 @@ export class AnycodeEditor {
     private wordHighlightEnabled: boolean;
     private scrollbarMarkersEnabled: boolean;
     private wordHighlight: WordHighlight | null = null;
+    private scrollbarSettingsHandler: ((event: Event) => void) | null = null;
 
     constructor(
         initialText = '',
@@ -162,24 +162,27 @@ export class AnycodeEditor {
             this.offset = 0;
         }
 
-        let initialScrollbarSettings: ScrollbarSettings = {
-            style: options.scrollbarStyle ?? 'mac',
-            minSize: options.scrollbarMinSize,
-            width: options.scrollbarWidth,
-        };
+        let initialScrollbarStyle = options.scrollbarStyle;
+        let initialScrollbarMinSize = options.scrollbarMinSize;
+        let initialScrollbarWidth = options.scrollbarWidth;
+
         if (typeof window !== 'undefined') {
             try {
                 const saved = JSON.parse(localStorage.getItem('scrollbarSettings') || '{}');
-                if (saved.style) initialScrollbarSettings.style = saved.style;
-                if (typeof saved.minSize === 'number') initialScrollbarSettings.minSize = saved.minSize;
-                if (typeof saved.width === 'number') initialScrollbarSettings.width = saved.width;
+                if (!initialScrollbarStyle && saved.style) initialScrollbarStyle = saved.style;
+                if (initialScrollbarMinSize === undefined && typeof saved.minSize === 'number') initialScrollbarMinSize = saved.minSize;
+                if (initialScrollbarWidth === undefined && typeof saved.width === 'number') initialScrollbarWidth = saved.width;
             } catch {}
         }
 
         this.settings = {
             lineHeight: 20,
             buffer: 25,
-            scrollbar: initialScrollbarSettings,
+            scrollbar: {
+                style: initialScrollbarStyle ?? 'mac',
+                minSize: initialScrollbarMinSize,
+                width: initialScrollbarWidth,
+            },
         };
         if (typeof window !== 'undefined') {
             const rootStyles = window.getComputedStyle(document.documentElement);
