@@ -206,6 +206,60 @@
     max-width: 100%;
 }
 
+@media (max-width: 768px) and (pointer: coarse) {
+    .layout.dockview-theme-dark .dv-groupview > .dv-tabs-and-actions-container {
+        min-height: 38px;
+    }
+
+    .layout.dockview-theme-dark .dv-groupview > .dv-tabs-and-actions-container .dv-tabs-container {
+        min-width: 0;
+    }
+
+    .layout .dv-tab,
+    .layout .dv-tab .dv-default-tab,
+    .layout .dv-tab .dv-default-tab .dv-default-tab-content {
+        font-size: max(16px, var(--interface-font-size, 16px)) !important;
+    }
+
+    .layout .dv-tab {
+        flex: 0 0 auto;
+        padding-left: 8px;
+        padding-right: 8px;
+    }
+
+    .layout-header-actions {
+        width: max-content;
+        min-width: max-content;
+        gap: 4px;
+        padding: 0 4px;
+        overflow: visible;
+    }
+
+    .layout-header-action-btn,
+    .layout-header-actions:hover .layout-header-action-btn,
+    .layout-header-actions:focus-within .layout-header-action-btn {
+        width: 40px;
+        min-width: 40px;
+        height: 38px;
+        opacity: 1;
+        pointer-events: auto;
+    }
+
+    .layout-header-action-icon {
+        width: 18px;
+        height: 18px;
+    }
+
+    .layout-header-action-btn--close .layout-header-action-icon {
+        width: 20px;
+        height: 20px;
+    }
+
+    .layout-header-action-plus {
+        font-size: 22px;
+    }
+}
+
 .layout .dv-tab.dv-active-tab .dv-default-tab .dv-default-tab-content {
     color: var(--theme-tab-active-foreground, #f0f0f0);
     /*text-shadow: 0 0 6px rgba(255, 255, 255, 0.8);*/

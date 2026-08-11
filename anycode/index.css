@@ -26,6 +26,11 @@
   --active-file: #b1fce5;
   --background-color: #242424;
 }
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
 /* 
 @keyframes darkGradientAnimation {
   0% {
@@ -59,6 +64,14 @@ body {
   min-width: 320px;
   min-height: 100vh; */
   overflow: hidden;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
 }
 
 button {
@@ -115,4 +128,19 @@ button:focus-visible {
 .search-file-icon {
   opacity: var(--file-icon-opacity, 1.0);
   transition: opacity 0.15s ease;
+}
+
+/* iOS Safari zooms the page when a focused form control is smaller than
+   16px. Keep controls readable on touch screens and keep panels within the
+   viewport instead of widening the page. */
+@media (max-width: 768px) and (pointer: coarse) {
+  :root {
+    --interface-font-size: 16px;
+  }
+
+  input,
+  textarea,
+  select {
+    font-size: max(16px, 1em) !important;
+  }
 }
