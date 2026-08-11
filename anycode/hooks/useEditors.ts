@@ -665,10 +665,11 @@ export const useEditors = ({ wsRef, isConnected, onFileClosed }: UseEditorsParam
     }, []);
 
     const setEditorDiffMode = useCallback((paneId: string, mode: DiffMode): boolean => {
-        if (!applyDiffModeToPaneEditor(paneId, mode)) {
-            return false;
-        }
         setEditorDiffModeByPane((prev) => ({ ...prev, [paneId]: mode }));
+        // The editor may still be initializing when the header button is clicked.
+        // Persist the requested mode first; the initialization effect will apply it
+        // once the active editor is available.
+        applyDiffModeToPaneEditor(paneId, mode);
         return true;
     }, [applyDiffModeToPaneEditor]);
 
@@ -1203,8 +1204,9 @@ export const useEditors = ({ wsRef, isConnected, onFileClosed }: UseEditorsParam
             return;
         }
 
-        applyDiffModeToPaneEditor(paneId, mode);
-        lastAppliedDiffStateRef.current = applyKey;
+        if (applyDiffModeToPaneEditor(paneId, mode)) {
+            lastAppliedDiffStateRef.current = applyKey;
+        }
     }, [activeEditorPaneId, activeFileId, applyDiffModeToPaneEditor, getEditorDiffMode]);
 
     const closeFile = useCallback((fileId: string) => {
