@@ -185,6 +185,7 @@ export class Code {
 
     private injection_parsers: Map<string, TreeSitterParser> = new Map()
     private injection_queries: Map<string, Query> = new Map()
+    private hasInjections = false
     private injectionCache = new Map<string, {
         startIndex: number;
         endIndex: number;
@@ -214,6 +215,7 @@ export class Code {
         this.foldRanges = [];
         this.injection_parsers.clear();
         this.injection_queries.clear();
+        this.hasInjections = false;
         this.injectionCache.clear();
     }
 
@@ -268,6 +270,7 @@ export class Code {
                 .filter((name) => name.startsWith("injection.content."))
                 .map((name) => name.slice("injection.content.".length))
         );
+        this.hasInjections = injectionLanguages.size > 0;
 
         await Promise.all([...injectionLanguages].map(async (language) => {
             if (this.injection_parsers.has(language)
@@ -828,7 +831,9 @@ export class Code {
             }
         );
     
-        const injectionCapturesArray = this.buildInjectionCaptures(captures);
+        const injectionCapturesArray = this.hasInjections
+            ? this.buildInjectionCaptures(captures)
+            : [];
     
         const lineNodes: HighlighedNode[] = [];
         let lastCapture: HighlighedNode | null = null;
