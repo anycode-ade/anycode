@@ -162,14 +162,24 @@ export class AnycodeEditor {
             this.offset = 0;
         }
 
+        let initialScrollbarSettings: ScrollbarSettings = {
+            style: options.scrollbarStyle ?? 'mac',
+            minSize: options.scrollbarMinSize,
+            width: options.scrollbarWidth,
+        };
+        if (typeof window !== 'undefined') {
+            try {
+                const saved = JSON.parse(localStorage.getItem('scrollbarSettings') || '{}');
+                if (saved.style) initialScrollbarSettings.style = saved.style;
+                if (typeof saved.minSize === 'number') initialScrollbarSettings.minSize = saved.minSize;
+                if (typeof saved.width === 'number') initialScrollbarSettings.width = saved.width;
+            } catch {}
+        }
+
         this.settings = {
             lineHeight: 20,
             buffer: 25,
-            scrollbar: {
-                style: options.scrollbarStyle ?? 'mac',
-                minSize: options.scrollbarMinSize,
-                width: options.scrollbarWidth,
-            },
+            scrollbar: initialScrollbarSettings,
         };
         if (typeof window !== 'undefined') {
             const rootStyles = window.getComputedStyle(document.documentElement);
