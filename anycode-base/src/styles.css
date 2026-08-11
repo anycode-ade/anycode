@@ -59,7 +59,7 @@
   position: absolute;
   right: 2px;
   top: 0;
-  width: 8px;
+  width: var(--smr-custom-width, 8px);
   min-height: 20px;
   border-radius: 4px;
   background: rgba(160, 160, 160, 0.45);
@@ -69,6 +69,31 @@
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.1);
   opacity: 0;
   transition: opacity 300ms ease, background-color 100ms ease, width 100ms ease, right 100ms ease;
+}
+
+/* --- Scrollbar Style Presets --- */
+
+/* Mac (Rounded pill - default) */
+.smr.style-mac .smrt {
+  border-radius: 4px;
+}
+
+/* Windows (Flat sharp rectangle) */
+.smr.style-windows .smrt {
+  border-radius: 0px;
+  box-shadow: none;
+}
+
+/* Minimal (Thin line) */
+.smr.style-minimal .smrt {
+  width: var(--smr-custom-width, 4px);
+  border-radius: 2px;
+  right: 1px;
+}
+
+.smr.style-minimal:hover .smrt {
+  width: var(--smr-custom-width, 6px);
+  right: 0px;
 }
 
 .smr:hover .smrt,
@@ -82,15 +107,20 @@
 
 .smr:hover .smrt {
   background: rgba(180, 180, 180, 0.7);
-  width: 10px;
+  width: var(--smr-custom-width, 10px);
   right: 1px;
+}
+
+.smr.style-windows:hover .smrt {
+  width: var(--smr-custom-width, 10px);
+  border-radius: 0px;
 }
 
 .smrt:hover,
 .smrt.dragging,
 .smr.dragging .smrt {
   background: rgba(220, 220, 220, 0.9);
-  width: 12px;
+  width: var(--smr-custom-width, 12px);
   right: 0px;
 }
 

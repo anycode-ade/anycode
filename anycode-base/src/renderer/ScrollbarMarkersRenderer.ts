@@ -170,6 +170,8 @@ export class ScrollbarMarkersRenderer {
             return;
         }
 
+        this.applyScrollbarSettings(state);
+
         const search = state.search;
         const searchMatches = includeSearch && search.isActive() && search.getPattern()
             ? search.getMatches()
@@ -276,7 +278,24 @@ export class ScrollbarMarkersRenderer {
         }
     }
 
+    private applyScrollbarSettings(state: EditorState) {
+        const scrollbarSettings = state.settings?.scrollbar;
+        const style = scrollbarSettings?.style || 'mac';
+
+        this.element.classList.remove('style-mac', 'style-windows', 'style-minimal');
+        this.element.classList.add(`style-${style}`);
+
+        if (scrollbarSettings?.width !== undefined && scrollbarSettings.width > 0) {
+            this.element.style.setProperty('--smr-custom-width', `${scrollbarSettings.width}px`);
+        } else {
+            this.element.style.removeProperty('--smr-custom-width');
+        }
+    }
+
     private getMinimumSliderSize(): number {
+        if (this.state?.settings?.scrollbar?.minSize !== undefined && this.state.settings.scrollbar.minSize > 0) {
+            return this.state.settings.scrollbar.minSize;
+        }
         if (typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(pointer: coarse)').matches) {
             return 28;
         }

@@ -26,9 +26,18 @@ import { Search } from "./search";
 import { computeGitChanges, DiffInfo } from "./diff";
 import { getGapElementData } from "./renderer/DiffRenderer";
 
+export type ScrollbarStyle = 'mac' | 'windows' | 'minimal';
+
+export interface ScrollbarSettings {
+    style?: ScrollbarStyle;
+    minSize?: number;
+    width?: number;
+}
+
 export interface EditorSettings {
     lineHeight: number;
     buffer: number;
+    scrollbar?: ScrollbarSettings;
 }
 
 export interface EditorOptions {
@@ -42,6 +51,9 @@ export interface EditorOptions {
     codeFoldingEnabled?: boolean;
     wordHighlightEnabled?: boolean;
     scrollbarMarkersEnabled?: boolean;
+    scrollbarStyle?: ScrollbarStyle;
+    scrollbarMinSize?: number;
+    scrollbarWidth?: number;
     code?: Code;
     originalCode?: Code;
 }
@@ -149,7 +161,15 @@ export class AnycodeEditor {
             this.offset = 0;
         }
 
-        this.settings = { lineHeight: 20, buffer: 25 };
+        this.settings = {
+            lineHeight: 20,
+            buffer: 25,
+            scrollbar: {
+                style: options.scrollbarStyle ?? 'mac',
+                minSize: options.scrollbarMinSize,
+                width: options.scrollbarWidth,
+            },
+        };
         if (typeof window !== 'undefined') {
             const rootStyles = window.getComputedStyle(document.documentElement);
             const fontSize = Number.parseFloat(rootStyles.getPropertyValue('--editor-font-size'));
@@ -247,6 +267,14 @@ export class AnycodeEditor {
         } else if (this.container && this.container.parentElement) {
             this.container.parentElement.removeChild(this.container);
         }
+    }
+
+    public setScrollbarSettings(settings: ScrollbarSettings) {
+        this.settings.scrollbar = {
+            ...this.settings.scrollbar,
+            ...settings,
+        };
+        this.render();
     }
 
     public setOnChange(func: (t: Change) => void) {
