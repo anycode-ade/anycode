@@ -38,6 +38,40 @@ test.describe('Anycode Live Demo Mode E2E Tests', () => {
         await expect(tab).toBeVisible({ timeout: 10000 });
     });
 
+    test('should load only grammars used by the opened file', async ({ page }) => {
+        const grammarRequests: string[] = [];
+        page.on('request', (request) => {
+            const url = new URL(request.url());
+            if (/\/tree-sitter-[^/]+\.wasm$/.test(url.pathname)) {
+                grammarRequests.push(url.pathname.split('/').pop()!);
+            }
+        });
+
+        await expect(page.getByText('README.md').first()).toBeVisible({ timeout: 10000 });
+        await page.getByText('README.md').first().click();
+        await expect(page.locator('.code .line').first()).toBeVisible({ timeout: 10000 });
+
+        // README.md contains Markdown inline nodes, but no HTML or fenced code.
+        // The grammar loader must not fetch every language declared by the
+        // Markdown injection query.
+        await expect.poll(() => grammarRequests).toEqual([
+            'tree-sitter-markdown.wasm',
+            'tree-sitter-markdown_inline.wasm',
+        ]);
+
+        await page.getByText('demo.py').first().click();
+        await expect(page.locator('.code .line').first()).toBeVisible({ timeout: 10000 });
+        await expect.poll(() => grammarRequests).toContain('tree-sitter-python.wasm');
+
+        expect(grammarRequests).not.toContain('tree-sitter-rust.wasm');
+        expect(grammarRequests).not.toContain('tree-sitter-bash.wasm');
+        expect(grammarRequests).not.toContain('tree-sitter-json.wasm');
+        expect(grammarRequests).not.toContain('tree-sitter-yaml.wasm');
+        expect(grammarRequests).not.toContain('tree-sitter-css.wasm');
+        expect(grammarRequests).not.toContain('tree-sitter-typescript.wasm');
+        expect(grammarRequests).not.toContain('tree-sitter-javascript.wasm');
+    });
+
     test('should allow typing in editor without history errors', async ({ page }) => {
         const readme = page.getByText('README.md').first();
         await expect(readme).toBeVisible({ timeout: 10000 });

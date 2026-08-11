@@ -256,47 +256,46 @@ export class Code {
     }
 
     public async initInjections() {
-        if (!this.query) return;
+        if (!this.query || !this.tree) return;
 
-        for (const name of this.query.captureNames) {
-            if (name.startsWith("injection.content.")) {
-                const language = name.slice("injection.content.".length);
+        // captureNames contains every injection declared by the language query.
+        // Loading those languages eagerly makes opening a Markdown file download
+        // grammars for every possible fenced-code language. Only initialize
+        // injections that are actually present in this document.
+        const injectionLanguages = new Set(
+            this.query.captures(this.tree.rootNode)
+                .map((capture) => capture.name)
+                .filter((name) => name.startsWith("injection.content."))
+                .map((name) => name.slice("injection.content.".length))
+        );
 
-                if (this.injection_parsers.has(language) 
-                    && this.injection_queries.has(language)) {
-                    continue;
-                }
+        await Promise.all([...injectionLanguages].map(async (language) => {
+            if (this.injection_parsers.has(language)
+                && this.injection_queries.has(language)) {
+                return;
+            }
 
-                let parser = new TreeSitterParser();
+            const languageConfig = this.getLang(language);
+            if (!languageConfig) return;
 
-                if (!this.getLang(language)) {
-                    continue;
-                }
-
-                let lang: Language;
-                try {
-                    lang = await loadLanguage(language);
-                } catch (error) {
-                    console.error(`Failed to initialize injected tree-sitter language "${language}"`, error);
-                    continue;
-                }
-
+            try {
+                const lang = await loadLanguage(language);
+                const parser = new TreeSitterParser();
                 parser.setLanguage(lang);
                 this.injection_parsers.set(language, parser);
 
-                try {
-                    const l = this.getLang(language);
-                    let query = l?.query;
-                    if (query) {
-                        this.injection_queries.set(language, getCachedQuery(lang, language, 'highlight', query));
-                    } else {
-                        console.error(`No query available for ${language}`);
-                    }
-                } catch (e) {
-                    console.error(e);
+                if (languageConfig.query) {
+                    this.injection_queries.set(
+                        language,
+                        getCachedQuery(lang, language, 'highlight', languageConfig.query)
+                    );
+                } else {
+                    console.error(`No query available for ${language}`);
                 }
+            } catch (error) {
+                console.error(`Failed to initialize injected tree-sitter language "${language}"`, error);
             }
-        }
+        }));
     }
 
     private buildInjectionCaptures(captures: any[]) {
