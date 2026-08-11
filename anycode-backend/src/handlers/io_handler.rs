@@ -103,10 +103,18 @@ pub async fn handle_file_open(
             .or_insert_with(|| Code::new_empty(&abs_path, &state.config));
     }
 
-    let mut f2c = state.file2code.lock().await;
-    let code = match get_or_create_code(&mut f2c, &abs_path, &state.config) {
-        Ok(c) => c,
-        Err(e) => error_ack!(ack, &abs_path, "{:?}", e),
+    let (content, lang, history) = {
+        let mut f2c = state.file2code.lock().await;
+        let code = match get_or_create_code(&mut f2c, &abs_path, &state.config) {
+            Ok(c) => c,
+            Err(e) => error_ack!(ack, &abs_path, "{:?}", e),
+        };
+
+        (
+            code.text.to_string(),
+            code.lang.clone(),
+            code.history.clone(),
+        )
     };
 
     {
@@ -116,7 +124,6 @@ pub async fn handle_file_open(
         data.opened_files.insert(abs_path.clone());
     }
 
-    let content = code.text.to_string();
     let original = {
         let git = state.git_manager.lock().await;
         match git.file_original(&abs_path) {
@@ -147,16 +154,21 @@ pub async fn handle_file_open(
         "original": original,
         "path": format_path(&request.path),
         "success": true,
-        "history": code.history,
+        "history": history,
     }))
     .ok();
 
-    let mut lsp_manager = state.lsp_manager.lock().await;
-    if let Some(lsp) = lsp_manager.get(&code.lang).await {
-        if let Err(e) = lsp.did_open(&code.lang, &abs_path, &content) {
-            error!("Failed to notify LSP didOpen for {}: {:?}", abs_path, e);
+    // LSP startup can take several seconds. Keep it out of the file-open
+    // response path so one slow language server cannot block other opens.
+    let lsp_manager = state.lsp_manager.clone();
+    tokio::spawn(async move {
+        let mut lsp_manager = lsp_manager.lock().await;
+        if let Some(lsp) = lsp_manager.get(&lang).await {
+            if let Err(e) = lsp.did_open(&lang, &abs_path, &content) {
+                error!("Failed to notify LSP didOpen for {}: {:?}", abs_path, e);
+            }
         }
-    }
+    });
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
