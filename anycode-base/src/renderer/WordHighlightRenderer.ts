@@ -1,6 +1,8 @@
 import { Code } from "../code";
 import { EditorState } from "../editor";
 
+const MAX_WORD_MARKER_LINES = 5000;
+
 export class WordHighlightRenderer {
     private codeContent: HTMLDivElement;
     private cachedCode: Code | null = null;
@@ -18,7 +20,7 @@ export class WordHighlightRenderer {
 
         const wh = state.wordHighlight;
         if (!state.wordHighlightEnabled || !wh?.text || !wh.token) {
-            this.clearCache();
+            this.invalidateMarkerLines();
             return [];
         }
 
@@ -28,7 +30,7 @@ export class WordHighlightRenderer {
                 if (element.textContent === wh.text) element.classList.add('wh');
             });
 
-        if (!collectMarkerLines) return [];
+        if (!collectMarkerLines || state.code.linesLength() > MAX_WORD_MARKER_LINES) return [];
 
         if (
             this.cachedCode === state.code
@@ -57,10 +59,6 @@ export class WordHighlightRenderer {
     }
 
     public invalidateMarkerLines() {
-        this.clearCache();
-    }
-
-    private clearCache() {
         this.cachedCode = null;
         this.cachedText = '';
         this.cachedToken = '';

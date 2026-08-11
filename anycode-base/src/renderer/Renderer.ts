@@ -884,16 +884,34 @@ export class Renderer {
         let { line } = code.getPosition(offset);
         if (focusLine !== null) line = focusLine;
 
-        // Use visual index to account for ghost lines above cursor
-        const visualIndex = this.getVisualIndexForLine(line);
+        // For plain files without folds or diffs, visual and source line
+        // indices are identical. Avoid scanning all rendered rows.
+        const visualIndex = !this.diffEnabled && state.foldRanges.length === 0
+            ? line
+            : this.getVisualIndexForLine(line);
         const cursorTop = visualIndex * settings.lineHeight;
         const cursorBottom = cursorTop + settings.lineHeight;
+
+        const renderedRange = this.getRenderedRange();
+        const isFarInsideRenderedRange = renderedRange !== null
+            && visualIndex >= renderedRange.startIndex + settings.buffer
+            && visualIndex < renderedRange.endIndex - settings.buffer;
+        if (isFarInsideRenderedRange) {
+            return false;
+        }
 
         const viewportTop = this.container.scrollTop;
         const viewportBottom = viewportTop + this.container.clientHeight;
 
         const bottomPaddingLines = 0;
         const padding = settings.lineHeight * bottomPaddingLines;
+
+        const isCursorVisible = cursorTop >= viewportTop
+            && cursorBottom <= viewportBottom - padding;
+        if (isCursorVisible) {
+            return false;
+        }
+
         let targetScrollTop = viewportTop;
 
         if (cursorTop < viewportTop) {
