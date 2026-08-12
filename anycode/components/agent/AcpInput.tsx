@@ -19,6 +19,7 @@ interface AcpInputProps {
   onCloseAgent?: () => void;
   isConnected: boolean;
   isProcessing?: boolean;
+  showProcessingDots?: boolean;
   modelSelector?: Omit<AcpModelSelectorMessage, 'role'>;
   reasoningSelector?: Omit<AcpReasoningSelectorMessage, 'role'>;
   contextUsage?: Omit<AcpContextUsageMessage, 'role'>;
@@ -34,6 +35,7 @@ const AcpInputComponent: React.FC<AcpInputProps> = ({
   agentLabel,
   isConnected,
   isProcessing = false,
+  showProcessingDots = false,
   modelSelector,
   reasoningSelector,
   contextUsage,
@@ -392,23 +394,40 @@ const AcpInputComponent: React.FC<AcpInputProps> = ({
                   rows={MIN_ROWS}
                   disabled={!isConnected}
                 />
-                {isProcessing ? (
+                <div className="acp-prompt-action-switch">
                   <button
-                    className="acp-stop-prompt-btn"
+                    type="button"
+                    className={`acp-stop-prompt-btn ${isProcessing ? 'acp-prompt-action-active' : 'acp-prompt-action-inactive'}`}
                     onClick={onCancel}
-                    disabled={!isConnected}
+                    disabled={!isConnected || !isProcessing}
+                    aria-hidden={!isProcessing}
+                    aria-label="Cancel prompt"
+                    title="Cancel prompt"
                   >
-                    <AcpIcons.Cancel />
+                    {showProcessingDots && (
+                      <span className="acp-stop-prompt-dots" aria-hidden="true">
+                        <span>.</span>
+                        <span>.</span>
+                        <span>.</span>
+                      </span>
+                    )}
+                    <span
+                      className={`acp-stop-prompt-icon${showProcessingDots ? ' acp-stop-prompt-icon-hover' : ' acp-stop-prompt-icon-visible'}`}
+                      aria-hidden="true"
+                    >
+                      <AcpIcons.Cancel />
+                    </span>
                   </button>
-                ) : (
                   <button
-                    className="acp-send-btn"
+                    type="button"
+                    className={`acp-send-btn ${isProcessing ? 'acp-prompt-action-inactive' : 'acp-prompt-action-active'}`}
                     onClick={handleSend}
-                    disabled={(!value.trim() && attachments.length === 0) || !isConnected}
+                    disabled={isProcessing || (!value.trim() && attachments.length === 0) || !isConnected}
+                    aria-hidden={isProcessing}
                   >
                     <AcpIcons.Send />
                   </button>
-                )}
+                </div>
               </>
             )}
           </div>

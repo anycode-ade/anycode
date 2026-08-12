@@ -8,13 +8,23 @@
     font-weight: var(--interface-font-weight, 700);
 }
 
+.acp-messages.acp-messages-auto-scrolling {
+    scrollbar-width: none;
+}
+
+.acp-messages.acp-messages-auto-scrolling::-webkit-scrollbar {
+    display: none;
+}
+
 .acp-chat-working {
     display: inline-flex;
     align-self: flex-start;
     align-items: baseline;
     gap: 1px;
     margin: 7px 0 0 8px;
+    max-height: 28px;
     padding: 5px 9px;
+    box-sizing: border-box;
     border: none;
     border-radius: 999px;
     color: #65d68a;
@@ -23,24 +33,42 @@
     font-size: 0.8em;
     line-height: 1;
     pointer-events: none;
+    opacity: 1;
+    transform: translateY(0);
+    overflow: hidden;
+    transition: opacity 180ms ease, transform 180ms ease, max-height 220ms ease, margin-top 220ms ease, padding 220ms ease;
+}
+
+.acp-chat-working-exiting {
+    opacity: 0;
+    transform: translateY(2px);
+    max-height: 0;
+    margin-top: 0;
+    padding-top: 0;
+    padding-bottom: 0;
 }
 
 .acp-chat-working-dots {
     display: inline-block;
     min-width: 15px;
+    font-size: 0.86em;
+    line-height: 1;
 }
 
 .acp-chat-working-dots > span {
     display: inline-block;
-    opacity: 0.2;
+    color: color-mix(in srgb, var(--theme-foreground, #f0f0f0) 35%, #65d68a);
+    opacity: 0.35;
     animation: acp-chat-working-dot 1.2s ease-in-out infinite;
 }
 
 .acp-chat-working-dots > span:nth-child(2) {
+    color: color-mix(in srgb, var(--theme-foreground, #f0f0f0) 35%, #7ab7ff);
     animation-delay: 0.15s;
 }
 
 .acp-chat-working-dots > span:nth-child(3) {
+    color: color-mix(in srgb, var(--theme-foreground, #f0f0f0) 35%, #c084fc);
     animation-delay: 0.3s;
 }
 

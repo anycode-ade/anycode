@@ -51,9 +51,7 @@ export const AcpWorkGroup: React.FC<AcpWorkGroupProps> = ({
         className="acp-work-group-header" 
         onClick={() => {
           setIsExpanded(!isExpanded);
-          if (searchActive) {
-            onExpansionChange?.();
-          }
+          onExpansionChange?.();
         }}
       >
         <span className="acp-work-group-icon">

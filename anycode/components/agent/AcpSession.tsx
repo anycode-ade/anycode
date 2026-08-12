@@ -43,6 +43,7 @@ const useAutoScroll = (messages: AcpMessage[], isProcessing: boolean, agentId: s
   const userScrollUpIntentRef = useRef(false);
   const isProgrammaticScrollRef = useRef(false);
   const pendingAutoScrollRafRef = useRef<number | null>(null);
+  const autoScrollScrollbarTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const forceScrollAfterUpdateRef = useRef(false);
   const wasProcessingRef = useRef(isProcessing);
   const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
@@ -59,12 +60,32 @@ const useAutoScroll = (messages: AcpMessage[], isProcessing: boolean, agentId: s
   const disableAutoScrollImmediately = () => {
     autoScrollEnabledRef.current = false;
     setAutoScrollEnabled((prev) => (prev ? false : prev));
+    contentRef.current?.classList.remove('acp-messages-auto-scrolling');
+    if (autoScrollScrollbarTimerRef.current !== null) {
+      clearTimeout(autoScrollScrollbarTimerRef.current);
+      autoScrollScrollbarTimerRef.current = null;
+    }
+  };
+
+  const hideScrollbarDuringAutoScroll = () => {
+    const element = contentRef.current;
+    if (!element) return;
+
+    element.classList.add('acp-messages-auto-scrolling');
+    if (autoScrollScrollbarTimerRef.current !== null) {
+      clearTimeout(autoScrollScrollbarTimerRef.current);
+    }
+    autoScrollScrollbarTimerRef.current = setTimeout(() => {
+      element.classList.remove('acp-messages-auto-scrolling');
+      autoScrollScrollbarTimerRef.current = null;
+    }, 180);
   };
 
   const scrollToBottom = (behavior: ScrollBehavior = 'auto') => {
     const element = contentRef.current;
     if (!element) return;
 
+    hideScrollbarDuringAutoScroll();
     isProgrammaticScrollRef.current = true;
     element.scrollTo({
       top: element.scrollHeight,
@@ -182,7 +203,7 @@ const useAutoScroll = (messages: AcpMessage[], isProcessing: boolean, agentId: s
       pendingAutoScrollRafRef.current = requestAnimationFrame(() => {
         pendingAutoScrollRafRef.current = null;
         if (!autoScrollEnabledRef.current) return;
-        scrollToBottom('auto');
+        scrollToBottom('smooth');
       });
     }
   }, [messages, isProcessing]);
@@ -191,7 +212,7 @@ const useAutoScroll = (messages: AcpMessage[], isProcessing: boolean, agentId: s
     if (!forceScrollAfterUpdateRef.current) return;
 
     forceScrollAfterUpdateRef.current = false;
-    scrollToBottom('auto');
+    scrollToBottom('smooth');
   }, [messages, isProcessing]);
 
   useEffect(() => {
@@ -203,7 +224,7 @@ const useAutoScroll = (messages: AcpMessage[], isProcessing: boolean, agentId: s
     const scrollAfterLayoutSettles = () => {
       settleRaf = requestAnimationFrame(() => {
         if (autoScrollEnabledRef.current) {
-          scrollToBottom('auto');
+          scrollToBottom('smooth');
         }
       });
     };
@@ -218,7 +239,7 @@ const useAutoScroll = (messages: AcpMessage[], isProcessing: boolean, agentId: s
 
     const observer = new ResizeObserver(() => {
       if (!autoScrollEnabledRef.current) return;
-      scrollToBottom('auto');
+      scrollToBottom('smooth');
     });
 
     observer.observe(innerElement);
@@ -230,7 +251,7 @@ const useAutoScroll = (messages: AcpMessage[], isProcessing: boolean, agentId: s
     setAutoScroll(true);
 
     requestAnimationFrame(() => {
-      scrollToBottom('auto');
+      scrollToBottom('smooth');
     });
   };
 
@@ -239,6 +260,11 @@ const useAutoScroll = (messages: AcpMessage[], isProcessing: boolean, agentId: s
       cancelAnimationFrame(pendingAutoScrollRafRef.current);
       pendingAutoScrollRafRef.current = null;
     }
+    if (autoScrollScrollbarTimerRef.current !== null) {
+      clearTimeout(autoScrollScrollbarTimerRef.current);
+      autoScrollScrollbarTimerRef.current = null;
+    }
+    contentRef.current?.classList.remove('acp-messages-auto-scrolling');
   }, []);
 
   return {
@@ -310,6 +336,8 @@ const AcpSessionComponent: React.FC<AcpSessionProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [currentSearchMatch, setCurrentSearchMatch] = useState(0);
   const [searchRenderVersion, setSearchRenderVersion] = useState(0);
+  const [showWorkingIndicator, setShowWorkingIndicator] = useState(isProcessing);
+  const [isWorkingIndicatorExiting, setIsWorkingIndicatorExiting] = useState(false);
   const [inputValues, setInputValues] = useState<Record<string, string>>(() => {
     const savedDrafts = loadItem<Record<string, unknown>>(ACP_INPUT_DRAFTS_STORAGE_KEY);
     if (!savedDrafts || typeof savedDrafts !== 'object') {
@@ -330,6 +358,24 @@ const AcpSessionComponent: React.FC<AcpSessionProps> = ({
     enableAutoScroll,
     disableAutoScroll,
   } = useAutoScroll(messages, isProcessing, agentId);
+
+  useEffect(() => {
+    if (isProcessing) {
+      setShowWorkingIndicator(true);
+      setIsWorkingIndicatorExiting(false);
+      return;
+    }
+
+    if (!showWorkingIndicator) return;
+
+    setIsWorkingIndicatorExiting(true);
+    const hideTimer = window.setTimeout(() => {
+      setShowWorkingIndicator(false);
+      setIsWorkingIndicatorExiting(false);
+    }, 260);
+
+    return () => window.clearTimeout(hideTimer);
+  }, [isProcessing, showWorkingIndicator]);
   const searchMatches = useMemo(
     () => findTextMatches(messages, searchOpen ? searchQuery : ''),
     [messages, searchOpen, searchQuery],
@@ -337,8 +383,24 @@ const AcpSessionComponent: React.FC<AcpSessionProps> = ({
   const activeSearchMessageIndex = searchMatches[currentSearchMatch]?.messageIndex;
   const activeOccurrence = searchMatches[currentSearchMatch]?.occurrence ?? 0;
   const handleWorkGroupExpansionChange = useCallback(() => {
+    disableAutoScroll();
     setSearchRenderVersion((version) => version + 1);
-  }, []);
+  }, [disableAutoScroll]);
+
+  const handleToggleToolCall = useCallback((index: number) => {
+    disableAutoScroll();
+    toggleToolCall(index);
+  }, [disableAutoScroll, toggleToolCall]);
+
+  const handleToggleToolResult = useCallback((index: number) => {
+    disableAutoScroll();
+    toggleToolResult(index);
+  }, [disableAutoScroll, toggleToolResult]);
+
+  const handleToggleThought = useCallback((index: number) => {
+    disableAutoScroll();
+    toggleThought(index);
+  }, [disableAutoScroll, toggleThought]);
 
   useEffect(() => {
     if (searchMatches.length === 0 || currentSearchMatch < searchMatches.length) return;
@@ -627,20 +689,25 @@ const AcpSessionComponent: React.FC<AcpSessionProps> = ({
               expandedThoughts={searchExpandedThoughts}
               activeSearchMessageIndex={activeSearchMessageIndex}
               onWorkGroupExpansionChange={handleWorkGroupExpansionChange}
-              onToggleToolCall={toggleToolCall}
-              onToggleToolResult={toggleToolResult}
-              onToggleThought={toggleThought}
+              onToggleToolCall={handleToggleToolCall}
+              onToggleToolResult={handleToggleToolResult}
+              onToggleThought={handleToggleThought}
               onUndoMessage={handleUndoMessage}
               onOpenFile={onOpenFile}
               onOpenFileDiff={onOpenFileDiff}
             />
-            {isProcessing && (
-              <div className="acp-chat-working" role="status" aria-live="polite" aria-label="Agent is working">
+            {showWorkingIndicator && (
+              <div
+                className={`acp-chat-working${isWorkingIndicatorExiting ? ' acp-chat-working-exiting' : ''}`}
+                role="status"
+                aria-live="polite"
+                aria-label="Agent is working"
+              >
                 <span className="acp-chat-working-dots" aria-hidden="true">
-                <span>.</span>
-                <span>.</span>
-                <span>.</span>
-              </span>
+                  <span>.</span>
+                  <span>.</span>
+                  <span>.</span>
+                </span>
             </div>
             )}
           </div>
@@ -666,6 +733,7 @@ const AcpSessionComponent: React.FC<AcpSessionProps> = ({
         onCloseAgent={handleCloseAgent}
         isConnected={isConnected}
         isProcessing={isProcessing}
+        showProcessingDots={!autoScrollEnabled}
         modelSelector={modelSelector}
         reasoningSelector={reasoningSelector}
         contextUsage={contextUsage}
