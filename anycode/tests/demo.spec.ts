@@ -734,6 +734,28 @@ test.describe('Anycode Live Demo Mode E2E Tests', () => {
         ).toContainText('-review-sync');
     });
 
+    test('should persist a Settings panel added from the panel plus button after reload', async ({ page }) => {
+        const filesPanel = page.getByRole('region', { name: 'Files' });
+        const addEmptyTabButton = filesPanel.getByRole('button', { name: 'Add Empty Tab' });
+
+        await expect(addEmptyTabButton).toBeVisible({ timeout: 10000 });
+        await expect(page.locator('.layout-dock-panel--settings:visible')).toHaveCount(0);
+
+        await filesPanel.locator('.layout-header-actions').hover();
+        await addEmptyTabButton.click();
+
+        const picker = page.locator('.layout-panel-picker').last();
+        await expect(picker).toBeVisible();
+        await picker.getByRole('button', { name: 'Settings', exact: true }).click();
+        await expect(page.locator('.layout-dock-panel--settings:visible')).toBeVisible();
+
+        await expect.poll(() => page.evaluate(() => localStorage.getItem('layout'))).toContain('settings');
+
+        await page.reload();
+
+        await expect(page.locator('.layout-dock-panel--settings:visible')).toBeVisible({ timeout: 10000 });
+    });
+
     test('should apply scrollbar settings to an open editor and persist them after reload', async ({ page }) => {
         const readme = page.getByText('README.md').first();
         await expect(readme).toBeVisible({ timeout: 10000 });

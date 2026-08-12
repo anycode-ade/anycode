@@ -878,6 +878,7 @@ export const Layout: React.FC<LayoutProps> = ({
         saveItem('agentPanelVisible', visibility.agent);
         saveItem('terminalPanelVisible', visibility.terminal);
         saveItem('browserPanelVisible', visibility.browser);
+        saveItem('settingsPanelVisible', visibility.settings);
     }, [visibility]);
 
     const resolvePanelContent = useCallback((panelId: PanelId, panelKey: string): React.ReactNode => (
