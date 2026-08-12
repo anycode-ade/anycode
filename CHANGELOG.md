@@ -2,6 +2,23 @@
 
 All notable changes are documented here by release tag.
 
+## v0.0.27 - 2026-08-12
+
+### Highlights
+- Added multi-buffer change review with per-file history, focused navigation, and safer diff context handling.
+- Added Git history browsing for repositories and individual files, with pagination and historical-file support.
+- Added customizable scrollbars with Mac, Windows, and minimal presets, configurable width/minimum size, and persisted settings.
+- Improved editor performance for large files, syntax injection, cursor and word highlighting, scrolling, and diff rendering.
+- Improved ACP controls, auto-scroll, agent status and message rendering, mobile layout behavior, and settings/layout persistence.
+- Added Git push status feedback, stronger Git status/history handling, expanded backend coverage, and demo/e2e coverage.
+
+### Commits
+- `b419fcb` Add multibuffer change review
+- `82dbff0` Add Git file history timeline
+- `3a77956` feat: custom scrollbar implementation with mac visuals, zero reflow, auto-hide, and mobile touch support
+- `1df55a8` Improve ACP controls and auto-scroll behavior
+- `991060d` Persist settings panel layout
+
 ## v0.0.26 - 2026-08-03
 
 ### Highlights
