@@ -92,58 +92,25 @@ brew install lua-language-server
 
 ### C#
 
-Requires **.NET 10 SDK or later**. `roslyn-language-server` is a prerelease .NET tool that targets `net10.0`; installing it with .NET 8/9 fails with:
-
-```text
-The settings file in the tool's NuGet package is invalid: Settings file 'DotnetToolSettings.xml' was not found in the package.
-```
-
-1. Install .NET 10 SDK (pick one):
-
-```bash
-# Official installer script (user-local, no admin)
-curl -fsSL https://dot.net/v1/dotnet-install.sh | bash -s -- --channel 10.0
-
-# Or Homebrew (macOS system install)
-brew install --cask dotnet-sdk
-```
-
-2. Put the SDK and global tools on `PATH`. If you used the install script into `~/.dotnet`:
-
-```bash
-# Add to ~/.zshrc or ~/.bashrc
-export DOTNET_ROOT="$HOME/.dotnet"
-export PATH="$HOME/.dotnet:$HOME/.dotnet/tools:$PATH"
-```
-
-On macOS, the .NET pkg often writes a literal `~/.dotnet/tools` entry into `/etc/paths.d/dotnet-cli-tools`. `path_helper` does **not** expand `~`, so global tools are invisible until you add `$HOME/.dotnet/tools` yourself as above.
-
-Reload the shell (or `source` the rc file), then confirm:
-
-```bash
-dotnet --version   # should be 10.x
-```
-
-3. Install the language server:
+Requires **.NET 10 SDK or later**:
 
 ```bash
 dotnet tool install --global roslyn-language-server --prerelease
 ```
 
-4. Confirm Anycode can resolve the binary:
+If the command is not found on Linux or macOS, add the global tools directory to `~/.zshrc` or `~/.bashrc`:
 
 ```bash
-which roslyn-language-server
-roslyn-language-server --version
+export PATH="$HOME/.dotnet/tools:$PATH"
 ```
 
-Anycode runs it as configured in [`config.toml`](../anycode-backend/config.toml):
+Reload the shell, then verify:
 
-```text
-roslyn-language-server --stdio --autoLoadProjects
+```bash
+command -v roslyn-language-server
 ```
 
-Restart Anycode after install so the backend picks up the updated `PATH` / `DOTNET_ROOT`.
+Use `$HOME`, not a literal `~` inside `PATH`. Do not run the server without arguments; Anycode supplies `--stdio --autoLoadProjects`. Restart Anycode after changing `PATH`.
 
 Notes:
 
@@ -215,10 +182,8 @@ Anycode currently uses these LSP requests:
 
 ## Troubleshooting
 
-- If the server does not start, verify the command can be run directly in a terminal.
+- If the server does not start, verify that its command is available on `PATH`.
 - If completion works but diagnostics do not, check that the server writes diagnostics to stdout/stderr in standard LSP format.
 - If a server expects workspace settings, make sure the `.vscode/settings.json` file exists in the project root.
 - If a language server behaves differently on another machine, compare the exact command in `config.toml` and the installed server version.
-- **C# / `roslyn-language-server`**: install fails with missing `DotnetToolSettings.xml` → you are on .NET 8/9; install .NET 10 first and run `dotnet tool install` with that SDK.
-- **C# / `roslyn-language-server`**: binary not found → ensure `$HOME/.dotnet/tools` is on `PATH` (macOS `/etc/paths.d` tilde is not expanded).
-- **C# / `roslyn-language-server`**: starts with "You must install or update .NET" for framework `10.0.0` → set `DOTNET_ROOT` to the directory that contains the .NET 10 shared framework (for the install script: `$HOME/.dotnet`), then restart Anycode.
+- **C# / `roslyn-language-server`**: requires .NET 10; if the binary is not found, ensure `$HOME/.dotnet/tools` is on `PATH`.
