@@ -139,4 +139,3 @@ export const useTheme = ({ wsRef, isConnected }: UseThemeParams) => {
         handleThemeChange,
     };
 };
-
