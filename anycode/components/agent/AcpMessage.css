@@ -164,6 +164,69 @@
     background: var(--assistant-message-bg, #2a2a2a);
 }
 
+.acp-code-toolbar {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    display: flex;
+    justify-content: flex-end;
+    height: 0;
+    margin-left: -0.5em;
+    padding: 0;
+    pointer-events: none;
+}
+
+.acp-code-copy-button {
+    position: absolute;
+    top: 0.4em;
+    right: 0.5em;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border: 1px solid transparent;
+    border-radius: 5px;
+    background: transparent;
+    color: var(--text-color-secondary, #aaa);
+    padding: 4px;
+    cursor: pointer;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.15s, color 0.15s, border-color 0.15s, background-color 0.15s;
+}
+
+.acp-code:hover .acp-code-copy-button,
+.acp-code-copy-button:focus-visible {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.acp-code-copy-button svg {
+    width: 16px;
+    height: 16px;
+}
+
+.acp-code-copy-button:hover,
+.acp-code-copy-button:focus-visible {
+    border-color: var(--accent-color, #7ab7ff);
+    background: var(--hover-bg, rgba(127, 127, 127, 0.2));
+    color: var(--text-color, #eee);
+}
+
+.acp-code-copy-button:focus-visible {
+    outline: 2px solid var(--accent-color, #7ab7ff);
+    outline-offset: 1px;
+}
+
+.acp-code-copy-button[data-copy-status="copied"] {
+    color: var(--success-color, #8bd49c);
+}
+
+.acp-code-copy-button[data-copy-status="error"] {
+    color: var(--error-text, #df8f8f);
+}
+
 .acp-code-host {
     min-height: 0;
 }
@@ -642,6 +705,10 @@
     .acp-code {
         padding: 0.35em;
         max-height: 26vh;
+    }
+
+    .acp-code-toolbar {
+        margin-left: -0.35em;
     }
 
     .acp-code .anyeditor {

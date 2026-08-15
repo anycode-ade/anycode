@@ -66,3 +66,30 @@ export const getLanguageFromFileName = (fileName: string): string => {
     const ext = normalizedName.split('.').pop();
     return LANGUAGE_EXTENSIONS[ext || ''] || '';
 };
+
+export const copyTextToClipboard = async (text: string): Promise<void> => {
+    if (navigator.clipboard?.writeText) {
+        try {
+            await navigator.clipboard.writeText(text);
+            return;
+        } catch {
+            // Fall back to the legacy API when clipboard permissions are unavailable.
+        }
+    }
+
+    const textArea = document.createElement('textarea');
+    textArea.value = text;
+    textArea.setAttribute('readonly', '');
+    textArea.style.position = 'fixed';
+    textArea.style.opacity = '0';
+    document.body.appendChild(textArea);
+    textArea.select();
+
+    try {
+        if (!document.execCommand('copy')) {
+            throw new Error('Copy command was rejected');
+        }
+    } finally {
+        textArea.remove();
+    }
+};

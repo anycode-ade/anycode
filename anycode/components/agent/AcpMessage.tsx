@@ -4,6 +4,7 @@ import remarkBreaks from 'remark-breaks';
 import remarkGfm from 'remark-gfm';
 import { diffLines } from 'diff';
 import { AnycodeEditorReact, AnycodeEditor } from 'anycode-react';
+import { Icons } from '../Icons';
 import {
   AcpMessage as AcpMessageType,
   AcpDiffContent,
@@ -16,7 +17,7 @@ import {
   AcpThoughtMessage,
   AcpErrorMessage,
 } from '../../types';
-import { LANGUAGE_EXTENSIONS, EDITOR_SUPPORTED_LANGUAGES, getFileName } from '../../utils';
+import { LANGUAGE_EXTENSIONS, EDITOR_SUPPORTED_LANGUAGES, getFileName, copyTextToClipboard } from '../../utils';
 import './AcpMessage.css';
 
 let codeBlockIdCounter = 0;
@@ -730,6 +731,54 @@ const MarkdownTextBlock: React.FC<{
   </ReactMarkdown>
 );
 
+const CodeCopyButton: React.FC<{ content: string }> = ({ content }) => {
+  const [copyStatus, setCopyStatus] = React.useState<'idle' | 'copied' | 'error'>('idle');
+  const copyResetTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  React.useEffect(() => () => {
+    if (copyResetTimerRef.current) {
+      clearTimeout(copyResetTimerRef.current);
+    }
+  }, []);
+
+  const handleCopy = async () => {
+    if (copyResetTimerRef.current) {
+      clearTimeout(copyResetTimerRef.current);
+    }
+
+    try {
+      await copyTextToClipboard(content);
+      setCopyStatus('copied');
+    } catch (error) {
+      console.warn('Failed to copy code block:', error);
+      setCopyStatus('error');
+    }
+
+    copyResetTimerRef.current = setTimeout(() => {
+      setCopyStatus('idle');
+    }, 1800);
+  };
+
+  const copyButtonLabel = copyStatus === 'copied'
+    ? 'Code copied'
+    : copyStatus === 'error'
+      ? 'Copy failed'
+      : 'Copy code';
+
+  return (
+    <button
+      type="button"
+      className="acp-code-copy-button"
+      onClick={handleCopy}
+      aria-label={copyButtonLabel}
+      title={copyButtonLabel}
+      data-copy-status={copyStatus}
+    >
+      {copyStatus === 'copied' ? <Icons.Check /> : <Icons.Copy />}
+    </button>
+  );
+};
+
 const MarkdownCodeBlock: React.FC<{
   code: string;
   language: string;
@@ -744,6 +793,12 @@ const MarkdownCodeBlock: React.FC<{
     codeBlockIdCounter += 1;
     blockIdRef.current = `acp-code-block-${codeBlockIdCounter}`;
   }
+
+  const codeToolbar = (
+    <div className="acp-code-toolbar">
+      <CodeCopyButton content={code} />
+    </div>
+  );
 
   React.useEffect(() => {
     if (editor) {
@@ -805,6 +860,7 @@ const MarkdownCodeBlock: React.FC<{
   if (!useEditor) {
     return (
       <div className="acp-code">
+        {codeToolbar}
         <pre className="acp-code-block-fallback">{code}</pre>
       </div>
     );
@@ -815,6 +871,7 @@ const MarkdownCodeBlock: React.FC<{
       ref={containerRef}
       className={`acp-code ${isOpen ? 'acp-code-streaming' : ''}`}
     >
+      {codeToolbar}
       {editor ? (
         <AnycodeEditorReact id={blockIdRef.current!} editorState={editor} />
       ) : (

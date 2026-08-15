@@ -434,6 +434,18 @@ test.describe('Anycode Live Demo Mode E2E Tests', () => {
 
             // Assert 4: Code block diff snippet is rendered in response message
             await expect(page.locator('.acp-message-content code, pre').getByText(/def greet/i).first()).toBeVisible({ timeout: 10000 });
+
+            // Assert 5: Markdown code blocks expose a copy action and acknowledge the copy
+            const markdownCode = page.locator('.acp-message-markdown').last();
+            const copyCodeButton = markdownCode.getByRole('button', { name: 'Copy code' }).first();
+            const codeBlock = markdownCode.locator('.acp-code').filter({ has: copyCodeButton }).first();
+            await expect(copyCodeButton).not.toBeVisible();
+            await codeBlock.hover();
+            await expect(copyCodeButton).toBeVisible({ timeout: 10000 });
+            await expect(copyCodeButton.locator('svg')).toBeVisible();
+            await expect(codeBlock.locator('.acp-code-toolbar')).toHaveCSS('position', 'sticky');
+            await copyCodeButton.click();
+            await expect(page.getByRole('button', { name: 'Code copied' }).first()).toBeVisible({ timeout: 5000 });
         }
     });
 
