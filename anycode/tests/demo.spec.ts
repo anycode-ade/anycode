@@ -336,6 +336,25 @@ test.describe('Anycode Live Demo Mode E2E Tests', () => {
         }
     });
 
+    test('should collapse and expand long user messages', async ({ page }) => {
+        const promptInput = page.getByPlaceholder('Ask anything...');
+        if (await promptInput.isVisible({ timeout: 5000 }).catch(() => false)) {
+            const longPrompt = Array.from({ length: 24 }, (_, index) => `Log line ${index + 1}: repeated diagnostic output`).join('\n');
+            await promptInput.fill(longPrompt);
+            await promptInput.press('Enter');
+
+            const userMessage = page.locator('.acp-message-user').filter({ hasText: 'Log line 24' }).last();
+            const toggle = userMessage.getByRole('button', { name: 'Show more' });
+            await expect(toggle).toBeVisible({ timeout: 10000 });
+            await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+            await expect(userMessage.locator('.acp-user-message-body')).toHaveClass(/acp-user-message-body-collapsed/);
+
+            await toggle.click();
+            await expect(userMessage.getByRole('button', { name: 'Show less' })).toHaveAttribute('aria-expanded', 'true');
+            await expect(userMessage.locator('.acp-user-message-body')).not.toHaveClass(/acp-user-message-body-collapsed/);
+        }
+    });
+
     test('should search ACP text without expanding unrelated work groups', async ({ page }) => {
         const promptInput = page.getByPlaceholder('Ask anything...');
         if (await promptInput.isVisible({ timeout: 5000 }).catch(() => false)) {

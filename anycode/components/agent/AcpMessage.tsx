@@ -946,62 +946,98 @@ const TextMessage: React.FC<{
   onUndo?: () => void;
   onOpenFile?: (path: string, line?: number, column?: number) => void;
   onOpenFileDiff?: (path: string, line?: number, column?: number) => void;
-}> = ({ message, onUndo, onOpenFile, onOpenFileDiff }) => (
-  <div className={`acp-message acp-message-${message.role}`}>
-    <div className="acp-message-content acp-message-content-with-actions">
-      <StreamingMarkdownContent
-        content={message.content}
-        onOpenFile={onOpenFile}
-        onOpenFileDiff={onOpenFileDiff}
-      />
-      {message.role === 'user' && Array.isArray(message.attachments) && message.attachments.length > 0 && (
-        <div className="acp-message-attachments">
-          {message.attachments.map((attachment, index) => {
-            const src = `data:${attachment.mime_type};base64,${attachment.data_base64}`;
-            const isImage = attachment.mime_type.startsWith('image/');
-            const isAudio = attachment.mime_type.startsWith('audio/');
-            if (isImage) {
-              return (
-                <img
-                  key={`${attachment.name}-${index}`}
-                  src={src}
-                  alt={attachment.name}
-                  className="acp-message-attachment-image"
-                />
-              );
-            }
-            if (isAudio) {
-              return (
-                <audio
-                  key={`${attachment.name}-${index}`}
-                  controls
-                  src={src}
-                  className="acp-message-attachment-audio"
-                />
-              );
-            }
-            return (
-              <div
-                key={`${attachment.name}-${index}`}
-                className="acp-message-attachment-file"
-                title={attachment.mime_type}
-              >
-                {attachment.name}
-              </div>
-            );
-          })}
+}> = ({ message, onUndo, onOpenFile, onOpenFileDiff }) => {
+  const [isExpanded, setIsExpanded] = React.useState(false);
+  const [isCollapsible, setIsCollapsible] = React.useState(false);
+  const bodyRef = React.useRef<HTMLDivElement>(null);
+
+  React.useLayoutEffect(() => {
+    const body = bodyRef.current;
+    if (!body || message.role !== 'user') {
+      setIsCollapsible(false);
+      return;
+    }
+
+    setIsExpanded(false);
+    const frame = requestAnimationFrame(() => {
+      setIsCollapsible(body.scrollHeight > body.clientHeight + 1);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [message.content, message.role]);
+
+  return (
+    <div className={`acp-message acp-message-${message.role}`}>
+      <div className="acp-message-content acp-message-content-with-actions">
+        <div
+          ref={bodyRef}
+          className={`acp-user-message-body ${message.role === 'user' && !isExpanded ? 'acp-user-message-body-collapsed' : ''}`}
+        >
+          <StreamingMarkdownContent
+            content={message.content}
+            onOpenFile={onOpenFile}
+            onOpenFileDiff={onOpenFileDiff}
+          />
         </div>
-      )}
-      {message.role === 'user' && onUndo && (
-        <div className="acp-message-actions">
-          <button className="acp-undo-button" onClick={onUndo} title="Undo">
-            Undo
+        {message.role === 'user' && isCollapsible && (
+          <button
+            type="button"
+            className="acp-user-message-toggle"
+            aria-expanded={isExpanded}
+            onClick={() => setIsExpanded((expanded) => !expanded)}
+          >
+            <span aria-hidden="true">{isExpanded ? '▲' : '▼'}</span>
+            {isExpanded ? 'Show less' : 'Show more'}
           </button>
-        </div>
-      )}
+        )}
+        {message.role === 'user' && Array.isArray(message.attachments) && message.attachments.length > 0 && (
+          <div className="acp-message-attachments">
+            {message.attachments.map((attachment, index) => {
+              const src = `data:${attachment.mime_type};base64,${attachment.data_base64}`;
+              const isImage = attachment.mime_type.startsWith('image/');
+              const isAudio = attachment.mime_type.startsWith('audio/');
+              if (isImage) {
+                return (
+                  <img
+                    key={`${attachment.name}-${index}`}
+                    src={src}
+                    alt={attachment.name}
+                    className="acp-message-attachment-image"
+                  />
+                );
+              }
+              if (isAudio) {
+                return (
+                  <audio
+                    key={`${attachment.name}-${index}`}
+                    controls
+                    src={src}
+                    className="acp-message-attachment-audio"
+                  />
+                );
+              }
+              return (
+                <div
+                  key={`${attachment.name}-${index}`}
+                  className="acp-message-attachment-file"
+                  title={attachment.mime_type}
+                >
+                  {attachment.name}
+                </div>
+              );
+            })}
+          </div>
+        )}
+        {message.role === 'user' && onUndo && (
+          <div className="acp-message-actions">
+            <button className="acp-undo-button" onClick={onUndo} title="Undo">
+              Undo
+            </button>
+          </div>
+        )}
+      </div>
     </div>
-  </div>
-);
+  );
+};
 
 const MediaMessage: React.FC<{
   message: AcpMediaMessage;
