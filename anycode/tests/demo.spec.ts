@@ -352,6 +352,7 @@ test.describe('Anycode Live Demo Mode E2E Tests', () => {
             await toggle.click();
             await expect(userMessage.getByRole('button', { name: 'Show less' })).toHaveAttribute('aria-expanded', 'true');
             await expect(userMessage.locator('.acp-user-message-body')).not.toHaveClass(/acp-user-message-body-collapsed/);
+            await expect(page.getByRole('button', { name: 'Enable auto-scroll' })).toBeVisible();
         }
     });
 

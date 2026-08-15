@@ -18,6 +18,7 @@ interface AcpMessagesProps {
   expandedThoughts: Set<number>;
   activeSearchMessageIndex?: number;
   onWorkGroupExpansionChange?: () => void;
+  onUserMessageToggle?: () => void;
   onToggleToolCall: (index: number) => void;
   onToggleToolResult: (index: number) => void;
   onToggleThought: (index: number) => void;
@@ -34,6 +35,7 @@ const AcpMessagesComponent: React.FC<AcpMessagesProps> = ({
   expandedThoughts,
   activeSearchMessageIndex,
   onWorkGroupExpansionChange,
+  onUserMessageToggle,
   onToggleToolCall,
   onToggleToolResult,
   onToggleThought,
@@ -187,6 +189,7 @@ const AcpMessagesComponent: React.FC<AcpMessagesProps> = ({
           toolUpdates={toolUpdates}
           onOpenFile={onOpenFile}
           onOpenFileDiff={onOpenFileDiff}
+          onUserMessageToggle={onUserMessageToggle}
           onUndo={
             message.role === 'user' && onUndoMessage
               ? () => onUndoMessage(message)
