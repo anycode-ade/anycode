@@ -27,6 +27,7 @@ interface AcpMessageProps {
   toolUpdates?: AcpToolUpdateMessage[];
   isExpanded?: boolean;
   onToggle?: () => void;
+  onUserMessageToggle?: () => void;
   onUndo?: () => void;
   onOpenFile?: (path: string, line?: number, column?: number) => void;
   onOpenFileDiff?: (path: string, line?: number, column?: number) => void;
@@ -943,10 +944,11 @@ const StreamingMarkdownContent: React.FC<{
 
 const TextMessage: React.FC<{
   message: AcpUserMessage | AcpAssistantMessage;
+  onUserMessageToggle?: () => void;
   onUndo?: () => void;
   onOpenFile?: (path: string, line?: number, column?: number) => void;
   onOpenFileDiff?: (path: string, line?: number, column?: number) => void;
-}> = ({ message, onUndo, onOpenFile, onOpenFileDiff }) => {
+}> = ({ message, onUserMessageToggle, onUndo, onOpenFile, onOpenFileDiff }) => {
   const [isExpanded, setIsExpanded] = React.useState(false);
   const [isCollapsible, setIsCollapsible] = React.useState(false);
   const bodyRef = React.useRef<HTMLDivElement>(null);
@@ -983,7 +985,10 @@ const TextMessage: React.FC<{
             type="button"
             className="acp-user-message-toggle"
             aria-expanded={isExpanded}
-            onClick={() => setIsExpanded((expanded) => !expanded)}
+            onClick={() => {
+              onUserMessageToggle?.();
+              setIsExpanded((expanded) => !expanded);
+            }}
           >
             <span aria-hidden="true">{isExpanded ? '▲' : '▼'}</span>
             {isExpanded ? 'Show less' : 'Show more'}
@@ -1125,6 +1130,7 @@ const AcpMessageComponent: React.FC<AcpMessageProps> = ({
   toolUpdates,
   isExpanded = false,
   onToggle,
+  onUserMessageToggle,
   onUndo,
   onOpenFile,
   onOpenFileDiff,
@@ -1164,6 +1170,7 @@ const AcpMessageComponent: React.FC<AcpMessageProps> = ({
       return (
         <TextMessage
           message={message}
+          onUserMessageToggle={onUserMessageToggle}
           onUndo={onUndo}
           onOpenFile={onOpenFile}
           onOpenFileDiff={onOpenFileDiff}
@@ -1206,6 +1213,7 @@ export const AcpMessage = React.memo(AcpMessageComponent, (previous, next) => (
   && previous.toolResult === next.toolResult
   && previous.toolUpdates === next.toolUpdates
   && previous.isExpanded === next.isExpanded
+  && previous.onUserMessageToggle === next.onUserMessageToggle
   && previous.onOpenFile === next.onOpenFile
   && previous.onOpenFileDiff === next.onOpenFileDiff
 ));

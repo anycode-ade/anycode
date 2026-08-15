@@ -689,6 +689,7 @@ const AcpSessionComponent: React.FC<AcpSessionProps> = ({
               expandedThoughts={searchExpandedThoughts}
               activeSearchMessageIndex={activeSearchMessageIndex}
               onWorkGroupExpansionChange={handleWorkGroupExpansionChange}
+              onUserMessageToggle={disableAutoScroll}
               onToggleToolCall={handleToggleToolCall}
               onToggleToolResult={handleToggleToolResult}
               onToggleThought={handleToggleThought}
