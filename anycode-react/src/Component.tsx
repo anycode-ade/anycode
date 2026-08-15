@@ -30,10 +30,13 @@ export default function AnycodeEditorReact({ id, editorState, forceUpdateTrigger
             }
         } else {
             editorState.render();
-            let { line, column } = editorState.getCursor();
-            if (line !== undefined && column !== undefined) {
-                editorState.requestFocus(line, column);
-                editorState.renderCursorOrSelection();
+            let focus = editorState.requestedFocus();
+            if (focus) {
+                let { line, column } = editorState.getCursor();
+                if (line !== undefined && column !== undefined) {
+                    editorState.requestFocus(line, column);
+                    editorState.renderCursorOrSelection();
+                }
             }
         }
 
