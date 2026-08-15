@@ -323,13 +323,6 @@ export class MultiBufferCode extends Code {
         if (!row) return this.getContentLength();
 
         this.activateFile(row.fileIndex);
-        if (row.kind === 'header') {
-            const bodyRow = this.rows.findIndex((candidate) => (
-                candidate.fileIndex === row.fileIndex && candidate.kind === 'file'
-            ));
-            return bodyRow >= 0 ? this.rows[bodyRow].start : row.start;
-        }
-
         return row.start + Math.max(0, Math.min(row.text.length, column));
     }
 
