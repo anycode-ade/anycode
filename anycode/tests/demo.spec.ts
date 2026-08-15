@@ -542,6 +542,50 @@ test.describe('Anycode Live Demo Mode E2E Tests', () => {
         await expect(singleLineGaps).toHaveCount(0);
     });
 
+    test('should preserve scroll position in Multibuffer Review when switching panels', async ({ page }) => {
+        const historyTab = page.getByText(/^History$/i).first();
+        await historyTab.click();
+        const historyList = page.locator('.history-panel').getByRole('list', { name: 'Git history' });
+        const firstCommit = historyList.locator('.history-commit-row').first();
+        await firstCommit.click();
+
+        const reviewBtn = historyList.locator('.history-review-button, button:has-text("Review")').first();
+        await expect(reviewBtn).toBeVisible({ timeout: 5000 });
+        await reviewBtn.click();
+        await expect(page.locator('.multibuffer-panel').first()).toBeVisible({ timeout: 10000 });
+
+        const editorContainer = page.locator('.multibuffer-editor-shell .anyeditor').first();
+        await expect(editorContainer).toBeVisible({ timeout: 10000 });
+
+        // Scroll down in review editor
+        await editorContainer.evaluate((el) => {
+            el.scrollTop = 200;
+            el.dispatchEvent(new Event('scroll'));
+        });
+
+        await expect.poll(() => editorContainer.evaluate((el) => el.scrollTop)).toBe(200);
+
+        // Add a new tab in the editor region to hide the review tab
+        const editorRegion = page.getByRole('region', { name: 'Editor' });
+        const addEmptyTabButton = editorRegion.getByRole('button', { name: 'Add Empty Tab' });
+        await editorRegion.locator('.layout-header-actions').hover();
+        await addEmptyTabButton.click();
+
+        // Select Settings panel in picker to activate the new tab
+        const picker = page.locator('.layout-panel-picker').last();
+        await expect(picker).toBeVisible();
+        await picker.getByRole('button', { name: 'Settings', exact: true }).click();
+        await expect(page.locator('.layout-dock-panel--settings:visible')).toBeVisible();
+
+        // Switch back to the Review/Editor tab
+        const reviewTab = page.getByRole('tab', { name: 'Editor' }).first();
+        await reviewTab.click();
+        await expect(editorContainer).toBeVisible({ timeout: 10000 });
+
+        // Verify scroll position was preserved
+        await expect.poll(() => editorContainer.evaluate((el) => el.scrollTop), { timeout: 5000 }).toBe(200);
+    });
+
     test('should render a deleted-only commit in Multibuffer Review', async ({ page }) => {
         await page.getByText(/^History$/i).first().click();
         const historyList = page.locator('.history-panel').getByRole('list', { name: 'Git history' });

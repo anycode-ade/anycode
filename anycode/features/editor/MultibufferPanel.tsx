@@ -1,6 +1,8 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { AnycodeEditorReact } from 'anycode-react';
 import { AnycodeEditor, Code, MultiBufferCode, type MultiBufferEntry, type DefinitionRequest, type DefinitionResponse, type HoverRequest } from 'anycode-base';
+import type { DockviewPanelApi } from 'dockview';
+import { LayoutPanelApiContext, LayoutVersionContext } from '../../components/layout/Layout';
 import type { FileState } from '../../types';
 import './MultibufferPanel.css';
 
@@ -56,6 +58,8 @@ const MultibufferPanel: React.FC<MultibufferPanelProps> = ({
     onHover,
     onLoadDeletedFile,
 }) => {
+    const panel = useContext(LayoutPanelApiContext) as DockviewPanelApi | null;
+    const layoutVersion = useContext(LayoutVersionContext);
     const [sharedEditor, setSharedEditor] = useState<AnycodeEditor | null>(null);
     const sharedEditorRef = useRef<AnycodeEditor | null>(null);
     const currentCodeRef = useRef<MultiBufferCode | null>(null);
@@ -81,6 +85,16 @@ const MultibufferPanel: React.FC<MultibufferPanelProps> = ({
                 ? [{ file, code: deletedEntry.code, originalCode: deletedEntry.originalCode }]
                 : [];
         }), [deletedEntriesVersion, editorStates, fileById, files]);
+
+    useEffect(() => {
+        if (!panel || !sharedEditor) return;
+        const disposable = panel.onDidVisibilityChange((event) => {
+            if (event.isVisible) {
+                sharedEditor.restoreScroll();
+            }
+        });
+        return () => disposable.dispose();
+    }, [panel, sharedEditor]);
 
     useEffect(() => {
         const deletedFiles = files.filter((file) => file.status === 'deleted');
@@ -408,6 +422,7 @@ const MultibufferPanel: React.FC<MultibufferPanelProps> = ({
                         <AnycodeEditorReact
                             id={`multibuffer-${panelKey}`}
                             editorState={sharedEditor}
+                            forceUpdateTrigger={layoutVersion}
                         />
                     </div>
                 ) : (
