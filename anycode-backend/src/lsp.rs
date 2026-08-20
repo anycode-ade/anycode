@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use tokio::io::{self};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::process::Command;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, Notify};
 use tokio::sync::mpsc;
 use tokio::time::Duration;
 use tokio::time::{self};
@@ -19,6 +19,8 @@ use lsp_types::*;
 
 use crate::config::Config;
 use crate::utils::path_to_uri;
+
+const PROJECT_INITIALIZATION_TIMEOUT: Duration = Duration::from_secs(30);
 
 fn lsp_command(program: &str, args: &[&str]) -> Command {
     let mut command = Command::new(program);
@@ -82,6 +84,8 @@ pub struct Lsp {
     pending: Arc<Mutex<HashMap<usize, mpsc::Sender<String>>>>,
     configuration: Arc<Mutex<Value>>,
     ready: AtomicBool,
+    project_initialized: Arc<AtomicBool>,
+    project_initialization_notify: Arc<Notify>,
     opened: HashSet<String>,
 }
 
@@ -97,6 +101,8 @@ impl Lsp {
             pending: Arc::new(Mutex::new(HashMap::new())),
             configuration: Arc::new(Mutex::new(Value::Object(serde_json::Map::new()))),
             ready: AtomicBool::new(false),
+            project_initialized: Arc::new(AtomicBool::new(false)),
+            project_initialization_notify: Arc::new(Notify::new()),
             opened: HashSet::new(),
         }
     }
@@ -149,6 +155,8 @@ impl Lsp {
 
         let pending = self.pending.clone();
         let configuration = self.configuration.clone();
+        let project_initialized = self.project_initialized.clone();
+        let project_initialization_notify = self.project_initialization_notify.clone();
 
         // reading from child stdout
         tokio::spawn(async move {
@@ -221,6 +229,10 @@ impl Lsp {
                 }
 
                 match parsed_json.get("method").and_then(|v| v.as_str()) {
+                    Some("workspace/projectInitializationComplete") => {
+                        project_initialized.store(true, Ordering::SeqCst);
+                        project_initialization_notify.notify_waiters();
+                    }
                     Some("textDocument/publishDiagnostics") => {
                         // diagnostics
                         let v = parsed_json["params"].clone();
@@ -331,6 +343,9 @@ impl Lsp {
         }
 
         self.ready.store(true, Ordering::SeqCst);
+        if !self.requires_project_initialization() {
+            self.project_initialized.store(true, Ordering::SeqCst);
+        }
         Ok(())
     }
 
@@ -357,6 +372,8 @@ impl Lsp {
         if !self.is_ready() {
             return Err(anyhow::anyhow!("LSP not ready"));
         }
+
+        self.wait_for_project_initialization().await?;
 
         let id = self.get_next_id();
 
@@ -391,6 +408,32 @@ impl Lsp {
         Ok(parsed)
     }
 
+    fn requires_project_initialization(&self) -> bool {
+        self.lsp_name.as_deref() == Some("roslyn-language-server")
+    }
+
+    async fn wait_for_project_initialization(&self) -> anyhow::Result<()> {
+        if !self.requires_project_initialization() {
+            return Ok(());
+        }
+
+        let notification = self.project_initialization_notify.notified();
+        if self.project_initialized.load(Ordering::SeqCst) {
+            return Ok(());
+        }
+
+        if time::timeout(PROJECT_INITIALIZATION_TIMEOUT, notification)
+            .await
+            .is_err()
+        {
+            return Err(anyhow::anyhow!(
+                "Timed out waiting for LSP project initialization"
+            ));
+        }
+
+        Ok(())
+    }
+
     pub fn is_ready(&mut self) -> bool {
         self.ready.load(Ordering::SeqCst)
     }
@@ -406,7 +449,14 @@ impl Lsp {
     }
 
     pub fn did_open(&mut self, lang: &str, path: &str, text: &str) -> Result<()> {
-        self.opened.insert(path.to_string());
+        // A document may be opened by more than one editor pane or by a
+        // repeated file:open event. LSP requires didOpen to be sent only
+        // once per document and server connection. Some servers tolerate a
+        // duplicate notification, while Roslyn terminates the connection.
+        if !self.opened.insert(path.to_string()) {
+            return Ok(());
+        }
+
         let uri = path_to_uri(path)?;
         let params = DidOpenTextDocumentParams {
             text_document: TextDocumentItem {

@@ -125,9 +125,16 @@ const uriToFilePath = (uriOrPath: string): string => {
 
     const rawPath = uriOrPath.slice('file://'.length);
     try {
-        return decodeURIComponent(rawPath);
+        const decodedPath = decodeURIComponent(rawPath);
+        // file:///C:/... is the canonical URI form for Windows, but the
+        // local filesystem path must be C:/..., without the URI root slash.
+        return /^\/[A-Za-z]:\//.test(decodedPath)
+            ? decodedPath.slice(1)
+            : decodedPath;
     } catch {
-        return rawPath;
+        return /^\/[A-Za-z]:\//.test(rawPath)
+            ? rawPath.slice(1)
+            : rawPath;
     }
 };
 
@@ -1056,19 +1063,17 @@ export const useEditors = ({ wsRef, isConnected, onFileClosed }: UseEditorsParam
                     const range = definition.range;
                     const line = range.start.line;
                     const column = range.start.character;
-                    const filePath = uri.replace('file://', '');
-                    const fileName = getFileName(filePath);
-
-                    const existingFile = filesRef.current.find((f) => f.id === filePath || f.name === fileName);
-                    if (existingFile) {
-                        setActiveFileId(existingFile.id);
-                        const editor = editorRefs.current.get(existingFile.id);
-                        if (editor) {
-                            editor.requestFocus(line, column);
-                        }
-                    } else {
-                        openFile(filePath, line, column);
-                    }
+                    const filePath = uriToFilePath(uri);
+                    // Always route definition navigation through openFile.
+                    // A persisted FileState can exist without a live editor
+                    // instance (for example after a reload); handling that
+                    // state here directly would silently skip file:open.
+                    openFile(
+                        filePath,
+                        line,
+                        column,
+                        activeEditorPaneIdRef.current || DEFAULT_EDITOR_PANE_ID,
+                    );
 
                     resolve(definition);
                 } else {
