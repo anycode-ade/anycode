@@ -13,7 +13,7 @@ export default defineConfig({
     webServer: {
         command: 'pnpm exec vite --mode demo --host 0.0.0.0 --port 5174',
         url: 'http://localhost:5174',
-        reuseExistingServer: false,
+        reuseExistingServer: true,
         timeout: 120 * 1000,
     },
     projects: [

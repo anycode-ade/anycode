@@ -1,4 +1,5 @@
 // demoSocket.ts - In-memory Mock Socket for Anycode Live Demo
+import { Code } from 'anycode-base';
 
 type EventHandler = (...args: any[]) => void;
 
@@ -7,24 +8,55 @@ interface VfsNode {
     name: string;
     is_dir: boolean;
     content?: string;
+    code?: Code;
 }
 
-const SCROLL_DEMO_CONTENT = Array.from({ length: 250 }, (_, section) => {
-    return `// Section ${section + 1}: generated records\n\n` +
-        Array.from({ length: 10 }, (_, item) => {
-            const index = section * 10 + item + 1;
-            return `export function processRecord${index}(payload: Record<string, unknown>): Record<string, unknown> {\n` +
-                `    /** Normalize record ${index} for the demo pipeline. */\n` +
-                `    const record: Record<string, unknown> = {\n` +
-                `        id: ${index},\n` +
-                `        name: payload.name ?? "record-${index}",\n` +
-                `        active: Boolean(payload.active ?? true),\n` +
-                `        score: Number(payload.score ?? 0),\n` +
-                `    };\n` +
-                `    return record;\n` +
-                `}\n\n`;
-        }).join('');
-}).join('');
+function getNodeContent(node: VfsNode): string {
+    if (node.code) {
+        return node.code.getContent();
+    }
+    return node.content ?? '';
+}
+
+function getNodeLines(node: VfsNode): string[] {
+    if (node.code) {
+        return node.code.getLines();
+    }
+    return typeof node.content === 'string' ? node.content.split('\n') : [];
+}
+
+function generateDemoScrollContent(targetLines: number = 1000000): string {
+    const lines: string[] = [
+        '/** Long TypeScript file used to exercise virtual scrolling with 1,000,000 lines in demo mode. */',
+        '// Generated records for stress testing virtual scrolling and tree-sitter',
+        '',
+    ];
+    let recordIndex = 1;
+    while (lines.length + 10 <= targetLines) {
+        lines.push(
+            `export function processRecord${recordIndex}(payload: Record<string, unknown>): Record<string, unknown> {`,
+            `    /** Normalize record ${recordIndex} for the demo pipeline. */`,
+            `    const record: Record<string, unknown> = {`,
+            `        id: ${recordIndex},`,
+            `        name: payload.name ?? "record-${recordIndex}",`,
+            `        active: Boolean(payload.active ?? true),`,
+            `        score: Number(payload.score ?? 0),`,
+            `    };`,
+            `    return record;`,
+            `}`
+        );
+        if (lines.length < targetLines) {
+            lines.push('');
+        }
+        recordIndex++;
+    }
+    while (lines.length < targetLines) {
+        lines.push(`export const item_${lines.length + 1} = ${lines.length + 1};`);
+    }
+    return lines.join('\n') + '\n';
+}
+
+const SCROLL_DEMO_CONTENT = generateDemoScrollContent(1000000);
 
 const DEMO_VFS: Record<string, VfsNode> = {
     '.': { path: '.', name: '.', is_dir: true },
@@ -200,15 +232,18 @@ const notifyGitChange = (socket: DemoSocket, targetPath: string) => {
         DEMO_CHANGED_FILES.set(targetPath, { path: targetPath, status: 'deleted', staged: false });
     } else if (original === undefined) {
         DEMO_CHANGED_FILES.set(targetPath, { path: targetPath, status: 'added', staged: false });
-    } else if (node.content !== original) {
-        const existing = DEMO_CHANGED_FILES.get(targetPath);
-        DEMO_CHANGED_FILES.set(targetPath, {
-            path: targetPath,
-            status: 'modified',
-            staged: existing ? existing.staged : false,
-        });
     } else {
-        DEMO_CHANGED_FILES.delete(targetPath);
+        const isModified = node.code ? (node.code.getVersionId() > 0) : (node.content !== original);
+        if (isModified) {
+            const existing = DEMO_CHANGED_FILES.get(targetPath);
+            DEMO_CHANGED_FILES.set(targetPath, {
+                path: targetPath,
+                status: 'modified',
+                staged: existing ? existing.staged : false,
+            });
+        } else {
+            DEMO_CHANGED_FILES.delete(targetPath);
+        }
     }
 
     const changedItem = DEMO_CHANGED_FILES.get(targetPath);
@@ -223,20 +258,22 @@ const notifyGitChange = (socket: DemoSocket, targetPath: string) => {
     socket.emitLocal('git:update', gitUpdatePayload);
 };
 
-const applyEditsToContent = (currentText: string, edits: any[]): string => {
-    let result = currentText;
+const applyEditsToNode = (node: VfsNode, edits: any[]): void => {
+    if (!node.code) {
+        node.code = new Code(node.content || '', node.name, 'text');
+    }
     for (const edit of edits) {
         if (!edit || typeof edit.start !== 'number' || typeof edit.text !== 'string') continue;
         const start = edit.start;
         const text = edit.text;
 
         if (edit.operation === 'insert') {
-            result = result.slice(0, start) + text + result.slice(start);
+            node.code.insert(text, start);
         } else if (edit.operation === 'remove') {
-            result = result.slice(0, start) + result.slice(start + text.length);
+            node.code.remove(start, text.length);
         }
     }
-    return result;
+    node.content = undefined;
 };
 
 // Dynamically import all 27+ real theme JSON files from the project themes/ directory via Vite glob!
@@ -381,11 +418,13 @@ export class DemoSocket {
                 const cleanPath = targetPath.replace(/^\.\//, '');
                 const node = DEMO_VFS[targetPath] || DEMO_VFS[cleanPath] || DEMO_VFS[`./${targetPath}`];
                 if (node && !node.is_dir) {
+                    const content = getNodeContent(node);
+                    const originalContent = ORIGINAL_VFS_CONTENTS[targetPath] ?? ORIGINAL_VFS_CONTENTS[cleanPath] ?? content;
                     callback?.({
                         success: true,
-                        content: node.content ?? '',
+                        content,
                         path: targetPath,
-                        original: { content: node.content ?? '', is_new: false, status: 'ok' },
+                        original: { content: originalContent, is_new: false, status: 'ok' },
                         history: { items: [], changes: [], index: 0 },
                     });
                 } else {
@@ -401,10 +440,15 @@ export class DemoSocket {
                 const key = DEMO_VFS[targetPath] ? targetPath : (DEMO_VFS[cleanPath] ? cleanPath : targetPath);
 
                 if (key && DEMO_VFS[key]) {
+                    const node = DEMO_VFS[key];
                     if (typeof payload.content === 'string') {
-                        DEMO_VFS[key].content = payload.content;
+                        if (node.code) {
+                            node.code.setContent(payload.content);
+                        } else {
+                            node.content = payload.content;
+                        }
                     } else if (Array.isArray(payload.edits) && payload.edits.length > 0) {
-                        DEMO_VFS[key].content = applyEditsToContent(DEMO_VFS[key].content || '', payload.edits);
+                        applyEditsToNode(node, payload.edits);
                     }
                     notifyGitChange(this, key);
                 }
@@ -629,6 +673,7 @@ export class DemoSocket {
                 const targetPath = payload?.path;
                 if (targetPath && ORIGINAL_VFS_CONTENTS[targetPath] !== undefined) {
                     DEMO_VFS[targetPath].content = ORIGINAL_VFS_CONTENTS[targetPath];
+                    delete DEMO_VFS[targetPath].code;
                     DEMO_CHANGED_FILES.delete(targetPath);
                     notifyGitChange(this, targetPath);
                 }
@@ -660,8 +705,8 @@ export class DemoSocket {
                     }));
                 }
                 DEMO_CHANGED_FILES.forEach((_, path) => {
-                    if (DEMO_VFS[path] && DEMO_VFS[path].content !== undefined) {
-                        ORIGINAL_VFS_CONTENTS[path] = DEMO_VFS[path].content!;
+                    if (DEMO_VFS[path]) {
+                        ORIGINAL_VFS_CONTENTS[path] = getNodeContent(DEMO_VFS[path]);
                     }
                 });
                 DEMO_CHANGED_FILES.clear();

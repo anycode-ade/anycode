@@ -1,4 +1,5 @@
 import { Code, HighlighedNode } from "../code";
+import { BinaryTokens } from "../tokens";
 import { AnycodeLine, RowElements } from "../types";
 import { isGhostElement, objectHash, minimize } from "../utils";
 import { moveCursor, removeCursor } from "../cursor";
@@ -61,7 +62,8 @@ export class Renderer {
     private wordHighlightRenderer: WordHighlightRenderer;
     private bracketMatchRenderer: BracketMatchRenderer;
     private scrollbarMarkersRenderer: ScrollbarMarkersRenderer;
-    private visualRows: VisualRow[] = [];
+    private activeVisualRows: VisualRow[] | null = null;
+    private lastTotalLines: number = 0;
     private visualIndexByElement = new WeakMap<HTMLElement, number>();
     private lastCollapsedMap: Map<number, number> = new Map();
     private lastFoldableStarts: Map<number, number> = new Map();
@@ -123,7 +125,8 @@ export class Renderer {
             },
             onImmediateScroll,
             scrollbarMarkersEnabled,
-            wrapper
+            wrapper,
+            (isDragging, state) => this.setFastScroll(isDragging, state)
         );
     }
 
@@ -132,44 +135,180 @@ export class Renderer {
     }
 
     public clean() {
+        if (this.expandBufferRafId !== null) {
+            cancelAnimationFrame(this.expandBufferRafId);
+            this.expandBufferRafId = null;
+        }
         this.scrollbarMarkersRenderer.clean();
     }
 
+    private sparseGhostGroups: {
+        anchorLine: number;
+        hunkId: number;
+        oldLineNumbers: number[];
+        ghostCount: number;
+        startVisualIndex: number;
+    }[] = [];
+    private totalGhostLines: number = 0;
+
+    private updateSparseGhostIndex(diffs: Map<number, DiffInfo> | undefined, totalLines: number): void {
+        this.sparseGhostGroups = [];
+        this.totalGhostLines = 0;
+        if (!diffs || diffs.size === 0) return;
+
+        const processedHunks = new Set<number>();
+        const ghostsByAnchor = new Map<number, { hunkId: number; oldLineNumbers: number[] }[]>();
+
+        for (const [lineNumber, diffInfo] of diffs) {
+            if (!diffInfo.oldLineNumbers || diffInfo.oldLineNumbers.length === 0) continue;
+            if (diffInfo.changeType !== 'modified' && diffInfo.changeType !== 'deleted') continue;
+
+            const anchorLine = diffInfo.ghostAnchorLine ?? lineNumber;
+            if (!ghostsByAnchor.has(anchorLine)) {
+                ghostsByAnchor.set(anchorLine, []);
+            }
+            ghostsByAnchor.get(anchorLine)!.push({
+                hunkId: diffInfo.hunkId,
+                oldLineNumbers: diffInfo.oldLineNumbers,
+            });
+        }
+
+        const sortedAnchors = Array.from(ghostsByAnchor.keys()).sort((a, b) => a - b);
+        let cumulativeGhosts = 0;
+
+        for (const anchor of sortedAnchors) {
+            const groups = ghostsByAnchor.get(anchor)!;
+            for (const group of groups) {
+                if (processedHunks.has(group.hunkId)) continue;
+                processedHunks.add(group.hunkId);
+
+                const validOldNumbers = group.oldLineNumbers.filter((n) => n >= 1);
+                if (validOldNumbers.length === 0) continue;
+
+                const startVisualIndex = Math.max(0, anchor - 1) + cumulativeGhosts;
+                const ghostCount = validOldNumbers.length;
+
+                this.sparseGhostGroups.push({
+                    anchorLine: anchor,
+                    hunkId: group.hunkId,
+                    oldLineNumbers: validOldNumbers,
+                    ghostCount,
+                    startVisualIndex,
+                });
+
+                cumulativeGhosts += ghostCount;
+            }
+        }
+
+        this.totalGhostLines = cumulativeGhosts;
+    }
+
     public getVisualRowCount(): number {
-        return this.visualRows.length;
+        if (this.activeVisualRows) {
+            return this.activeVisualRows.length;
+        }
+        return this.lastTotalLines + this.totalGhostLines;
+    }
+
+    public getVisualRow(visualIndex: number): VisualRow {
+        if (this.activeVisualRows) {
+            return this.activeVisualRows[visualIndex] ?? { kind: 'real', lineIndex: visualIndex };
+        }
+
+        if (this.sparseGhostGroups.length === 0) {
+            return { kind: 'real', lineIndex: visualIndex };
+        }
+
+        let ghostsBefore = 0;
+        for (let g = 0; g < this.sparseGhostGroups.length; g++) {
+            const group = this.sparseGhostGroups[g];
+            if (visualIndex < group.startVisualIndex) {
+                return { kind: 'real', lineIndex: visualIndex - ghostsBefore };
+            }
+            if (visualIndex < group.startVisualIndex + group.ghostCount) {
+                const ghostOffset = visualIndex - group.startVisualIndex;
+                const originalLineNumber = group.oldLineNumbers[ghostOffset];
+                return {
+                    kind: 'ghost',
+                    hunkId: group.hunkId,
+                    anchorLine: group.anchorLine,
+                    originalLineIndex: originalLineNumber - 1,
+                };
+            }
+            ghostsBefore += group.ghostCount;
+        }
+
+        return { kind: 'real', lineIndex: visualIndex - ghostsBefore };
+    }
+
+    public getVisualRows(startIndex: number, endIndex: number): VisualRow[] {
+        const count = Math.max(0, endIndex - startIndex);
+        const rows: VisualRow[] = new Array(count);
+        for (let i = 0; i < count; i++) {
+            rows[i] = this.getVisualRow(startIndex + i);
+        }
+        return rows;
     }
 
     public setFocusedDiffMode(enabled: boolean, contextLines: number = 3) {
         this.diffRenderer.setFocusedDiffMode(enabled, contextLines);
     }
 
+    private lastGutterWidth: number = 48;
+    public lastScrollTop: number = 0;
+    public lastClientHeight: number = 600;
+
+    public updateGutterWidth(state: EditorState) {
+        const totalRealLines = state.code.linesLength();
+        const digits = Math.max(3, String(Math.max(1, totalRealLines)).length);
+        const gutterWidth = Math.max(48, Math.ceil(digits * 8.5 + 18));
+        this.lastGutterWidth = gutterWidth;
+        const foldsLeft = 32 + gutterWidth;
+        this.container.style.setProperty('--anycode-gutter-width', `${gutterWidth}px`);
+        this.container.style.setProperty('--anycode-folds-left', `${foldsLeft}px`);
+        (this.container as any)._stickyWidth = undefined;
+    }
+
     public render(state: EditorState) {
         const { code, diffs } = state;
+        if (this.container.isConnected) {
+            this.lastScrollTop = this.container.scrollTop;
+            if (this.container.clientHeight > 0) {
+                this.lastClientHeight = this.container.clientHeight;
+            }
+        }
+        this.updateGutterWidth(state);
         this.codeFoldingEnabled = state.codeFoldingEnabled ?? true;
         this.updateFoldableStarts(state);
         this.updateCollapsedMap(state);
 
-        // Build unified visual rows model (real lines + ghost lines)
         const totalRealLines = code.linesLength();
-        this.visualRows = this.diffEnabled
-            ? this.buildVisualRows(totalRealLines, diffs, code)
-            : this.buildRealOnlyRows(totalRealLines);
+        this.lastTotalLines = totalRealLines;
+
+        this.updateSparseGhostIndex(diffs, totalRealLines);
+
+        if (this.diffRenderer.isFocusedDiffEnabled() && diffs && diffs.size > 0) {
+            this.activeVisualRows = this.buildVisualRows(totalRealLines, diffs, code);
+        } else if (this.lastHiddenLines.size > 0 && this.codeFoldingEnabled) {
+            this.activeVisualRows = this.buildRealOnlyRows(totalRealLines);
+        } else {
+            this.activeVisualRows = null;
+        }
 
         this.renderViewport(state);
         const wordLines = this.wordHighlightRenderer.render(state, state.scrollbarMarkersEnabled);
         this.renderScrollbarMarkers(state, true, wordLines);
-        this.updateContentMinWidth(state);
     }
 
-    private renderViewport(state: EditorState) {
+    private renderViewport(state: EditorState, bufferOverride?: number) {
         const { settings, readOnly, search } = state;
 
-        const totalVisualRows = this.visualRows.length;
-        const { startIndex, endIndex } = this.getVisibleRange(totalVisualRows, settings);
+        const totalVisualRows = this.getVisualRowCount();
+        const { startIndex, endIndex } = this.getVisibleRange(totalVisualRows, settings, bufferOverride);
 
         const itemHeight = settings.lineHeight;
-        const paddingTop = startIndex * itemHeight;
-        const paddingBottom = (totalVisualRows - endIndex) * itemHeight;
+        const paddingTop = Math.round(startIndex * itemHeight);
+        const paddingBottom = Math.round(Math.max(0, (totalVisualRows - endIndex) * itemHeight));
 
         // Build fragments for better performance
         const btnFrag = document.createDocumentFragment();
@@ -183,10 +322,12 @@ export class Renderer {
         foldsFrag.appendChild(this.lineRenderer.createSpacer(paddingTop));
         codeFrag.appendChild(this.lineRenderer.createSpacer(paddingTop));
 
-        // Render visible slice of visual rows
-        for (let i = startIndex; i < endIndex; i++) {
-            const row = this.visualRows[i];
-            const elements = this.createRow(row, i, state);
+        // Render visible slice of visual rows on the fly
+        const visibleSlice = this.getVisualRows(startIndex, endIndex);
+        for (let i = 0; i < visibleSlice.length; i++) {
+            const visualIndex = startIndex + i;
+            const row = visibleSlice[i];
+            const elements = this.createRow(row, visualIndex, state);
             codeFrag.appendChild(elements.code);
             gutterFrag.appendChild(elements.gutter);
             btnFrag.appendChild(elements.btn);
@@ -214,6 +355,9 @@ export class Renderer {
         if (!readOnly && search.isActive()) {
             this.searchRenderer.updateSearchHighlights(search);
         }
+
+        // Update content min width based on rendered slice
+        this.updateContentMinWidth(state, startIndex, endIndex, bufferOverride === undefined);
     }
 
     private renderScrollbarMarkers(
@@ -229,11 +373,14 @@ export class Renderer {
         const effectiveWordLines = limitMarkers ? [] : wordLines;
         const effectiveIncludeSearch = limitMarkers ? false : includeSearch;
 
+        const totalVisualRows = this.getVisualRowCount();
+        const clientHeight = this.lastClientHeight || 600;
+        const scrollHeight = totalVisualRows * state.settings.lineHeight;
         this.scrollbarMarkersRenderer.updateGeometry(
-            this.container.clientHeight,
-            this.visualRows.length * state.settings.lineHeight
+            clientHeight,
+            scrollHeight
         );
-        this.scrollbarMarkersRenderer.render(state, effectiveIncludeSearch, effectiveWordLines, this.visualRows);
+        this.scrollbarMarkersRenderer.render(state, effectiveIncludeSearch, effectiveWordLines, this.activeVisualRows || undefined);
     }
 
     /**
@@ -362,31 +509,54 @@ export class Renderer {
      * This accounts for ghost lines above the target line.
      */
     private getVisualIndexForLine(lineIndex: number): number {
-        for (let i = 0; i < this.visualRows.length; i++) {
-            const row = this.visualRows[i];
-            if (row.kind === 'real' && row.lineIndex === lineIndex) {
-                return i;
+        if (this.activeVisualRows) {
+            for (let i = 0; i < this.activeVisualRows.length; i++) {
+                const row = this.activeVisualRows[i];
+                if (row.kind === 'real' && row.lineIndex === lineIndex) {
+                    return i;
+                }
+            }
+            // In focused diff mode, cursor can temporarily point to a hidden line.
+            // Snap to nearest rendered real row for scrolling purposes.
+            let nearestIndex = -1;
+            let nearestDistance = Number.POSITIVE_INFINITY;
+            for (let i = 0; i < this.activeVisualRows.length; i++) {
+                const row = this.activeVisualRows[i];
+                if (row.kind !== 'real') continue;
+                const distance = Math.abs(row.lineIndex - lineIndex);
+                if (distance < nearestDistance) {
+                    nearestDistance = distance;
+                    nearestIndex = i;
+                }
+            }
+            return nearestIndex >= 0 ? nearestIndex : 0;
+        }
+
+        if (this.sparseGhostGroups.length === 0) {
+            return lineIndex;
+        }
+
+        let visualIndex = lineIndex;
+        for (let g = 0; g < this.sparseGhostGroups.length; g++) {
+            const group = this.sparseGhostGroups[g];
+            if (lineIndex >= group.anchorLine - 1) {
+                visualIndex += group.ghostCount;
+            } else {
+                break;
             }
         }
-        // In focused diff mode, cursor can temporarily point to a hidden line.
-        // Snap to nearest rendered real row for scrolling purposes.
-        let nearestIndex = -1;
-        let nearestDistance = Number.POSITIVE_INFINITY;
-        for (let i = 0; i < this.visualRows.length; i++) {
-            const row = this.visualRows[i];
-            if (row.kind !== 'real') continue;
-            const distance = Math.abs(row.lineIndex - lineIndex);
-            if (distance < nearestDistance) {
-                nearestDistance = distance;
-                nearestIndex = i;
-            }
-        }
-        return nearestIndex >= 0 ? nearestIndex : 0;
+        return visualIndex;
     }
 
     public getVisibleRealLineIndices(): Set<number> {
         const lines = new Set<number>();
-        for (const row of this.visualRows) {
+        if (!this.activeVisualRows) {
+            for (let i = 0; i < this.lastTotalLines; i++) {
+                lines.add(i);
+            }
+            return lines;
+        }
+        for (const row of this.activeVisualRows) {
             if (row.kind === 'real') {
                 lines.add(row.lineIndex);
             }
@@ -394,14 +564,27 @@ export class Renderer {
         return lines;
     }
 
-    /**
-     * Get visible range based on visual row indices
-     */
-    private getVisibleRange(totalVisualRows: number, settings: EditorSettings) {
+    private expandBufferRafId: number | null = null;
+    private isFastScroll: boolean = false;
+
+    public setFastScroll(enabled: boolean, state?: EditorState) {
+        if (this.isFastScroll === enabled) return;
+        this.isFastScroll = enabled;
+        if (!enabled && state) {
+            this.scheduleExpandBuffer(state);
+        }
+    }
+
+    private getVisibleRange(totalVisualRows: number, settings: EditorSettings, bufferOverride?: number) {
         const scrollTop = this.container.scrollTop;
         const viewHeight = this.container.clientHeight;
+        this.lastScrollTop = scrollTop;
+        if (viewHeight > 0) this.lastClientHeight = viewHeight;
 
-        const visibleBuffer = settings.buffer;
+        let visibleBuffer = bufferOverride !== undefined ? bufferOverride : settings.buffer;
+        if (this.isFastScroll && bufferOverride === undefined) {
+            visibleBuffer = 2;
+        }
         const itemHeight = settings.lineHeight;
 
         let visibleCount: number;
@@ -419,20 +602,60 @@ export class Renderer {
         return { startIndex, endIndex };
     }
 
+    private scheduleExpandBuffer(state: EditorState) {
+        if (this.expandBufferRafId !== null) {
+            cancelAnimationFrame(this.expandBufferRafId);
+        }
+        this.expandBufferRafId = requestAnimationFrame(() => {
+            this.expandBufferRafId = null;
+            if (!this.container.isConnected) return;
+            this.renderScroll(state);
+        });
+    }
+
     public renderScroll(state: EditorState) {
         const currentScrollTop = this.container.scrollTop;
+        this.lastScrollTop = currentScrollTop;
+        const viewHeight = this.container.clientHeight;
+        if (viewHeight > 0) this.lastClientHeight = viewHeight;
         const { settings, readOnly, search } = state;
         const lineHeight = settings.lineHeight;
         const buffer = settings.buffer;
 
         // Structural changes rebuild this model through render()/renderChanges().
-        // Scrolling only consumes the cached visual rows.
-        if (this.visualRows.length === 0) {
+        // Scrolling only consumes the visual rows on the fly.
+        const totalVisualRows = this.getVisualRowCount();
+        if (totalVisualRows === 0) {
             this.render(state);
             return;
         }
 
-        const totalVisualRows = this.visualRows.length;
+        const renderedRange = this.getRenderedRange();
+        let currentStartIndex = renderedRange?.startIndex ?? -1;
+        let currentEndIndex = renderedRange?.endIndex ?? -1;
+
+        // Buffer thresholding: if viewport is still comfortably within rendered slice, skip DOM mutations
+        if (currentStartIndex !== -1 && currentEndIndex !== -1 && viewHeight > 0) {
+            const firstVisible = Math.floor(currentScrollTop / lineHeight);
+            const visibleCount = Math.ceil(viewHeight / lineHeight);
+            const lastVisible = firstVisible + visibleCount;
+            const threshold = Math.max(3, Math.floor(buffer / 4));
+
+            if (
+                firstVisible >= currentStartIndex + threshold &&
+                lastVisible <= currentEndIndex - threshold
+            ) {
+                // Viewport is completely covered by already rendered elements.
+                if (!readOnly && (!search.isActive() || !search.isFocused())) {
+                    this.renderCursorOrSelection(state);
+                }
+                if (search.isActive()) {
+                    this.searchRenderer.updateSearchHighlights(search);
+                }
+                return;
+            }
+        }
+
         const { startIndex, endIndex } = this.getVisibleRange(totalVisualRows, settings);
 
         this.ensureSpacers(this.codeContent);
@@ -451,11 +674,13 @@ export class Renderer {
         const foldsTopSpacer = this.foldsColumn.firstChild as HTMLElement;
         const foldsBottomSpacer = this.foldsColumn.lastChild as HTMLElement;
 
-        const renderedRange = this.getRenderedRange();
-        let currentStartIndex = renderedRange?.startIndex ?? -1;
-        let currentEndIndex = renderedRange?.endIndex ?? -1;
-
         // Check if full re-render is needed
+        const isFarJump =
+            currentStartIndex !== -1 &&
+            (startIndex >= currentEndIndex ||
+                endIndex <= currentStartIndex ||
+                Math.abs(startIndex - currentStartIndex) > buffer * 3);
+
         const needFullRerender =
             currentStartIndex === -1 ||
             startIndex >= currentEndIndex ||
@@ -464,8 +689,15 @@ export class Renderer {
             Math.abs(endIndex - currentEndIndex) > buffer * 2;
 
         if (needFullRerender) {
-            // Rebuild only the viewport DOM; the structural row model stays cached.
-            this.renderViewport(state);
+            if (isFarJump) {
+                // Two-phase far-jump: render minimal visible window on frame 1 for instant sub-frame paint,
+                // then expand to full buffer in subsequent RAF.
+                this.renderViewport(state, 2);
+                this.scheduleExpandBuffer(state);
+            } else {
+                // Rebuild only the viewport DOM; the structural row model stays cached.
+                this.renderViewport(state);
+            }
             return;
         }
 
@@ -507,7 +739,7 @@ export class Renderer {
         // Add rows above
         while (currentStartIndex > startIndex) {
             currentStartIndex--;
-            const row = this.visualRows[currentStartIndex];
+            const row = this.getVisualRow(currentStartIndex);
             const elements = this.createRow(row, currentStartIndex, state);
 
             this.codeContent.insertBefore(elements.code, this.codeContent.children[1]);
@@ -520,7 +752,7 @@ export class Renderer {
 
         // Add rows below
         while (currentEndIndex < endIndex) {
-            const row = this.visualRows[currentEndIndex];
+            const row = this.getVisualRow(currentEndIndex);
             const elements = this.createRow(row, currentEndIndex, state);
 
             this.codeContent.insertBefore(elements.code, bottomSpacer);
@@ -542,6 +774,8 @@ export class Renderer {
             this.searchRenderer.updateSearchHighlights(search);
         }
 
+        this.updateContentMinWidth(state, startIndex, endIndex);
+
         if (!changed) return;
 
         // Update spacers based on visual indices
@@ -559,11 +793,11 @@ export class Renderer {
         foldsTopSpacer.style.height = `${topHeight}px`;
         foldsBottomSpacer.style.height = `${bottomHeight}px`;
 
-        this.scrollbarMarkersRenderer.updateThumbPosition(currentScrollTop);
+        this.scrollbarMarkersRenderer.updateThumbPosition(currentScrollTop, true);
     }
 
     public updateScrollbarThumb() {
-        this.scrollbarMarkersRenderer.updateThumbPosition(this.container.scrollTop);
+        this.scrollbarMarkersRenderer.updateThumbPosition(this.lastScrollTop, true);
     }
 
     /**
@@ -583,12 +817,14 @@ export class Renderer {
                 getMultibufferHeader?: (line: number) => string | null;
                 getMultibufferLineNumber?: (line: number) => number | null;
             };
-            const syntaxNodes = precomputedNodes || code.getLineNodes(row.lineIndex);
+            const lineText = code.line(row.lineIndex) || '\u200B';
+            const binaryTokens = code.getLineBinaryTokens(row.lineIndex);
+            const syntaxNodes = precomputedNodes || [];
             const displayLineNumber = multibufferCode.getMultibufferLineNumber?.(row.lineIndex) ?? undefined;
             elements = this.lineRenderer.createLineElements(
                 row.lineIndex, syntaxNodes, errorLines, settings,
                 diffs, runLines, this.getFoldIndicator(row.lineIndex), state.wordHighlight,
-                displayLineNumber,
+                displayLineNumber, binaryTokens, lineText
             );
             const header = multibufferCode.getMultibufferHeader?.(row.lineIndex);
             if (header !== null && header !== undefined) {
@@ -650,23 +886,28 @@ export class Renderer {
         this.updateFoldableStarts(state);
         this.updateCollapsedMap(state);
 
-        // Keep a reference to the old visual rows model to identify changes
-        const oldVisualRows = this.visualRows;
-
-        // Rebuild visual rows - structure may have changed
         const totalRealLines = code.linesLength();
-        const newVisualRows = this.diffEnabled
-            ? this.buildVisualRows(totalRealLines, diffs, code)
-            : this.buildRealOnlyRows(totalRealLines);
+        const oldTotalRows = this.getVisualRowCount();
+        const oldActiveRows = this.activeVisualRows;
 
-        if (newVisualRows.length !== oldVisualRows.length) {
+        this.updateSparseGhostIndex(diffs, totalRealLines);
+
+        let newActiveRows: VisualRow[] | null = null;
+        if (this.diffRenderer.isFocusedDiffEnabled() && diffs && diffs.size > 0) {
+            newActiveRows = this.buildVisualRows(totalRealLines, diffs, code);
+        } else if (this.lastHiddenLines.size > 0 && this.codeFoldingEnabled) {
+            newActiveRows = this.buildRealOnlyRows(totalRealLines);
+        }
+
+        const newTotalRows = newActiveRows ? newActiveRows.length : (totalRealLines + this.totalGhostLines);
+        if (newTotalRows !== oldTotalRows) {
             // Fallback to full render
             this.render(state);
             return;
         }
 
-        // Update visualRows
-        this.visualRows = newVisualRows;
+        this.lastTotalLines = totalRealLines;
+        this.activeVisualRows = newActiveRows;
 
         const renderedRange = this.getRenderedRange();
         if (!renderedRange) {
@@ -675,8 +916,7 @@ export class Renderer {
             return;
         }
 
-        const totalVisualRows = this.visualRows.length;
-        const visible = this.getVisibleRange(totalVisualRows, settings);
+        const visible = this.getVisibleRange(newTotalRows, settings);
 
         // If viewport changed, do full render
         if (renderedRange.startIndex !== visible.startIndex ||
@@ -687,8 +927,8 @@ export class Renderer {
 
         // Update changed rows in viewport
         for (let i = visible.startIndex; i < visible.endIndex; i++) {
-            const oldRow = oldVisualRows[i];
-            const newRow = this.visualRows[i];
+            const oldRow = oldActiveRows ? oldActiveRows[i] : { kind: 'real' as const, lineIndex: i };
+            const newRow = this.getVisualRow(i);
             const childIndex = i - renderedRange.startIndex + 1;
 
             let needsUpdate = false;
@@ -701,13 +941,13 @@ export class Renderer {
                 if (oldReal.lineIndex !== newRow.lineIndex) {
                     needsUpdate = true;
                 } else {
-                    const nodes = code.getLineNodes(newRow.lineIndex);
-                    const newHash = objectHash(nodes).toString();
+                    const lineText = code.line(newRow.lineIndex) || '\u200B';
+                    const binaryTokens = code.getLineBinaryTokens(newRow.lineIndex);
+                    const newHash = BinaryTokens.fastHash(binaryTokens, lineText).toString();
                     const existingLine = this.codeContent.children[childIndex] as AnycodeLine | undefined;
                     
                     if (!existingLine || existingLine.hash !== newHash) {
                         needsUpdate = true;
-                        precomputedNodes = nodes;
                     }
                 }
             } else if (newRow.kind === 'ghost') {
@@ -757,7 +997,7 @@ export class Renderer {
 
         // Render cursor or selection
         this.renderCursorOrSelection(state, true);
-        this.updateContentMinWidth(state);
+        this.updateContentMinWidth(state, visible.startIndex, visible.endIndex);
 
     }
 
@@ -832,23 +1072,36 @@ export class Renderer {
         const { code, offset, selection } = state;
         if (!selection || selection.isEmpty()) {
             const { line, column } = code.getPosition(offset);
-            this.renderCursor(line, column, focus);
+            this.renderCursor(line, column, focus, state);
         } else {
             this.renderSelection(code, selection!);
         }
         this.renderBracketMatch(state);
     }
 
-    public renderCursor(line: number, column: number, focus: boolean = false) {
+    private cursorRafId: number | null = null;
+
+    public renderCursor(line: number, column: number, focus: boolean = false, state?: EditorState) {
         this.codeContent.classList.remove('selecting');
         const lineDiv = this.getLine(line);
         if (lineDiv) {
-            if (lineDiv.isConnected) {
-                moveCursor(lineDiv, column, focus);
-            } else {
-                requestAnimationFrame(() => {
-                    moveCursor(lineDiv, column, focus)
+            const visualIndex = this.getVisualIndexForLine(line);
+            const lineHeight = state?.settings?.lineHeight || 20;
+            const gutterWidth = this.lastGutterWidth || 48;
+            const scrollTop = this.lastScrollTop;
+            const clientHeight = this.lastClientHeight;
+
+            if (typeof requestAnimationFrame !== 'undefined') {
+                if (this.cursorRafId !== null) {
+                    cancelAnimationFrame(this.cursorRafId);
+                }
+                this.cursorRafId = requestAnimationFrame(() => {
+                    this.cursorRafId = null;
+                    if (!lineDiv.isConnected) return;
+                    moveCursor(lineDiv, column, focus, visualIndex, lineHeight, gutterWidth, scrollTop, clientHeight);
                 });
+            } else {
+                moveCursor(lineDiv, column, focus, visualIndex, lineHeight, gutterWidth, scrollTop, clientHeight);
             }
         } else {
             removeCursor();
@@ -1105,29 +1358,55 @@ export class Renderer {
         return this.charWidth;
     }
 
-    private updateContentMinWidth(state: EditorState): void {
-        const charWidth = this.getCharWidth();
-        let maxWidth = 0;
+    private maxTrackedWidth: number = 0;
 
-        for (let line = 0; line < state.code.linesLength(); line++) {
-            let width = state.code.lineLength(line) * charWidth;
-            const diagnostic = state.errorLines.get(line);
-            if (diagnostic) {
-                const diagnosticText = minimize(diagnostic);
-                width += diagnosticText.length * charWidth + charWidth * 3 + 8;
-            }
-            maxWidth = Math.max(maxWidth, width);
+    private updateContentMinWidth(
+        state: EditorState,
+        startIndex: number = 0,
+        endIndex?: number,
+        reset: boolean = false
+    ): void {
+        const charWidth = this.getCharWidth();
+        const totalLines = state.code.linesLength();
+
+        if (reset) {
+            this.maxTrackedWidth = 0;
         }
 
-        if (state.originalCode) {
-            for (const row of this.visualRows) {
+        let start = 0;
+        let end = totalLines;
+
+        // For large files (> 5000 lines), scan visible viewport slice and error lines to keep render sub-millisecond
+        if (totalLines > 5000) {
+            start = startIndex;
+            end = endIndex !== undefined ? Math.min(totalLines, endIndex) : Math.min(totalLines, startIndex + 100);
+        }
+
+        let currentMaxWidth = this.maxTrackedWidth;
+
+        for (let line = start; line < end; line++) {
+            let width = state.code.lineLength(line) * charWidth;
+            currentMaxWidth = Math.max(currentMaxWidth, width);
+        }
+
+        for (const [line, diagnostic] of state.errorLines) {
+            if (line >= 0 && line < totalLines) {
+                const diagnosticText = minimize(diagnostic);
+                const width = state.code.lineLength(line) * charWidth + diagnosticText.length * charWidth + charWidth * 3 + 8;
+                currentMaxWidth = Math.max(currentMaxWidth, width);
+            }
+        }
+
+        if (state.originalCode && this.activeVisualRows) {
+            for (const row of this.activeVisualRows) {
                 if (row.kind !== 'ghost') continue;
                 const width = state.originalCode.lineLength(row.originalLineIndex) * charWidth;
-                maxWidth = Math.max(maxWidth, width);
+                currentMaxWidth = Math.max(currentMaxWidth, width);
             }
         }
 
-        const nextMinWidth = Math.ceil(maxWidth + 100);
+        this.maxTrackedWidth = currentMaxWidth;
+        const nextMinWidth = Math.ceil(currentMaxWidth + 100);
         if (nextMinWidth === this.lastContentMinWidth) return;
 
         this.lastContentMinWidth = nextMinWidth;

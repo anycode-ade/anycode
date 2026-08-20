@@ -1,4 +1,5 @@
 import { HighlighedNode, WordHighlight } from "../code";
+import { TokenDictionary, BinaryTokens } from "../tokens";
 import {
     AnycodeLine,
     ButtonColumnElement,
@@ -32,7 +33,9 @@ export class LineRenderer {
         errorLines: Map<number, string>,
         settings: EditorSettings,
         diffs?: Map<number, DiffInfo>,
-        wordHighlight?: WordHighlight | null
+        wordHighlight?: WordHighlight | null,
+        binaryTokens?: Uint32Array,
+        lineText?: string
     ): AnycodeLine {
         const wrapper = document.createElement('div') as AnycodeLine;
 
@@ -40,7 +43,9 @@ export class LineRenderer {
         wrapper.className = "line";
 
         // Add hash for change tracking
-        const hash = objectHash(nodes).toString();
+        const hash = binaryTokens && lineText !== undefined
+            ? BinaryTokens.fastHash(binaryTokens, lineText).toString()
+            : objectHash(nodes).toString();
         wrapper.hash = hash;
 
         // Check if this line was changed in diff mode
@@ -53,33 +58,64 @@ export class LineRenderer {
             }
         }
 
-        if (nodes.length === 0 || (nodes.length === 1 && nodes[0].text === "\u200B")) {
+        if (binaryTokens && lineText !== undefined) {
+            const tokenCount = (binaryTokens.length / 2) | 0;
+            if (tokenCount === 0 || (tokenCount === 1 && lineText === "\u200B")) {
+                wrapper.appendChild(document.createElement('br'));
+            } else {
+                const whToken = wordHighlight?.token;
+                const whText = wordHighlight?.text;
+
+                for (let i = 0; i < tokenCount; i++) {
+                    const word0 = binaryTokens[i * 2];
+                    const word1 = binaryTokens[i * 2 + 1];
+
+                    const tokenId = (word0 >>> 16) & 0xffff;
+                    const startColumn = (word1 >>> 16) & 0xffff;
+                    const textLen = word1 & 0xffff;
+
+                    const text = lineText.substring(startColumn, startColumn + textLen);
+                    const span = document.createElement('span');
+
+                    let classString = TokenDictionary.getClassString(tokenId);
+                    if (tokenId === 0 && text === '\t') {
+                        classString = classString ? `${classString} indent` : 'indent';
+                    }
+
+                    if (whToken && whText && text === whText && classString.includes(whToken)) {
+                        classString = classString ? `${classString} wh` : 'wh';
+                    }
+
+                    if (classString) {
+                        span.className = classString;
+                    }
+                    span.textContent = text;
+                    wrapper.appendChild(span);
+                }
+            }
+        } else if (nodes.length === 0 || (nodes.length === 1 && nodes[0].text === "\u200B")) {
             wrapper.appendChild(document.createElement('br'));
         } else {
             for (const { name, text } of nodes) {
                 const span = document.createElement('span');
-                const classNameParts: string[] = [];
-                if (name) {
-                    // Add both full token class (e.g. "function.method") and path segments
-                    // ("function", "method") so styles can gracefully fall back from specific
-                    // to general when a theme misses a deep token color.
-                    // Deduplicate classes to avoid repeating when category name has no dots.
-                    const parts = name.split('.').filter(Boolean);
-                    classNameParts.push(...Array.from(new Set([name, ...parts])));
-                }
-                if (!name && text === '\t') classNameParts.push('indent');
-                
-                // Add highlight class if it matches the wordHighlight text and is highlightable
-                if (
-                  wordHighlight?.token &&
-                  classNameParts.includes(wordHighlight.token) &&
-                  text === wordHighlight.text
-                ) {
-                  classNameParts.push('wh');
+                const tokenId = TokenDictionary.getId(name);
+                let classString = TokenDictionary.getClassString(tokenId);
+
+                if (!name && text === '\t') {
+                    classString = classString ? `${classString} indent` : 'indent';
                 }
 
-                if (classNameParts.length > 0) {
-                    span.className = classNameParts.join(' ');
+                if (
+                  wordHighlight?.token &&
+                  wordHighlight?.text &&
+                  text === wordHighlight.text &&
+                  classString.includes(wordHighlight.token)
+                ) {
+                  classString = classString ? `${classString} wh` : 'wh';
+                }
+
+                if (classString) {
+                    span.className = classString;
                 }
                 span.textContent = text;
                 wrapper.appendChild(span);
@@ -165,8 +201,10 @@ export class LineRenderer {
         foldIndicator: { canFold: boolean; collapsed: boolean },
         wordHighlight?: WordHighlight | null,
         displayLineNumber?: number,
+        binaryTokens?: Uint32Array,
+        lineText?: string,
     ): RealRowElements {
-        const code = this.createLineWrapper(lineNumber, nodes, errorLines, settings, diffs, wordHighlight);
+        const code = this.createLineWrapper(lineNumber, nodes, errorLines, settings, diffs, wordHighlight, binaryTokens, lineText);
         const gutter = this.createLineNumber(lineNumber, settings, diffs, displayLineNumber);
         const btn = this.createLineButtons(lineNumber, runLines, errorLines, settings);
         const fold = document.createElement('div') as FoldColumnElement;

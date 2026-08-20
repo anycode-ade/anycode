@@ -18,6 +18,8 @@
 
 .anyeditor {
   --anycode-line-height: 20px;
+  --anycode-gutter-width: 48px;
+  --anycode-folds-left: 80px;
   display: flex;
   height: 100%;
   width: 100%;
@@ -333,14 +335,16 @@
   user-select: none;
   pointer-events: auto;
   background: inherit;
-  min-width: 48px;
+  min-width: var(--anycode-gutter-width, 48px);
+  max-width: var(--anycode-gutter-width, 48px);
+  width: var(--anycode-gutter-width, 48px);
   color: var(--theme-editor-line-number, #888);
   z-index: 10;
 }
 
 .anyeditor .folds {
   position: sticky;
-  left: 80px;
+  left: var(--anycode-folds-left, 80px);
   user-select: none;
   pointer-events: auto;
   background: inherit;
@@ -419,8 +423,12 @@
 
 .anyeditor .gutter .ln {
   background: inherit;
-  min-width: 48px;
-  max-width: 48px;
+  min-width: var(--anycode-gutter-width, 48px);
+  max-width: var(--anycode-gutter-width, 48px);
+  width: var(--anycode-gutter-width, 48px);
+  box-sizing: border-box;
+  text-align: right;
+  padding-right: 8px;
 }
 
 .anyeditor .code {

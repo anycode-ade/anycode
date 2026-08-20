@@ -776,5 +776,26 @@ const b = 2;
             expect(cache.has(3)).toBe(false);
             expect(cache.has(4)).toBe(false);
         });
+
+        it('should cap linesCache at MAX_LINES_CACHE_SIZE (500) and evict oldest via LRU', async () => {
+            const lines = Array.from({ length: 600 }, (_, i) => `const x_${i} = ${i};`).join('\n');
+            const code = new Code(lines, 'stress.js', 'javascript');
+            await code.init();
+
+            // Access lines 0 to 599
+            for (let i = 0; i < 600; i++) {
+                code.getLineNodes(i);
+            }
+
+            const cache = (code as any).linesCache as Map<number, any>;
+            expect(cache.size).toBe(500);
+
+            // First 100 lines (0..99) should have been evicted by LRU
+            expect(cache.has(0)).toBe(false);
+            expect(cache.has(99)).toBe(false);
+            // Latest 500 lines (100..599) should be in cache
+            expect(cache.has(100)).toBe(true);
+            expect(cache.has(599)).toBe(true);
+        });
     });
 });

@@ -7,15 +7,15 @@ describe('Code.getWordAtPosition', () => {
 
         // Line 0: "const find_tree = 123;"
         // "const" is cols 0-5
-        expect(code.getWordAtPosition(0, 0)).toEqual({ text: 'const', token: null });
-        expect(code.getWordAtPosition(0, 3)).toEqual({ text: 'const', token: null });
-        expect(code.getWordAtPosition(0, 5)).toEqual({ text: 'const', token: null });
+        expect(code.getWordAtPosition(0, 0)).toEqual({ text: 'const', token: 'keyword' });
+        expect(code.getWordAtPosition(0, 3)).toEqual({ text: 'const', token: 'keyword' });
+        expect(code.getWordAtPosition(0, 5)).toEqual({ text: 'const', token: 'keyword' });
 
         // Space at col 5 is adjacent to both "const" and "find_tree" (since index 5 is space and index 4 is 't')
         // Actually, let's verify if index 5 is space:
         // 'c'(0), 'o'(1), 'n'(2), 's'(3), 't'(4), ' '(5)
         // At col 5, index 5 is ' ', index 4 is 't' (word char). So it touches "const"
-        expect(code.getWordAtPosition(0, 5)).toEqual({ text: 'const', token: null });
+        expect(code.getWordAtPosition(0, 5)).toEqual({ text: 'const', token: 'keyword' });
 
         // Col 6 is 'f'. Touches "find_tree"
         expect(code.getWordAtPosition(0, 6)).toEqual({ text: 'find_tree', token: null });
@@ -26,8 +26,8 @@ describe('Code.getWordAtPosition', () => {
         expect(code.getWordAtPosition(0, 16)).toBe(null);
 
         // "123" is cols 18-21
-        expect(code.getWordAtPosition(0, 18)).toEqual({ text: '123', token: null });
-        expect(code.getWordAtPosition(0, 21)).toEqual({ text: '123', token: null });
+        expect(code.getWordAtPosition(0, 18)).toEqual({ text: '123', token: 'number' });
+        expect(code.getWordAtPosition(0, 21)).toEqual({ text: '123', token: 'number' });
 
         // Line 1: "  another_word"
         expect(code.getWordAtPosition(1, 0)).toBe(null); // too far from word

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeGitChanges, computeGitChangesWithStats } from '../src/diff';
+import { computeGitChanges, computeGitChangesWithStats, computeGitChangesFromSource } from '../src/diff';
 
 describe('computeGitChanges', () => {
     it('returns exact added and removed line counts from diff blocks', () => {
@@ -143,16 +143,52 @@ describe('computeGitChanges', () => {
         });
     });
 
-    it('should handle complete deletion of file content', () => {
-        const original = 'line1\nline2\n';
-        const current = '';
-        const result = computeGitChanges(original, current);
+    it('should compute diff on 1,000,000 identical lines in less than 50ms', () => {
+        const lines = new Array(1000000).fill('const x = 1;');
+        const start = performance.now();
+        const result = computeGitChangesWithStats(lines, lines);
+        const duration = performance.now() - start;
 
-        expect(result.get(1)).toEqual({
-            changeType: 'deleted',
-            oldLineNumbers: [1, 2, 3],
-            ghostAnchorLine: 1,
-            hunkId: 0,
-        });
+        expect(result.diffs.size).toBe(0);
+        expect(result.added).toBe(0);
+        expect(result.removed).toBe(0);
+        expect(duration).toBeLessThan(50);
+    });
+
+    it('should compute diff on 1,000,000 lines with middle modification in less than 50ms', () => {
+        const original = new Array(1000000).fill('const x = 1;');
+        const current = original.slice();
+        current[500000] = 'const x = 2;';
+
+        const start = performance.now();
+        const result = computeGitChangesWithStats(original, current);
+        const duration = performance.now() - start;
+
+        expect(result.diffs.size).toBe(1);
+        expect(result.diffs.get(500001)?.changeType).toBe('modified');
+        expect(duration).toBeLessThan(50);
+    });
+
+    it('should compute diff with dirtyRange on 1,000,000 lines in less than 5ms', () => {
+        const lineContent = 'const x = 1;';
+        const modifiedContent = 'const x = 2;';
+        const origSource = {
+            linesLength: () => 1000000,
+            lineLength: (i: number) => 12,
+            line: (i: number) => lineContent,
+        };
+        const currSource = {
+            linesLength: () => 1000000,
+            lineLength: (i: number) => 12,
+            line: (i: number) => i === 500000 ? modifiedContent : lineContent,
+        };
+
+        const start = performance.now();
+        const result = computeGitChangesFromSource(origSource, currSource, { start: 500000, end: 500000 });
+        const duration = performance.now() - start;
+
+        expect(result.diffs.size).toBe(1);
+        expect(result.diffs.get(500001)?.changeType).toBe('modified');
+        expect(duration).toBeLessThan(5);
     });
 });

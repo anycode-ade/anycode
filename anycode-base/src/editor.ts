@@ -23,7 +23,7 @@ import {
 
 import './styles.css';
 import { Search } from "./search";
-import { computeGitChanges, DiffInfo } from "./diff";
+import { computeGitChanges, computeGitChangesFromSource, DiffInfo } from "./diff";
 import { getGapElementData } from "./renderer/DiffRenderer";
 
 export type ScrollbarStyle = 'rounded' | 'flat';
@@ -278,6 +278,10 @@ export class AnycodeEditor {
         this.render();
     }
 
+    public setFastScroll(enabled: boolean) {
+        this.renderer?.setFastScroll(enabled, this.getEditorState());
+    }
+
     public setOnChange(func: (t: Change) => void) {
         if (this.readOnly) return;
         this.code.setOnChange(func);
@@ -416,10 +420,13 @@ export class AnycodeEditor {
         this.setupEventListeners();
     }
 
+    private originalContentString: string | null = null;
+
     private async initOriginalCode(content: string): Promise<boolean> {
-        if (this.originalCode?.getContent() === content) {
+        if (this.originalContentString === content && this.originalCode) {
             return false;
         }
+        this.originalContentString = content;
         const originalCode = new Code(
             content,
             this.code.filename,
@@ -437,6 +444,7 @@ export class AnycodeEditor {
             // Don't wipe newer baseline on stale failure.
             if (this.originalCode === originalCode) {
                 this.originalCode = undefined;
+                this.originalContentString = null;
             }
             console.warn('Failed to initialize original code for diff rendering', error);
             return false;
@@ -1889,6 +1897,8 @@ export class AnycodeEditor {
         this.setDiffMode(enabled ? 'diff' : (this.diffEnabled ? 'combine' : 'plain'), contextLines);
     }
 
+    private isOriginalCodeInitializing = false;
+
     public setDiffMode(mode: 'plain' | 'diff' | 'combine', contextLines: number = 3): void {
         const diffEnabled = mode !== 'plain';
         const focusedDiffEnabled = mode === 'diff';
@@ -1910,16 +1920,20 @@ export class AnycodeEditor {
         this.focusedDiffContextLines = Math.max(0, contextLines);
         this.renderer.setFocusedDiffMode(focusedDiffEnabled, this.focusedDiffContextLines);
 
-        if (diffEnabled && !wasDiffEnabled) {
-            const baseline = this.originalCode?.getContent() ?? this.code.getContent();
+        if (diffEnabled && !wasDiffEnabled && !this.originalCode && !this.isOriginalCodeInitializing) {
+            const baseline = this.pendingOriginalContent ?? this.originalContentString ?? this.code.getContent();
+            this.isOriginalCodeInitializing = true;
             void this.initOriginalCode(baseline).then(() => {
+                this.isOriginalCodeInitializing = false;
                 if (!this.diffEnabled) return;
                 this.recomputeDiffs();
                 this.renderer.render(this.getEditorState());
             });
         }
 
-        this.recomputeDiffs();
+        if (!this.isOriginalCodeInitializing) {
+            this.recomputeDiffs();
+        }
 
         if (!diffEnabled) {
             this.renderer.clearAllDiffs();
@@ -1929,8 +1943,10 @@ export class AnycodeEditor {
 
     public setOriginalCode(content: string): void {
         this.pendingOriginalContent = content;
+        this.isOriginalCodeInitializing = true;
         void this.initOriginalCode(content).then((updated) => {
             this.pendingOriginalContent = null;
+            this.isOriginalCodeInitializing = false;
             if (!this.diffEnabled || !updated) return;
             this.recomputeDiffs();
             this.renderer.render(this.getEditorState());
@@ -1941,20 +1957,47 @@ export class AnycodeEditor {
         this.pendingOriginalContent = content;
     }
 
+    private lastDiffOriginalCode: Code | null = null;
+    private lastDiffCurrentCode: Code | null = null;
+    private lastDiffOriginalVersion: number = -1;
+    private lastDiffCurrentVersion: number = -1;
+
     private recomputeDiffs(): void {
-        if (this.diffEnabled && this.originalCode) {
-            const multibufferCode = this.code as Code & {
-                getMultibufferDiffs?: () => Map<number, DiffInfo>;
-            };
-            this.diffs = multibufferCode.getMultibufferDiffs
-                ? multibufferCode.getMultibufferDiffs()
-                : computeGitChanges(
-                    this.originalCode.getLines(),
-                    this.code.getLines()
-                );
-        } else {
+        if (!this.diffEnabled || !this.originalCode) {
             this.diffs = undefined;
+            return;
         }
+
+        const multibufferCode = this.code as Code & {
+            getMultibufferDiffs?: () => Map<number, DiffInfo>;
+        };
+        if (multibufferCode.getMultibufferDiffs) {
+            this.diffs = multibufferCode.getMultibufferDiffs();
+            return;
+        }
+
+        if (this.originalCode === this.code) {
+            this.diffs = new Map();
+            return;
+        }
+
+        // Reuse memoized diffs if code versions haven't changed
+        if (
+            this.diffs !== undefined &&
+            this.lastDiffOriginalCode === this.originalCode &&
+            this.lastDiffCurrentCode === this.code &&
+            this.lastDiffOriginalVersion === this.originalCode.getVersionId() &&
+            this.lastDiffCurrentVersion === this.code.getVersionId()
+        ) {
+            return;
+        }
+
+        this.lastDiffOriginalCode = this.originalCode;
+        this.lastDiffCurrentCode = this.code;
+        this.lastDiffOriginalVersion = this.originalCode.getVersionId();
+        this.lastDiffCurrentVersion = this.code.getVersionId();
+
+        this.diffs = computeGitChangesFromSource(this.originalCode, this.code, this.code.getDirtyRange()).diffs;
     }
 
 }

@@ -45,13 +45,13 @@ export class ScrollbarMarkersRenderer {
     private errorLines: number[] = [];
     private searchMarkers: SearchMarker[] = [];
     private totalRows = 0;
-    private visualRowByLine = new Map<number, number>();
-    private lineByVisualRow: number[] = [];
+    private visualRows: VisualRow[] | null = null;
     private rightOffset = -1;
     private enabled = true;
     private revealLineCenter: (state: EditorState, line: number) => void;
     private selectSearchMatch: (state: EditorState, index: number) => void;
     private onImmediateScroll?: () => void;
+    private onDragStateChange?: (isDragging: boolean, state?: EditorState) => void;
 
     private resizeObserver: ResizeObserver | null = null;
 
@@ -61,7 +61,8 @@ export class ScrollbarMarkersRenderer {
         selectSearchMatch: (state: EditorState, index: number) => void,
         onImmediateScroll?: () => void,
         enabled: boolean = true,
-        wrapper?: HTMLDivElement
+        wrapper?: HTMLDivElement,
+        onDragStateChange?: (isDragging: boolean, state?: EditorState) => void
     ) {
         this.container = container;
         this.wrapper = wrapper || container;
@@ -69,6 +70,7 @@ export class ScrollbarMarkersRenderer {
         this.selectSearchMatch = selectSearchMatch;
         this.onImmediateScroll = onImmediateScroll;
         this.enabled = enabled;
+        this.onDragStateChange = onDragStateChange;
 
         this.element = document.createElement('div');
         this.element.className = 'smr';
@@ -177,13 +179,12 @@ export class ScrollbarMarkersRenderer {
             ? search.getMatches()
             : [];
         const nextWordLines = wordLines;
-        const nextVisualRowByLine = this.getVisualRowByLine(visualRows);
-        const layoutChanged = !this.mapsEqual(nextVisualRowByLine, this.visualRowByLine);
-        this.visualRowByLine = nextVisualRowByLine;
-        this.lineByVisualRow = this.getLineByVisualRow(visualRows);
+        this.visualRows = visualRows && visualRows.length > 0 ? visualRows : null;
+        const totalRows = Math.max(1, visualRows?.length || state.code.linesLength());
+        const layoutChanged = totalRows !== this.totalRows;
+        this.totalRows = totalRows;
         const nextDiffRanges = this.getDiffRanges(state, visualRows);
         const nextErrorLines = this.getErrorLines(state);
-        const totalRows = Math.max(1, visualRows.length || state.code.linesLength());
         const selected = search.getSelected();
         const nextSearchMarkers = searchMatches.map((match, index) => ({
             line: match.line,
@@ -197,55 +198,53 @@ export class ScrollbarMarkersRenderer {
             this.element.style.right = `${rightOffset}px`;
         }
 
-        if (
-            nextSearchMarkers.length === 0
-            && nextWordLines.length === 0
-            && nextErrorLines.length === 0
-            && nextDiffRanges.length === 0
-        ) {
-            this.wordLines = [];
-            this.diffRanges = [];
-            this.errorLines = [];
-            this.searchMarkers = [];
-            this.diffLayer.replaceChildren();
-            this.wordLayer.replaceChildren();
-            this.searchLayer.replaceChildren();
-            this.errorLayer.replaceChildren();
+        const diffRangesUnchanged = arraysEqual(nextDiffRanges, this.diffRanges, (a, b) =>
+            a.startRow === b.startRow
+            && a.endRow === b.endRow
+            && a.targetLine === b.targetLine
+            && a.type === b.type
+        );
+        const wordLinesUnchanged = arraysEqual(nextWordLines, this.wordLines, (a, b) => a === b);
+        const searchMarkersUnchanged = arraysEqual(nextSearchMarkers, this.searchMarkers, (a, b) =>
+            a.line === b.line
+            && a.column === b.column
+            && a.selected === b.selected
+        );
+        const errorLinesUnchanged = arraysEqual(nextErrorLines, this.errorLines, (a, b) => a === b);
+
+        const hasAnyMarkers = nextSearchMarkers.length > 0
+            || nextWordLines.length > 0
+            || nextErrorLines.length > 0
+            || nextDiffRanges.length > 0;
+
+        if (!hasAnyMarkers) {
+            if (this.wordLines.length > 0 || this.diffRanges.length > 0 || this.errorLines.length > 0 || this.searchMarkers.length > 0) {
+                this.wordLines = [];
+                this.diffRanges = [];
+                this.errorLines = [];
+                this.searchMarkers = [];
+                this.diffLayer.replaceChildren();
+                this.wordLayer.replaceChildren();
+                this.searchLayer.replaceChildren();
+                this.errorLayer.replaceChildren();
+            }
+        } else if (!scaleChanged && !layoutChanged && diffRangesUnchanged && wordLinesUnchanged && searchMarkersUnchanged && errorLinesUnchanged) {
+            // Nothing changed! Do not touch layers!
+            return;
         } else {
-            if (
-                scaleChanged
-                || !arraysEqual(nextDiffRanges, this.diffRanges, (a, b) =>
-                    a.startRow === b.startRow
-                    && a.endRow === b.endRow
-                    && a.targetLine === b.targetLine
-                    && a.type === b.type
-                )
-            ) {
+            if (scaleChanged || !diffRangesUnchanged) {
                 this.diffRanges = nextDiffRanges;
                 this.renderDiffLayer(totalRows);
             }
-            if (
-                scaleChanged || layoutChanged
-                || !arraysEqual(nextWordLines, this.wordLines, (a, b) => a === b)
-            ) {
+            if (scaleChanged || layoutChanged || !wordLinesUnchanged) {
                 this.wordLines = [...nextWordLines];
                 this.renderLineLayer(this.wordLayer, 'smrw', this.wordLines, totalRows);
             }
-            if (
-                scaleChanged || layoutChanged
-                || !arraysEqual(nextSearchMarkers, this.searchMarkers, (a, b) =>
-                    a.line === b.line
-                    && a.column === b.column
-                    && a.selected === b.selected
-                )
-            ) {
+            if (scaleChanged || layoutChanged || !searchMarkersUnchanged) {
                 this.searchMarkers = nextSearchMarkers;
                 this.renderSearchLayer(totalRows);
             }
-            if (
-                scaleChanged || layoutChanged
-                || !arraysEqual(nextErrorLines, this.errorLines, (a, b) => a === b)
-            ) {
+            if (scaleChanged || layoutChanged || !errorLinesUnchanged) {
                 this.errorLines = nextErrorLines;
                 this.renderLineLayer(this.errorLayer, 'smre', this.errorLines, totalRows);
             }
@@ -253,30 +252,29 @@ export class ScrollbarMarkersRenderer {
 
         this.totalRows = totalRows;
         this.element.classList.add('active');
-        this.updateThumbPosition();
     }
 
     private cachedClientHeight = 0;
     private cachedScrollHeight = 0;
+    private lastSliderSize = -1;
+    private lastSliderPosition = -1;
+    private lastThumbScrollTop = -1;
 
     public updateGeometry(clientHeight?: number, scrollHeight?: number) {
-        const trackRect = this.element ? this.element.getBoundingClientRect() : null;
-        const trackHeight = trackRect ? trackRect.height : 0;
-        if (trackHeight > 0) {
-            this.cachedClientHeight = trackHeight;
-        } else if (clientHeight && clientHeight > 0) {
+        if (clientHeight && clientHeight > 0) {
             this.cachedClientHeight = clientHeight;
-        } else if (this.container) {
-            const containerRect = this.container.getBoundingClientRect();
-            this.cachedClientHeight = containerRect.height || this.container.clientHeight;
+        } else if (!this.cachedClientHeight && this.container) {
+            this.cachedClientHeight = this.container.clientHeight;
         }
 
         if (scrollHeight && scrollHeight > 0) {
             this.cachedScrollHeight = scrollHeight;
-        } else if (this.container) {
+        } else if (!this.cachedScrollHeight && this.container) {
             this.cachedScrollHeight = this.container.scrollHeight;
         }
     }
+
+    private cachedMinSliderSize = 20;
 
     private applyScrollbarSettings(state: EditorState) {
         const scrollbarSettings = state.settings?.scrollbar;
@@ -298,41 +296,35 @@ export class ScrollbarMarkersRenderer {
 
         if (scrollbarSettings?.minSize !== undefined && scrollbarSettings.minSize > 0) {
             this.element.style.setProperty('--smr-min-size', `${scrollbarSettings.minSize}px`);
+            this.cachedMinSliderSize = scrollbarSettings.minSize;
         } else {
             this.element.style.removeProperty('--smr-min-size');
+            this.cachedMinSliderSize = typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(pointer: coarse)').matches ? 28 : 20;
         }
     }
 
     private getMinimumSliderSize(): number {
-        if (this.state?.settings?.scrollbar?.minSize !== undefined && this.state.settings.scrollbar.minSize > 0) {
-            return this.state.settings.scrollbar.minSize;
-        }
-        if (typeof window !== 'undefined') {
-            const cssMinimumSize = Number.parseFloat(
-                window.getComputedStyle(this.element).getPropertyValue('--smr-min-size')
-            );
-            if (Number.isFinite(cssMinimumSize) && cssMinimumSize > 0) {
-                return cssMinimumSize;
-            }
-        }
-        if (typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(pointer: coarse)').matches) {
-            return 28;
-        }
-        return 20;
+        return this.cachedMinSliderSize;
     }
 
-    public updateThumbPosition(scrollTopOverride?: number) {
-        if (!this.enabled || !this.thumb || !this.container) return;
-        const scrollTop = scrollTopOverride !== undefined ? scrollTopOverride : this.container.scrollTop;
-        const clientHeight = this.cachedClientHeight || this.container.clientHeight;
-        const scrollHeight = this.cachedScrollHeight || this.container.scrollHeight;
+    public updateThumbPosition(scrollTopOverride?: number, triggerFade: boolean = false) {
+        if (!this.enabled || !this.thumb) return;
+        if (this.thumb.classList.contains('dragging')) return;
+
+        const scrollTop = scrollTopOverride !== undefined ? scrollTopOverride : (this.container?.scrollTop ?? 0);
+        const clientHeight = this.cachedClientHeight || this.container?.clientHeight || 600;
+        const scrollHeight = this.cachedScrollHeight || this.container?.scrollHeight || 0;
 
         if (scrollHeight <= clientHeight || clientHeight <= 0) {
-            this.thumb.style.display = 'none';
+            if (this.thumb.style.display !== 'none') {
+                this.thumb.style.display = 'none';
+            }
             return;
         }
 
-        this.thumb.style.display = 'block';
+        if (this.thumb.style.display !== 'block') {
+            this.thumb.style.display = 'block';
+        }
 
         // Monaco Editor Scrollbar Math with 2px inset
         const INSET = 2;
@@ -347,9 +339,19 @@ export class ScrollbarMarkersRenderer {
         const clampedScrollTop = Math.max(0, Math.min(maxScrollTop, scrollTop));
         const sliderPosition = INSET + Math.max(0, Math.min(maxSliderPosition, Math.round(clampedScrollTop * sliderRatio)));
 
-        this.thumb.style.height = `${sliderSize}px`;
-        this.thumb.style.transform = `translateY(${sliderPosition}px)`;
-        this.triggerFadeIn();
+        if (this.lastSliderSize !== sliderSize) {
+            this.lastSliderSize = sliderSize;
+            this.thumb.style.height = `${sliderSize}px`;
+        }
+        if (this.lastSliderPosition !== sliderPosition) {
+            this.lastSliderPosition = sliderPosition;
+            this.thumb.style.transform = `translateY(${sliderPosition}px)`;
+        }
+        this.lastThumbScrollTop = scrollTop;
+
+        if (triggerFade) {
+            this.triggerFadeIn();
+        }
     }
 
     private clear() {
@@ -364,8 +366,7 @@ export class ScrollbarMarkersRenderer {
         this.errorLines = [];
         this.searchMarkers = [];
         this.totalRows = 0;
-        this.visualRowByLine.clear();
-        this.lineByVisualRow = [];
+        this.visualRows = null;
         this.diffLayer.replaceChildren();
         this.wordLayer.replaceChildren();
         this.searchLayer.replaceChildren();
@@ -417,10 +418,32 @@ export class ScrollbarMarkersRenderer {
         this.searchLayer.replaceChildren(fragment);
     }
 
+    private getVisualRowForLine(line: number): number {
+        if (!this.visualRows || this.visualRows.length === 0) {
+            return line;
+        }
+        for (let i = 0; i < this.visualRows.length; i++) {
+            const r = this.visualRows[i];
+            if (r.kind === 'real' && r.lineIndex === line) return i;
+        }
+        return line;
+    }
+
+    private getLineForVisualRow(visualRow: number, targetLine?: number): number {
+        if (!this.visualRows || this.visualRows.length === 0) {
+            return visualRow;
+        }
+        const row = this.visualRows[visualRow];
+        if (!row) return targetLine ?? visualRow;
+        if (row.kind === 'real') return row.lineIndex;
+        if (row.kind === 'ghost') return Math.max(0, row.anchorLine - 1);
+        return Math.max(0, Math.round((row.hiddenStart + row.hiddenEnd) / 2));
+    }
+
     private createLineMarker(className: string, line: number, totalRows: number): HTMLSpanElement {
         const marker = document.createElement('span');
         marker.className = `smrm ${className}`;
-        const visualRow = this.visualRowByLine.get(line) ?? line;
+        const visualRow = this.getVisualRowForLine(line);
         marker.style.top = `${((visualRow + 0.5) / totalRows) * 100}%`;
         return marker;
     }
@@ -429,68 +452,64 @@ export class ScrollbarMarkersRenderer {
         return 0;
     }
 
-    private getVisualRowByLine(visualRows: VisualRow[]): Map<number, number> {
-        const rows = new Map<number, number>();
-        visualRows.forEach((row, index) => {
-            if (row.kind === 'real') rows.set(row.lineIndex, index);
-        });
-        return rows;
-    }
-
-    private getLineByVisualRow(visualRows: VisualRow[]): number[] {
-        return visualRows.map((row) => {
-            if (row.kind === 'real') return row.lineIndex;
-            if (row.kind === 'ghost') return Math.max(0, row.anchorLine - 1);
-            return Math.max(0, Math.round((row.hiddenStart + row.hiddenEnd) / 2));
-        });
-    }
-
-    private mapsEqual(left: Map<number, number>, right: Map<number, number>): boolean {
-        if (left.size !== right.size) return false;
-        for (const [line, row] of left) {
-            if (right.get(line) !== row) return false;
-        }
-        return true;
-    }
-
-    private getDiffRanges(state: EditorState, visualRows: VisualRow[]): DiffRange[] {
+    private getDiffRanges(state: EditorState, visualRows: VisualRow[] | null): DiffRange[] {
         if (!state.diffs || state.diffs.size === 0) return [];
 
         const rangesByHunk = new Map<number, DiffRange>();
-        const typeByHunk = new Map<number, DiffInfo['changeType']>();
-        const targetLineByHunk = new Map<number, number>();
 
-        for (const [lineNumber, info] of state.diffs) {
-            typeByHunk.set(info.hunkId, info.changeType);
-            targetLineByHunk.set(
-                info.hunkId,
-                Math.max(0, Math.min(state.code.linesLength() - 1, lineNumber - 1))
-            );
-        }
+        if (visualRows && visualRows.length > 0) {
+            const typeByHunk = new Map<number, DiffInfo['changeType']>();
+            const targetLineByHunk = new Map<number, number>();
 
-        visualRows.forEach((row, rowIndex) => {
-            const info = row.kind === 'real'
-                ? state.diffs?.get(row.lineIndex + 1)
-                : row.kind === 'ghost'
-                    ? { hunkId: row.hunkId, changeType: typeByHunk.get(row.hunkId) ?? 'deleted' }
-                    : undefined;
-            if (!info) return;
-
-            const existing = rangesByHunk.get(info.hunkId);
-            if (!existing) {
-                rangesByHunk.set(info.hunkId, {
-                    startRow: rowIndex,
-                    endRow: rowIndex,
-                    targetLine: targetLineByHunk.get(info.hunkId) ?? 0,
-                    type: info.changeType,
-                });
-                return;
+            for (const [lineNumber, info] of state.diffs) {
+                typeByHunk.set(info.hunkId, info.changeType);
+                targetLineByHunk.set(
+                    info.hunkId,
+                    Math.max(0, Math.min(state.code.linesLength() - 1, lineNumber - 1))
+                );
             }
 
-            existing.startRow = Math.min(existing.startRow, rowIndex);
-            existing.endRow = Math.max(existing.endRow, rowIndex);
-            if (existing.type !== info.changeType) existing.type = 'modified';
-        });
+            visualRows.forEach((row, rowIndex) => {
+                const info = row.kind === 'real'
+                    ? state.diffs?.get(row.lineIndex + 1)
+                    : row.kind === 'ghost'
+                        ? { hunkId: row.hunkId, changeType: typeByHunk.get(row.hunkId) ?? 'deleted' }
+                        : undefined;
+                if (!info) return;
+
+                const existing = rangesByHunk.get(info.hunkId);
+                if (!existing) {
+                    rangesByHunk.set(info.hunkId, {
+                        startRow: rowIndex,
+                        endRow: rowIndex,
+                        targetLine: targetLineByHunk.get(info.hunkId) ?? 0,
+                        type: info.changeType,
+                    });
+                    return;
+                }
+
+                existing.startRow = Math.min(existing.startRow, rowIndex);
+                existing.endRow = Math.max(existing.endRow, rowIndex);
+                if (existing.type !== info.changeType) existing.type = 'modified';
+            });
+        } else {
+            for (const [lineNumber, info] of state.diffs) {
+                const rowLine = Math.max(0, lineNumber - 1);
+                const existing = rangesByHunk.get(info.hunkId);
+                if (!existing) {
+                    rangesByHunk.set(info.hunkId, {
+                        startRow: rowLine,
+                        endRow: rowLine,
+                        targetLine: Math.max(0, Math.min(state.code.linesLength() - 1, rowLine)),
+                        type: info.changeType,
+                    });
+                } else {
+                    existing.startRow = Math.min(existing.startRow, rowLine);
+                    existing.endRow = Math.max(existing.endRow, rowLine);
+                    if (existing.type !== info.changeType) existing.type = 'modified';
+                }
+            }
+        }
 
         return Array.from(rangesByHunk.values());
     }
@@ -528,12 +547,13 @@ export class ScrollbarMarkersRenderer {
             this.element.setPointerCapture(event.pointerId);
             this.thumb.classList.add('dragging');
             this.element.classList.add('dragging');
+            this.onDragStateChange?.(true, this.state || undefined);
 
             const startY = event.clientY;
             const startX = event.clientX;
-            const clientHeight = this.container.clientHeight;
-            const scrollHeight = this.container.scrollHeight;
-            const maxScrollTop = Math.max(0, scrollHeight - clientHeight);
+            const clientHeight = this.cachedClientHeight || this.container.clientHeight;
+            const scrollHeight = this.cachedScrollHeight || this.container.scrollHeight;
+            const maxScrollTop = Math.max(1, scrollHeight - clientHeight);
 
             if (maxScrollTop <= 0 || clientHeight <= 0) return;
 
@@ -541,7 +561,7 @@ export class ScrollbarMarkersRenderer {
             const availableHeight = Math.max(1, clientHeight - INSET * 2);
             const MINIMUM_SLIDER_SIZE = this.getMinimumSliderSize();
             const sliderSize = Math.round(Math.max(MINIMUM_SLIDER_SIZE, Math.floor((availableHeight * availableHeight) / scrollHeight)));
-            const maxSliderPosition = Math.max(1, availableHeight - sliderSize);
+            const maxSliderPosition = Math.max(0, availableHeight - sliderSize);
             const sliderRatio = maxSliderPosition / maxScrollTop;
 
             let startScrollTop = this.container.scrollTop;
@@ -561,10 +581,11 @@ export class ScrollbarMarkersRenderer {
             }
 
             const initialScrollTop = startScrollTop;
+            const clampedInitialScrollTop = Math.max(0, Math.min(maxScrollTop, initialScrollTop));
+            const initialSliderPos = Math.max(0, Math.min(maxSliderPosition, Math.round(clampedInitialScrollTop * sliderRatio)));
 
             const handleThumbMove = (moveEvent: PointerEvent) => {
                 const deltaY = moveEvent.clientY - startY;
-                const initialSliderPos = initialScrollTop * sliderRatio;
                 const targetSliderPos = Math.max(0, Math.min(maxSliderPosition, initialSliderPos + deltaY));
                 const targetScrollTop = Math.round(targetSliderPos / sliderRatio);
 
@@ -579,9 +600,11 @@ export class ScrollbarMarkersRenderer {
                 this.element.releasePointerCapture(upEvent.pointerId);
                 this.thumb.classList.remove('dragging');
                 this.element.classList.remove('dragging');
+                this.onDragStateChange?.(false, this.state || undefined);
                 this.element.removeEventListener('pointermove', handleThumbMove);
                 this.element.removeEventListener('pointerup', handleThumbUp);
                 this.element.removeEventListener('pointercancel', handleThumbUp);
+                this.updateThumbPosition(this.container.scrollTop, true);
             };
 
             this.element.addEventListener('pointermove', handleThumbMove);
@@ -594,6 +617,7 @@ export class ScrollbarMarkersRenderer {
         event.stopPropagation();
         this.element.setPointerCapture(event.pointerId);
         this.element.classList.add('dragging');
+        this.onDragStateChange?.(true, this.state || undefined);
 
         const revealClosestMarker = (clientY: number) => {
             const state = this.state;
@@ -614,7 +638,7 @@ export class ScrollbarMarkersRenderer {
                         range.startRow
                             + Math.floor(ratio * (range.endRow - range.startRow + 1))
                     );
-                    const line = this.lineByVisualRow[visualRow] ?? range.targetLine;
+                    const line = this.getLineForVisualRow(visualRow, range.targetLine);
                     this.revealLineCenter(state, line);
                     return;
                 }
@@ -651,6 +675,7 @@ export class ScrollbarMarkersRenderer {
             this.element.releasePointerCapture(upEvent.pointerId);
             this.element.classList.remove('dragging');
             this.element.querySelector('.smr-active')?.classList.remove('smr-active');
+            this.onDragStateChange?.(false, this.state || undefined);
             this.element.removeEventListener('pointermove', handlePointerMove);
             this.element.removeEventListener('pointerup', handlePointerUp);
             this.element.removeEventListener('pointercancel', handlePointerUp);

@@ -2,6 +2,7 @@ import { AnycodeLine } from './types';
 import { isDiagnosticElement } from './utils';
 
 export function removeCursor() {
+    if (typeof window === 'undefined') return;
     const sel = window.getSelection();
     if (sel) sel.removeAllRanges();
 }
@@ -9,11 +10,14 @@ export function removeCursor() {
 export function moveCursor(
     lineDiv: HTMLElement,
     column: number,
-    focus: boolean = true
+    focus: boolean = true,
+    visualIndex?: number,
+    lineHeight: number = 20,
+    stickyWidth: number = 80,
+    cachedScrollTop?: number,
+    cachedClientHeight?: number
 ) {
-    // Ensure the lineDiv is connected to the DOM before proceeding
-    if (!lineDiv.isConnected) {
-        // console.warn('moveCursor: lineDiv is not connected to DOM');
+    if (!lineDiv || !lineDiv.isConnected) {
         return;
     }
     
@@ -48,7 +52,7 @@ export function moveCursor(
     }
     
     if (!chunk) {
-        return
+        return;
     }
 
     // Special handling for BR elements: set cursor relative to parent, not inside BR
@@ -73,66 +77,61 @@ export function moveCursor(
         chunkOffset = chunkCharacter;
     }
     
-    // Ensure we're working with the correct document context
-    const doc = ch.ownerDocument || document;
-    const range = doc.createRange();
-    range.setStart(ch, chunkOffset);
-    range.collapse(true);
-    
-    // Check if the range is already the same as the current selection
-    // Do this early to avoid unnecessary scrolling and DOM operations
-    const sel = window.getSelection();
-    if (sel && sel.rangeCount > 0) {
-        const currentRange = sel.getRangeAt(0);
-        if (currentRange.startContainer === range.startContainer &&
-            currentRange.startOffset === range.startOffset &&
-            currentRange.collapsed === range.collapsed) {
-            // console.log('moveCursor: range already the same, skipping update');
-            return;
-        }
-    }
-    
     if (focus) {
         const scrollable = lineDiv?.parentElement?.parentElement;
         if (scrollable) {
-            scrollCursorIntoViewVertically(scrollable, lineDiv);
-            
-            let stickyWidth = (scrollable as any)._stickyWidth;
-            if (stickyWidth === undefined) {
-                const buttons = scrollable.querySelector('.buttons') as HTMLElement | null;
-                const gutter = scrollable.querySelector('.gutter') as HTMLElement | null;
-                const folds = scrollable.querySelector('.folds') as HTMLElement | null;
-                stickyWidth = (buttons?.offsetWidth ?? 0) +
-                    (gutter?.offsetWidth ?? 0) +
-                    (folds?.offsetWidth ?? 0);
-                (scrollable as any)._stickyWidth = stickyWidth;
-            }
-            
-            scrollCursorIntoViewHorizontally(scrollable, ch, chunkOffset, stickyWidth);
+            scrollCursorIntoViewVertically(scrollable, visualIndex, lineHeight, cachedScrollTop, cachedClientHeight);
+            scrollCursorIntoViewHorizontally(scrollable, ch, chunkOffset, stickyWidth, column);
         }
     }
 
-    if (sel) {
-        // Ensure the range is valid and in the same document as the selection
-        try {
+    const sel = typeof window !== 'undefined' ? window.getSelection() : null;
+    if (!sel) return;
+
+    if (sel.rangeCount > 0) {
+        const currentRange = sel.getRangeAt(0);
+        if (currentRange.startContainer === ch &&
+            currentRange.startOffset === chunkOffset &&
+            currentRange.collapsed) {
+            return;
+        }
+    }
+
+    try {
+        if (typeof sel.setPosition === 'function') {
+            sel.setPosition(ch, chunkOffset);
+        } else if (typeof sel.collapse === 'function') {
+            sel.collapse(ch, chunkOffset);
+        } else {
+            const doc = (ch as any)?.ownerDocument || (typeof document !== 'undefined' ? document : null);
+            if (!doc) return;
+            const range = doc.createRange();
+            range.setStart(ch, chunkOffset);
+            range.collapse(true);
             sel.removeAllRanges();
             sel.addRange(range);
-        } catch (error) {
-            console.warn('Failed to add range to selection:', error);
         }
+    } catch (error) {
+        console.warn('Failed to set selection position:', error);
     }
 }
 
 function scrollCursorIntoViewVertically(
-    container: HTMLElement, lineDiv: HTMLElement
+    container: HTMLElement,
+    visualIndex?: number,
+    lineHeight: number = 20,
+    cachedScrollTop?: number,
+    cachedClientHeight?: number
 ) {
-    const containerRect = container.getBoundingClientRect();
-    const lineRect = lineDiv.getBoundingClientRect();
+    if (visualIndex === undefined) return;
+    const lineTop = visualIndex * lineHeight;
+    const scrollTop = cachedScrollTop !== undefined ? cachedScrollTop : container.scrollTop;
+    const clientHeight = cachedClientHeight !== undefined && cachedClientHeight > 0 ? cachedClientHeight : container.clientHeight;
 
-    if (lineRect.top < containerRect.top) {
-        container.scrollTop -= (containerRect.top - lineRect.top);
-    } else if (lineRect.bottom > containerRect.bottom) {
-        container.scrollTop += (lineRect.bottom - containerRect.bottom);
+    if (lineTop < scrollTop) {
+        container.scrollTop = lineTop;
+    } else if (lineTop + lineHeight > scrollTop + clientHeight) {
+        container.scrollTop = lineTop + lineHeight - clientHeight;
     }
 }
 
@@ -141,55 +140,49 @@ function scrollCursorIntoViewHorizontally(
     cursorNode: Node, 
     cursorOffset: number, 
     leftPlus: number, 
+    column: number
 ) {
+    // Fast path: if column is small (typical typing), cursor is definitely in view!
+    // ZERO DOM READS!
+    if (column < 30) {
+        return;
+    }
 
     const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
-    
-    // Ensure we're working with the correct document context
-    const doc = cursorNode.ownerDocument || document;
-    const range = doc.createRange();
-    range.setStart(cursorNode, cursorOffset);
-    range.collapse(true);
+    const scrollWidth = container.scrollWidth;
+    const clientWidth = container.clientWidth;
+    const scrollLeft = container.scrollLeft;
 
-    const cursorRect = range.getBoundingClientRect();
-    const containerRect = container.getBoundingClientRect();
+    if (scrollWidth <= clientWidth && scrollLeft === 0) {
+        return;
+    }
 
-    const padding = 20; // Padding in pixels to keep cursor away from the edges
-    const leftVisible = containerRect.left + leftPlus + padding;
-    const rightVisible = Math.max(leftVisible, containerRect.right - padding);
+    const padding = 20;
+    const charWidth = 8.5; // Monospace font JetBrains Mono estimated char width
+    const estimatedCursorLeft = leftPlus + column * charWidth;
+    const leftVisible = scrollLeft + leftPlus + padding;
+    const rightVisible = Math.max(leftVisible, scrollLeft + clientWidth - padding);
 
     let scrolled = false;
-    if (cursorRect.left < leftVisible) {
-        const delta = leftVisible - cursorRect.left;
-        container.scrollLeft -= delta;
+    if (estimatedCursorLeft < leftVisible) {
+        container.scrollLeft = Math.max(0, estimatedCursorLeft - leftPlus - padding);
         scrolled = true;
-    } else if (cursorRect.right > rightVisible) {
-        const delta = cursorRect.right - rightVisible;
-        container.scrollLeft += delta;
+    } else if (estimatedCursorLeft > rightVisible) {
+        container.scrollLeft = estimatedCursorLeft - clientWidth + padding * 2;
         scrolled = true;
     }
 
     if (scrolled && isSafari) {
-        // Safari-specific multiple carets bug fix:
-        // Force repaint of the container and reset selection in the next animation frame.
-        // requestAnimationFrame(() => {
-            try {
-                // 1. Force WebKit repaint/reflow (Repaint Hack)
-                const prevOpacity = container.style.opacity;
-                container.style.opacity = '0.99';
-                container.offsetHeight; // Forces repaint
-                container.style.opacity = prevOpacity || '';
-
-                // 2. Re-apply selection to clean ghost carets
-                const sel = doc.defaultView?.getSelection() || window.getSelection();
-                if (sel && sel.rangeCount > 0) {
-                    const currentRange = sel.getRangeAt(0).cloneRange();
-                    sel.removeAllRanges();
-                    sel.addRange(currentRange);
-                }
-            } catch (e) {
-                console.warn('Failed to fix Safari caret repaint:', e);
+        try {
+            const doc = cursorNode.ownerDocument || document;
+            const sel = doc.defaultView?.getSelection() || window.getSelection();
+            if (sel && sel.rangeCount > 0) {
+                const currentRange = sel.getRangeAt(0).cloneRange();
+                sel.removeAllRanges();
+                sel.addRange(currentRange);
             }
-        // });
+        } catch (e) {
+            console.warn('Failed to fix Safari caret repaint:', e);
+        }
     }
 }

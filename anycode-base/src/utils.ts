@@ -28,20 +28,21 @@ export function addCssToDocument(css: string, id: string) {
 }
 
 export function isDiagnosticElement(node: Node | null): node is HTMLElement {
-    return !!node && node instanceof HTMLElement && node.classList.contains('diagnostic');
+    return !!node && typeof HTMLElement !== 'undefined' && node instanceof HTMLElement && node.classList.contains('diagnostic');
 }
 
 export function isInsideDiagnostic(node: Node | null): boolean {
     if (!node) return false;
     if (isDiagnosticElement(node)) return true;
-    if (node instanceof HTMLElement) {
+    if (typeof HTMLElement !== 'undefined' && node instanceof HTMLElement) {
         return !!node.closest('.diagnostic');
     }
-    return !!node.parentElement?.closest('.diagnostic');
+    return !!node.parentElement?.closest?.('.diagnostic');
 }
 
 export function isSideLineElement(node: Element | null | undefined): node is SideLineElement {
     return !!node
+        && typeof HTMLDivElement !== 'undefined'
         && node instanceof HTMLDivElement
         && typeof (node as SideLineElement).lineNumber === 'number';
 }

@@ -10,9 +10,10 @@ type UseSocketParams = {
     onError?: (data: { message: string }) => void;
 };
 
-export type ConnectionStatus = 'connecting' | 'connected' | 'reconnecting';
-
-const IS_DEMO_MODE = import.meta.env.MODE === 'demo' || import.meta.env.VITE_DEMO_MODE === 'true';
+const IS_DEMO_MODE =
+    import.meta.env.MODE === 'demo' ||
+    import.meta.env.VITE_DEMO_MODE === 'true' ||
+    (typeof window !== 'undefined' && (new URLSearchParams(window.location.search).get('demo') === 'true' || window.location.hash.includes('demo')));
 
 export const useSocket = ({ onConnect, onDisconnect, onConnectError, onError }: UseSocketParams) => {
     const wsRef = useRef<Socket | null>(null);

@@ -22,8 +22,11 @@ import {
     BRACKET_PAIRS, OPEN_BRACKETS, CLOSE_BRACKETS
 } from './utils';
 import type { Lang } from './lang';
+import { FastSyntaxHighlighter } from './fastSyntax';
+import { BinaryTokens } from './tokens';
 
 const MAX_FOLDING_LINES = 5000;
+const MAX_TREE_SITTER_LINES = 30000;
 
 import javascript from './langs/javascript';
 import typescript from './langs/typescript';
@@ -160,6 +163,72 @@ async function loadLanguage(language: string): Promise<Language> {
     }
 }
 
+export class LruCache<K, V> {
+    private map: Map<K, V> = new Map();
+    private readonly maxSize: number;
+
+    constructor(maxSize: number = 500) {
+        this.maxSize = maxSize;
+    }
+
+    get(key: K): V | undefined {
+        const val = this.map.get(key);
+        if (val !== undefined) {
+            this.map.delete(key);
+            this.map.set(key, val);
+        }
+        return val;
+    }
+
+    set(key: K, value: V): void {
+        if (this.map.has(key)) {
+            this.map.delete(key);
+        } else if (this.map.size >= this.maxSize) {
+            const oldestKey = this.map.keys().next().value;
+            if (oldestKey !== undefined) {
+                this.map.delete(oldestKey);
+            }
+        }
+        this.map.set(key, value);
+    }
+
+    has(key: K): boolean {
+        return this.map.has(key);
+    }
+
+    delete(key: K): boolean {
+        return this.map.delete(key);
+    }
+
+    clear(): void {
+        this.map.clear();
+    }
+
+    get size(): number {
+        return this.map.size;
+    }
+
+    keys(): IterableIterator<K> {
+        return this.map.keys();
+    }
+
+    values(): IterableIterator<V> {
+        return this.map.values();
+    }
+
+    entries(): IterableIterator<[K, V]> {
+        return this.map.entries();
+    }
+
+    invalidateFrom(fromKey: number): void {
+        for (const key of Array.from(this.map.keys())) {
+            if ((key as any) >= fromKey) {
+                this.map.delete(key);
+            }
+        }
+    }
+}
+
 export class Code {
     public filename: string
     private buffer: PieceTreeBase
@@ -171,10 +240,11 @@ export class Code {
     private runnablesQuery: Query | undefined
     private foldRanges: FoldRange[] = []
     private foldRangesInvalidated: boolean = true;
+    private useFastSyntax: boolean = false;
 
     public runnables: Map<number, any> = new Map()
 
-    private linesCache: Map<number, HighlighedNode[]> = new Map()
+    private linesCache = new LruCache<number, Uint32Array>(500);
 
     private history = new History<Change>()
     private changeActive: boolean = false;
@@ -193,6 +263,26 @@ export class Code {
         endIndex: number;
         name: string;
     }[]>();
+
+    private versionId: number = 0;
+    private dirtyStartLine: number | null = null;
+    private dirtyEndLine: number | null = null;
+
+    public getVersionId(): number {
+        return this.versionId;
+    }
+
+    public getDirtyRange(): { start: number; end: number } | null {
+        if (this.dirtyStartLine === null || this.dirtyEndLine === null) {
+            return null;
+        }
+        return { start: this.dirtyStartLine, end: this.dirtyEndLine };
+    }
+
+    public clearDirtyRange(): void {
+        this.dirtyStartLine = null;
+        this.dirtyEndLine = null;
+    }
 
     constructor(content: string = '', filename: string = '', language: string = 'text') {
         const builder = new PieceTreeTextBufferBuilder();
@@ -222,8 +312,14 @@ export class Code {
     }
 
     public async init() {
+        if (this.linesLength() > MAX_TREE_SITTER_LINES) {
+            this.useFastSyntax = true;
+            this.clearSyntaxState();
+            return;
+        }
+
         if (!this.language || !this.getLang(this.language)) {
-            this.language = undefined;
+            this.useFastSyntax = true;
             this.clearSyntaxState();
             return;
         }
@@ -234,7 +330,7 @@ export class Code {
             lang = await loadLanguage(this.language);
         } catch (error) {
             console.error(`Failed to initialize tree-sitter language "${this.language}"`, error);
-            this.language = undefined;
+            this.useFastSyntax = true;
             this.clearSyntaxState();
             return;
         }
@@ -479,6 +575,9 @@ export class Code {
         const pieceTreeFactory = pieceTreeTextBufferBuilder.finish(true);
         const pieceTree = pieceTreeFactory.create(1);
         this.buffer = pieceTree;
+        this.versionId++;
+        this.dirtyStartLine = 0;
+        this.dirtyEndLine = this.linesLength();
 
         if (this.parser) this.tree = this.parser.parse(this.input) || undefined;
         this.foldRangesInvalidated = true;
@@ -503,6 +602,15 @@ export class Code {
         const pos = this.getPosition(offset);
 
         this.buffer.insert(offset, text);
+        this.versionId++;
+
+        let newlines = 0;
+        for (let i = 0; i < text.length; i++) {
+            if (text.charCodeAt(i) === 10) newlines++;
+        }
+        this.dirtyStartLine = this.dirtyStartLine === null ? pos.line : Math.min(this.dirtyStartLine, pos.line);
+        this.dirtyEndLine = this.dirtyEndLine === null ? (pos.line + newlines) : Math.max(this.dirtyEndLine, pos.line + newlines);
+
         if (this.tree) this.treeSitterInsert(text, offset);
 
         this.invalidateCacheFrom(pos.line);
@@ -525,6 +633,8 @@ export class Code {
             start.lineNumber, start.column, end.lineNumber, end.column
         ));
 
+        this.versionId++;
+
         let edit: Edit = {
             operation: Operation.Remove,
             start: offset,
@@ -542,6 +652,9 @@ export class Code {
 
         const pos = this.getPosition(offset);
 
+        this.dirtyStartLine = this.dirtyStartLine === null ? pos.line : Math.min(this.dirtyStartLine, pos.line);
+        this.dirtyEndLine = this.dirtyEndLine === null ? pos.line : Math.max(this.dirtyEndLine, pos.line);
+
         this.buffer.delete(offset, length);
         if (this.tree) this.treeSitterRemove(offset + length, length);
 
@@ -549,11 +662,7 @@ export class Code {
     }
 
     private invalidateCacheFrom(line: number) {
-        for (const key of Array.from(this.linesCache.keys())) {
-            if (key >= line) {
-                this.linesCache.delete(key);
-            }
-        }
+        this.linesCache.invalidateFrom(line);
     }
 
     treeSitterInsert(text: string, offset: number) {
@@ -827,16 +936,20 @@ export class Code {
         return language?.executable || false;
     }
 
-    getLineNodes(line: number): HighlighedNode[] {
-        // console.log('getLineNodes', line);
-        if (this.linesCache.has(line)) {
-            return this.linesCache.get(line)!;
+    public getLineBinaryTokens(line: number): Uint32Array {
+        const cached = this.linesCache.get(line);
+        if (cached) {
+            return cached;
         }
-    
+
         const lineText = this.line(line) || "\u200B";
-    
-        if (!this.language || !this.tree || !this.query) {
-            return [{ name: null, text: lineText }];
+
+        if (this.useFastSyntax || !this.language || !this.tree || !this.query) {
+            const lang = this.language || FastSyntaxHighlighter.detectLanguage(this.filename);
+            const nodes = FastSyntaxHighlighter.tokenize(lineText, lang);
+            const binary = BinaryTokens.encode(nodes);
+            this.linesCache.set(line, binary);
+            return binary;
         }
     
         const captures = this.query.captures(
@@ -924,8 +1037,15 @@ export class Code {
             lineNodes.push({ name: null, text: lineText || "\u200B" });
         }
     
-        this.linesCache.set(line, lineNodes);
-        return lineNodes;
+        const binary = BinaryTokens.encode(lineNodes);
+        this.linesCache.set(line, binary);
+        return binary;
+    }
+
+    getLineNodes(line: number): HighlighedNode[] {
+        const binary = this.getLineBinaryTokens(line);
+        const lineText = this.line(line) || "\u200B";
+        return BinaryTokens.decode(binary, lineText);
     }
 
     private updateRunnables() {
