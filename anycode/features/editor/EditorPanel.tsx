@@ -28,9 +28,11 @@ type EditorPanelProps = {
     multibufferFiles?: MultibufferFile[];
     multibufferTitle?: string;
     multibufferIgnoreEdits?: boolean;
+    multibufferRawDiff?: string;
     multibufferFocusRequest?: { path: string; line?: number; column?: number; token: number };
     onCloseMultibuffer?: () => void;
     onMultibufferActiveFileChange?: (paneId: string, fileId: string) => void;
+    onOpenFile?: (path: string) => void;
     onGoToDefinition?: (request: DefinitionRequest) => Promise<DefinitionResponse>;
     onLoadDeletedFile?: (path: string) => Promise<string | null>;
 };
@@ -42,9 +44,11 @@ export const EditorPanel = ({
     multibufferFiles = [],
     multibufferTitle,
     multibufferIgnoreEdits = false,
+    multibufferRawDiff,
     multibufferFocusRequest,
     onCloseMultibuffer,
     onMultibufferActiveFileChange,
+    onOpenFile,
     onGoToDefinition,
     onLoadDeletedFile,
 }: EditorPanelProps) => {
@@ -58,25 +62,15 @@ export const EditorPanel = ({
     const [lastReadyEditor, setLastReadyEditor] = useState<{ id: string; state: AnycodeEditor } | null>(null);
 
     useEffect(() => {
-        if (!paneFileId) {
-            setLastReadyEditor(null);
-            return;
-        }
-
-        if (paneFile && editorState) {
+        if (editorState && paneFile) {
             setLastReadyEditor({ id: paneFile.id, state: editorState });
         }
-    }, [paneFileId, paneFile, editorState]);
+    }, [editorState, paneFile]);
 
-    const editorForCurrentFile = lastReadyEditor?.id === paneFileId
-        ? lastReadyEditor
-        : null;
-    const fallbackEditor = editors.keepPreviousEditorByPane[panelKey]
-        ? lastReadyEditor
-        : editorForCurrentFile;
-    const displayedEditor = paneFile && editorState
+    const keepPreviousEditor = editors.keepPreviousEditorByPane[panelKey] ?? false;
+    const displayedEditor = editorState && paneFile
         ? { id: paneFile.id, state: editorState }
-        : fallbackEditor;
+        : (keepPreviousEditor ? lastReadyEditor : null);
 
     useEffect(() => {
         if (multibufferOpen || !displayedEditor) return;
@@ -105,8 +99,10 @@ export const EditorPanel = ({
                     onClose={onCloseMultibuffer ?? (() => undefined)}
                     title={multibufferTitle}
                     ignoreEdits={multibufferIgnoreEdits}
+                    rawDiff={multibufferRawDiff}
                     focusRequest={multibufferFocusRequest}
                     onActiveFileChange={(fileId) => onMultibufferActiveFileChange?.(panelKey, fileId)}
+                    onOpenFile={onOpenFile}
                     onGoToDefinition={onGoToDefinition}
                     onHover={editors.handleHover}
                     onLoadDeletedFile={onLoadDeletedFile}

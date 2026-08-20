@@ -263,10 +263,26 @@ export class DiffRenderer {
         let prevRealLine: number | null = null;
 
         const addSeparatorsForRange = (start: number, end: number) => {
+            if (start > end) return;
+            if (!isHiddenByFold) {
+                const count = end - start + 1;
+                if (count === 1) {
+                    result.push({ kind: 'real', lineIndex: start });
+                } else if (count > 1) {
+                    result.push({
+                        kind: 'separator',
+                        hiddenStart: start,
+                        hiddenEnd: end,
+                        hiddenCount: count,
+                    });
+                }
+                return;
+            }
+
             let currentStart: number | null = null;
 
             for (let i = start; i <= end; i++) {
-                const folded = isHiddenByFold ? isHiddenByFold(i) : false;
+                const folded = isHiddenByFold(i);
                 if (!folded) {
                     if (currentStart === null) {
                         currentStart = i;

@@ -12,6 +12,21 @@ import { EditorSettings } from "../editor";
 import { DiffInfo } from "../diff";
 import { DiagnosticRenderer } from "./DiagnosticRenderer";
 
+const TOKEN_CLASS_CACHE = new Map<string, string>();
+function getTokenClassName(name: string): string {
+    let cached = TOKEN_CLASS_CACHE.get(name);
+    if (cached !== undefined) return cached;
+    if (!name.includes('.')) {
+        TOKEN_CLASS_CACHE.set(name, name);
+        return name;
+    }
+    const parts = name.split('.');
+    const unique = Array.from(new Set([name, ...parts])).filter(Boolean);
+    cached = unique.join(' ');
+    TOKEN_CLASS_CACHE.set(name, cached);
+    return cached;
+}
+
 /**
  * LineRenderer is responsible for creating line elements.
  * It doesn't manage DOM or query lines - just creates elements.
@@ -39,10 +54,6 @@ export class LineRenderer {
         wrapper.lineNumber = lineNumber;
         wrapper.className = "line";
 
-        // Add hash for change tracking
-        const hash = objectHash(nodes).toString();
-        wrapper.hash = hash;
-
         // Check if this line was changed in diff mode
         if (diffs) {
             const diffInfo = diffs.get(lineNumber + 1);
@@ -58,28 +69,26 @@ export class LineRenderer {
         } else {
             for (const { name, text } of nodes) {
                 const span = document.createElement('span');
-                const classNameParts: string[] = [];
+                let className = '';
                 if (name) {
-                    // Add both full token class (e.g. "function.method") and path segments
-                    // ("function", "method") so styles can gracefully fall back from specific
-                    // to general when a theme misses a deep token color.
-                    // Deduplicate classes to avoid repeating when category name has no dots.
-                    const parts = name.split('.').filter(Boolean);
-                    classNameParts.push(...Array.from(new Set([name, ...parts])));
+                    className = getTokenClassName(name);
                 }
-                if (!name && text === '\t') classNameParts.push('indent');
+                if (!name && text === '\t') {
+                    className = className ? className + ' indent' : 'indent';
+                }
                 
                 // Add highlight class if it matches the wordHighlight text and is highlightable
                 if (
                   wordHighlight?.token &&
-                  classNameParts.includes(wordHighlight.token) &&
+                  name &&
+                  className.includes(wordHighlight.token) &&
                   text === wordHighlight.text
                 ) {
-                  classNameParts.push('wh');
+                  className = className ? className + ' wh' : 'wh';
                 }
 
-                if (classNameParts.length > 0) {
-                    span.className = classNameParts.join(' ');
+                if (className) {
+                    span.className = className;
                 }
                 span.textContent = text;
                 wrapper.appendChild(span);
@@ -139,7 +148,7 @@ export class LineRenderer {
         div.className = "bt";
         div.lineNumber = lineNumber;
 
-        const isRun = runLines.includes(lineNumber);
+        const isRun = runLines.length > 0 && runLines.includes(lineNumber);
 
         if (isRun) {
             div.textContent = '▶';

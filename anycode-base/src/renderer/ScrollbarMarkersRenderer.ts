@@ -321,11 +321,11 @@ export class ScrollbarMarkersRenderer {
         return 20;
     }
 
-    public updateThumbPosition(scrollTopOverride?: number) {
+    public updateThumbPosition(scrollTopOverride?: number, scrollHeightOverride?: number, clientHeightOverride?: number) {
         if (!this.enabled || !this.thumb || !this.container) return;
         const scrollTop = scrollTopOverride !== undefined ? scrollTopOverride : this.container.scrollTop;
-        const clientHeight = this.cachedClientHeight || this.container.clientHeight;
-        const scrollHeight = this.cachedScrollHeight || this.container.scrollHeight;
+        const clientHeight = clientHeightOverride || this.cachedClientHeight || (typeof window !== 'undefined' ? window.innerHeight : 800);
+        const scrollHeight = scrollHeightOverride || this.cachedScrollHeight || clientHeight;
 
         if (scrollHeight <= clientHeight || clientHeight <= 0) {
             this.thumb.style.display = 'none';

@@ -18,7 +18,6 @@ import { WordHighlightRenderer } from "./WordHighlightRenderer";
 import { BracketMatchRenderer } from "./BracketMatchRenderer";
 
 const MAX_SCROLLBAR_MARKER_LINES = 5000;
-
 /**
  * A real line from the code
  */
@@ -125,6 +124,29 @@ export class Renderer {
             scrollbarMarkersEnabled,
             wrapper
         );
+        this.setupResizeObserver();
+    }
+
+    private cachedViewHeight = 0;
+    private resizeObserver: ResizeObserver | null = null;
+
+    private setupResizeObserver() {
+        if (typeof ResizeObserver !== 'undefined' && this.container) {
+            this.resizeObserver = new ResizeObserver((entries) => {
+                for (const entry of entries) {
+                    if (entry.contentRect && entry.contentRect.height > 0) {
+                        this.cachedViewHeight = entry.contentRect.height;
+                    }
+                }
+            });
+            this.resizeObserver.observe(this.container);
+        }
+    }
+
+    public getViewHeight(): number {
+        if (this.cachedViewHeight > 0) return this.cachedViewHeight;
+        if (typeof window !== 'undefined' && window.innerHeight > 0) return window.innerHeight;
+        return 800;
     }
 
     public setDiffEnabled(enabled: boolean) {
@@ -132,6 +154,8 @@ export class Renderer {
     }
 
     public clean() {
+        this.resizeObserver?.disconnect();
+        this.resizeObserver = null;
         this.scrollbarMarkersRenderer.clean();
     }
 
@@ -168,8 +192,8 @@ export class Renderer {
         const { startIndex, endIndex } = this.getVisibleRange(totalVisualRows, settings);
 
         const itemHeight = settings.lineHeight;
-        const paddingTop = startIndex * itemHeight;
-        const paddingBottom = (totalVisualRows - endIndex) * itemHeight;
+        const paddingTop = Math.round(startIndex * itemHeight);
+        const paddingBottom = Math.round(Math.max(0, (totalVisualRows - endIndex) * itemHeight));
 
         // Build fragments for better performance
         const btnFrag = document.createDocumentFragment();
@@ -230,7 +254,7 @@ export class Renderer {
         const effectiveIncludeSearch = limitMarkers ? false : includeSearch;
 
         this.scrollbarMarkersRenderer.updateGeometry(
-            this.container.clientHeight,
+            this.getViewHeight(),
             this.visualRows.length * state.settings.lineHeight
         );
         this.scrollbarMarkersRenderer.render(state, effectiveIncludeSearch, effectiveWordLines, this.visualRows);
@@ -337,10 +361,14 @@ export class Renderer {
             }
         }
 
+        const foldFilter = this.codeFoldingEnabled && this.lastHiddenLines.size > 0
+            ? ((lineIndex: number) => this.isHiddenByFold(lineIndex))
+            : undefined;
+
         return this.diffRenderer.insertSeparators(
             rows,
             totalLines,
-            (lineIndex) => this.isHiddenByFold(lineIndex)
+            foldFilter
         );
     }
 
@@ -394,12 +422,9 @@ export class Renderer {
         return lines;
     }
 
-    /**
-     * Get visible range based on visual row indices
-     */
     private getVisibleRange(totalVisualRows: number, settings: EditorSettings) {
         const scrollTop = this.container.scrollTop;
-        const viewHeight = this.container.clientHeight;
+        const viewHeight = this.getViewHeight();
 
         const visibleBuffer = settings.buffer;
         const itemHeight = settings.lineHeight;
@@ -532,11 +557,6 @@ export class Renderer {
             changed = true;
         }
 
-        // Render cursor or selection
-        if (!readOnly && (!search.isActive() || !search.isFocused())) {
-            this.renderCursorOrSelection(state);
-        }
-
         // Render search highlights
         if (search.isActive()) {
             this.searchRenderer.updateSearchHighlights(search);
@@ -580,18 +600,21 @@ export class Renderer {
 
         if (row.kind === 'real') {
             const multibufferCode = code as Code & {
-                getMultibufferHeader?: (line: number) => string | null;
-                getMultibufferLineNumber?: (line: number) => number | null;
+                getMultibufferRowMeta?: (line: number) => {
+                    nodes: HighlighedNode[];
+                    isHeader: boolean;
+                    displayLineNumber?: number;
+                };
             };
-            const syntaxNodes = precomputedNodes || code.getLineNodes(row.lineIndex);
-            const displayLineNumber = multibufferCode.getMultibufferLineNumber?.(row.lineIndex) ?? undefined;
+            const meta = multibufferCode.getMultibufferRowMeta?.(row.lineIndex);
+            const syntaxNodes = precomputedNodes || meta?.nodes || code.getLineNodes(row.lineIndex);
+            const displayLineNumber = meta?.displayLineNumber;
             elements = this.lineRenderer.createLineElements(
                 row.lineIndex, syntaxNodes, errorLines, settings,
                 diffs, runLines, this.getFoldIndicator(row.lineIndex), state.wordHighlight,
                 displayLineNumber,
             );
-            const header = multibufferCode.getMultibufferHeader?.(row.lineIndex);
-            if (header !== null && header !== undefined) {
+            if (meta?.isHeader) {
                 elements.code.classList.add('multibuffer-file-header-row');
                 elements.code.contentEditable = 'false';
                 elements.gutter.classList.add('multibuffer-file-header-gutter');

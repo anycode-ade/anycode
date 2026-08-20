@@ -686,27 +686,17 @@ export class AnycodeEditor {
 
     private handleScroll(e: Event) {
         if (!this.container.isConnected) return;
-        if (this.container.clientHeight === 0 && this.container.clientWidth === 0) return;
 
         this.clearPendingHover();
         this.closeHover();
 
-        this.renderer.updateScrollbarThumb();
-
-        if (this.scrollAnimationFrameId !== null) return;
-
-        this.scrollAnimationFrameId = requestAnimationFrame(() => {
-            this.scrollAnimationFrameId = null;
-            if (!this.container.isConnected) return;
-            if (this.container.clientHeight === 0 && this.container.clientWidth === 0) return;
-            const scrollTop = this.container.scrollTop;
-            if (scrollTop !== this.lastScrollTop) {
-                let state = this.getEditorState();
-                this.renderer.renderScroll(state);
-                this.lastScrollTop = scrollTop;
-            }
-            this.needFocus = false;
-        });
+        const scrollTop = this.container.scrollTop;
+        if (scrollTop !== this.lastScrollTop) {
+            const state = this.getEditorState();
+            this.renderer.renderScroll(state);
+            this.lastScrollTop = scrollTop;
+        }
+        this.needFocus = false;
     }
 
     public hasScroll() {
@@ -1048,7 +1038,6 @@ export class AnycodeEditor {
     }
 
     private handleMouseMove(e: MouseEvent) {
-        e.preventDefault();
         const target = e.target as HTMLElement | null;
         if (target?.closest('.hover-box')) {
             return;
@@ -1561,7 +1550,7 @@ export class AnycodeEditor {
         }
     }
 
-    private handlePasteEvent(e: ClipboardEvent) {
+    private async handlePasteEvent(e: ClipboardEvent) {
         this.clearPendingHover();
         this.closeHover();
         if (this.ignoreEdits) {

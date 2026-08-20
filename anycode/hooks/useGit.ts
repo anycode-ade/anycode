@@ -588,6 +588,38 @@ export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
         });
     }, [fetchGitStatus, isConnected, wsRef]);
 
+    const fetchRawDiff = useCallback((staged?: boolean): Promise<string> => {
+        return new Promise((resolve) => {
+            if (!wsRef.current || !isConnected) {
+                resolve('');
+                return;
+            }
+            wsRef.current.emit('git:diff-raw', { staged }, (response: any) => {
+                if (response?.success && typeof response.diff === 'string') {
+                    resolve(response.diff);
+                } else {
+                    resolve('');
+                }
+            });
+        });
+    }, [isConnected, wsRef]);
+
+    const fetchCommitRawDiff = useCallback((hash: string): Promise<string> => {
+        return new Promise((resolve) => {
+            if (!wsRef.current || !isConnected) {
+                resolve('');
+                return;
+            }
+            wsRef.current.emit('git:commit-diff-raw', { hash }, (response: any) => {
+                if (response?.success && typeof response.diff === 'string') {
+                    resolve(response.diff);
+                } else {
+                    resolve('');
+                }
+            });
+        });
+    }, [isConnected, wsRef]);
+
     return {
         changedFiles,
         gitBranch,
@@ -602,6 +634,8 @@ export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
         historyFilesLoading,
         historyPath,
         fetchGitStatus,
+        fetchRawDiff,
+        fetchCommitRawDiff,
         fetchOriginalFileContent,
         fetchBranches,
         fetchHistory,
@@ -625,3 +659,4 @@ export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
         unstage,
     };
 };
+

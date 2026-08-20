@@ -416,6 +416,43 @@ pub async fn handle_git_unstage(
     send_response(ack, result);
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct GitDiffRawRequest {
+    #[serde(default)]
+    pub staged: Option<bool>,
+}
+
+pub async fn handle_git_diff_raw(
+    Data(request): Data<GitDiffRawRequest>,
+    ack: AckSender,
+    state: State<AppState>,
+) {
+    info!("Received git:diff-raw: staged={:?}", request.staged);
+    let result = {
+        let git = state.git_manager.lock().await;
+        git.raw_diff(request.staged).map(|diff| json!({ "diff": diff }))
+    };
+    send_response(ack, result);
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct GitCommitDiffRawRequest {
+    pub hash: String,
+}
+
+pub async fn handle_git_commit_diff_raw(
+    Data(request): Data<GitCommitDiffRawRequest>,
+    ack: AckSender,
+    state: State<AppState>,
+) {
+    info!("Received git:commit-diff-raw: hash={}", request.hash);
+    let result = {
+        let git = state.git_manager.lock().await;
+        git.raw_commit_diff(&request.hash).map(|diff| json!({ "diff": diff }))
+    };
+    send_response(ack, result);
+}
+
 pub async fn is_file_tracked(abs_path: &str, state: &AppState) -> bool {
     let git = state.git_manager.lock().await;
     match git.file_original(abs_path) {
@@ -423,3 +460,4 @@ pub async fn is_file_tracked(abs_path: &str, state: &AppState) -> bool {
         Err(_) => false,
     }
 }
+

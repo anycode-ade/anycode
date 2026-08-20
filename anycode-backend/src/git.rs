@@ -1128,6 +1128,74 @@ impl GitManager {
         })
     }
 
+    fn diff_to_patch_string(diff: &mut git2::Diff) -> Result<String> {
+        let mut patch_bytes = Vec::new();
+        diff.print(git2::DiffFormat::Patch, |_delta, _hunk, line| {
+            let origin = line.origin();
+            match origin {
+                '+' | '-' | ' ' => {
+                    patch_bytes.push(origin as u8);
+                    patch_bytes.extend_from_slice(line.content());
+                }
+                _ => {
+                    patch_bytes.extend_from_slice(line.content());
+                }
+            }
+            true
+        })?;
+        Ok(String::from_utf8_lossy(&patch_bytes).to_string())
+    }
+
+    /// Return raw unified diff output for the working directory / staged changes using in-memory libgit2.
+    pub fn raw_diff(&self, staged: Option<bool>) -> Result<String> {
+        let repo = self.repo()?;
+        let mut diff_opts = DiffOptions::new();
+        let mut find_opts = DiffFindOptions::new();
+        find_opts.renames(true);
+
+        let mut diff = match staged {
+            Some(true) => {
+                let head_tree = repo.head().ok().and_then(|h| h.peel_to_tree().ok());
+                let mut d = repo.diff_tree_to_index(head_tree.as_ref(), None, Some(&mut diff_opts))?;
+                d.find_similar(Some(&mut find_opts))?;
+                d
+            }
+            Some(false) => {
+                let mut d = repo.diff_index_to_workdir(None, Some(&mut diff_opts))?;
+                d.find_similar(Some(&mut find_opts))?;
+                d
+            }
+            None => {
+                let head_tree = repo.head().ok().and_then(|h| h.peel_to_tree().ok());
+                let mut d = repo.diff_tree_to_workdir_with_index(head_tree.as_ref(), Some(&mut diff_opts))?;
+                d.find_similar(Some(&mut find_opts))?;
+                d
+            }
+        };
+
+        Self::diff_to_patch_string(&mut diff)
+    }
+
+    /// Return raw unified diff output for a specific commit hash using in-memory libgit2.
+    pub fn raw_commit_diff(&self, hash: &str) -> Result<String> {
+        let repo = self.repo()?;
+        let commit = repo.find_commit(git2::Oid::from_str(hash.trim())?)?;
+        let new_tree = commit.tree()?;
+        let old_tree = if commit.parent_count() > 0 {
+            Some(commit.parent(0)?.tree()?)
+        } else {
+            None
+        };
+        let mut diff_opts = DiffOptions::new();
+        let mut find_opts = DiffFindOptions::new();
+        find_opts.renames(true);
+
+        let mut diff = repo.diff_tree_to_tree(old_tree.as_ref(), Some(&new_tree), Some(&mut diff_opts))?;
+        diff.find_similar(Some(&mut find_opts))?;
+
+        Self::diff_to_patch_string(&mut diff)
+    }
+
     /// Commit currently staged index entries (like `git commit`)
     pub fn commit(&self, message: &str) -> Result<()> {
         let repo = self.repo()?;

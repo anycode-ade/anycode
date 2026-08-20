@@ -51,6 +51,7 @@ type ReviewSession = {
     ignoreEdits: boolean;
     openedByReview: string[];
     activeFileId: string | null;
+    rawDiff?: string;
     focusRequest?: { path: string; line?: number; column?: number; token: number };
 };
 
@@ -296,7 +297,7 @@ const App: React.FC = () => {
         });
     });
 
-    const handleOpenMultibuffer = useEvent(() => {
+    const handleOpenMultibuffer = useEvent(async () => {
         if (git.changedFiles.length === 0) return;
 
         const paneId = layoutActionsRef.current?.ensureEditorPanel(editors.activeEditorPaneId);
@@ -314,24 +315,23 @@ const App: React.FC = () => {
                 activeFileId: files.find((file) => file.id === editors.activeFileId)?.id
                     ?? files[0]?.id
                     ?? null,
-                openedByReview: files
-                    .filter((file) => !editors.editorStates.has(file.id))
-                    .map((file) => file.id),
+                openedByReview: [],
             },
         }));
+
+        const rawDiff = await git.fetchRawDiff();
+        setMultibufferReviews((previous) => {
+            if (!previous[paneId]) return previous;
+            return {
+                ...previous,
+                [paneId]: {
+                    ...previous[paneId],
+                    rawDiff,
+                },
+            };
+        });
     });
 
-    useEffect(() => {
-        for (const [paneId, review] of Object.entries(multibufferReviews)) {
-            if (review.ignoreEdits) continue;
-            const paths = review.files
-                .filter((file) => file.status !== 'deleted' && !editors.editorStates.has(file.id))
-                .map((file) => file.path);
-            if (paths.length > 0) {
-                void editors.openFiles(paths, { paneId, diffMode: 'diff', keepPreviousEditor: true });
-            }
-        }
-    }, [editors.openFiles, multibufferReviews]);
 
     useEffect(() => {
         const nextFiles = toMultibufferFiles(git.changedFiles);
@@ -465,31 +465,9 @@ const App: React.FC = () => {
         const paneId = layoutActionsRef.current?.ensureEditorPanel(editors.activeEditorPaneId);
         if (!paneId || files.length === 0) return;
 
-        const contents = await Promise.all(files.map(async (file) => {
-            if (file.binary) return null;
-            const content = await git.fetchHistoryFileContent(hash, file);
-            if (!content || content.old_binary || content.new_binary) return null;
-            return { file, content };
-        }));
-        const textFiles = contents.filter((entry): entry is NonNullable<typeof entry> => entry !== null);
-        if (textFiles.length === 0) {
-            window.alert('This commit has no text diffs to review.');
-            return;
-        }
-
         closeReview(paneId);
         editors.setActiveEditorPaneId(paneId);
-        for (const { file, content } of textFiles) {
-            editors.openHistoricalDiff(
-                hash,
-                file.path,
-                content.old_content ?? '',
-                content.new_content ?? '',
-                paneId,
-                false,
-            );
-        }
-        const reviewFiles = textFiles.map(({ file }) => ({
+        const reviewFiles = files.map((file) => ({
             id: getHistoricalFileId(hash, file.path),
             path: file.path,
             added: file.added,
@@ -503,11 +481,21 @@ const App: React.FC = () => {
                 title: `Review ${hash.slice(0, 7)}`,
                 ignoreEdits: true,
                 activeFileId: reviewFiles[0]?.id ?? null,
-                openedByReview: textFiles
-                    .map(({ file }) => getHistoricalFileId(hash, file.path))
-                    .filter((fileId) => !editors.editorStates.has(fileId)),
+                openedByReview: [],
             },
         }));
+
+        const rawDiff = await git.fetchCommitRawDiff(hash);
+        setMultibufferReviews((previous) => {
+            if (!previous[paneId]) return previous;
+            return {
+                ...previous,
+                [paneId]: {
+                    ...previous[paneId],
+                    rawDiff,
+                },
+            };
+        });
     });
 
     const activeChangedFile = useMemo<ChangedFile | null>(() => {
@@ -753,9 +741,11 @@ const App: React.FC = () => {
                         multibufferFiles={multibufferReview?.files ?? []}
                         multibufferTitle={multibufferReview?.title}
                         multibufferIgnoreEdits={multibufferReview?.ignoreEdits ?? false}
+                        multibufferRawDiff={multibufferReview?.rawDiff}
                         multibufferFocusRequest={multibufferReview?.focusRequest}
                         onCloseMultibuffer={() => closeReview(panelKey)}
                         onMultibufferActiveFileChange={handleReviewActiveFileChange}
+                        onOpenFile={(path) => handleOpenFile(path)}
                         onGoToDefinition={handleGoToDefinition}
                         onLoadDeletedFile={git.fetchOriginalFileContent}
                     />
