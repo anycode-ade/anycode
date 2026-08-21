@@ -1,3 +1,4 @@
+import { CSS_CLASS } from "../constants";
 import { HighlighedNode, WordHighlight } from "../code";
 import { TokenDictionary, BinaryTokens } from "../tokens";
 import {
@@ -40,21 +41,21 @@ export class LineRenderer {
         const wrapper = document.createElement('div') as AnycodeLine;
 
         wrapper.lineNumber = lineNumber;
-        wrapper.className = "line";
+        wrapper.className = CSS_CLASS.LINE;
 
-        // Add hash for change tracking
+        // Add 32-bit numeric hash for fast zero-alloc change tracking
         const hash = binaryTokens && lineText !== undefined
-            ? BinaryTokens.fastHash(binaryTokens, lineText).toString()
-            : objectHash(nodes).toString();
+            ? BinaryTokens.fastHash(binaryTokens, lineText)
+            : objectHash(nodes);
         wrapper.hash = hash;
 
         // Check if this line was changed in diff mode
         if (diffs) {
             const diffInfo = diffs.get(lineNumber + 1);
             if (diffInfo?.changeType === 'modified') {
-                wrapper.classList.add('diff-changed');
+                wrapper.classList.add(CSS_CLASS.DIFF_CHANGED);
             } else if (diffInfo?.changeType === 'added') {
-                wrapper.classList.add('diff-added');
+                wrapper.classList.add(CSS_CLASS.DIFF_ADDED);
             }
         }
 
@@ -144,18 +145,18 @@ export class LineRenderer {
         displayLineNumber: number = lineNumber,
     ): GutterElement {
         const div = document.createElement('div') as GutterElement;
-        div.className = "ln";
+        div.className = CSS_CLASS.GUTTER;
         div.lineNumber = lineNumber;
         div.textContent = (displayLineNumber + 1).toString();
 
         if (diffs) {
             const diffInfo = diffs.get(lineNumber + 1);
             if (diffInfo?.changeType === 'modified') {
-                div.classList.add('diff-changed');
+                div.classList.add(CSS_CLASS.DIFF_CHANGED);
             } else if (diffInfo?.changeType === 'added') {
-                div.classList.add('diff-added');
+                div.classList.add(CSS_CLASS.DIFF_ADDED);
             } else if (diffInfo?.changeType === 'deleted') {
-                div.classList.add('diff-deleted');
+                div.classList.add(CSS_CLASS.DIFF_DELETED);
             }
         }
 
@@ -172,7 +173,7 @@ export class LineRenderer {
         settings: EditorSettings
     ): ButtonColumnElement {
         const div = document.createElement('div') as ButtonColumnElement;
-        div.className = "bt";
+        div.className = CSS_CLASS.BUTTONS;
         div.lineNumber = lineNumber;
 
         const isRun = runLines.includes(lineNumber);
@@ -208,12 +209,12 @@ export class LineRenderer {
         const gutter = this.createLineNumber(lineNumber, settings, diffs, displayLineNumber);
         const btn = this.createLineButtons(lineNumber, runLines, errorLines, settings);
         const fold = document.createElement('div') as FoldColumnElement;
-        fold.className = 'fd';
+        fold.className = CSS_CLASS.FOLDS;
         fold.lineNumber = lineNumber;
 
         if (foldIndicator.canFold) {
             const toggle = document.createElement('button') as FoldElement;
-            toggle.className = `fold-toggle ${foldIndicator.collapsed ? 'collapsed' : 'expanded'}`;
+            toggle.className = `${CSS_CLASS.FOLD_TOGGLE} ${foldIndicator.collapsed ? CSS_CLASS.COLLAPSED : CSS_CLASS.EXPANDED}`;
             toggle.lineNumber = lineNumber;
             toggle.type = 'button';
             toggle.ariaLabel = foldIndicator.collapsed ? 'Expand folded block' : 'Collapse block';
@@ -226,10 +227,10 @@ export class LineRenderer {
     /**
      * Creates a spacer element for virtual scrolling
      */
-    public createSpacer(height: number): HTMLDivElement {
+    public createSpacer(height: number | string): HTMLDivElement {
         const spacer = document.createElement('div');
-        spacer.className = "spacer";
-        spacer.style.height = `${height}px`;
+        spacer.className = CSS_CLASS.SPACER;
+        spacer.style.height = typeof height === "number" ? `${height}px` : height;
         return spacer;
     }
 }

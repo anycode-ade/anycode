@@ -1,6 +1,6 @@
 import { Code, HighlighedNode } from "../code";
 import { BinaryTokens } from "../tokens";
-import { AnycodeLine, RowElements } from "../types";
+import { AnycodeLine, RowElements, SparseGhostGroup } from "../types";
 import { isGhostElement, objectHash, minimize } from "../utils";
 import { moveCursor, removeCursor } from "../cursor";
 import { EditorState, EditorSettings } from "../editor";
@@ -10,7 +10,8 @@ import { Completion } from "../lsp";
 import { Search } from "../search";
 import { LineRenderer } from "./LineRenderer";
 import { SearchRenderer } from "./SearchRenderer";
-import { DiffRenderer } from "./DiffRenderer";
+import { DiffRenderer, getGapElementData } from "./DiffRenderer";
+import { CSS_CLASS } from "../constants";
 import { CompletionRenderer } from "./CompletionRenderer";
 import { HoverRenderer } from "./HoverRenderer";
 import { DiagnosticRenderer } from "./DiagnosticRenderer";
@@ -71,6 +72,13 @@ export class Renderer {
     private codeFoldingEnabled: boolean = true;
     private charWidth = 0;
     private lastContentMinWidth = -1;
+    private maxTrackedWidth: number = 0;
+    private lastGutterWidth: number = 48;
+    private sparseGhostGroups: SparseGhostGroup[] = [];
+    private totalGhostLines: number = 0;
+    private expandBufferRafId: number | null = null;
+    private isFastScroll: boolean = false;
+    private cursorRafId: number | null = null;
 
     constructor(
         container: HTMLDivElement,
@@ -141,15 +149,6 @@ export class Renderer {
         }
         this.scrollbarMarkersRenderer.clean();
     }
-
-    private sparseGhostGroups: {
-        anchorLine: number;
-        hunkId: number;
-        oldLineNumbers: number[];
-        ghostCount: number;
-        startVisualIndex: number;
-    }[] = [];
-    private totalGhostLines: number = 0;
 
     private updateSparseGhostIndex(diffs: Map<number, DiffInfo> | undefined, totalLines: number): void {
         this.sparseGhostGroups = [];
@@ -254,20 +253,8 @@ export class Renderer {
         this.diffRenderer.setFocusedDiffMode(enabled, contextLines);
     }
 
-    private lastGutterWidth: number = 48;
     public lastScrollTop: number = 0;
     public lastClientHeight: number = 600;
-
-    public updateGutterWidth(state: EditorState) {
-        const totalRealLines = state.code.linesLength();
-        const digits = Math.max(3, String(Math.max(1, totalRealLines)).length);
-        const gutterWidth = Math.max(48, Math.ceil(digits * 8.5 + 18));
-        this.lastGutterWidth = gutterWidth;
-        const foldsLeft = 32 + gutterWidth;
-        this.container.style.setProperty('--anycode-gutter-width', `${gutterWidth}px`);
-        this.container.style.setProperty('--anycode-folds-left', `${foldsLeft}px`);
-        (this.container as any)._stickyWidth = undefined;
-    }
 
     public render(state: EditorState) {
         const { code, diffs } = state;
@@ -309,6 +296,8 @@ export class Renderer {
         const itemHeight = settings.lineHeight;
         const paddingTop = Math.round(startIndex * itemHeight);
         const paddingBottom = Math.round(Math.max(0, (totalVisualRows - endIndex) * itemHeight));
+        const topPx = `${paddingTop}px`;
+        const bottomPx = `${paddingBottom}px`;
 
         // Build fragments for better performance
         const btnFrag = document.createDocumentFragment();
@@ -317,17 +306,14 @@ export class Renderer {
         const codeFrag = document.createDocumentFragment();
 
         // Top spacers
-        btnFrag.appendChild(this.lineRenderer.createSpacer(paddingTop));
-        gutterFrag.appendChild(this.lineRenderer.createSpacer(paddingTop));
-        foldsFrag.appendChild(this.lineRenderer.createSpacer(paddingTop));
-        codeFrag.appendChild(this.lineRenderer.createSpacer(paddingTop));
+        btnFrag.appendChild(this.lineRenderer.createSpacer(topPx));
+        gutterFrag.appendChild(this.lineRenderer.createSpacer(topPx));
+        foldsFrag.appendChild(this.lineRenderer.createSpacer(topPx));
+        codeFrag.appendChild(this.lineRenderer.createSpacer(topPx));
 
-        // Render visible slice of visual rows on the fly
-        const visibleSlice = this.getVisualRows(startIndex, endIndex);
-        for (let i = 0; i < visibleSlice.length; i++) {
-            const visualIndex = startIndex + i;
-            const row = visibleSlice[i];
-            const elements = this.createRow(row, visualIndex, state);
+        // Render visible slice of visual rows directly on the fly (Zero Alloc)
+        for (let visualIndex = startIndex; visualIndex < endIndex; visualIndex++) {
+            const elements = this.renderRowAt(visualIndex, state);
             codeFrag.appendChild(elements.code);
             gutterFrag.appendChild(elements.gutter);
             btnFrag.appendChild(elements.btn);
@@ -335,10 +321,10 @@ export class Renderer {
         }
 
         // Bottom spacers
-        btnFrag.appendChild(this.lineRenderer.createSpacer(paddingBottom));
-        gutterFrag.appendChild(this.lineRenderer.createSpacer(paddingBottom));
-        foldsFrag.appendChild(this.lineRenderer.createSpacer(paddingBottom));
-        codeFrag.appendChild(this.lineRenderer.createSpacer(paddingBottom));
+        btnFrag.appendChild(this.lineRenderer.createSpacer(bottomPx));
+        gutterFrag.appendChild(this.lineRenderer.createSpacer(bottomPx));
+        foldsFrag.appendChild(this.lineRenderer.createSpacer(bottomPx));
+        codeFrag.appendChild(this.lineRenderer.createSpacer(bottomPx));
 
         // Replace old children atomically
         this.buttonsColumn.replaceChildren(btnFrag);
@@ -565,9 +551,6 @@ export class Renderer {
         return lines;
     }
 
-    private expandBufferRafId: number | null = null;
-    private isFastScroll: boolean = false;
-
     public setFastScroll(enabled: boolean, state?: EditorState) {
         if (this.isFastScroll === enabled) return;
         this.isFastScroll = enabled;
@@ -619,7 +602,7 @@ export class Renderer {
         this.lastScrollTop = currentScrollTop;
         const viewHeight = this.container.clientHeight;
         if (viewHeight > 0) this.lastClientHeight = viewHeight;
-        this.scrollbarMarkersRenderer.updateThumbPosition(currentScrollTop, true);
+        this.scrollbarMarkersRenderer.updateThumbPosition(currentScrollTop, true, viewHeight);
         const { settings, readOnly, search } = state;
         const lineHeight = settings.lineHeight;
         const buffer = settings.buffer;
@@ -738,11 +721,10 @@ export class Renderer {
             changed = true;
         }
 
-        // Add rows above
+        // Add rows above directly (Zero Alloc)
         while (currentStartIndex > startIndex) {
             currentStartIndex--;
-            const row = this.getVisualRow(currentStartIndex);
-            const elements = this.createRow(row, currentStartIndex, state);
+            const elements = this.renderRowAt(currentStartIndex, state);
 
             this.codeContent.insertBefore(elements.code, this.codeContent.children[1]);
             this.gutter.insertBefore(elements.gutter, this.gutter.children[1]);
@@ -752,10 +734,9 @@ export class Renderer {
             changed = true;
         }
 
-        // Add rows below
+        // Add rows below directly (Zero Alloc)
         while (currentEndIndex < endIndex) {
-            const row = this.getVisualRow(currentEndIndex);
-            const elements = this.createRow(row, currentEndIndex, state);
+            const elements = this.renderRowAt(currentEndIndex, state);
 
             this.codeContent.insertBefore(elements.code, bottomSpacer);
             this.gutter.insertBefore(elements.gutter, gutterBottomSpacer);
@@ -784,16 +765,18 @@ export class Renderer {
         const topHeight = Math.round(startIndex * lineHeight);
         const bottomHeight = Math.round(Math.max(0, (totalVisualRows - endIndex) * lineHeight));
 
-        topSpacer.style.height = `${topHeight}px`;
-        bottomSpacer.style.height = `${bottomHeight}px`;
+        const topPx = `${topHeight}px`;
+        const bottomPx = `${bottomHeight}px`;
 
-        gutterTopSpacer.style.height = `${topHeight}px`;
-        gutterBottomSpacer.style.height = `${bottomHeight}px`;
+        topSpacer.style.height = topPx;
+        gutterTopSpacer.style.height = topPx;
+        btnTopSpacer.style.height = topPx;
+        foldsTopSpacer.style.height = topPx;
 
-        btnTopSpacer.style.height = `${topHeight}px`;
-        btnBottomSpacer.style.height = `${bottomHeight}px`;
-        foldsTopSpacer.style.height = `${topHeight}px`;
-        foldsBottomSpacer.style.height = `${bottomHeight}px`;
+        bottomSpacer.style.height = bottomPx;
+        gutterBottomSpacer.style.height = bottomPx;
+        btnBottomSpacer.style.height = bottomPx;
+        foldsBottomSpacer.style.height = bottomPx;
     }
 
     public updateScrollbarThumb() {
@@ -801,51 +784,180 @@ export class Renderer {
     }
 
     /**
-     * Create DOM elements for a visual row (real or ghost)
+     * Render a visual row directly without intermediate object allocations (Zero Alloc)
      */
-    private createRow(
-        row: VisualRow,
+    public renderRowAt(
+        visualIndex: number,
+        state: EditorState,
+        precomputedNodes?: HighlighedNode[]
+    ): RowElements {
+        if (this.activeVisualRows) {
+            const row = this.activeVisualRows[visualIndex];
+            if (!row || row.kind === "real") {
+                const lineIndex = row ? row.lineIndex : visualIndex;
+                return this.createRealRow(lineIndex, visualIndex, state, precomputedNodes);
+            }
+            if (row.kind === "ghost") {
+                return this.createGhostRow(row.hunkId, row.anchorLine, row.originalLineIndex, visualIndex, state);
+            }
+            return this.createSeparatorRow(row, visualIndex, state);
+        }
+
+        if (this.sparseGhostGroups.length === 0) {
+            return this.createRealRow(visualIndex, visualIndex, state, precomputedNodes);
+        }
+
+        let ghostsBefore = 0;
+        for (let g = 0; g < this.sparseGhostGroups.length; g++) {
+            const group = this.sparseGhostGroups[g];
+            if (visualIndex < group.startVisualIndex) {
+                const lineIndex = visualIndex - ghostsBefore;
+                return this.createRealRow(lineIndex, visualIndex, state, precomputedNodes);
+            }
+            if (visualIndex < group.startVisualIndex + group.ghostCount) {
+                const ghostOffset = visualIndex - group.startVisualIndex;
+                const originalLineNumber = group.oldLineNumbers[ghostOffset];
+                return this.createGhostRow(
+                    group.hunkId,
+                    group.anchorLine,
+                    originalLineNumber - 1,
+                    visualIndex,
+                    state
+                );
+            }
+            ghostsBefore += group.ghostCount;
+        }
+
+        const lineIndex = visualIndex - ghostsBefore;
+        return this.createRealRow(lineIndex, visualIndex, state, precomputedNodes);
+    }
+
+    private createRealRow(
+        lineIndex: number,
         visualIndex: number,
         state: EditorState,
         precomputedNodes?: HighlighedNode[]
     ): RowElements {
         const { code, settings, diffs, runLines, errorLines } = state;
-        let elements: RowElements;
+        const multibufferCode = code as Code & {
+            getMultibufferHeader?: (line: number) => string | null;
+            getMultibufferLineNumber?: (line: number) => number | null;
+        };
+        const lineText = code.line(lineIndex) || "\u200B";
+        const binaryTokens = code.getLineBinaryTokens(lineIndex);
+        const syntaxNodes = precomputedNodes || [];
+        const displayLineNumber = multibufferCode.getMultibufferLineNumber?.(lineIndex) ?? undefined;
+        const elements = this.lineRenderer.createLineElements(
+            lineIndex, syntaxNodes, errorLines, settings,
+            diffs, runLines, this.getFoldIndicator(lineIndex), state.wordHighlight,
+            displayLineNumber, binaryTokens, lineText
+        );
+        const header = multibufferCode.getMultibufferHeader?.(lineIndex);
+        if (header !== null && header !== undefined) {
+            elements.code.classList.add("multibuffer-file-header-row");
+            elements.code.contentEditable = "false";
+            elements.gutter.classList.add("multibuffer-file-header-gutter");
+            elements.gutter.textContent = "";
+            elements.btn.classList.add("multibuffer-file-header-gutter");
+            elements.fold.classList.add("multibuffer-file-header-gutter");
+        }
+        return this.applyVisualIndex(elements, visualIndex);
+    }
 
-        if (row.kind === 'real') {
-            const multibufferCode = code as Code & {
-                getMultibufferHeader?: (line: number) => string | null;
-                getMultibufferLineNumber?: (line: number) => number | null;
-            };
-            const lineText = code.line(row.lineIndex) || '\u200B';
-            const binaryTokens = code.getLineBinaryTokens(row.lineIndex);
-            const syntaxNodes = precomputedNodes || [];
-            const displayLineNumber = multibufferCode.getMultibufferLineNumber?.(row.lineIndex) ?? undefined;
-            elements = this.lineRenderer.createLineElements(
-                row.lineIndex, syntaxNodes, errorLines, settings,
-                diffs, runLines, this.getFoldIndicator(row.lineIndex), state.wordHighlight,
-                displayLineNumber, binaryTokens, lineText
-            );
-            const header = multibufferCode.getMultibufferHeader?.(row.lineIndex);
-            if (header !== null && header !== undefined) {
-                elements.code.classList.add('multibuffer-file-header-row');
-                elements.code.contentEditable = 'false';
-                elements.gutter.classList.add('multibuffer-file-header-gutter');
-                elements.gutter.textContent = '';
-                elements.btn.classList.add('multibuffer-file-header-gutter');
-                elements.fold.classList.add('multibuffer-file-header-gutter');
-            }
-        } else if (row.kind === 'ghost') {
-            const originalNodes = state.originalCode?.getLineNodes(row.originalLineIndex);
-            const originalText = state.originalCode?.line(row.originalLineIndex) ?? '';
-            elements = this.diffRenderer.createGhostRowElements(
-                row, settings, originalText, originalNodes, state.wordHighlight
-            );
-        } else {
-            elements = this.diffRenderer.createGapRowElements(row, settings);
+    private createGhostRow(
+        hunkId: number,
+        anchorLine: number,
+        originalLineIndex: number,
+        visualIndex: number,
+        state: EditorState
+    ): RowElements {
+        const { settings } = state;
+        const originalNodes = state.originalCode?.getLineNodes(originalLineIndex);
+        const originalText = state.originalCode?.line(originalLineIndex) ?? "";
+        const ghostRow: GhostRow = {
+            kind: "ghost",
+            hunkId,
+            anchorLine,
+            originalLineIndex,
+        };
+        const elements = this.diffRenderer.createGhostRowElements(
+            ghostRow, settings, originalText, originalNodes, state.wordHighlight
+        );
+        return this.applyVisualIndex(elements, visualIndex);
+    }
+
+    private createSeparatorRow(
+        separator: SeparatorRow,
+        visualIndex: number,
+        state: EditorState
+    ): RowElements {
+        const elements = this.diffRenderer.createGapRowElements(separator, state.settings);
+        return this.applyVisualIndex(elements, visualIndex);
+    }
+
+    private replaceRowAt(childIndex: number, row: RowElements): void {
+        const oldCode = this.codeContent.children[childIndex];
+        if (oldCode) this.codeContent.replaceChild(row.code, oldCode);
+
+        const oldGutter = this.gutter.children[childIndex] as HTMLElement | undefined;
+        if (oldGutter && (oldGutter.textContent !== row.gutter.textContent || oldGutter.className !== row.gutter.className)) {
+            this.gutter.replaceChild(row.gutter, oldGutter);
         }
 
-        return this.applyVisualIndex(elements, visualIndex);
+        const oldBtn = this.buttonsColumn.children[childIndex] as HTMLElement | undefined;
+        if (oldBtn && (oldBtn.textContent !== row.btn.textContent || oldBtn.className !== row.btn.className)) {
+            this.buttonsColumn.replaceChild(row.btn, oldBtn);
+        }
+
+        const oldFold = this.foldsColumn.children[childIndex] as HTMLElement | undefined;
+        if (oldFold) {
+            const oldToggle = oldFold.firstElementChild?.className;
+            const newToggle = row.fold.firstElementChild?.className;
+            if (oldFold.className !== row.fold.className || oldToggle !== newToggle) {
+                this.foldsColumn.replaceChild(row.fold, oldFold);
+            }
+        }
+    }
+
+    private isRowChanged(
+        existing: HTMLElement,
+        row: VisualRow,
+        code: Code,
+        diffs?: Map<number, DiffInfo>
+    ): boolean {
+        if (row.kind === "real") {
+            if (isGhostElement(existing)) return true;
+            return this.isLineChanged(existing as AnycodeLine, row.lineIndex, code, diffs);
+        }
+        if (row.kind === "ghost") {
+            if (!isGhostElement(existing)) return true;
+            return existing.hunkId !== row.hunkId || existing.originalLineIndex !== row.originalLineIndex;
+        }
+        if (row.kind === "separator") {
+            if (!existing.classList.contains(CSS_CLASS.DIFF_GAP)) return true;
+            const data = getGapElementData(existing);
+            return !data || data.hiddenStart !== row.hiddenStart || data.hiddenEnd !== row.hiddenEnd;
+        }
+        return true;
+    }
+
+    private isLineChanged(line: AnycodeLine, lineIndex: number, code: Code, diffs?: Map<number, DiffInfo>): boolean {
+        if (line.lineNumber !== lineIndex) return true;
+
+        const lineText = code.line(lineIndex) || "\u200B";
+        const binaryTokens = code.getLineBinaryTokens(lineIndex);
+        if (line.hash !== BinaryTokens.fastHash(binaryTokens, lineText)) return true;
+
+        if (diffs) {
+            const diff = diffs.get(lineIndex + 1);
+            const expectedClass = diff?.changeType === "modified" ? CSS_CLASS.DIFF_CHANGED
+                                : diff?.changeType === "added" ? CSS_CLASS.DIFF_ADDED : null;
+            if (expectedClass ? !line.classList.contains(expectedClass)
+                              : (line.classList.contains(CSS_CLASS.DIFF_CHANGED) || line.classList.contains(CSS_CLASS.DIFF_ADDED))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private applyVisualIndex(elements: RowElements, visualIndex: number): RowElements {
@@ -925,68 +1037,14 @@ export class Renderer {
             return;
         }
 
-        // Update changed rows in viewport
+        // Update changed rows in viewport (Zero-Alloc)
         for (let i = visible.startIndex; i < visible.endIndex; i++) {
-            const oldRow = oldActiveRows ? oldActiveRows[i] : { kind: 'real' as const, lineIndex: i };
-            const newRow = this.getVisualRow(i);
             const childIndex = i - renderedRange.startIndex + 1;
+            const existing = this.codeContent.children[childIndex] as HTMLElement | undefined;
+            const row = this.getVisualRow(i);
 
-            let needsUpdate = false;
-            let precomputedNodes: HighlighedNode[] | undefined;
-
-            if (!oldRow || oldRow.kind !== newRow.kind) {
-                needsUpdate = true;
-            } else if (newRow.kind === 'real') {
-                const oldReal = oldRow as RealRow;
-                if (oldReal.lineIndex !== newRow.lineIndex) {
-                    needsUpdate = true;
-                } else {
-                    const lineText = code.line(newRow.lineIndex) || '\u200B';
-                    const binaryTokens = code.getLineBinaryTokens(newRow.lineIndex);
-                    const newHash = BinaryTokens.fastHash(binaryTokens, lineText).toString();
-                    const existingLine = this.codeContent.children[childIndex] as AnycodeLine | undefined;
-                    
-                    if (!existingLine || existingLine.hash !== newHash) {
-                        needsUpdate = true;
-                    }
-                }
-            } else if (newRow.kind === 'ghost') {
-                const oldGhost = oldRow as GhostRow;
-                if (oldGhost.originalLineIndex !== newRow.originalLineIndex ||
-                    oldGhost.hunkId !== newRow.hunkId ||
-                    oldGhost.anchorLine !== newRow.anchorLine) {
-                    needsUpdate = true;
-                }
-            } else if (newRow.kind === 'separator') {
-                const oldSep = oldRow as SeparatorRow;
-                if (oldSep.hiddenStart !== newRow.hiddenStart ||
-                    oldSep.hiddenEnd !== newRow.hiddenEnd) {
-                    needsUpdate = true;
-                }
-            }
-
-            if (needsUpdate) {
-                const row = this.createRow(newRow, i, state, precomputedNodes);
-
-                const oldCode = this.codeContent.children[childIndex];
-                if (oldCode) {
-                    this.codeContent.replaceChild(row.code, oldCode);
-                }
-
-                const oldGutter = this.gutter.children[childIndex];
-                if (oldGutter) {
-                    this.gutter.replaceChild(row.gutter, oldGutter);
-                }
-
-                const oldBtn = this.buttonsColumn.children[childIndex];
-                if (oldBtn) {
-                    this.buttonsColumn.replaceChild(row.btn, oldBtn);
-                }
-
-                const oldFold = this.foldsColumn.children[childIndex];
-                if (oldFold) {
-                    this.foldsColumn.replaceChild(row.fold, oldFold);
-                }
+            if (!existing || this.isRowChanged(existing, row, code, diffs)) {
+                this.replaceRowAt(childIndex, this.renderRowAt(i, state));
             }
         }
 
@@ -1078,8 +1136,6 @@ export class Renderer {
         }
         this.renderBracketMatch(state);
     }
-
-    private cursorRafId: number | null = null;
 
     public renderCursor(line: number, column: number, focus: boolean = false, state?: EditorState) {
         this.codeContent.classList.remove('selecting');
@@ -1358,59 +1414,74 @@ export class Renderer {
         return this.charWidth;
     }
 
-    private maxTrackedWidth: number = 0;
-
     private updateContentMinWidth(
         state: EditorState,
         startIndex: number = 0,
         endIndex?: number,
         reset: boolean = false
     ): void {
-        const charWidth = this.getCharWidth();
-        const totalLines = state.code.linesLength();
+        // const charWidth = this.getCharWidth();
+        // const totalLines = state.code.linesLength();
 
-        if (reset) {
-            this.maxTrackedWidth = 0;
-        }
+        // if (reset) {
+        //     this.maxTrackedWidth = 0;
+        // }
 
-        let start = 0;
-        let end = totalLines;
+        // let start = 0;
+        // let end = totalLines;
 
-        // For large files (> 5000 lines), scan visible viewport slice and error lines to keep render sub-millisecond
-        if (totalLines > 5000) {
-            start = startIndex;
-            end = endIndex !== undefined ? Math.min(totalLines, endIndex) : Math.min(totalLines, startIndex + 100);
-        }
+        // // For large files (> 5000 lines), scan visible viewport slice and error lines to keep render sub-millisecond
+        // if (totalLines > 5000) {
+        //     start = startIndex;
+        //     end = endIndex !== undefined ? Math.min(totalLines, endIndex) : Math.min(totalLines, startIndex + 100);
+        // }
 
-        let currentMaxWidth = this.maxTrackedWidth;
+        // let currentMaxWidth = this.maxTrackedWidth;
 
-        for (let line = start; line < end; line++) {
-            let width = state.code.lineLength(line) * charWidth;
-            currentMaxWidth = Math.max(currentMaxWidth, width);
-        }
+        // for (let line = start; line < end; line++) {
+        //     let width = state.code.lineLength(line) * charWidth;
+        //     currentMaxWidth = Math.max(currentMaxWidth, width);
+        // }
 
-        for (const [line, diagnostic] of state.errorLines) {
-            if (line >= 0 && line < totalLines) {
-                const diagnosticText = minimize(diagnostic);
-                const width = state.code.lineLength(line) * charWidth + diagnosticText.length * charWidth + charWidth * 3 + 8;
-                currentMaxWidth = Math.max(currentMaxWidth, width);
-            }
-        }
+        // for (const [line, diagnostic] of state.errorLines) {
+        //     if (line >= 0 && line < totalLines) {
+        //         const diagnosticText = minimize(diagnostic);
+        //         const width = state.code.lineLength(line) * charWidth + diagnosticText.length * charWidth + charWidth * 3 + 8;
+        //         currentMaxWidth = Math.max(currentMaxWidth, width);
+        //     }
+        // }
 
-        if (state.originalCode && this.activeVisualRows) {
-            for (const row of this.activeVisualRows) {
-                if (row.kind !== 'ghost') continue;
-                const width = state.originalCode.lineLength(row.originalLineIndex) * charWidth;
-                currentMaxWidth = Math.max(currentMaxWidth, width);
-            }
-        }
+        // if (state.originalCode && this.activeVisualRows) {
+        //     for (const row of this.activeVisualRows) {
+        //         if (row.kind !== 'ghost') continue;
+        //         const width = state.originalCode.lineLength(row.originalLineIndex) * charWidth;
+        //         currentMaxWidth = Math.max(currentMaxWidth, width);
+        //     }
+        // }
 
-        this.maxTrackedWidth = currentMaxWidth;
-        const nextMinWidth = Math.ceil(currentMaxWidth + 100);
-        if (nextMinWidth === this.lastContentMinWidth) return;
+        // this.maxTrackedWidth = currentMaxWidth;
+        // const nextMinWidth = Math.ceil(currentMaxWidth + 100);
+        // if (nextMinWidth === this.lastContentMinWidth) return;
 
-        this.lastContentMinWidth = nextMinWidth;
-        this.codeContent.style.minWidth = `${nextMinWidth}px`;
+        // this.lastContentMinWidth = nextMinWidth;
+        // this.codeContent.style.minWidth = `${nextMinWidth}px`;
+    }
+
+    public updateGutterWidth(state: EditorState): void {
+        const totalRealLines = state.code.linesLength();
+        const digits = totalRealLines >= 100000 ? 6
+                     : totalRealLines >= 10000  ? 5
+                     : totalRealLines >= 1000   ? 4
+                     : 3;
+
+        const gutterWidth = Math.max(48, Math.ceil(digits * 8.5 + 18));
+        if (gutterWidth === this.lastGutterWidth) return;
+
+        this.lastGutterWidth = gutterWidth;
+        const foldsLeft = 32 + gutterWidth;
+        this.container.style.setProperty("--anycode-gutter-width", `${gutterWidth}px`);
+        this.container.style.setProperty("--anycode-folds-left", `${foldsLeft}px`);
+        (this.container as any)._stickyWidth = undefined;
     }
 
 }

@@ -1,3 +1,4 @@
+import { CSS_CLASS } from "../constants";
 import { AnycodeLine, GhostElement, GutterElement } from "../types";
 import { isGhostElement } from "../utils";
 import { EditorSettings } from "../editor";
@@ -86,7 +87,7 @@ export class DiffRenderer {
         wordHighlight?: WordHighlight | null
     ): HTMLDivElement & GhostElement {
         const ghostLine = document.createElement('div') as HTMLDivElement & GhostElement;
-        ghostLine.className = "line line-deleted-ghost";
+        ghostLine.className = `${CSS_CLASS.LINE} ${CSS_CLASS.LINE_DELETED_GHOST}`;
         ghostLine.isGhost = true;
         ghostLine.hunkId = hunkId;
 
@@ -143,20 +144,21 @@ export class DiffRenderer {
             hunkId,
             originalNodes,
             wordHighlight
-        );
+        ) as HTMLDivElement & GhostElement & { originalLineIndex: number };
+        ghostLine.originalLineIndex = ghostRow.originalLineIndex;
 
         const emptyGutter = document.createElement('div') as HTMLDivElement & GhostElement;
-        emptyGutter.className = 'ln';
+        emptyGutter.className = CSS_CLASS.GUTTER;
         emptyGutter.isGhost = true;
         emptyGutter.hunkId = hunkId;
 
         const emptyButton = document.createElement('div') as HTMLDivElement & GhostElement;
-        emptyButton.className = 'bt';
+        emptyButton.className = CSS_CLASS.BUTTONS;
         emptyButton.isGhost = true;
         emptyButton.hunkId = hunkId;
 
         const emptyFold = document.createElement('div') as HTMLDivElement & GhostElement;
-        emptyFold.className = 'fd';
+        emptyFold.className = CSS_CLASS.FOLDS;
         emptyFold.isGhost = true;
         emptyFold.hunkId = hunkId;
 
@@ -374,11 +376,11 @@ export class DiffRenderer {
     public getDiffClass(changeType: ChangeType): string {
         switch (changeType) {
             case 'modified':
-                return 'diff-changed';
+                return CSS_CLASS.DIFF_CHANGED;
             case 'added':
-                return 'diff-added';
+                return CSS_CLASS.DIFF_ADDED;
             case 'deleted':
-                return 'diff-deleted';
+                return CSS_CLASS.DIFF_DELETED;
             default:
                 return '';
         }
@@ -387,14 +389,14 @@ export class DiffRenderer {
 
 
     public clearAllDiffs(): void {
-        const gutterLines = this.gutter.querySelectorAll('.ln.diff-changed, .ln.diff-added, .ln.diff-deleted');
+        const gutterLines = this.gutter.querySelectorAll(`.${CSS_CLASS.GUTTER}.${CSS_CLASS.DIFF_CHANGED}, .${CSS_CLASS.GUTTER}.${CSS_CLASS.DIFF_ADDED}, .${CSS_CLASS.GUTTER}.${CSS_CLASS.DIFF_DELETED}`);
         gutterLines.forEach((gutterLine) => {
-            gutterLine.classList.remove('diff-changed', 'diff-added', 'diff-deleted');
+            gutterLine.classList.remove(CSS_CLASS.DIFF_CHANGED, CSS_CLASS.DIFF_ADDED, CSS_CLASS.DIFF_DELETED);
         });
 
-        const codeLines = this.codeContent.querySelectorAll('.line.diff-changed, .line.diff-added, .line.diff-deleted');
+        const codeLines = this.codeContent.querySelectorAll(`.${CSS_CLASS.LINE}.${CSS_CLASS.DIFF_CHANGED}, .${CSS_CLASS.LINE}.${CSS_CLASS.DIFF_ADDED}, .${CSS_CLASS.LINE}.${CSS_CLASS.DIFF_DELETED}`);
         codeLines.forEach((codeLine: Element) => {
-            codeLine.classList.remove('diff-changed', 'diff-added', 'diff-deleted');
+            codeLine.classList.remove(CSS_CLASS.DIFF_CHANGED, CSS_CLASS.DIFF_ADDED, CSS_CLASS.DIFF_DELETED);
         });
 
         // Clear all ghost lines
@@ -417,7 +419,7 @@ export class DiffRenderer {
         settings: EditorSettings
     ): { code: HTMLElement; gutter: HTMLElement; btn: HTMLElement; fold: HTMLElement } {
         const code = document.createElement('div');
-        code.className = 'line diff-gap';
+        code.className = `${CSS_CLASS.LINE} ${CSS_CLASS.DIFF_GAP}`;
         setGapElementData(code, {
             hiddenStart: row.hiddenStart,
             hiddenEnd: row.hiddenEnd,
@@ -426,7 +428,7 @@ export class DiffRenderer {
         });
 
         const labelBtn = document.createElement('button');
-        labelBtn.className = 'diff-gap-expand-btn diff-gap-expand-btn-label';
+        labelBtn.className = `${CSS_CLASS.DIFF_GAP_EXPAND_BTN} ${CSS_CLASS.DIFF_GAP_EXPAND_BTN_LABEL}`;
         labelBtn.type = 'button';
         labelBtn.textContent = `${row.hiddenCount} unmodified ${row.hiddenCount === 1 ? 'line' : 'lines'}`;
         setGapElementData(labelBtn, {
@@ -438,10 +440,10 @@ export class DiffRenderer {
         code.appendChild(labelBtn);
 
         const gutter = document.createElement('div');
-        gutter.className = 'ln diff-gap-gutter';
+        gutter.className = `${CSS_CLASS.GUTTER} ${CSS_CLASS.DIFF_GAP_GUTTER}`;
 
         const upBtn = document.createElement('button');
-        upBtn.className = 'diff-gap-expand-btn diff-gap-gutter-btn diff-gap-gutter-btn-up';
+        upBtn.className = `${CSS_CLASS.DIFF_GAP_EXPAND_BTN} ${CSS_CLASS.DIFF_GAP_GUTTER_BTN} ${CSS_CLASS.DIFF_GAP_GUTTER_BTN_UP}`;
         upBtn.type = 'button';
         upBtn.ariaLabel = 'Expand hidden lines up';
         setGapElementData(upBtn, {
@@ -453,7 +455,7 @@ export class DiffRenderer {
         gutter.appendChild(upBtn);
 
         const downBtn = document.createElement('button');
-        downBtn.className = 'diff-gap-expand-btn diff-gap-gutter-btn diff-gap-gutter-btn-down';
+        downBtn.className = `${CSS_CLASS.DIFF_GAP_EXPAND_BTN} ${CSS_CLASS.DIFF_GAP_GUTTER_BTN} ${CSS_CLASS.DIFF_GAP_GUTTER_BTN_DOWN}`;
         downBtn.type = 'button';
         downBtn.ariaLabel = 'Expand hidden lines down';
         setGapElementData(downBtn, {
@@ -465,10 +467,10 @@ export class DiffRenderer {
         gutter.appendChild(downBtn);
 
         const btn = document.createElement('div');
-        btn.className = 'bt diff-gap-btn';
+        btn.className = `${CSS_CLASS.BUTTONS} ${CSS_CLASS.DIFF_GAP_BTN}`;
 
         const fold = document.createElement('div');
-        fold.className = 'fd fold-gap-cell';
+        fold.className = `${CSS_CLASS.FOLDS} ${CSS_CLASS.FOLD_GAP_CELL}`;
 
         return { code, gutter, btn, fold };
     }

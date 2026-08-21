@@ -21,36 +21,48 @@ export function moveCursor(
         return;
     }
     
-    var character: number = column;
-    
-    const chunks = Array.from(lineDiv.children)
-        .filter((child) => !isDiagnosticElement(child))
-        .map(l => l as AnycodeLine);
-        
-    let chunkCharacter = 0;
-    let chunk: Element | null = null;
+    let character: number = column;
+    const children = lineDiv.children;
+    const len = children.length;
 
-    for (let chunkNode of chunks) {
-        const chunkLength = chunkNode.textContent!.length;
+    let chunk: Element | null = null;
+    let chunkCharacter = 0;
+    let brChildIndex = -1;
+    let nonDiagIndex = 0;
+
+    for (let i = 0; i < len; i++) {
+        const child = children[i];
+        if (isDiagnosticElement(child)) continue;
+
+        const currentNonDiagIndex = nonDiagIndex++;
+        const chunkLength = child.textContent?.length ?? 0;
+
         if (chunkLength === 0) {
-            chunk = chunkNode;
+            chunk = child;
             chunkCharacter = 0;
+            if (child.tagName === 'BR') {
+                brChildIndex = currentNonDiagIndex;
+            }
             break;
         }
+
         if (character < chunkLength) {
-            chunk = chunkNode;
+            chunk = child;
             chunkCharacter = character;
+            if (child.tagName === 'BR') {
+                brChildIndex = currentNonDiagIndex;
+            }
             break;
         } else {
             character -= chunkLength;
+            chunk = child;
+            chunkCharacter = chunkLength;
+            if (child.tagName === 'BR') {
+                brChildIndex = currentNonDiagIndex;
+            }
         }
     }
 
-    if (!chunk) {
-        chunk = chunks[chunks.length - 1];
-        chunkCharacter = chunk?.textContent?.length ?? 0;
-    }
-    
     if (!chunk) {
         return;
     }
@@ -60,18 +72,11 @@ export function moveCursor(
     let chunkOffset: number;
     
     if (chunk.tagName === 'BR') {
-        // Find the index of the BR element within its parent
         const parent = chunk.parentElement;
-        if (!parent) return;
-        
-        const childIndex = Array.from(parent.children)
-            .filter(child => !isDiagnosticElement(child))
-            .indexOf(chunk as Element);
-        
-        if (childIndex === -1) return;
+        if (!parent || brChildIndex === -1) return;
         
         ch = parent;
-        chunkOffset = childIndex;
+        chunkOffset = brChildIndex;
     } else {
         ch = chunk.firstChild || chunk;
         chunkOffset = chunkCharacter;
@@ -98,91 +103,69 @@ export function moveCursor(
     }
 
     try {
-        if (typeof sel.setPosition === 'function') {
-            sel.setPosition(ch, chunkOffset);
-        } else if (typeof sel.collapse === 'function') {
-            sel.collapse(ch, chunkOffset);
-        } else {
-            const doc = (ch as any)?.ownerDocument || (typeof document !== 'undefined' ? document : null);
-            if (!doc) return;
-            const range = doc.createRange();
-            range.setStart(ch, chunkOffset);
-            range.collapse(true);
-            sel.removeAllRanges();
-            sel.addRange(range);
-        }
-    } catch (error) {
-        console.warn('Failed to set selection position:', error);
+        const range = document.createRange();
+        range.setStart(ch, chunkOffset);
+        range.collapse(true);
+        sel.removeAllRanges();
+        sel.addRange(range);
+    } catch {
+        // Range out of bounds or element disconnected
     }
 }
 
 function scrollCursorIntoViewVertically(
-    container: HTMLElement,
+    scrollable: HTMLElement,
     visualIndex?: number,
     lineHeight: number = 20,
     cachedScrollTop?: number,
     cachedClientHeight?: number
 ) {
     if (visualIndex === undefined) return;
-    const lineTop = visualIndex * lineHeight;
-    const scrollTop = cachedScrollTop !== undefined ? cachedScrollTop : container.scrollTop;
-    const clientHeight = cachedClientHeight !== undefined && cachedClientHeight > 0 ? cachedClientHeight : container.clientHeight;
+    const cursorTop = visualIndex * lineHeight;
+    const cursorBottom = cursorTop + lineHeight;
+    const clientHeight = cachedClientHeight !== undefined && cachedClientHeight > 0
+        ? cachedClientHeight
+        : scrollable.clientHeight;
+    const scrollTop = cachedScrollTop !== undefined
+        ? cachedScrollTop
+        : scrollable.scrollTop;
 
-    if (lineTop < scrollTop) {
-        container.scrollTop = lineTop;
-    } else if (lineTop + lineHeight > scrollTop + clientHeight) {
-        container.scrollTop = lineTop + lineHeight - clientHeight;
+    if (cursorTop < scrollTop) {
+        scrollable.scrollTop = cursorTop;
+    } else if (cursorBottom > scrollTop + clientHeight) {
+        scrollable.scrollTop = cursorBottom - clientHeight;
     }
 }
 
 function scrollCursorIntoViewHorizontally(
-    container: HTMLElement, 
-    cursorNode: Node, 
-    cursorOffset: number, 
-    leftPlus: number, 
-    column: number
+    scrollable: HTMLElement,
+    ch: Node,
+    chunkOffset: number,
+    stickyWidth: number = 80,
+    column: number = 0
 ) {
-    // Fast path: if column is small (typical typing), cursor is definitely in view!
-    // ZERO DOM READS!
-    if (column < 30) {
-        return;
-    }
-
-    const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
-    const scrollWidth = container.scrollWidth;
-    const clientWidth = container.clientWidth;
-    const scrollLeft = container.scrollLeft;
-
-    if (scrollWidth <= clientWidth && scrollLeft === 0) {
-        return;
-    }
-
-    const padding = 20;
-    const charWidth = 8.5; // Monospace font JetBrains Mono estimated char width
-    const estimatedCursorLeft = leftPlus + column * charWidth;
-    const leftVisible = scrollLeft + leftPlus + padding;
-    const rightVisible = Math.max(leftVisible, scrollLeft + clientWidth - padding);
-
-    let scrolled = false;
-    if (estimatedCursorLeft < leftVisible) {
-        container.scrollLeft = Math.max(0, estimatedCursorLeft - leftPlus - padding);
-        scrolled = true;
-    } else if (estimatedCursorLeft > rightVisible) {
-        container.scrollLeft = estimatedCursorLeft - clientWidth + padding * 2;
-        scrolled = true;
-    }
-
-    if (scrolled && isSafari) {
-        try {
-            const doc = cursorNode.ownerDocument || document;
-            const sel = doc.defaultView?.getSelection() || window.getSelection();
-            if (sel && sel.rangeCount > 0) {
-                const currentRange = sel.getRangeAt(0).cloneRange();
-                sel.removeAllRanges();
-                sel.addRange(currentRange);
-            }
-        } catch (e) {
-            console.warn('Failed to fix Safari caret repaint:', e);
+    let cursorLeft = 0;
+    try {
+        const range = document.createRange();
+        range.setStart(ch, Math.min(chunkOffset, ch.textContent?.length ?? 0));
+        range.collapse(true);
+        const rect = range.getBoundingClientRect();
+            if (rect.width === 0 && rect.left === 0) {
+            cursorLeft = stickyWidth + column * 7.8;
+        } else {
+            const scrollableRect = scrollable.getBoundingClientRect();
+            cursorLeft = rect.left - scrollableRect.left + scrollable.scrollLeft;
         }
+    } catch {
+        cursorLeft = stickyWidth + column * 7.8;
+    }
+
+    const visibleLeft = scrollable.scrollLeft + stickyWidth;
+    const visibleRight = scrollable.scrollLeft + scrollable.clientWidth;
+
+    if (cursorLeft < visibleLeft) {
+        scrollable.scrollLeft = Math.max(0, cursorLeft - stickyWidth);
+    } else if (cursorLeft + 20 > visibleRight) {
+        scrollable.scrollLeft = cursorLeft - scrollable.clientWidth + 40;
     }
 }

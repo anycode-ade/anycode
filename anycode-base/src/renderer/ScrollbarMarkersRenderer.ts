@@ -1,3 +1,4 @@
+import { CSS_CLASS } from "../constants";
 import { EditorState } from "../editor";
 import { DiffInfo } from "../diff";
 import type { VisualRow } from "./Renderer";
@@ -73,19 +74,19 @@ export class ScrollbarMarkersRenderer {
         this.onDragStateChange = onDragStateChange;
 
         this.element = document.createElement('div');
-        this.element.className = 'smr';
+        this.element.className = CSS_CLASS.SMR;
         this.element.setAttribute('aria-label', 'Scrollbar markers');
 
         this.thumb = document.createElement('div');
-        this.thumb.className = 'smrt';
+        this.thumb.className = CSS_CLASS.SMRT;
         this.thumb.setAttribute('aria-label', 'Scrollbar thumb');
 
         this.element.addEventListener('pointerdown', this.handlePointer);
 
-        this.diffLayer = this.createLayer('smrdl');
-        this.wordLayer = this.createLayer('smrwl');
-        this.searchLayer = this.createLayer('smrsl');
-        this.errorLayer = this.createLayer('smrel');
+        this.diffLayer = this.createLayer(CSS_CLASS.SMR_DIFF_LAYER);
+        this.wordLayer = this.createLayer(CSS_CLASS.SMR_WORD_LAYER);
+        this.searchLayer = this.createLayer(CSS_CLASS.SMR_SEARCH_LAYER);
+        this.errorLayer = this.createLayer(CSS_CLASS.SMR_ERROR_LAYER);
         this.element.append(
             this.diffLayer,
             this.wordLayer,
@@ -119,15 +120,17 @@ export class ScrollbarMarkersRenderer {
 
     public triggerFadeIn() {
         if (!this.element) return;
-        this.element.classList.add('visible');
+        if (!this.element.classList.contains("visible")) {
+            this.element.classList.add("visible");
+        }
 
         if (this.fadeTimer !== null) {
             window.clearTimeout(this.fadeTimer);
         }
 
         this.fadeTimer = window.setTimeout(() => {
-            if (this.element && !this.element.classList.contains('dragging')) {
-                this.element.classList.remove('visible');
+            if (this.element && !this.element.classList.contains("dragging")) {
+                this.element.classList.remove("visible");
             }
             this.fadeTimer = null;
         }, 1000);
@@ -196,7 +199,6 @@ export class ScrollbarMarkersRenderer {
             selected: index === selected,
         }));
 
-        const scaleChanged = totalRows !== this.totalRows;
         if (rightOffset !== this.rightOffset) {
             this.rightOffset = rightOffset;
             this.element.style.right = `${rightOffset}px`;
@@ -232,30 +234,35 @@ export class ScrollbarMarkersRenderer {
                 this.searchLayer.replaceChildren();
                 this.errorLayer.replaceChildren();
             }
-        } else if (!scaleChanged && !layoutChanged && diffRangesUnchanged && wordLinesUnchanged && searchMarkersUnchanged && errorLinesUnchanged) {
+        } else if (!layoutChanged && diffRangesUnchanged && wordLinesUnchanged && searchMarkersUnchanged && errorLinesUnchanged) {
             // Nothing changed! Do not touch layers!
+            if (!this.element.classList.contains("active")) {
+                this.element.classList.add("active");
+            }
+            this.updateThumbPosition();
             return;
         } else {
-            if (scaleChanged || !diffRangesUnchanged) {
+            if (layoutChanged || !diffRangesUnchanged) {
                 this.diffRanges = nextDiffRanges;
                 this.renderDiffLayer(totalRows);
             }
-            if (scaleChanged || layoutChanged || !wordLinesUnchanged) {
+            if (layoutChanged || !wordLinesUnchanged) {
                 this.wordLines = [...nextWordLines];
-                this.renderLineLayer(this.wordLayer, 'smrw', this.wordLines, totalRows);
+                this.renderLineLayer(this.wordLayer, CSS_CLASS.SMR_WORD, this.wordLines, totalRows);
             }
-            if (scaleChanged || layoutChanged || !searchMarkersUnchanged) {
+            if (layoutChanged || !searchMarkersUnchanged) {
                 this.searchMarkers = nextSearchMarkers;
                 this.renderSearchLayer(totalRows);
             }
-            if (scaleChanged || layoutChanged || !errorLinesUnchanged) {
+            if (layoutChanged || !errorLinesUnchanged) {
                 this.errorLines = nextErrorLines;
-                this.renderLineLayer(this.errorLayer, 'smre', this.errorLines, totalRows);
+                this.renderLineLayer(this.errorLayer, CSS_CLASS.SMR_ERROR, this.errorLines, totalRows);
             }
         }
 
-        this.totalRows = totalRows;
-        this.element.classList.add('active');
+        if (!this.element.classList.contains("active")) {
+            this.element.classList.add("active");
+        }
         this.updateThumbPosition();
     }
 
@@ -291,12 +298,29 @@ export class ScrollbarMarkersRenderer {
     }
 
     private cachedMinSliderSize = 20;
+    private lastScrollbarStyle = "";
+    private lastScrollbarWidth = -1;
+    private lastScrollbarMinSize = -1;
 
     private applyScrollbarSettings(state: EditorState) {
         const scrollbarSettings = state.settings?.scrollbar;
-        const style = scrollbarSettings?.style || 'rounded';
+        const style = scrollbarSettings?.style || "rounded";
+        const width = scrollbarSettings?.width ?? -1;
+        const minSize = scrollbarSettings?.minSize ?? -1;
 
-        this.element.classList.remove('style-rounded', 'style-flat');
+        if (
+            this.lastScrollbarStyle === style &&
+            this.lastScrollbarWidth === width &&
+            this.lastScrollbarMinSize === minSize
+        ) {
+            return;
+        }
+
+        this.lastScrollbarStyle = style;
+        this.lastScrollbarWidth = width;
+        this.lastScrollbarMinSize = minSize;
+
+        this.element.classList.remove("style-rounded", "style-flat");
         this.element.classList.add(`style-${style}`);
         if (scrollbarSettings?.style !== undefined) {
             this.element.dataset.scrollbarStyle = style;
@@ -304,18 +328,18 @@ export class ScrollbarMarkersRenderer {
             delete this.element.dataset.scrollbarStyle;
         }
 
-        if (scrollbarSettings?.width !== undefined && scrollbarSettings.width > 0) {
-            this.element.style.setProperty('--smr-custom-width', `${scrollbarSettings.width}px`);
+        if (width > 0) {
+            this.element.style.setProperty("--smr-custom-width", `${width}px`);
         } else {
-            this.element.style.removeProperty('--smr-custom-width');
+            this.element.style.removeProperty("--smr-custom-width");
         }
 
-        if (scrollbarSettings?.minSize !== undefined && scrollbarSettings.minSize > 0) {
-            this.element.style.setProperty('--smr-min-size', `${scrollbarSettings.minSize}px`);
-            this.cachedMinSliderSize = scrollbarSettings.minSize;
+        if (minSize > 0) {
+            this.element.style.setProperty("--smr-min-size", `${minSize}px`);
+            this.cachedMinSliderSize = minSize;
         } else {
-            this.element.style.removeProperty('--smr-min-size');
-            this.cachedMinSliderSize = typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(pointer: coarse)').matches ? 28 : 20;
+            this.element.style.removeProperty("--smr-min-size");
+            this.cachedMinSliderSize = typeof window !== "undefined" && window.matchMedia && window.matchMedia("(pointer: coarse)").matches ? 28 : 20;
         }
     }
 
@@ -323,11 +347,11 @@ export class ScrollbarMarkersRenderer {
         return this.cachedMinSliderSize;
     }
 
-    public updateThumbPosition(scrollTopOverride?: number, triggerFade: boolean = false) {
-        if (!this.enabled || !this.thumb || this.thumb.classList.contains('dragging')) return;
+    public updateThumbPosition(scrollTopOverride?: number, triggerFade: boolean = false, clientHeightOverride?: number) {
+        if (!this.enabled || !this.thumb || this.thumb.classList.contains("dragging")) return;
 
         const scrollTop = scrollTopOverride !== undefined ? scrollTopOverride : (this.container?.scrollTop ?? 0);
-        const { clientHeight, scrollHeight } = this.getGeometry();
+        const { clientHeight, scrollHeight } = this.getGeometry(clientHeightOverride);
 
         if (scrollHeight <= clientHeight || clientHeight <= 0) {
             if (this.thumb.style.display !== 'none') this.thumb.style.display = 'none';
@@ -393,7 +417,7 @@ export class ScrollbarMarkersRenderer {
         for (let index = 0; index < this.diffRanges.length; index++) {
             const range = this.diffRanges[index];
             const marker = document.createElement('span');
-            marker.className = `smrd ${range.type}`;
+            marker.className = `${CSS_CLASS.SMR_DIFF} ${range.type}`;
             marker.dataset.rangeIndex = index.toString();
             marker.style.top = `${(range.startRow / totalRows) * 100}%`;
             marker.style.height = `${((range.endRow - range.startRow + 1) / totalRows) * 100}%`;
@@ -418,7 +442,7 @@ export class ScrollbarMarkersRenderer {
     private renderSearchLayer(totalRows: number) {
         const fragment = document.createDocumentFragment();
         for (const marker of this.searchMarkers) {
-            const className = marker.selected ? 'smrs selected' : 'smrs';
+            const className = marker.selected ? `${CSS_CLASS.SMR_SEARCH} selected` : CSS_CLASS.SMR_SEARCH;
             fragment.appendChild(this.createLineMarker(className, marker.line, totalRows));
         }
         this.searchLayer.replaceChildren(fragment);
@@ -448,7 +472,7 @@ export class ScrollbarMarkersRenderer {
 
     private createLineMarker(className: string, line: number, totalRows: number): HTMLSpanElement {
         const marker = document.createElement('span');
-        marker.className = `smrm ${className}`;
+        marker.className = `${CSS_CLASS.SMR_MARKER} ${className}`;
         const visualRow = this.getVisualRowForLine(line);
         marker.style.top = `${((visualRow + 0.5) / totalRows) * 100}%`;
         return marker;
@@ -545,7 +569,7 @@ export class ScrollbarMarkersRenderer {
         if (!this.state || !this.element.classList.contains('active')) return;
 
         const target = event.target as HTMLElement | null;
-        const isMarker = target?.classList.contains('smrm') || target?.classList.contains('smrd');
+        const isMarker = target?.classList.contains(CSS_CLASS.SMR_MARKER) || target?.classList.contains(CSS_CLASS.SMR_DIFF);
 
         if (target === this.thumb || !isMarker) {
             event.preventDefault();
@@ -629,7 +653,7 @@ export class ScrollbarMarkersRenderer {
             if (!state) return;
 
             const activeMarker = this.updateActiveMarker(clientY);
-            if (activeMarker?.classList.contains('smrd')) {
+            if (activeMarker?.classList.contains(CSS_CLASS.SMR_DIFF)) {
                 const rangeIndex = Number(activeMarker.dataset.rangeIndex);
                 const range = this.diffRanges[rangeIndex];
                 if (range) {
@@ -679,7 +703,7 @@ export class ScrollbarMarkersRenderer {
         const handlePointerUp = (upEvent: PointerEvent) => {
             this.element.releasePointerCapture(upEvent.pointerId);
             this.element.classList.remove('dragging');
-            this.element.querySelector('.smr-active')?.classList.remove('smr-active');
+            this.element.querySelector(`.${CSS_CLASS.SMR_ACTIVE}`)?.classList.remove(CSS_CLASS.SMR_ACTIVE);
             this.onDragStateChange?.(false, this.state || undefined);
             this.element.removeEventListener('pointermove', handlePointerMove);
             this.element.removeEventListener('pointerup', handlePointerUp);
@@ -694,7 +718,7 @@ export class ScrollbarMarkersRenderer {
 
     private updateActiveMarker(clientY: number): HTMLElement | null {
         const markers = Array.from(
-            this.element.querySelectorAll<HTMLElement>('.smrm, .smrd')
+            this.element.querySelectorAll<HTMLElement>(`.${CSS_CLASS.SMR_MARKER}, .${CSS_CLASS.SMR_DIFF}`)
         );
         let closest: HTMLElement | null = null;
         let closestDistance = Number.POSITIVE_INFINITY;
@@ -712,10 +736,10 @@ export class ScrollbarMarkersRenderer {
             }
         }
 
-        const current = this.element.querySelector<HTMLElement>('.smr-active');
+        const current = this.element.querySelector<HTMLElement>(`.${CSS_CLASS.SMR_ACTIVE}`);
         if (current === closest) return closest;
-        current?.classList.remove('smr-active');
-        closest?.classList.add('smr-active');
+        current?.classList.remove(CSS_CLASS.SMR_ACTIVE);
+        closest?.classList.add(CSS_CLASS.SMR_ACTIVE);
         return closest;
     }
 

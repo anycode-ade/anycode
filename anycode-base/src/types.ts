@@ -1,7 +1,7 @@
 export interface AnycodeLine extends HTMLDivElement {
     lineNumber: number;
     offset: number;
-    hash: string;
+    hash: number | string;
 }
 
 export interface GutterElement extends HTMLDivElement {
@@ -41,6 +41,15 @@ export interface SideLineElement extends HTMLDivElement {
 export interface GhostElement extends HTMLElement {
     isGhost: true;
     hunkId: number;
+    originalLineIndex?: number;
+}
+
+export interface SparseGhostGroup {
+    anchorLine: number;
+    hunkId: number;
+    oldLineNumbers: number[];
+    ghostCount: number;
+    startVisualIndex: number;
 }
 
 export type Pos = { row: number; col: number };

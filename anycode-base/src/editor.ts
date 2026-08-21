@@ -1,3 +1,4 @@
+import { CSS_CLASS } from "./constants";
 import { Code, Change, Position, Operation, type FoldRange, WordHighlight, areWordHighlightsEqual } from "./code";
 import { Renderer } from './renderer/Renderer';
 import { getPosFromMouse } from './mouse';
@@ -101,6 +102,8 @@ export class AnycodeEditor {
 
     private lastScrollTop = 0;
     private scrollAnimationFrameId: number | null = null;
+    private listenersAttached: boolean = false;
+    private readOnlyListenersAttached: boolean = false;
 
     private runLines: number[] = [];
     private errorLines: Map<number, string> = new Map();
@@ -452,6 +455,8 @@ export class AnycodeEditor {
     }
 
     private setupReadOnlyEventListeners() {
+        if (this.readOnlyListenersAttached) return;
+        this.readOnlyListenersAttached = true;
         this.handleScroll = this.handleScroll.bind(this);
         this.container.addEventListener("scroll", this.handleScroll);
     }
@@ -629,6 +634,9 @@ export class AnycodeEditor {
     }
 
     private setupEventListeners() {
+        if (this.listenersAttached) return;
+        this.listenersAttached = true;
+
         this.handleScroll = this.handleScroll.bind(this);
         this.container.addEventListener("scroll", this.handleScroll);
 
@@ -666,6 +674,13 @@ export class AnycodeEditor {
     }
 
     private removeEventListeners() {
+        if (this.readOnlyListenersAttached) {
+            this.container.removeEventListener("scroll", this.handleScroll);
+            this.readOnlyListenersAttached = false;
+        }
+        if (!this.listenersAttached) return;
+        this.listenersAttached = false;
+
         this.container.removeEventListener("scroll", this.handleScroll);
         this.codeContent.removeEventListener('click', this.handleClick);
         this.gutter.removeEventListener('click', this.handleClick);
@@ -798,7 +813,7 @@ export class AnycodeEditor {
         if (!(target instanceof Element)) {
             return null;
         }
-        const match = target.closest('.diff-gap, .diff-gap-expand-btn');
+        const match = target.closest(`.${CSS_CLASS.DIFF_GAP}, .${CSS_CLASS.DIFF_GAP_EXPAND_BTN}`);
         return match instanceof HTMLElement ? match : null;
     }
 
