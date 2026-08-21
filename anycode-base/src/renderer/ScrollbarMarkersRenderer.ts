@@ -102,7 +102,11 @@ export class ScrollbarMarkersRenderer {
         if (typeof ResizeObserver !== 'undefined') {
             this.resizeObserver = new ResizeObserver(() => {
                 this.updateGeometry();
-                this.updateThumbPosition();
+                if (this.onImmediateScroll) {
+                    this.onImmediateScroll();
+                } else {
+                    this.updateThumbPosition();
+                }
             });
             if (this.wrapper) this.resizeObserver.observe(this.wrapper);
             if (this.container && this.container !== this.wrapper) {
@@ -252,6 +256,7 @@ export class ScrollbarMarkersRenderer {
 
         this.totalRows = totalRows;
         this.element.classList.add('active');
+        this.updateThumbPosition();
     }
 
     private cachedClientHeight = 0;
@@ -260,18 +265,29 @@ export class ScrollbarMarkersRenderer {
     private lastSliderPosition = -1;
     private lastThumbScrollTop = -1;
 
-    public updateGeometry(clientHeight?: number, scrollHeight?: number) {
-        if (clientHeight && clientHeight > 0) {
-            this.cachedClientHeight = clientHeight;
-        } else if (!this.cachedClientHeight && this.container) {
+    private getGeometry(clientHeightOverride?: number, scrollHeightOverride?: number): { clientHeight: number; scrollHeight: number } {
+        if (clientHeightOverride && clientHeightOverride > 0) {
+            this.cachedClientHeight = clientHeightOverride;
+        } else if (this.container?.clientHeight > 0) {
             this.cachedClientHeight = this.container.clientHeight;
         }
 
-        if (scrollHeight && scrollHeight > 0) {
-            this.cachedScrollHeight = scrollHeight;
-        } else if (!this.cachedScrollHeight && this.container) {
+        if (scrollHeightOverride && scrollHeightOverride > 0) {
+            this.cachedScrollHeight = scrollHeightOverride;
+        } else if (this.state?.settings?.lineHeight) {
+            this.cachedScrollHeight = (this.totalRows || this.state.code.linesLength()) * this.state.settings.lineHeight;
+        } else if (this.container?.scrollHeight > 0) {
             this.cachedScrollHeight = this.container.scrollHeight;
         }
+
+        return {
+            clientHeight: this.cachedClientHeight || 600,
+            scrollHeight: this.cachedScrollHeight || 0,
+        };
+    }
+
+    public updateGeometry(clientHeight?: number, scrollHeight?: number) {
+        this.getGeometry(clientHeight, scrollHeight);
     }
 
     private cachedMinSliderSize = 20;
@@ -308,36 +324,26 @@ export class ScrollbarMarkersRenderer {
     }
 
     public updateThumbPosition(scrollTopOverride?: number, triggerFade: boolean = false) {
-        if (!this.enabled || !this.thumb) return;
-        if (this.thumb.classList.contains('dragging')) return;
+        if (!this.enabled || !this.thumb || this.thumb.classList.contains('dragging')) return;
 
         const scrollTop = scrollTopOverride !== undefined ? scrollTopOverride : (this.container?.scrollTop ?? 0);
-        const clientHeight = this.cachedClientHeight || this.container?.clientHeight || 600;
-        const scrollHeight = this.cachedScrollHeight || this.container?.scrollHeight || 0;
+        const { clientHeight, scrollHeight } = this.getGeometry();
 
         if (scrollHeight <= clientHeight || clientHeight <= 0) {
-            if (this.thumb.style.display !== 'none') {
-                this.thumb.style.display = 'none';
-            }
+            if (this.thumb.style.display !== 'none') this.thumb.style.display = 'none';
             return;
         }
 
-        if (this.thumb.style.display !== 'block') {
-            this.thumb.style.display = 'block';
-        }
+        if (this.thumb.style.display !== 'block') this.thumb.style.display = 'block';
 
         // Monaco Editor Scrollbar Math with 2px inset
         const INSET = 2;
         const availableHeight = Math.max(1, clientHeight - INSET * 2);
-        const MINIMUM_SLIDER_SIZE = this.getMinimumSliderSize();
-        const sliderSize = Math.round(Math.max(MINIMUM_SLIDER_SIZE, Math.floor((availableHeight * availableHeight) / scrollHeight)));
+        const sliderSize = Math.round(Math.max(this.getMinimumSliderSize(), Math.floor((availableHeight * availableHeight) / scrollHeight)));
         const maxSliderPosition = Math.max(0, availableHeight - sliderSize);
         const maxScrollTop = Math.max(1, scrollHeight - clientHeight);
-        const sliderRatio = maxSliderPosition / maxScrollTop;
-
-        // Clamp scrollTop to [0, maxScrollTop] to prevent macOS elastic overscroll from pulling thumb out of bounds
         const clampedScrollTop = Math.max(0, Math.min(maxScrollTop, scrollTop));
-        const sliderPosition = INSET + Math.max(0, Math.min(maxSliderPosition, Math.round(clampedScrollTop * sliderRatio)));
+        const sliderPosition = INSET + Math.max(0, Math.min(maxSliderPosition, Math.round(clampedScrollTop * (maxSliderPosition / maxScrollTop))));
 
         if (this.lastSliderSize !== sliderSize) {
             this.lastSliderSize = sliderSize;
@@ -551,8 +557,7 @@ export class ScrollbarMarkersRenderer {
 
             const startY = event.clientY;
             const startX = event.clientX;
-            const clientHeight = this.cachedClientHeight || this.container.clientHeight;
-            const scrollHeight = this.cachedScrollHeight || this.container.scrollHeight;
+            const { clientHeight, scrollHeight } = this.getGeometry();
             const maxScrollTop = Math.max(1, scrollHeight - clientHeight);
 
             if (maxScrollTop <= 0 || clientHeight <= 0) return;

@@ -374,7 +374,8 @@ export class Renderer {
         const effectiveIncludeSearch = limitMarkers ? false : includeSearch;
 
         const totalVisualRows = this.getVisualRowCount();
-        const clientHeight = this.lastClientHeight || 600;
+        const clientHeight = this.container.clientHeight > 0 ? this.container.clientHeight : (this.lastClientHeight || 600);
+        this.lastClientHeight = clientHeight;
         const scrollHeight = totalVisualRows * state.settings.lineHeight;
         this.scrollbarMarkersRenderer.updateGeometry(
             clientHeight,
@@ -618,6 +619,7 @@ export class Renderer {
         this.lastScrollTop = currentScrollTop;
         const viewHeight = this.container.clientHeight;
         if (viewHeight > 0) this.lastClientHeight = viewHeight;
+        this.scrollbarMarkersRenderer.updateThumbPosition(currentScrollTop, true);
         const { settings, readOnly, search } = state;
         const lineHeight = settings.lineHeight;
         const buffer = settings.buffer;
@@ -792,8 +794,6 @@ export class Renderer {
         btnBottomSpacer.style.height = `${bottomHeight}px`;
         foldsTopSpacer.style.height = `${topHeight}px`;
         foldsBottomSpacer.style.height = `${bottomHeight}px`;
-
-        this.scrollbarMarkersRenderer.updateThumbPosition(currentScrollTop, true);
     }
 
     public updateScrollbarThumb() {
