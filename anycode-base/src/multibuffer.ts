@@ -1,6 +1,7 @@
 import { Code, type Change, type Edit, type FoldRange, type HighlighedNode, type Position, type WordHighlight, type FilePosition, Operation } from './code';
+import { BinaryTokens } from './tokens';
 import type { Selection } from './selection';
-import { computeGitChangesWithStats, type DiffInfo } from './diff';
+import { computeGitChangesWithStats, type DiffInfo, type DiffHunk, DiffModel } from './diff';
 
 export type MultiBufferEntry = {
     id: string;
@@ -34,7 +35,7 @@ type ResolvedOffset = {
 
 type CachedFileDiff = {
     version: number;
-    diffs: Map<number, DiffInfo>;
+    diffs: DiffModel;
     added: number;
     removed: number;
 };
@@ -206,29 +207,34 @@ export class MultiBufferCode extends Code {
      * invalidates that file's JsDiff result; the other files are remapped into
      * the current global coordinate space without being diffed again.
      */
-    public getMultibufferDiffs(): Map<number, DiffInfo> {
+    public getMultibufferDiffs(): DiffModel {
         this.ensureIndex();
-        const diffs = new Map<number, DiffInfo>();
+        const allHunks: DiffHunk[] = [];
+        let totalAdded = 0;
+        let totalRemoved = 0;
 
         for (let fileIndex = 0; fileIndex < this.entries.length; fileIndex++) {
             const cached = this.getCachedFileDiff(fileIndex);
+            totalAdded += cached.added;
+            totalRemoved += cached.removed;
 
             const currentBodyStart = this.getBodyStart(fileIndex, false);
             if (currentBodyStart < 0) continue;
             const originalBodyStart = this.getBodyStart(fileIndex, true);
-            for (const [localLine, diff] of cached.diffs) {
-                diffs.set(currentBodyStart + localLine, {
-                    ...diff,
-                    oldLineNumbers: diff.oldLineNumbers?.map((line) => originalBodyStart + line),
-                    ghostAnchorLine: diff.ghostAnchorLine === undefined
+            for (const hunk of cached.diffs.getHunks()) {
+                allHunks.push({
+                    ...hunk,
+                    startLine: currentBodyStart + hunk.startLine,
+                    oldLineNumbers: hunk.oldLineNumbers?.map((line) => originalBodyStart + line),
+                    ghostAnchorLine: hunk.ghostAnchorLine === undefined
                         ? undefined
-                        : currentBodyStart + diff.ghostAnchorLine,
-                    hunkId: fileIndex * 1_000_000 + diff.hunkId,
+                        : currentBodyStart + hunk.ghostAnchorLine,
+                    hunkId: fileIndex * 1_000_000 + hunk.hunkId,
                 });
             }
         }
 
-        return diffs;
+        return new DiffModel(allHunks, totalAdded, totalRemoved);
     }
 
     public getMultibufferHeader(line: number): string | null {
@@ -330,7 +336,7 @@ export class MultiBufferCode extends Code {
         return this.getContent().slice(Math.max(0, from), Math.max(0, to));
     }
 
-    public getLineNodes(line: number): HighlighedNode[] {
+    public override getLineNodes(line: number): HighlighedNode[] {
         this.ensureIndex();
         const row = this.rows[line];
         if (!row) return [{ name: null, text: EMPTY_LINE }];
@@ -348,6 +354,17 @@ export class MultiBufferCode extends Code {
             ];
         }
         return this.entries[row.fileIndex]?.code.getLineNodes(row.localLine) ?? [{ name: null, text: EMPTY_LINE }];
+    }
+
+    public override getLineBinaryTokens(line: number): Uint32Array {
+        this.ensureIndex();
+        const row = this.rows[line];
+        if (!row) return new Uint32Array(0);
+        if (row.kind === 'header') {
+            const nodes = this.getLineNodes(line);
+            return BinaryTokens.encode(nodes);
+        }
+        return this.entries[row.fileIndex]?.code.getLineBinaryTokens(row.localLine) ?? new Uint32Array(0);
     }
 
     public getFoldRanges(): FoldRange[] {
@@ -559,6 +576,7 @@ export class MultiBufferCode extends Code {
 
     private ensureIndex(): void {
         if (!this.indexDirty) return;
+        this.linesCache.clear();
         this.rows = [];
         let offset = 0;
         for (let fileIndex = 0; fileIndex < this.entries.length; fileIndex++) {
@@ -595,7 +613,7 @@ export class MultiBufferCode extends Code {
 
     private getCachedFileDiff(fileIndex: number): CachedFileDiff {
         const entry = this.entries[fileIndex];
-        if (!entry) return { version: 0, diffs: new Map(), added: 0, removed: 0 };
+        if (!entry) return { version: 0, diffs: DiffModel.empty(), added: 0, removed: 0 };
         const version = this.fileVersions[fileIndex];
         let cached = this.fileDiffs.get(entry.id);
         if (!cached || cached.version !== version) {

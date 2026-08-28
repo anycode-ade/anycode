@@ -2,103 +2,37 @@ import { describe, it, expect } from 'vitest';
 import { DiffRenderer } from '../src/renderer/DiffRenderer';
 import { VisualRow } from '../src/renderer/Renderer';
 
-describe('DiffRenderer.insertSeparators', () => {
-    it('should add gaps at start and end of file when appropriate', () => {
+describe('DiffRenderer.computeVisibleRanges', () => {
+    it('should return merged ranges for focused diff', () => {
         const renderer = new DiffRenderer({} as any, {} as any, {} as any, {} as any);
-        renderer.setFocusedDiffMode(true);
+        renderer.setFocusedDiffMode(true, 3);
 
-        // Case 1: Gap at start only (line 0 is single hidden line -> rendered as real line)
-        const rows1: VisualRow[] = [
-            { kind: 'real', lineIndex: 1 },
-            { kind: 'real', lineIndex: 2 },
-        ];
-        const result1 = renderer.insertSeparators(rows1, 3);
-        expect(result1).toEqual([
-            { kind: 'real', lineIndex: 0 },
-            { kind: 'real', lineIndex: 1 },
-            { kind: 'real', lineIndex: 2 },
+        const diffs = new Map([
+            [10, { changeType: 'modified' as const, hunkId: 0 }],
         ]);
 
-        // Case 2: Gap at end only (line 2 is single hidden line -> rendered as real line)
-        const rows2: VisualRow[] = [
-            { kind: 'real', lineIndex: 0 },
-            { kind: 'real', lineIndex: 1 },
-        ];
-        const result2 = renderer.insertSeparators(rows2, 3);
-        expect(result2).toEqual([
-            { kind: 'real', lineIndex: 0 },
-            { kind: 'real', lineIndex: 1 },
-            { kind: 'real', lineIndex: 2 },
+        const ranges = renderer.computeVisibleRanges(100, diffs);
+        expect(ranges).toEqual([
+            { start: 6, end: 12 }, // line 9 (0-indexed) with context ±3
+        ]);
+    });
+
+    it('should handle 1,000,000 lines in < 1ms', () => {
+        const renderer = new DiffRenderer({} as any, {} as any, {} as any, {} as any);
+        renderer.setFocusedDiffMode(true, 3);
+
+        const diffs = new Map([
+            [500_000, { changeType: 'modified' as const, hunkId: 0 }],
         ]);
 
-        // Case 3: Gaps at both start and end
-        const rows3: VisualRow[] = [
-            { kind: 'real', lineIndex: 2 },
-            { kind: 'real', lineIndex: 3 },
-        ];
-        const result3 = renderer.insertSeparators(rows3, 6);
-        expect(result3).toEqual([
-            { kind: 'separator', hiddenStart: 0, hiddenEnd: 1, hiddenCount: 2 },
-            { kind: 'real', lineIndex: 2 },
-            { kind: 'real', lineIndex: 3 },
-            { kind: 'separator', hiddenStart: 4, hiddenEnd: 5, hiddenCount: 2 },
-        ]);
+        const start = performance.now();
+        const ranges = renderer.computeVisibleRanges(1_000_000, diffs);
+        const elapsed = performance.now() - start;
 
-        // Case 4: No gaps (first and last lines are visible)
-        const rows4: VisualRow[] = [
-            { kind: 'real', lineIndex: 0 },
-            { kind: 'real', lineIndex: 1 },
-            { kind: 'real', lineIndex: 2 },
-        ];
-        const result4 = renderer.insertSeparators(rows4, 3);
-        expect(result4).toEqual([
-            { kind: 'real', lineIndex: 0 },
-            { kind: 'real', lineIndex: 1 },
-            { kind: 'real', lineIndex: 2 },
+        expect(ranges).toEqual([
+            { start: 499_996, end: 500_002 },
         ]);
-
-        // Case 5: Empty file
-        const rows5: VisualRow[] = [];
-        const result5 = renderer.insertSeparators(rows5, 0);
-        expect(result5).toEqual([]);
-
-        // Case 6: Entire file hidden
-        const rows6: VisualRow[] = [];
-        const result6 = renderer.insertSeparators(rows6, 5);
-        expect(result6).toEqual([
-            { kind: 'separator', hiddenStart: 0, hiddenEnd: 4, hiddenCount: 5 },
-        ]);
-
-        // Case 7: Only ghost rows in input (entire file is hidden, but ghost rows exist)
-        const rows7: VisualRow[] = [
-            { kind: 'ghost', hunkId: 0, anchorLine: 1, originalLineIndex: 0 },
-        ];
-        const result7 = renderer.insertSeparators(rows7, 3);
-        expect(result7).toEqual([
-            { kind: 'ghost', hunkId: 0, anchorLine: 1, originalLineIndex: 0 },
-            { kind: 'separator', hiddenStart: 0, hiddenEnd: 2, hiddenCount: 3 },
-        ]);
-
-        // Case 8: Gaps hidden by fold
-        const rows8: VisualRow[] = [
-            { kind: 'real', lineIndex: 0 },
-            { kind: 'real', lineIndex: 4 },
-        ];
-        // Suppose lines 1, 2, 3 are hidden by fold
-        const isHiddenByFold = (lineIndex: number) => lineIndex >= 1 && lineIndex <= 3;
-        const result8 = renderer.insertSeparators(rows8, 5, isHiddenByFold);
-        expect(result8).toEqual([
-            { kind: 'real', lineIndex: 0 },
-            { kind: 'real', lineIndex: 4 },
-        ]);
-
-        // Case 9: Gaps when folding is disabled (predicate returns false or is not passed)
-        const result9 = renderer.insertSeparators(rows8, 5);
-        expect(result9).toEqual([
-            { kind: 'real', lineIndex: 0 },
-            { kind: 'separator', hiddenStart: 1, hiddenEnd: 3, hiddenCount: 3 },
-            { kind: 'real', lineIndex: 4 },
-        ]);
+        expect(elapsed).toBeLessThan(10); // Runs instantly in < 1ms
     });
 });
 

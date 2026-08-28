@@ -244,7 +244,7 @@ export class Code {
 
     public runnables: Map<number, any> = new Map()
 
-    private linesCache = new LruCache<number, Uint32Array>(500);
+    protected linesCache = new LruCache<number, Uint32Array>(500);
 
     private history = new History<Change>()
     private changeActive: boolean = false;

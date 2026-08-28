@@ -3,7 +3,6 @@
   "version": "1.0.0",
   "description": "",
   "type": "module",
-  "main": "dist/index.js",
   "scripts": {
     "postinstall": "cpy \"node_modules/anycode-base/wasm/*.wasm\" public",
     "dev": "vite --host 0.0.0.0",
@@ -12,8 +11,7 @@
     "build": "rimraf ../anycode-backend/dist && vite build && cpy dist ../anycode-backend --parents",
     "build:demo": "vite build --mode demo",
     "preview": "vite preview",
-    "test:demo": "playwright test",
-    "electron": "electron ."
+    "test:demo": "playwright test"
   },
   "keywords": [],
   "author": "",
@@ -41,7 +39,6 @@
     "@playwright/test": "^1.62.0",
     "@vitejs/plugin-react": "^6.0.1",
     "cpy-cli": "^7.0.0",
-    "electron": "^37.4.0",
     "rimraf": "^6.0.1",
     "tree-sitter-cli": "^0.25.8",
     "tree-sitter-javascript": "^0.23.1",

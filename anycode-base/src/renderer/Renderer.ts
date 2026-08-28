@@ -4,7 +4,7 @@ import { AnycodeLine, RowElements, SparseGhostGroup } from "../types";
 import { isGhostElement, objectHash, minimize } from "../utils";
 import { moveCursor, removeCursor } from "../cursor";
 import { EditorState, EditorSettings } from "../editor";
-import { DiffInfo } from "../diff";
+import { DiffInfo, DiffModel } from "../diff";
 import { Selection, renderSelection } from "../selection";
 import { Completion } from "../lsp";
 import { Search } from "../search";
@@ -48,6 +48,11 @@ export interface SeparatorRow {
 
 export type VisualRow = RealRow | GhostRow | SeparatorRow;
 
+export type VisualSegment =
+    | { kind: 'real'; startLine: number; count: number; startVisualIndex: number }
+    | { kind: 'ghost'; hunkId: number; anchorLine: number; oldLineNumbers: number[]; ghostCount: number; startVisualIndex: number }
+    | { kind: 'separator'; hiddenStart: number; hiddenEnd: number; startVisualIndex: number };
+
 export class Renderer {
     private container: HTMLDivElement;
     private buttonsColumn: HTMLDivElement;
@@ -63,7 +68,8 @@ export class Renderer {
     private wordHighlightRenderer: WordHighlightRenderer;
     private bracketMatchRenderer: BracketMatchRenderer;
     private scrollbarMarkersRenderer: ScrollbarMarkersRenderer;
-    private activeVisualRows: VisualRow[] | null = null;
+    private visualSegments: VisualSegment[] | null = null;
+    private totalVisualRows: number = 0;
     private lastTotalLines: number = 0;
     private visualIndexByElement = new WeakMap<HTMLElement, number>();
     private lastCollapsedMap: Map<number, number> = new Map();
@@ -74,7 +80,6 @@ export class Renderer {
     private lastContentMinWidth = -1;
     private maxTrackedWidth: number = 0;
     private lastGutterWidth: number = 48;
-    private sparseGhostGroups: SparseGhostGroup[] = [];
     private totalGhostLines: number = 0;
     private expandBufferRafId: number | null = null;
     private isFastScroll: boolean = false;
@@ -150,94 +155,325 @@ export class Renderer {
         this.scrollbarMarkersRenderer.clean();
     }
 
-    private updateSparseGhostIndex(diffs: Map<number, DiffInfo> | undefined, totalLines: number): void {
-        this.sparseGhostGroups = [];
-        this.totalGhostLines = 0;
-        if (!diffs || diffs.size === 0) return;
+    private updateVisualSegments(state: EditorState): void {
+        const { code, diffs } = state;
+        const totalRealLines = code.linesLength();
+        this.lastTotalLines = totalRealLines;
 
-        const processedHunks = new Set<number>();
-        const ghostsByAnchor = new Map<number, { hunkId: number; oldLineNumbers: number[] }[]>();
+        // 1. Ghost groups from diffs (only deleted / modified)
+        const ghostGroups: SparseGhostGroup[] = [];
+        let totalGhosts = 0;
+        if (diffs && diffs.hasChanges()) {
+            const processedHunks = new Set<number>();
+            const ghostsByAnchor = new Map<number, { hunkId: number; oldLineNumbers: number[] }[]>();
 
-        for (const [lineNumber, diffInfo] of diffs) {
-            if (!diffInfo.oldLineNumbers || diffInfo.oldLineNumbers.length === 0) continue;
-            if (diffInfo.changeType !== 'modified' && diffInfo.changeType !== 'deleted') continue;
+            for (const hunk of diffs.getHunks()) {
+                if (!hunk.oldLineNumbers || hunk.oldLineNumbers.length === 0) continue;
+                if (hunk.changeType !== 'modified' && hunk.changeType !== 'deleted') continue;
 
-            const anchorLine = diffInfo.ghostAnchorLine ?? lineNumber;
-            if (!ghostsByAnchor.has(anchorLine)) {
-                ghostsByAnchor.set(anchorLine, []);
-            }
-            ghostsByAnchor.get(anchorLine)!.push({
-                hunkId: diffInfo.hunkId,
-                oldLineNumbers: diffInfo.oldLineNumbers,
-            });
-        }
-
-        const sortedAnchors = Array.from(ghostsByAnchor.keys()).sort((a, b) => a - b);
-        let cumulativeGhosts = 0;
-
-        for (const anchor of sortedAnchors) {
-            const groups = ghostsByAnchor.get(anchor)!;
-            for (const group of groups) {
-                if (processedHunks.has(group.hunkId)) continue;
-                processedHunks.add(group.hunkId);
-
-                const validOldNumbers = group.oldLineNumbers.filter((n) => n >= 1);
-                if (validOldNumbers.length === 0) continue;
-
-                const startVisualIndex = Math.max(0, anchor - 1) + cumulativeGhosts;
-                const ghostCount = validOldNumbers.length;
-
-                this.sparseGhostGroups.push({
-                    anchorLine: anchor,
-                    hunkId: group.hunkId,
-                    oldLineNumbers: validOldNumbers,
-                    ghostCount,
-                    startVisualIndex,
+                const anchorLine = hunk.ghostAnchorLine ?? hunk.startLine;
+                if (!ghostsByAnchor.has(anchorLine)) {
+                    ghostsByAnchor.set(anchorLine, []);
+                }
+                ghostsByAnchor.get(anchorLine)!.push({
+                    hunkId: hunk.hunkId,
+                    oldLineNumbers: hunk.oldLineNumbers,
                 });
+            }
 
-                cumulativeGhosts += ghostCount;
+            const sortedAnchors = Array.from(ghostsByAnchor.keys()).sort((a, b) => a - b);
+            for (const anchor of sortedAnchors) {
+                const groups = ghostsByAnchor.get(anchor)!;
+                for (const group of groups) {
+                    if (processedHunks.has(group.hunkId)) continue;
+                    processedHunks.add(group.hunkId);
+                    const validOldNumbers = group.oldLineNumbers.filter((n) => n >= 1);
+                    if (validOldNumbers.length === 0) continue;
+                    ghostGroups.push({
+                        anchorLine: anchor,
+                        hunkId: group.hunkId,
+                        oldLineNumbers: validOldNumbers,
+                        ghostCount: validOldNumbers.length,
+                        startVisualIndex: 0,
+                    });
+                    totalGhosts += validOldNumbers.length;
+                }
+            }
+        }
+        this.totalGhostLines = totalGhosts;
+
+        // 2. Focused diff visible ranges
+        const focusedRanges = this.diffRenderer.computeVisibleRanges(totalRealLines, diffs, code);
+        const alwaysVisible = code.getAlwaysVisibleLines(totalRealLines);
+
+        // 3. Fast Path: No focused diff gaps, no folds, no ghosts -> visualSegments = null!
+        const hasFolds = this.lastHiddenLines.size > 0 && this.codeFoldingEnabled;
+        const isFocusedDiffActive = focusedRanges !== undefined && !(focusedRanges.length === 1 && focusedRanges[0].start === 0 && focusedRanges[0].end === totalRealLines - 1);
+        const hasGhosts = ghostGroups.length > 0;
+
+        if (!hasFolds && !isFocusedDiffActive && !hasGhosts && !alwaysVisible) {
+            this.visualSegments = null;
+            this.totalVisualRows = totalRealLines;
+            return;
+        }
+
+        // In the common diff-only case, there is no reason to inspect every
+        // real line. Ghost anchors are already sorted, so the visual model
+        // can be built in O(H), where H is the number of ghost groups.
+        if (!hasFolds && !isFocusedDiffActive) {
+            const result = this.buildSegmentsAroundGhosts(totalRealLines, ghostGroups);
+            this.visualSegments = result.segments;
+            this.totalVisualRows = result.totalRows;
+            return;
+        }
+
+        // 4. Build sparse segments by interleaving real visible intervals, separators, and ghost groups
+        let baseIntervals: { start: number; end: number }[] = focusedRanges ?? (totalRealLines > 0 ? [{ start: 0, end: totalRealLines - 1 }] : []);
+        if (alwaysVisible && alwaysVisible.size > 0) {
+            const raw = [...baseIntervals];
+            for (const line of alwaysVisible) {
+                if (line >= 0 && line < totalRealLines) raw.push({ start: line, end: line });
+            }
+            raw.sort((a, b) => a.start - b.start);
+            if (raw.length > 0) {
+                baseIntervals = [raw[0]];
+                for (let i = 1; i < raw.length; i++) {
+                    const prev = baseIntervals[baseIntervals.length - 1];
+                    if (raw[i].start <= prev.end + 1) {
+                        prev.end = Math.max(prev.end, raw[i].end);
+                    } else {
+                        baseIntervals.push(raw[i]);
+                    }
+                }
             }
         }
 
-        this.totalGhostLines = cumulativeGhosts;
+        const segments: VisualSegment[] = [];
+        let currentVisualIndex = 0;
+        let ghostIdx = 0;
+        let lastRealEnd = -1;
+
+        for (let r = 0; r < baseIntervals.length; r++) {
+            const range = baseIntervals[r];
+
+            // Gap before this range?
+            if (focusedRanges !== undefined && range.start > lastRealEnd + 1) {
+                segments.push({
+                    kind: 'separator',
+                    hiddenStart: lastRealEnd + 1,
+                    hiddenEnd: range.start - 1,
+                    startVisualIndex: currentVisualIndex,
+                });
+                currentVisualIndex += 1;
+            }
+
+            // Real lines within this range (handling folds and ghosts)
+            let segStartLine: number | null = null;
+
+            for (let line = range.start; line <= range.end; line++) {
+                const lineNumber = line + 1; // 1-based for anchor
+
+                // Insert ghosts anchored before this line
+                while (ghostIdx < ghostGroups.length && ghostGroups[ghostIdx].anchorLine <= lineNumber) {
+                    const ghost = ghostGroups[ghostIdx++];
+
+                    // If the anchor itself is hidden by a collapsed fold, the
+                    // ghost belongs to that hidden block and must not be
+                    // moved to the next visible row.
+                    if (this.isHiddenByFold(Math.max(0, ghost.anchorLine - 1))) {
+                        continue;
+                    }
+
+                    // Flush active real segment first
+                    if (segStartLine !== null) {
+                        const count = line - segStartLine;
+                        if (count > 0) {
+                            segments.push({
+                                kind: 'real',
+                                startLine: segStartLine,
+                                count,
+                                startVisualIndex: currentVisualIndex,
+                            });
+                            currentVisualIndex += count;
+                        }
+                        segStartLine = null;
+                    }
+
+                    segments.push({
+                        kind: 'ghost',
+                        hunkId: ghost.hunkId,
+                        anchorLine: ghost.anchorLine,
+                        oldLineNumbers: ghost.oldLineNumbers,
+                        ghostCount: ghost.ghostCount,
+                        startVisualIndex: currentVisualIndex,
+                    });
+                    currentVisualIndex += ghost.ghostCount;
+                }
+
+                // Check fold
+                if (this.isHiddenByFold(line)) {
+                    if (segStartLine !== null) {
+                        const count = line - segStartLine;
+                        if (count > 0) {
+                            segments.push({
+                                kind: 'real',
+                                startLine: segStartLine,
+                                count,
+                                startVisualIndex: currentVisualIndex,
+                            });
+                            currentVisualIndex += count;
+                        }
+                        segStartLine = null;
+                    }
+                } else {
+                    if (segStartLine === null) {
+                        segStartLine = line;
+                    }
+                }
+            }
+
+            // Flush remaining real lines in range
+            if (segStartLine !== null) {
+                const count = range.end - segStartLine + 1;
+                if (count > 0) {
+                    segments.push({
+                        kind: 'real',
+                        startLine: segStartLine,
+                        count,
+                        startVisualIndex: currentVisualIndex,
+                    });
+                    currentVisualIndex += count;
+                }
+            }
+
+            lastRealEnd = range.end;
+        }
+
+        // Trailing gap for focused diff?
+        if (focusedRanges !== undefined && lastRealEnd < totalRealLines - 1) {
+            segments.push({
+                kind: 'separator',
+                hiddenStart: lastRealEnd + 1,
+                hiddenEnd: totalRealLines - 1,
+                startVisualIndex: currentVisualIndex,
+            });
+            currentVisualIndex += 1;
+        }
+
+        // EOF ghosts (anchored after last line)
+        while (ghostIdx < ghostGroups.length) {
+            const g = ghostGroups[ghostIdx++];
+            segments.push({
+                kind: 'ghost',
+                hunkId: g.hunkId,
+                anchorLine: g.anchorLine,
+                oldLineNumbers: g.oldLineNumbers,
+                ghostCount: g.ghostCount,
+                startVisualIndex: currentVisualIndex,
+            });
+            currentVisualIndex += g.ghostCount;
+        }
+
+        this.visualSegments = segments;
+        this.totalVisualRows = currentVisualIndex;
+    }
+
+    private buildSegmentsAroundGhosts(
+        totalRealLines: number,
+        ghostGroups: SparseGhostGroup[],
+    ): { segments: VisualSegment[]; totalRows: number } {
+        const segments: VisualSegment[] = [];
+        let realCursor = 0;
+        let visualCursor = 0;
+
+        for (const ghost of ghostGroups) {
+            // A ghost is rendered immediately before its 1-based anchor.
+            // Clamping also handles deletions at/after EOF.
+            const anchor = Math.max(0, Math.min(totalRealLines, ghost.anchorLine - 1));
+
+            if (anchor > realCursor) {
+                const count = anchor - realCursor;
+                segments.push({
+                    kind: 'real',
+                    startLine: realCursor,
+                    count,
+                    startVisualIndex: visualCursor,
+                });
+                visualCursor += count;
+            }
+
+            segments.push({
+                kind: 'ghost',
+                hunkId: ghost.hunkId,
+                anchorLine: ghost.anchorLine,
+                oldLineNumbers: ghost.oldLineNumbers,
+                ghostCount: ghost.ghostCount,
+                startVisualIndex: visualCursor,
+            });
+            visualCursor += ghost.ghostCount;
+            realCursor = Math.max(realCursor, anchor);
+        }
+
+        if (realCursor < totalRealLines) {
+            const count = totalRealLines - realCursor;
+            segments.push({
+                kind: 'real',
+                startLine: realCursor,
+                count,
+                startVisualIndex: visualCursor,
+            });
+            visualCursor += count;
+        }
+
+        return { segments, totalRows: visualCursor };
     }
 
     public getVisualRowCount(): number {
-        if (this.activeVisualRows) {
-            return this.activeVisualRows.length;
-        }
-        return this.lastTotalLines + this.totalGhostLines;
+        return this.totalVisualRows || this.lastTotalLines;
     }
 
     public getVisualRow(visualIndex: number): VisualRow {
-        if (this.activeVisualRows) {
-            return this.activeVisualRows[visualIndex] ?? { kind: 'real', lineIndex: visualIndex };
-        }
-
-        if (this.sparseGhostGroups.length === 0) {
+        if (!this.visualSegments || this.visualSegments.length === 0) {
             return { kind: 'real', lineIndex: visualIndex };
         }
 
-        let ghostsBefore = 0;
-        for (let g = 0; g < this.sparseGhostGroups.length; g++) {
-            const group = this.sparseGhostGroups[g];
-            if (visualIndex < group.startVisualIndex) {
-                return { kind: 'real', lineIndex: visualIndex - ghostsBefore };
+        let low = 0;
+        let high = this.visualSegments.length - 1;
+
+        while (low <= high) {
+            const mid = (low + high) >> 1;
+            const seg = this.visualSegments[mid];
+            const segCount = seg.kind === 'real' ? seg.count : seg.kind === 'ghost' ? seg.ghostCount : 1;
+
+            if (visualIndex < seg.startVisualIndex) {
+                high = mid - 1;
+            } else if (visualIndex >= seg.startVisualIndex + segCount) {
+                low = mid + 1;
+            } else {
+                if (seg.kind === 'real') {
+                    return { kind: 'real', lineIndex: seg.startLine + (visualIndex - seg.startVisualIndex) };
+                }
+                if (seg.kind === 'ghost') {
+                    const offset = visualIndex - seg.startVisualIndex;
+                    return {
+                        kind: 'ghost',
+                        hunkId: seg.hunkId,
+                        anchorLine: seg.anchorLine,
+                        originalLineIndex: seg.oldLineNumbers[offset] - 1,
+                    };
+                }
+                if (seg.kind === 'separator') {
+                    return {
+                        kind: 'separator',
+                        hiddenStart: seg.hiddenStart,
+                        hiddenEnd: seg.hiddenEnd,
+                        hiddenCount: seg.hiddenEnd - seg.hiddenStart + 1,
+                    };
+                }
             }
-            if (visualIndex < group.startVisualIndex + group.ghostCount) {
-                const ghostOffset = visualIndex - group.startVisualIndex;
-                const originalLineNumber = group.oldLineNumbers[ghostOffset];
-                return {
-                    kind: 'ghost',
-                    hunkId: group.hunkId,
-                    anchorLine: group.anchorLine,
-                    originalLineIndex: originalLineNumber - 1,
-                };
-            }
-            ghostsBefore += group.ghostCount;
         }
 
-        return { kind: 'real', lineIndex: visualIndex - ghostsBefore };
+        return { kind: 'real', lineIndex: visualIndex };
     }
 
     public getVisualRows(startIndex: number, endIndex: number): VisualRow[] {
@@ -269,18 +505,7 @@ export class Renderer {
         this.updateFoldableStarts(state);
         this.updateCollapsedMap(state);
 
-        const totalRealLines = code.linesLength();
-        this.lastTotalLines = totalRealLines;
-
-        this.updateSparseGhostIndex(diffs, totalRealLines);
-
-        if (this.diffRenderer.isFocusedDiffEnabled() && diffs && diffs.size > 0) {
-            this.activeVisualRows = this.buildVisualRows(totalRealLines, diffs, code);
-        } else if (this.lastHiddenLines.size > 0 && this.codeFoldingEnabled) {
-            this.activeVisualRows = this.buildRealOnlyRows(totalRealLines);
-        } else {
-            this.activeVisualRows = null;
-        }
+        this.updateVisualSegments(state);
 
         this.renderViewport(state);
         const wordLines = this.wordHighlightRenderer.render(state, state.scrollbarMarkersEnabled);
@@ -367,114 +592,13 @@ export class Renderer {
             clientHeight,
             scrollHeight
         );
-        this.scrollbarMarkersRenderer.render(state, effectiveIncludeSearch, effectiveWordLines, this.activeVisualRows || undefined);
-    }
-
-    /**
-     * Build visual rows with only real lines (no ghost lines)
-     */
-    private buildRealOnlyRows(totalLines: number): VisualRow[] {
-        const rows: VisualRow[] = [];
-        for (let i = 0; i < totalLines; i++) {
-            if (this.isHiddenByFold(i)) continue;
-            rows.push({ kind: 'real', lineIndex: i });
-        }
-        return rows;
-    }
-
-    /**
-     * Build a unified list of visual rows.
-     * This provides a stable model for virtualized scrolling.
-     */
-    private buildVisualRows(
-        totalLines: number,
-        diffs: Map<number, DiffInfo> | undefined,
-        code: Code,
-    ): VisualRow[] {
-        const rows: VisualRow[] = [];
-        const processedHunks = new Set<number>();
-        const visibleRealLines = this.diffRenderer.computeVisibleLines(totalLines, diffs, code);
-        const alwaysVisibleLines = code.getAlwaysVisibleLines(totalLines);
-        if (visibleRealLines && alwaysVisibleLines) {
-            for (const line of alwaysVisibleLines) visibleRealLines.add(line);
-        }
-
-        // Collect ghost info by anchor line for efficient lookup
-        const ghostsByAnchor = new Map<number, { hunkId: number; oldLineNumbers: number[] }[]>();
-
-        if (diffs) {
-            for (const [lineNumber, diffInfo] of diffs) {
-                if (!diffInfo.oldLineNumbers || diffInfo.oldLineNumbers.length === 0) continue;
-                if (diffInfo.changeType !== 'modified' && diffInfo.changeType !== 'deleted') continue;
-
-                const anchorLine = diffInfo.ghostAnchorLine ?? lineNumber;
-
-                if (!ghostsByAnchor.has(anchorLine)) {
-                    ghostsByAnchor.set(anchorLine, []);
-                }
-                ghostsByAnchor.get(anchorLine)!.push({
-                    hunkId: diffInfo.hunkId,
-                    oldLineNumbers: diffInfo.oldLineNumbers,
-                });
-            }
-        }
-
-        // Build visual rows: iterate through lines and insert ghosts before their anchors
-        for (let i = 0; i < totalLines; i++) {
-            const lineNumber = i + 1; // 1-indexed for diffs
-            // Check for ghost lines anchored before this line
-            const ghostsHere = ghostsByAnchor.get(lineNumber);
-            if (ghostsHere && !this.isHiddenByFold(i)) {
-                for (const ghostGroup of ghostsHere) {
-                    if (processedHunks.has(ghostGroup.hunkId)) continue;
-                    processedHunks.add(ghostGroup.hunkId);
-
-                    for (let ghostIndex = 0; ghostIndex < ghostGroup.oldLineNumbers.length; ghostIndex++) {
-                        const originalLineNumber = ghostGroup.oldLineNumbers[ghostIndex];
-                        if (originalLineNumber < 1) continue;
-                        rows.push({
-                            kind: 'ghost',
-                            hunkId: ghostGroup.hunkId,
-                            anchorLine: lineNumber,
-                            originalLineIndex: originalLineNumber - 1,
-                        });
-                    }
-                }
-            }
-
-            // Add real lines based on focused mode visibility
-            if (!visibleRealLines || visibleRealLines.has(i)) {
-                if (this.isHiddenByFold(i)) continue;
-                rows.push({ kind: 'real', lineIndex: i });
-            }
-        }
-
-        // Handle EOF ghosts (deletions anchored after the last line)
-        const eofAnchor = totalLines + 1;
-        const eofGhosts = ghostsByAnchor.get(eofAnchor);
-        const isLastLineFolded = totalLines > 0 && this.isHiddenByFold(totalLines - 1);
-        if (eofGhosts && !isLastLineFolded) {
-            for (const ghostGroup of eofGhosts) {
-                if (processedHunks.has(ghostGroup.hunkId)) continue;
-                processedHunks.add(ghostGroup.hunkId);
-
-                for (let ghostIndex = 0; ghostIndex < ghostGroup.oldLineNumbers.length; ghostIndex++) {
-                    const originalLineNumber = ghostGroup.oldLineNumbers[ghostIndex];
-                    if (originalLineNumber < 1) continue;
-                    rows.push({
-                        kind: 'ghost',
-                        hunkId: ghostGroup.hunkId,
-                        anchorLine: eofAnchor,
-                        originalLineIndex: originalLineNumber - 1,
-                    });
-                }
-            }
-        }
-
-        return this.diffRenderer.insertSeparators(
-            rows,
-            totalLines,
-            (lineIndex) => this.isHiddenByFold(lineIndex)
+        this.scrollbarMarkersRenderer.render(
+            state,
+            effectiveIncludeSearch,
+            effectiveWordLines,
+            (line: number) => this.getVisualIndexForLine(line),
+            (visualIndex: number) => this.getLineForVisualRow(visualIndex),
+            totalVisualRows
         );
     }
 
@@ -493,59 +617,60 @@ export class Renderer {
 
     /**
      * Get visual index for a real line number.
-     * This accounts for ghost lines above the target line.
+     * This accounts for ghost lines and hidden lines.
      */
     private getVisualIndexForLine(lineIndex: number): number {
-        if (this.activeVisualRows) {
-            for (let i = 0; i < this.activeVisualRows.length; i++) {
-                const row = this.activeVisualRows[i];
-                if (row.kind === 'real' && row.lineIndex === lineIndex) {
-                    return i;
-                }
-            }
-            // In focused diff mode, cursor can temporarily point to a hidden line.
-            // Snap to nearest rendered real row for scrolling purposes.
-            let nearestIndex = -1;
-            let nearestDistance = Number.POSITIVE_INFINITY;
-            for (let i = 0; i < this.activeVisualRows.length; i++) {
-                const row = this.activeVisualRows[i];
-                if (row.kind !== 'real') continue;
-                const distance = Math.abs(row.lineIndex - lineIndex);
-                if (distance < nearestDistance) {
-                    nearestDistance = distance;
-                    nearestIndex = i;
-                }
-            }
-            return nearestIndex >= 0 ? nearestIndex : 0;
-        }
-
-        if (this.sparseGhostGroups.length === 0) {
+        if (!this.visualSegments || this.visualSegments.length === 0) {
             return lineIndex;
         }
 
-        let visualIndex = lineIndex;
-        for (let g = 0; g < this.sparseGhostGroups.length; g++) {
-            const group = this.sparseGhostGroups[g];
-            if (lineIndex >= group.anchorLine - 1) {
-                visualIndex += group.ghostCount;
-            } else {
-                break;
+        for (const seg of this.visualSegments) {
+            if (seg.kind === 'real') {
+                if (lineIndex >= seg.startLine && lineIndex < seg.startLine + seg.count) {
+                    return seg.startVisualIndex + (lineIndex - seg.startLine);
+                }
             }
         }
-        return visualIndex;
+
+        // Fallback for hidden lines (e.g. cursor in folded or focused diff gap): find nearest real segment
+        let closestVisual = 0;
+        let minDistance = Infinity;
+        for (const seg of this.visualSegments) {
+            if (seg.kind === 'real') {
+                const dist = lineIndex < seg.startLine
+                    ? seg.startLine - lineIndex
+                    : lineIndex - (seg.startLine + seg.count - 1);
+                if (dist < minDistance) {
+                    minDistance = dist;
+                    closestVisual = lineIndex < seg.startLine
+                        ? seg.startVisualIndex
+                        : seg.startVisualIndex + seg.count - 1;
+                }
+            }
+        }
+        return closestVisual;
+    }
+
+    public getLineForVisualRow(visualIndex: number): number {
+        const row = this.getVisualRow(visualIndex);
+        if (row.kind === 'real') return row.lineIndex;
+        if (row.kind === 'ghost') return Math.max(0, row.anchorLine - 1);
+        return Math.max(0, Math.round((row.hiddenStart + row.hiddenEnd) / 2));
     }
 
     public getVisibleRealLineIndices(): Set<number> {
         const lines = new Set<number>();
-        if (!this.activeVisualRows) {
+        if (!this.visualSegments || this.visualSegments.length === 0) {
             for (let i = 0; i < this.lastTotalLines; i++) {
                 lines.add(i);
             }
             return lines;
         }
-        for (const row of this.activeVisualRows) {
-            if (row.kind === 'real') {
-                lines.add(row.lineIndex);
+        for (const seg of this.visualSegments) {
+            if (seg.kind === 'real') {
+                for (let i = 0; i < seg.count; i++) {
+                    lines.add(seg.startLine + i);
+                }
             }
         }
         return lines;
@@ -791,45 +916,14 @@ export class Renderer {
         state: EditorState,
         precomputedNodes?: HighlighedNode[]
     ): RowElements {
-        if (this.activeVisualRows) {
-            const row = this.activeVisualRows[visualIndex];
-            if (!row || row.kind === "real") {
-                const lineIndex = row ? row.lineIndex : visualIndex;
-                return this.createRealRow(lineIndex, visualIndex, state, precomputedNodes);
-            }
-            if (row.kind === "ghost") {
-                return this.createGhostRow(row.hunkId, row.anchorLine, row.originalLineIndex, visualIndex, state);
-            }
-            return this.createSeparatorRow(row, visualIndex, state);
+        const row = this.getVisualRow(visualIndex);
+        if (row.kind === 'real') {
+            return this.createRealRow(row.lineIndex, visualIndex, state, precomputedNodes);
         }
-
-        if (this.sparseGhostGroups.length === 0) {
-            return this.createRealRow(visualIndex, visualIndex, state, precomputedNodes);
+        if (row.kind === 'ghost') {
+            return this.createGhostRow(row.hunkId, row.anchorLine, row.originalLineIndex, visualIndex, state);
         }
-
-        let ghostsBefore = 0;
-        for (let g = 0; g < this.sparseGhostGroups.length; g++) {
-            const group = this.sparseGhostGroups[g];
-            if (visualIndex < group.startVisualIndex) {
-                const lineIndex = visualIndex - ghostsBefore;
-                return this.createRealRow(lineIndex, visualIndex, state, precomputedNodes);
-            }
-            if (visualIndex < group.startVisualIndex + group.ghostCount) {
-                const ghostOffset = visualIndex - group.startVisualIndex;
-                const originalLineNumber = group.oldLineNumbers[ghostOffset];
-                return this.createGhostRow(
-                    group.hunkId,
-                    group.anchorLine,
-                    originalLineNumber - 1,
-                    visualIndex,
-                    state
-                );
-            }
-            ghostsBefore += group.ghostCount;
-        }
-
-        const lineIndex = visualIndex - ghostsBefore;
-        return this.createRealRow(lineIndex, visualIndex, state, precomputedNodes);
+        return this.createSeparatorRow(row, visualIndex, state);
     }
 
     private createRealRow(
@@ -923,7 +1017,7 @@ export class Renderer {
         existing: HTMLElement,
         row: VisualRow,
         code: Code,
-        diffs?: Map<number, DiffInfo>
+        diffs?: DiffModel
     ): boolean {
         if (row.kind === "real") {
             if (isGhostElement(existing)) return true;
@@ -941,7 +1035,7 @@ export class Renderer {
         return true;
     }
 
-    private isLineChanged(line: AnycodeLine, lineIndex: number, code: Code, diffs?: Map<number, DiffInfo>): boolean {
+    private isLineChanged(line: AnycodeLine, lineIndex: number, code: Code, diffs?: DiffModel): boolean {
         if (line.lineNumber !== lineIndex) return true;
 
         const lineText = code.line(lineIndex) || "\u200B";
@@ -998,28 +1092,15 @@ export class Renderer {
         this.updateFoldableStarts(state);
         this.updateCollapsedMap(state);
 
-        const totalRealLines = code.linesLength();
         const oldTotalRows = this.getVisualRowCount();
-        const oldActiveRows = this.activeVisualRows;
+        this.updateVisualSegments(state);
+        const newTotalRows = this.getVisualRowCount();
 
-        this.updateSparseGhostIndex(diffs, totalRealLines);
-
-        let newActiveRows: VisualRow[] | null = null;
-        if (this.diffRenderer.isFocusedDiffEnabled() && diffs && diffs.size > 0) {
-            newActiveRows = this.buildVisualRows(totalRealLines, diffs, code);
-        } else if (this.lastHiddenLines.size > 0 && this.codeFoldingEnabled) {
-            newActiveRows = this.buildRealOnlyRows(totalRealLines);
-        }
-
-        const newTotalRows = newActiveRows ? newActiveRows.length : (totalRealLines + this.totalGhostLines);
         if (newTotalRows !== oldTotalRows) {
             // Fallback to full render
             this.render(state);
             return;
         }
-
-        this.lastTotalLines = totalRealLines;
-        this.activeVisualRows = newActiveRows;
 
         const renderedRange = this.getRenderedRange();
         if (!renderedRange) {
@@ -1061,10 +1142,12 @@ export class Renderer {
 
     private updateFoldableStarts(state: EditorState) {
         const map = new Map<number, number>();
-        for (const range of state.foldRanges) {
-            const prevEnd = map.get(range.startLine);
-            if (prevEnd === undefined || range.endLine > prevEnd) {
-                map.set(range.startLine, range.endLine);
+        if (state.foldRanges) {
+            for (const range of state.foldRanges) {
+                const prevEnd = map.get(range.startLine);
+                if (prevEnd === undefined || range.endLine > prevEnd) {
+                    map.set(range.startLine, range.endLine);
+                }
             }
         }
         this.lastFoldableStarts = map;
@@ -1072,10 +1155,12 @@ export class Renderer {
 
     private updateCollapsedMap(state: EditorState) {
         const map = new Map<number, number>();
-        for (const start of state.collapsedFoldStarts) {
-            const end = this.lastFoldableStarts.get(start);
-            if (end !== undefined && end > start) {
-                map.set(start, end);
+        if (state.collapsedFoldStarts) {
+            for (const start of state.collapsedFoldStarts) {
+                const end = this.lastFoldableStarts.get(start);
+                if (end !== undefined && end > start) {
+                    map.set(start, end);
+                }
             }
         }
         this.lastCollapsedMap = map;
@@ -1451,13 +1536,6 @@ export class Renderer {
         //     }
         // }
 
-        // if (state.originalCode && this.activeVisualRows) {
-        //     for (const row of this.activeVisualRows) {
-        //         if (row.kind !== 'ghost') continue;
-        //         const width = state.originalCode.lineLength(row.originalLineIndex) * charWidth;
-        //         currentMaxWidth = Math.max(currentMaxWidth, width);
-        //     }
-        // }
 
         // this.maxTrackedWidth = currentMaxWidth;
         // const nextMinWidth = Math.ceil(currentMaxWidth + 100);

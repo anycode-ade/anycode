@@ -191,4 +191,77 @@ describe('computeGitChanges', () => {
         expect(result.diffs.get(500001)?.changeType).toBe('modified');
         expect(duration).toBeLessThan(5);
     });
+
+    it('should compute diff from empty original source on 1,000,000 lines in less than 2ms and have 1 hunk', () => {
+        const origSource = {
+            linesLength: () => 1,
+            lineLength: (i: number) => 0,
+            line: (i: number) => '',
+        };
+        const currSource = {
+            linesLength: () => 1000000,
+            lineLength: (i: number) => 12,
+            line: (i: number) => 'const x = 1;',
+        };
+
+        const start = performance.now();
+        const result = computeGitChangesFromSource(origSource, currSource);
+        const duration = performance.now() - start;
+
+        expect(result.added).toBe(1000000);
+        expect(result.removed).toBe(0);
+        expect(result.diffs.size).toBe(1000000);
+        expect(result.diffs.getHunks().length).toBe(1);
+        expect(result.diffs.getHunks()[0]).toEqual({
+            hunkId: 0,
+            startLine: 1,
+            lineCount: 1000000,
+            changeType: 'added',
+        });
+        expect(result.diffs.get(1)?.changeType).toBe('added');
+        expect(result.diffs.get(500000)?.changeType).toBe('added');
+        expect(result.diffs.get(1000000)?.changeType).toBe('added');
+        expect(result.diffs.get(1000001)).toBeUndefined();
+        expect(duration).toBeLessThan(5);
+    });
+
+    it('should compute diff with stats from empty string on 1,000,000 lines in less than 2ms', () => {
+        const currentLines = new Array(1000000).fill('const x = 1;');
+        const start = performance.now();
+        const result = computeGitChangesWithStats('', currentLines);
+        const duration = performance.now() - start;
+
+        expect(result.added).toBe(1000000);
+        expect(result.removed).toBe(0);
+        expect(result.diffs.size).toBe(1000000);
+        expect(result.diffs.getHunks().length).toBe(1);
+        expect(result.diffs.get(1)?.changeType).toBe('added');
+        expect(result.diffs.get(1000000)?.changeType).toBe('added');
+        expect(duration).toBeLessThan(5);
+    });
+
+    it('should compute diff from source when deleting 1,000,000 lines in less than 50ms', () => {
+        const origSource = {
+            linesLength: () => 1000000,
+            lineLength: (i: number) => 12,
+            line: (i: number) => 'const x = 1;',
+        };
+        const currSource = {
+            linesLength: () => 1,
+            lineLength: (i: number) => 0,
+            line: (i: number) => '',
+        };
+
+        const start = performance.now();
+        const result = computeGitChangesFromSource(origSource, currSource);
+        const duration = performance.now() - start;
+
+        expect(result.added).toBe(0);
+        expect(result.removed).toBe(1000000);
+        expect(result.diffs.size).toBe(1);
+        expect(result.diffs.getHunks().length).toBe(1);
+        expect(result.diffs.get(1)?.changeType).toBe('deleted');
+        expect(result.diffs.get(1)?.oldLineNumbers?.length).toBe(1000000);
+        expect(duration).toBeLessThan(50);
+    });
 });

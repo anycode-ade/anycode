@@ -11,7 +11,7 @@ import {
 } from "../types";
 import { objectHash } from "../utils";
 import { EditorSettings } from "../editor";
-import { DiffInfo } from "../diff";
+import { DiffInfo, DiffModel } from "../diff";
 import { DiagnosticRenderer } from "./DiagnosticRenderer";
 
 /**
@@ -33,7 +33,7 @@ export class LineRenderer {
         nodes: HighlighedNode[],
         errorLines: Map<number, string>,
         settings: EditorSettings,
-        diffs?: Map<number, DiffInfo>,
+        diffs?: DiffModel,
         wordHighlight?: WordHighlight | null,
         binaryTokens?: Uint32Array,
         lineText?: string
@@ -141,7 +141,7 @@ export class LineRenderer {
     public createLineNumber(
         lineNumber: number,
         settings: EditorSettings,
-        diffs?: Map<number, DiffInfo>,
+        diffs?: DiffModel,
         displayLineNumber: number = lineNumber,
     ): GutterElement {
         const div = document.createElement('div') as GutterElement;
@@ -197,7 +197,7 @@ export class LineRenderer {
         nodes: HighlighedNode[],
         errorLines: Map<number, string>,
         settings: EditorSettings,
-        diffs: Map<number, DiffInfo> | undefined,
+        diffs: DiffModel | undefined,
         runLines: number[],
         foldIndicator: { canFold: boolean; collapsed: boolean },
         wordHighlight?: WordHighlight | null,

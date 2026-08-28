@@ -24,7 +24,7 @@ import {
 
 import './styles.css';
 import { Search } from "./search";
-import { computeGitChanges, computeGitChangesFromSource, DiffInfo } from "./diff";
+import { computeGitChanges, computeGitChangesFromSource, DiffInfo, DiffModel } from "./diff";
 import { getGapElementData } from "./renderer/DiffRenderer";
 
 export type ScrollbarStyle = 'rounded' | 'flat';
@@ -68,7 +68,7 @@ export interface EditorState {
     runLines: number[];
     errorLines: Map<number, string>;
     settings: EditorSettings;
-    diffs?: Map<number, DiffInfo>;
+    diffs?: DiffModel;
     readOnly?: boolean;
     foldRanges: FoldRange[];
     collapsedFoldStarts: Set<number>;
@@ -131,7 +131,7 @@ export class AnycodeEditor {
     private focusedDiffEnabled: boolean;
     private focusedDiffContextLines: number;
     private originalCode?: Code;
-    private diffs?: Map<number, DiffInfo>;
+    private diffs?: DiffModel;
     private readonly readOnly: boolean;
     private readonly ignoreEdits: boolean;
     private collapsedFoldStarts: Set<number> = new Set();
@@ -1984,7 +1984,7 @@ export class AnycodeEditor {
         }
 
         const multibufferCode = this.code as Code & {
-            getMultibufferDiffs?: () => Map<number, DiffInfo>;
+            getMultibufferDiffs?: () => DiffModel;
         };
         if (multibufferCode.getMultibufferDiffs) {
             this.diffs = multibufferCode.getMultibufferDiffs();
@@ -1992,7 +1992,7 @@ export class AnycodeEditor {
         }
 
         if (this.originalCode === this.code) {
-            this.diffs = new Map();
+            this.diffs = DiffModel.empty();
             return;
         }
 

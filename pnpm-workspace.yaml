@@ -3,7 +3,6 @@ packages:
   - anycode-react
   - anycode
 allowBuilds:
-  electron: set this to true or false
   esbuild: set this to true or false
   tree-sitter: set this to true or false
   tree-sitter-cli: set this to true or false

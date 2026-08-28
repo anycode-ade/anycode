@@ -21,8 +21,107 @@ export type DiffInfo = {
     hunkId: number;
 };
 
+export interface DiffHunk {
+    hunkId: number;
+    startLine: number;         // 1-indexed in current code (or marker line for deleted)
+    lineCount: number;         // number of lines in current code (0 for pure deletion)
+    changeType: ChangeType;    // 'added' | 'modified' | 'deleted'
+    oldLineNumbers?: number[]; // 1-indexed line numbers from original code (for modified/deleted)
+    ghostAnchorLine?: number;  // 1-indexed anchor line for ghost lines
+}
+
+export class DiffModel {
+    public readonly hunks: readonly DiffHunk[];
+    public readonly added: number;
+    public readonly removed: number;
+
+    constructor(hunks: readonly DiffHunk[] = [], added: number = 0, removed: number = 0) {
+        this.hunks = hunks;
+        this.added = added;
+        this.removed = removed;
+    }
+
+    public static empty(): DiffModel {
+        return new DiffModel([], 0, 0);
+    }
+
+    public get size(): number {
+        let count = 0;
+        for (const hunk of this.hunks) {
+            count += hunk.changeType === 'deleted' ? 1 : Math.max(1, hunk.lineCount);
+        }
+        return count;
+    }
+
+    public hasChanges(): boolean {
+        return this.hunks.length > 0;
+    }
+
+    public getHunks(): readonly DiffHunk[] {
+        return this.hunks;
+    }
+
+    public get(lineNumber: number): DiffInfo | undefined {
+        if (this.hunks.length === 0) return undefined;
+
+        let low = 0;
+        let high = this.hunks.length - 1;
+
+        while (low <= high) {
+            const mid = (low + high) >> 1;
+            const hunk = this.hunks[mid];
+            const endLine = hunk.startLine + Math.max(1, hunk.lineCount) - 1;
+
+            if (lineNumber < hunk.startLine) {
+                high = mid - 1;
+            } else if (lineNumber > endLine) {
+                low = mid + 1;
+            } else {
+                if (hunk.changeType === 'added') {
+                    return { changeType: 'added', hunkId: hunk.hunkId };
+                }
+                if (hunk.changeType === 'modified') {
+                    return { changeType: 'modified', oldLineNumbers: hunk.oldLineNumbers, hunkId: hunk.hunkId };
+                }
+                if (hunk.changeType === 'deleted') {
+                    return {
+                        changeType: 'deleted',
+                        oldLineNumbers: hunk.oldLineNumbers,
+                        ghostAnchorLine: hunk.ghostAnchorLine,
+                        hunkId: hunk.hunkId,
+                    };
+                }
+            }
+        }
+
+        return undefined;
+    }
+
+    *[Symbol.iterator](): IterableIterator<[number, DiffInfo]> {
+        for (const hunk of this.hunks) {
+            if (hunk.changeType === 'deleted') {
+                yield [hunk.startLine, {
+                    changeType: 'deleted',
+                    oldLineNumbers: hunk.oldLineNumbers,
+                    ghostAnchorLine: hunk.ghostAnchorLine,
+                    hunkId: hunk.hunkId,
+                }];
+            } else {
+                const count = Math.max(1, hunk.lineCount);
+                for (let i = 0; i < count; i++) {
+                    yield [hunk.startLine + i, {
+                        changeType: hunk.changeType,
+                        oldLineNumbers: hunk.oldLineNumbers,
+                        hunkId: hunk.hunkId,
+                    }];
+                }
+            }
+        }
+    }
+}
+
 export type GitChangesResult = {
-    diffs: Map<number, DiffInfo>;
+    diffs: DiffModel;
     added: number;
     removed: number;
 };
@@ -39,10 +138,81 @@ function normalizeLines(lines: string[] | string): string[] {
     return normalized.length === 1 && normalized[0] === '' ? [] : normalized;
 }
 
+function buildHunksFromJsDiff(
+    diffs: JsDiff.ArrayChange<string>[],
+    currentLineCount: number
+): { hunks: DiffHunk[]; added: number; removed: number } {
+    const hunks: DiffHunk[] = [];
+    let oldLine = 1;
+    let newLine = 1;
+    let hunkId = 0;
+    let added = 0;
+    let removed = 0;
+
+    for (let i = 0; i < diffs.length; i++) {
+        const diff = diffs[i];
+        const { added: partAdded, removed: partRemoved } = diff;
+        const count = diff.count ?? diff.value.length;
+
+        if (partAdded || partRemoved) {
+            if (partRemoved) {
+                removed += count;
+                const deletedLineNumbers = new Array<number>(count);
+                for (let j = 0; j < count; j++) {
+                    deletedLineNumbers[j] = oldLine + j;
+                }
+                oldLine += count;
+
+                const next = diffs[i + 1];
+                if (next?.added) {
+                    const addedCount = next.count ?? next.value.length;
+                    added += addedCount;
+                    hunks.push({
+                        hunkId: hunkId++,
+                        startLine: newLine,
+                        lineCount: addedCount,
+                        changeType: 'modified',
+                        oldLineNumbers: deletedLineNumbers,
+                    });
+                    newLine += addedCount;
+                    i++; // skip the added block
+                } else {
+                    const ghostAnchorLine = Math.max(1, newLine);
+                    const markerLine = Math.max(1, Math.min(ghostAnchorLine, currentLineCount));
+                    hunks.push({
+                        hunkId: hunkId++,
+                        startLine: markerLine,
+                        lineCount: 0,
+                        changeType: 'deleted',
+                        oldLineNumbers: deletedLineNumbers,
+                        ghostAnchorLine,
+                    });
+                }
+            } else {
+                // Pure addition
+                added += count;
+                hunks.push({
+                    hunkId: hunkId++,
+                    startLine: newLine,
+                    lineCount: count,
+                    changeType: 'added',
+                });
+                newLine += count;
+            }
+        } else {
+            // Context lines (unchanged)
+            oldLine += count;
+            newLine += count;
+        }
+    }
+
+    return { hunks, added, removed };
+}
+
 export function computeGitChanges(
     original: string[] | string,
     current: string[] | string
-): Map<number, DiffInfo> {
+): DiffModel {
     return computeGitChangesWithStats(original, current).diffs;
 }
 
@@ -50,7 +220,6 @@ export function computeGitChangesWithStats(
     original: string[] | string,
     current: string[] | string
 ): GitChangesResult {
-    const changes = new Map<number, DiffInfo>();
     const originalLines = normalizeLines(original);
     const currentLines = normalizeLines(current);
 
@@ -67,8 +236,38 @@ export function computeGitChangesWithStats(
             }
         }
         if (identical) {
-            return { diffs: changes, added: 0, removed: 0 };
+            return { diffs: DiffModel.empty(), added: 0, removed: 0 };
         }
+    }
+
+    if (origLen === 0 && currLen === 0) {
+        return { diffs: DiffModel.empty(), added: 0, removed: 0 };
+    }
+
+    if (origLen === 0) {
+        const hunk: DiffHunk = {
+            hunkId: 0,
+            startLine: 1,
+            lineCount: currLen,
+            changeType: 'added',
+        };
+        return { diffs: new DiffModel([hunk], currLen, 0), added: currLen, removed: 0 };
+    }
+
+    if (currLen === 0) {
+        const deletedLineNumbers = new Array<number>(origLen);
+        for (let i = 0; i < origLen; i++) {
+            deletedLineNumbers[i] = i + 1;
+        }
+        const hunk: DiffHunk = {
+            hunkId: 0,
+            startLine: 1,
+            lineCount: 0,
+            changeType: 'deleted',
+            oldLineNumbers: deletedLineNumbers,
+            ghostAnchorLine: 1,
+        };
+        return { diffs: new DiffModel([hunk], 0, origLen), added: 0, removed: origLen };
     }
 
     // Common prefix trimming
@@ -88,7 +287,38 @@ export function computeGitChangesWithStats(
     }
 
     if (prefix === origLen && prefix === currLen) {
-        return { diffs: changes, added: 0, removed: 0 };
+        return { diffs: DiffModel.empty(), added: 0, removed: 0 };
+    }
+
+    const trimmedOrigLen = origLen - prefix - suffix;
+    const trimmedCurrLen = currLen - prefix - suffix;
+
+    if (trimmedOrigLen === 0 && trimmedCurrLen > 0) {
+        const hunk: DiffHunk = {
+            hunkId: 0,
+            startLine: prefix + 1,
+            lineCount: trimmedCurrLen,
+            changeType: 'added',
+        };
+        return { diffs: new DiffModel([hunk], trimmedCurrLen, 0), added: trimmedCurrLen, removed: 0 };
+    }
+
+    if (trimmedCurrLen === 0 && trimmedOrigLen > 0) {
+        const deletedLineNumbers = new Array<number>(trimmedOrigLen);
+        for (let j = 0; j < trimmedOrigLen; j++) {
+            deletedLineNumbers[j] = prefix + 1 + j;
+        }
+        const ghostAnchorLine = Math.max(1, prefix + 1);
+        const markerLine = Math.max(1, Math.min(ghostAnchorLine, currLen === 0 ? 1 : currLen));
+        const hunk: DiffHunk = {
+            hunkId: 0,
+            startLine: markerLine,
+            lineCount: 0,
+            changeType: 'deleted',
+            oldLineNumbers: deletedLineNumbers,
+            ghostAnchorLine,
+        };
+        return { diffs: new DiffModel([hunk], 0, trimmedOrigLen), added: 0, removed: trimmedOrigLen };
     }
 
     const trimmedOriginal = originalLines.slice(prefix, origLen - suffix);
@@ -108,82 +338,13 @@ export function computeGitChangesWithStats(
     }
 
     const currentLineCount = currentLines.length === 0 ? 1 : currentLines.length;
+    const result = buildHunksFromJsDiff(diffs, currentLineCount);
 
-    let oldLine = 1;
-    let newLine = 1;
-    let hunkId = 0;
-    let inChangeBlock = false;
-    let added = 0;
-    let removed = 0;
-
-    for (let i = 0; i < diffs.length; i++) {
-        const diff = diffs[i];
-        const { added: partAdded, removed: partRemoved } = diff;
-        const count = diff.count ?? diff.value.length;
-
-        if (partAdded) added += count;
-        if (partRemoved) removed += count;
-
-        if (partAdded || partRemoved) {
-            inChangeBlock = true;
-
-            if (partRemoved) {
-                const deletedLineNumbers: number[] = [];
-                for (let j = 0; j < count; j++) {
-                    deletedLineNumbers.push(oldLine + j);
-                }
-                oldLine += count;
-
-                const next = diffs[i + 1];
-                if (next?.added) {
-                    const addedCount = next.value.length;
-                    added += addedCount;
-                    for (let j = 0; j < addedCount; j++) {
-                        changes.set(newLine + j, {
-                            changeType: 'modified',
-                            oldLineNumbers: deletedLineNumbers,
-                            hunkId: hunkId,
-                        });
-                    }
-                    newLine += addedCount;
-                    i++; // skip the added block
-                } else {
-                    const ghostAnchorLine = Math.max(1, newLine);
-                    const markerLine = Math.max(1, Math.min(ghostAnchorLine, currentLineCount));
-
-                    changes.set(markerLine, {
-                        changeType: 'deleted',
-                        oldLineNumbers: deletedLineNumbers,
-                        ghostAnchorLine,
-                        hunkId: hunkId,
-                    });
-                }
-            } else {
-                // Pure addition
-                for (let j = 0; j < count; j++) {
-                    changes.set(newLine + j, {
-                        changeType: 'added',
-                        hunkId: hunkId,
-                    });
-                }
-                newLine += count;
-            }
-        } else {
-            // Context lines (unchanged)
-            if (inChangeBlock) {
-                hunkId++;
-                inChangeBlock = false;
-            }
-            oldLine += count;
-            newLine += count;
-        }
-    }
-
-    if (inChangeBlock) {
-        hunkId++;
-    }
-
-    return { diffs: changes, added, removed };
+    return {
+        diffs: new DiffModel(result.hunks, result.added, result.removed),
+        added: result.added,
+        removed: result.removed,
+    };
 }
 
 export type LineSource = {
@@ -192,14 +353,50 @@ export type LineSource = {
     line(i: number): string;
 };
 
+function getEffectiveSourceLength(source: LineSource): number {
+    const len = source.linesLength();
+    if (len === 0) return 0;
+    if (len === 1 && source.lineLength(0) === 0) return 0;
+    return len;
+}
+
 export function computeGitChangesFromSource(
     original: LineSource,
     current: LineSource,
     dirtyRange?: { start: number; end: number } | null
 ): GitChangesResult {
-    const changes = new Map<number, DiffInfo>();
-    const origLen = original.linesLength();
-    const currLen = current.linesLength();
+    const origLen = getEffectiveSourceLength(original);
+    const currLen = getEffectiveSourceLength(current);
+
+    if (origLen === 0 && currLen === 0) {
+        return { diffs: DiffModel.empty(), added: 0, removed: 0 };
+    }
+
+    if (origLen === 0) {
+        const hunk: DiffHunk = {
+            hunkId: 0,
+            startLine: 1,
+            lineCount: currLen,
+            changeType: 'added',
+        };
+        return { diffs: new DiffModel([hunk], currLen, 0), added: currLen, removed: 0 };
+    }
+
+    if (currLen === 0) {
+        const deletedLineNumbers = new Array<number>(origLen);
+        for (let i = 0; i < origLen; i++) {
+            deletedLineNumbers[i] = i + 1;
+        }
+        const hunk: DiffHunk = {
+            hunkId: 0,
+            startLine: 1,
+            lineCount: 0,
+            changeType: 'deleted',
+            oldLineNumbers: deletedLineNumbers,
+            ghostAnchorLine: 1,
+        };
+        return { diffs: new DiffModel([hunk], 0, origLen), added: 0, removed: origLen };
+    }
 
     // Find common prefix (using dirtyRange if available)
     let prefix = 0;
@@ -231,7 +428,38 @@ export function computeGitChangesFromSource(
     }
 
     if (prefix === origLen && prefix === currLen) {
-        return { diffs: changes, added: 0, removed: 0 };
+        return { diffs: DiffModel.empty(), added: 0, removed: 0 };
+    }
+
+    const trimmedOrigLen = origLen - prefix - suffix;
+    const trimmedCurrLen = currLen - prefix - suffix;
+
+    if (trimmedOrigLen === 0 && trimmedCurrLen > 0) {
+        const hunk: DiffHunk = {
+            hunkId: 0,
+            startLine: prefix + 1,
+            lineCount: trimmedCurrLen,
+            changeType: 'added',
+        };
+        return { diffs: new DiffModel([hunk], trimmedCurrLen, 0), added: trimmedCurrLen, removed: 0 };
+    }
+
+    if (trimmedCurrLen === 0 && trimmedOrigLen > 0) {
+        const deletedLineNumbers = new Array<number>(trimmedOrigLen);
+        for (let j = 0; j < trimmedOrigLen; j++) {
+            deletedLineNumbers[j] = prefix + 1 + j;
+        }
+        const ghostAnchorLine = Math.max(1, prefix + 1);
+        const markerLine = Math.max(1, Math.min(ghostAnchorLine, currLen === 0 ? 1 : currLen));
+        const hunk: DiffHunk = {
+            hunkId: 0,
+            startLine: markerLine,
+            lineCount: 0,
+            changeType: 'deleted',
+            oldLineNumbers: deletedLineNumbers,
+            ghostAnchorLine,
+        };
+        return { diffs: new DiffModel([hunk], 0, trimmedOrigLen), added: 0, removed: trimmedOrigLen };
     }
 
     const trimmedOriginal: string[] = [];
@@ -258,80 +486,11 @@ export function computeGitChangesFromSource(
     }
 
     const currentLineCount = currLen === 0 ? 1 : currLen;
+    const result = buildHunksFromJsDiff(diffs, currentLineCount);
 
-    let oldLine = 1;
-    let newLine = 1;
-    let hunkId = 0;
-    let inChangeBlock = false;
-    let added = 0;
-    let removed = 0;
-
-    for (let i = 0; i < diffs.length; i++) {
-        const diff = diffs[i];
-        const { added: partAdded, removed: partRemoved } = diff;
-        const count = diff.count ?? diff.value.length;
-
-        if (partAdded) added += count;
-        if (partRemoved) removed += count;
-
-        if (partAdded || partRemoved) {
-            inChangeBlock = true;
-
-            if (partRemoved) {
-                const deletedLineNumbers: number[] = [];
-                for (let j = 0; j < count; j++) {
-                    deletedLineNumbers.push(oldLine + j);
-                }
-                oldLine += count;
-
-                const next = diffs[i + 1];
-                if (next?.added) {
-                    const addedCount = next.value.length;
-                    added += addedCount;
-                    for (let j = 0; j < addedCount; j++) {
-                        changes.set(newLine + j, {
-                            changeType: 'modified',
-                            oldLineNumbers: deletedLineNumbers,
-                            hunkId: hunkId,
-                        });
-                    }
-                    newLine += addedCount;
-                    i++; // skip the added block
-                } else {
-                    const ghostAnchorLine = Math.max(1, newLine);
-                    const markerLine = Math.max(1, Math.min(ghostAnchorLine, currentLineCount));
-
-                    changes.set(markerLine, {
-                        changeType: 'deleted',
-                        oldLineNumbers: deletedLineNumbers,
-                        ghostAnchorLine,
-                        hunkId: hunkId,
-                    });
-                }
-            } else {
-                // Pure addition
-                for (let j = 0; j < count; j++) {
-                    changes.set(newLine + j, {
-                        changeType: 'added',
-                        hunkId: hunkId,
-                    });
-                }
-                newLine += count;
-            }
-        } else {
-            // Context lines (unchanged)
-            if (inChangeBlock) {
-                hunkId++;
-                inChangeBlock = false;
-            }
-            oldLine += count;
-            newLine += count;
-        }
-    }
-
-    if (inChangeBlock) {
-        hunkId++;
-    }
-
-    return { diffs: changes, added, removed };
+    return {
+        diffs: new DiffModel(result.hunks, result.added, result.removed),
+        added: result.added,
+        removed: result.removed,
+    };
 }

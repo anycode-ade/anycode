@@ -162,16 +162,23 @@ export class ScrollbarMarkersRenderer {
         }
     }
 
+    private getVisualIndexCallback?: (line: number) => number;
+    private getLineIndexCallback?: (visualIndex: number) => number;
+
     public render(
         state: EditorState | null,
         includeSearch: boolean = true,
         wordLines: number[] = this.wordLines,
-        visualRows: VisualRow[] = []
+        getVisualIndex?: (line: number) => number,
+        getLineIndex?: (visualIndex: number) => number,
+        totalVisualRowsOverride?: number
     ) {
         if (!this.enabled) return;
 
         this.state = state;
         this.includeSearch = includeSearch;
+        this.getVisualIndexCallback = getVisualIndex;
+        this.getLineIndexCallback = getLineIndex;
         const rightOffset = this.getScrollbarOffset();
 
         if (!state) {
@@ -186,11 +193,11 @@ export class ScrollbarMarkersRenderer {
             ? search.getMatches()
             : [];
         const nextWordLines = wordLines;
-        this.visualRows = visualRows && visualRows.length > 0 ? visualRows : null;
-        const totalRows = Math.max(1, visualRows?.length || state.code.linesLength());
+        this.visualRows = null;
+        const totalRows = Math.max(1, totalVisualRowsOverride ?? state.code.linesLength());
         const layoutChanged = totalRows !== this.totalRows;
         this.totalRows = totalRows;
-        const nextDiffRanges = this.getDiffRanges(state, visualRows);
+        const nextDiffRanges = this.getDiffRanges(state);
         const nextErrorLines = this.getErrorLines(state);
         const selected = search.getSelected();
         const nextSearchMarkers = searchMatches.map((match, index) => ({
@@ -449,25 +456,11 @@ export class ScrollbarMarkersRenderer {
     }
 
     private getVisualRowForLine(line: number): number {
-        if (!this.visualRows || this.visualRows.length === 0) {
-            return line;
-        }
-        for (let i = 0; i < this.visualRows.length; i++) {
-            const r = this.visualRows[i];
-            if (r.kind === 'real' && r.lineIndex === line) return i;
-        }
-        return line;
+        return this.getVisualIndexCallback ? this.getVisualIndexCallback(line) : line;
     }
 
     private getLineForVisualRow(visualRow: number, targetLine?: number): number {
-        if (!this.visualRows || this.visualRows.length === 0) {
-            return visualRow;
-        }
-        const row = this.visualRows[visualRow];
-        if (!row) return targetLine ?? visualRow;
-        if (row.kind === 'real') return row.lineIndex;
-        if (row.kind === 'ghost') return Math.max(0, row.anchorLine - 1);
-        return Math.max(0, Math.round((row.hiddenStart + row.hiddenEnd) / 2));
+        return this.getLineIndexCallback ? this.getLineIndexCallback(visualRow) : (targetLine ?? visualRow);
     }
 
     private createLineMarker(className: string, line: number, totalRows: number): HTMLSpanElement {
@@ -482,63 +475,28 @@ export class ScrollbarMarkersRenderer {
         return 0;
     }
 
-    private getDiffRanges(state: EditorState, visualRows: VisualRow[] | null): DiffRange[] {
-        if (!state.diffs || state.diffs.size === 0) return [];
+    private getDiffRanges(state: EditorState): DiffRange[] {
+        if (!state.diffs || !state.diffs.hasChanges()) return [];
 
         const rangesByHunk = new Map<number, DiffRange>();
+        const hunks = state.diffs.getHunks();
+        const totalLines = state.code.linesLength();
 
-        if (visualRows && visualRows.length > 0) {
-            const typeByHunk = new Map<number, DiffInfo['changeType']>();
-            const targetLineByHunk = new Map<number, number>();
+        for (const hunk of hunks) {
+            const rawStart = Math.max(0, Math.min(totalLines - 1, hunk.startLine - 1));
+            const rawEnd = hunk.changeType === 'deleted'
+                ? rawStart
+                : Math.max(rawStart, Math.min(totalLines - 1, hunk.startLine + Math.max(1, hunk.lineCount) - 2));
 
-            for (const [lineNumber, info] of state.diffs) {
-                typeByHunk.set(info.hunkId, info.changeType);
-                targetLineByHunk.set(
-                    info.hunkId,
-                    Math.max(0, Math.min(state.code.linesLength() - 1, lineNumber - 1))
-                );
-            }
+            const startRow = this.getVisualRowForLine(rawStart);
+            const endRow = this.getVisualRowForLine(rawEnd);
 
-            visualRows.forEach((row, rowIndex) => {
-                const info = row.kind === 'real'
-                    ? state.diffs?.get(row.lineIndex + 1)
-                    : row.kind === 'ghost'
-                        ? { hunkId: row.hunkId, changeType: typeByHunk.get(row.hunkId) ?? 'deleted' }
-                        : undefined;
-                if (!info) return;
-
-                const existing = rangesByHunk.get(info.hunkId);
-                if (!existing) {
-                    rangesByHunk.set(info.hunkId, {
-                        startRow: rowIndex,
-                        endRow: rowIndex,
-                        targetLine: targetLineByHunk.get(info.hunkId) ?? 0,
-                        type: info.changeType,
-                    });
-                    return;
-                }
-
-                existing.startRow = Math.min(existing.startRow, rowIndex);
-                existing.endRow = Math.max(existing.endRow, rowIndex);
-                if (existing.type !== info.changeType) existing.type = 'modified';
+            rangesByHunk.set(hunk.hunkId, {
+                startRow,
+                endRow,
+                targetLine: rawStart,
+                type: hunk.changeType,
             });
-        } else {
-            for (const [lineNumber, info] of state.diffs) {
-                const rowLine = Math.max(0, lineNumber - 1);
-                const existing = rangesByHunk.get(info.hunkId);
-                if (!existing) {
-                    rangesByHunk.set(info.hunkId, {
-                        startRow: rowLine,
-                        endRow: rowLine,
-                        targetLine: Math.max(0, Math.min(state.code.linesLength() - 1, rowLine)),
-                        type: info.changeType,
-                    });
-                } else {
-                    existing.startRow = Math.min(existing.startRow, rowLine);
-                    existing.endRow = Math.max(existing.endRow, rowLine);
-                    if (existing.type !== info.changeType) existing.type = 'modified';
-                }
-            }
         }
 
         return Array.from(rangesByHunk.values());

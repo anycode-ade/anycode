@@ -2,7 +2,7 @@ import { CSS_CLASS } from "../constants";
 import { AnycodeLine, GhostElement, GutterElement } from "../types";
 import { isGhostElement } from "../utils";
 import { EditorSettings } from "../editor";
-import { DiffInfo, ChangeType } from "../diff";
+import { DiffInfo, ChangeType, DiffModel } from "../diff";
 import { Code, HighlighedNode, WordHighlight } from "../code";
 import type { GhostRow, SeparatorRow, VisualRow } from "./Renderer";
 
@@ -197,137 +197,119 @@ export class DiffRenderer {
     }
 
     /**
+     * Returns the list of non-overlapping [start, end] 0-indexed line ranges that should be visible,
+     * or `undefined` when focused diff is disabled (meaning "show all lines").
+     */
+    public computeVisibleRanges(
+        totalLines: number,
+        diffs: DiffModel | Map<number, DiffInfo> | undefined,
+        code?: Code,
+    ): { start: number; end: number }[] | undefined {
+        if (!this.focusedDiffEnabled) {
+            return undefined;
+        }
+
+        const hasChanges = diffs instanceof DiffModel
+            ? diffs.hasChanges()
+            : Boolean(diffs && diffs.size > 0);
+
+        if (!diffs || !hasChanges) {
+            return totalLines > 0 ? [{ start: 0, end: totalLines - 1 }] : [];
+        }
+
+        const rawRanges: { start: number; end: number }[] = [];
+        const clamp = (line: number) => Math.max(0, Math.min(totalLines - 1, line));
+
+        if (diffs instanceof DiffModel) {
+            for (const hunk of diffs.getHunks()) {
+                const start = clamp(hunk.startLine - 1);
+                const end = hunk.changeType === 'deleted'
+                    ? start
+                    : clamp(hunk.startLine + Math.max(1, hunk.lineCount) - 2);
+
+                let rStart = start;
+                for (let step = 1; step <= this.focusedDiffContextLines; step++) {
+                    const candidate = start - step;
+                    if (candidate < 0) break;
+                    if (code && !code.isSameFileBody(start, candidate)) break;
+                    rStart = candidate;
+                }
+
+                let rEnd = end;
+                for (let step = 1; step <= this.focusedDiffContextLines; step++) {
+                    const candidate = end + step;
+                    if (candidate >= totalLines) break;
+                    if (code && !code.isSameFileBody(end, candidate)) break;
+                    rEnd = candidate;
+                }
+
+                rawRanges.push({ start: rStart, end: rEnd });
+            }
+        } else {
+            for (const [lineNumber] of diffs) {
+                const center = lineNumber - 1;
+                let rStart = center;
+                for (let step = 1; step <= this.focusedDiffContextLines; step++) {
+                    const candidate = center - step;
+                    if (candidate < 0) break;
+                    if (code && !code.isSameFileBody(center, candidate)) break;
+                    rStart = candidate;
+                }
+                let rEnd = center;
+                for (let step = 1; step <= this.focusedDiffContextLines; step++) {
+                    const candidate = center + step;
+                    if (candidate >= totalLines) break;
+                    if (code && !code.isSameFileBody(center, candidate)) break;
+                    rEnd = candidate;
+                }
+                rawRanges.push({ start: rStart, end: rEnd });
+            }
+        }
+
+        for (const range of this.focusedDiffExpandedRanges) {
+            rawRanges.push({ start: clamp(range.start), end: clamp(range.end) });
+        }
+
+        if (rawRanges.length === 0) {
+            return totalLines > 0 ? [{ start: 0, end: totalLines - 1 }] : [];
+        }
+
+        // Sort and merge overlapping or adjacent ranges in O(H log H)
+        rawRanges.sort((a, b) => a.start - b.start);
+        const merged: { start: number; end: number }[] = [rawRanges[0]];
+
+        for (let i = 1; i < rawRanges.length; i++) {
+            const current = rawRanges[i];
+            const prev = merged[merged.length - 1];
+
+            if (current.start <= prev.end + 1) {
+                prev.end = Math.max(prev.end, current.end);
+            } else {
+                merged.push(current);
+            }
+        }
+
+        return merged;
+    }
+
+    /**
      * Returns the set of 0-indexed real line indices that should be rendered,
      * or `undefined` when focused diff is disabled (meaning "show all lines").
      */
     public computeVisibleLines(
         totalLines: number,
-        diffs: Map<number, DiffInfo> | undefined,
+        diffs: DiffModel | Map<number, DiffInfo> | undefined,
         code?: Code,
     ): Set<number> | undefined {
-        if (!this.focusedDiffEnabled) {
-            return undefined;
-        }
-
+        const ranges = this.computeVisibleRanges(totalLines, diffs, code);
+        if (!ranges) return undefined;
         const visible = new Set<number>();
-        if (!diffs || diffs.size === 0) {
-            for (let i = 0; i < totalLines; i++) visible.add(i);
-            return visible;
-        }
-
-        const clamp = (line: number) => Math.max(0, Math.min(totalLines - 1, line));
-
-        for (const [lineNumber] of diffs) {
-            const center = lineNumber - 1;
-            visible.add(center);
-
-            for (let step = 1; step <= this.focusedDiffContextLines; step++) {
-                const candidate = center - step;
-                if (candidate < 0) break;
-                if (code && !code.isSameFileBody(center, candidate)) break;
-                visible.add(candidate);
-            }
-
-            for (let step = 1; step <= this.focusedDiffContextLines; step++) {
-                const candidate = center + step;
-                if (candidate >= totalLines) break;
-                if (code && !code.isSameFileBody(center, candidate)) break;
-                visible.add(candidate);
-            }
-        }
-
-        for (const range of this.focusedDiffExpandedRanges) {
-            const start = clamp(range.start);
-            const end = clamp(range.end);
-            for (let i = start; i <= end; i++) {
+        for (const r of ranges) {
+            for (let i = r.start; i <= r.end; i++) {
                 visible.add(i);
             }
         }
-
         return visible;
-    }
-
-    /**
-     * Walk through `rows` and insert `SeparatorRow`s wherever consecutive real
-     * lines are non-contiguous (i.e. some lines were hidden).
-     * No-op when focused diff is disabled.
-     */
-    public insertSeparators(
-        rows: VisualRow[],
-        totalLines: number,
-        isHiddenByFold?: (lineIndex: number) => boolean
-    ): VisualRow[] {
-        if (!this.focusedDiffEnabled) {
-            return rows;
-        }
-
-        const result: VisualRow[] = [];
-        let prevRealLine: number | null = null;
-
-        const addSeparatorsForRange = (start: number, end: number) => {
-            let currentStart: number | null = null;
-
-            for (let i = start; i <= end; i++) {
-                const folded = isHiddenByFold ? isHiddenByFold(i) : false;
-                if (!folded) {
-                    if (currentStart === null) {
-                        currentStart = i;
-                    }
-                } else {
-                    if (currentStart !== null) {
-                        const count = i - currentStart;
-                        if (count === 1) {
-                            result.push({ kind: 'real', lineIndex: currentStart });
-                        } else if (count > 1) {
-                            result.push({
-                                kind: 'separator',
-                                hiddenStart: currentStart,
-                                hiddenEnd: i - 1,
-                                hiddenCount: count,
-                            });
-                        }
-                        currentStart = null;
-                    }
-                }
-            }
-            if (currentStart !== null) {
-                const count = end - currentStart + 1;
-                if (count === 1) {
-                    result.push({ kind: 'real', lineIndex: currentStart });
-                } else if (count > 1) {
-                    result.push({
-                        kind: 'separator',
-                        hiddenStart: currentStart,
-                        hiddenEnd: end,
-                        hiddenCount: count,
-                    });
-                }
-            }
-        };
-
-        for (const row of rows) {
-            if (row.kind === 'real') {
-                if (prevRealLine === null) {
-                    if (row.lineIndex > 0) {
-                        addSeparatorsForRange(0, row.lineIndex - 1);
-                    }
-                } else if (row.lineIndex - prevRealLine > 1) {
-                    addSeparatorsForRange(prevRealLine + 1, row.lineIndex - 1);
-                }
-                prevRealLine = row.lineIndex;
-            }
-            result.push(row);
-        }
-
-        if (prevRealLine !== null) {
-            if (prevRealLine < totalLines - 1) {
-                addSeparatorsForRange(prevRealLine + 1, totalLines - 1);
-            }
-        } else if (totalLines > 0) {
-            addSeparatorsForRange(0, totalLines - 1);
-        }
-
-        return result;
     }
 
     /**
