@@ -148,11 +148,19 @@ export class Renderer {
     }
 
     public clean() {
+        this.cancelCursorRaf();
         if (this.expandBufferRafId !== null) {
             cancelAnimationFrame(this.expandBufferRafId);
             this.expandBufferRafId = null;
         }
         this.scrollbarMarkersRenderer.clean();
+    }
+
+    public cancelCursorRaf(): void {
+        if (this.cursorRafId !== null) {
+            cancelAnimationFrame(this.cursorRafId);
+            this.cursorRafId = null;
+        }
     }
 
     private updateVisualSegments(state: EditorState): void {
@@ -1135,7 +1143,7 @@ export class Renderer {
         }
 
         // Render cursor or selection
-        this.renderCursorOrSelection(state, true);
+        this.renderCursorOrSelection(state);
         this.updateContentMinWidth(state, visible.startIndex, visible.endIndex);
 
     }
@@ -1232,13 +1240,20 @@ export class Renderer {
             const scrollTop = this.lastScrollTop;
             const clientHeight = this.lastClientHeight;
 
-            if (typeof requestAnimationFrame !== 'undefined') {
+            if (lineDiv.isConnected) {
+                if (this.cursorRafId !== null) {
+                    cancelAnimationFrame(this.cursorRafId);
+                    this.cursorRafId = null;
+                }
+                moveCursor(lineDiv, column, focus, visualIndex, lineHeight, gutterWidth, scrollTop, clientHeight);
+            } else if (typeof requestAnimationFrame !== 'undefined') {
                 if (this.cursorRafId !== null) {
                     cancelAnimationFrame(this.cursorRafId);
                 }
                 this.cursorRafId = requestAnimationFrame(() => {
                     this.cursorRafId = null;
                     if (!lineDiv.isConnected) return;
+                    if (state && !state.cursorActive) return;
                     moveCursor(lineDiv, column, focus, visualIndex, lineHeight, gutterWidth, scrollTop, clientHeight);
                 });
             } else {

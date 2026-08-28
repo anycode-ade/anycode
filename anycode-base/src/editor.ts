@@ -232,6 +232,7 @@ export class AnycodeEditor {
 
         this.codeContent = document.createElement('div');
         this.codeContent.className = 'code';
+        this.codeContent.tabIndex = 0;
         this.codeContent.contentEditable = this.readOnly ? "false" : "true";
         this.codeContent.spellcheck = false;
         (this.codeContent as any).autocorrect = "off";
@@ -757,6 +758,7 @@ export class AnycodeEditor {
 
     public deactivateCursor(): void {
         this.cursorActive = false;
+        this.renderer.cancelCursorRaf();
     }
 
     private getEditorState(): EditorState {
@@ -897,6 +899,10 @@ export class AnycodeEditor {
         this.offset = o;
         this.updateWordHighlight();
 
+        this.activateCursor();
+        if (!this.readOnly && document.activeElement !== this.codeContent) {
+            this.codeContent.focus({ preventScroll: true });
+        }
         this.renderCursorOrSelection();
 
         if (this.onCursorChangeCallback) {
@@ -1031,6 +1037,9 @@ export class AnycodeEditor {
         }
         if (isInsideDiagnostic(e.target as Node)) return;
         this.activateCursor();
+        if (!this.readOnly && document.activeElement !== this.codeContent) {
+            this.codeContent.focus({ preventScroll: true });
+        }
         e.preventDefault();
         this.clearPendingHover();
         this.closeHover();
