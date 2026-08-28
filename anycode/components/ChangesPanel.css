@@ -7,6 +7,8 @@
     font-family: var(--interface-font-family);
     font-size: var(--interface-font-size, 14px);
     font-weight: var(--interface-font-weight, 700);
+    contain: strict;
+    isolation: isolate;
 }
 
 .changes-panel-title {
@@ -233,9 +235,9 @@
     align-items: center;
     justify-content: flex-end;
     position: relative;
-    width: 78px;
-    min-width: 78px;
     min-height: 20px;
+    min-width: 20px;
+    flex: 0 0 auto;
 }
 
 .changes-list-title {
@@ -258,10 +260,9 @@
     font-size: 0.79em;
     line-height: 1;
     font-variant-numeric: tabular-nums;
+    white-space: nowrap;
     opacity: 0.95;
-    position: absolute;
-    inset: 0;
-    justify-content: flex-end;
+    flex-shrink: 0;
 }
 
 .changes-list-header-actions {
@@ -269,7 +270,9 @@
     align-items: center;
     gap: 4px;
     position: absolute;
-    inset: 0;
+    right: 0;
+    top: 50%;
+    transform: translateY(-50%);
     justify-content: flex-end;
     visibility: hidden;
     opacity: 0;
@@ -320,6 +323,20 @@
     flex: 1;
     overflow-y: auto;
     padding: 4px;
+    position: relative;
+}
+
+.changes-virtual-spacer {
+    position: relative;
+    width: 100%;
+}
+
+.changes-virtual-row {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    box-sizing: border-box;
 }
 
 .changes-list:focus,
@@ -656,14 +673,16 @@
 
 .changes-stat-added {
     color: var(--theme-git-added, #79c97d);
-    min-width: 0;
+    white-space: nowrap;
+    flex-shrink: 0;
     text-align: left;
     padding: 0;
 }
 
 .changes-stat-removed {
     color: var(--theme-git-removed, rgba(248, 65, 61, 1));
-    min-width: 0;
+    white-space: nowrap;
+    flex-shrink: 0;
     text-align: left;
     padding: 0;
 }

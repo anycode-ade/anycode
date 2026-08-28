@@ -107,6 +107,8 @@
     /* background-color: #1e1e1e; */
     position: relative;
     height: 100%;
+    contain: strict;
+    isolation: isolate;
 }
 
 .no-editor {
@@ -157,6 +159,8 @@
     height: 100%;
     position: relative;
     color: var(--theme-foreground, var(--foreground-color, #e0e0e0));
+    contain: strict;
+    isolation: isolate;
 }
 
 .file-system-panel::after {

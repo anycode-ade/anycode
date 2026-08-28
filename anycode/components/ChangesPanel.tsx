@@ -74,6 +74,7 @@ interface ChangesPanelItemProps {
     isActive: boolean;
     isSelected: boolean;
     fileIconsStyle?: 'colored' | 'monochrome' | 'disabled';
+    style?: React.CSSProperties;
     onClick: (rowId: string, path: string) => void;
     onRevert: (path: string) => void;
     onStage: (path: string) => void;
@@ -106,6 +107,7 @@ const ChangesPanelItemImpl: React.FC<ChangesPanelItemProps> = ({
     isActive,
     isSelected,
     fileIconsStyle = 'colored',
+    style,
     onClick,
     onRevert,
     onStage,
@@ -141,7 +143,8 @@ const ChangesPanelItemImpl: React.FC<ChangesPanelItemProps> = ({
     return (
         <div
             ref={refCallback}
-            className={`changes-item ${isActive ? 'active' : ''} ${isSelected ? 'selected' : ''}`}
+            style={style}
+            className={`changes-virtual-row changes-item ${isActive ? 'active' : ''} ${isSelected ? 'selected' : ''}`}
             onClick={() => onClick(rowId, file.path)}
             role="option"
             aria-selected={isSelected}
@@ -195,10 +198,39 @@ const areChangesPanelItemsEqual = (
     && prev.onStage === next.onStage
     && prev.onUnstage === next.onUnstage
     && prev.setItemRef === next.setItemRef
+    && prev.style?.transform === next.style?.transform
+    && prev.style?.height === next.style?.height
     && areChangedFileEqual(prev.file, next.file)
 );
 
 const ChangesPanelItem = React.memo(ChangesPanelItemImpl, areChangesPanelItemsEqual);
+
+const FILE_ROW_HEIGHT = 32;
+const GROUP_HEADER_HEIGHT = 28;
+const OVERSCAN_PX = 250;
+
+export type VirtualChangesRow =
+    | {
+          key: string;
+          kind: 'group-header';
+          groupType: 'merge' | 'staged' | 'changed';
+          title: string;
+          stats: { added: number; removed: number };
+          onAction?: () => void;
+          actionTitle?: string;
+          actionLabel?: string;
+          top: number;
+          height: number;
+      }
+    | {
+          key: string;
+          kind: 'file';
+          file: ChangedFile;
+          mode: 'merge' | 'staged' | 'changed' | 'flat';
+          rowId: string;
+          top: number;
+          height: number;
+      };
 
 const ChangesPanelImpl: React.FC<ChangesPanelProps> = ({
     files,
@@ -225,9 +257,24 @@ const ChangesPanelImpl: React.FC<ChangesPanelProps> = ({
     });
     const [activeFilePath, setActiveFilePath] = useState<string | null>(null);
     const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
+    const [scrollTop, setScrollTop] = useState(0);
+    const [viewportHeight, setViewportHeight] = useState(600);
     const listRef = usePersistedScroll<HTMLDivElement>('changes-panel', 'session', [files]);
     const itemRefs = useRef<Map<string, HTMLDivElement>>(new Map());
     const shouldAutoScrollRef = useRef(false);
+
+    useEffect(() => {
+        const list = listRef.current;
+        if (!list) return;
+        const updateSize = () => {
+            setViewportHeight(list.clientHeight || 600);
+            setScrollTop(list.scrollTop);
+        };
+        updateSize();
+        const observer = new ResizeObserver(updateSize);
+        observer.observe(list);
+        return () => observer.disconnect();
+    }, [listRef]);
 
     const setItemRef = useCallback((rowId: string, element: HTMLDivElement | null) => {
         if (element) {
@@ -261,6 +308,7 @@ const ChangesPanelImpl: React.FC<ChangesPanelProps> = ({
 
         return files.map((file) => ({ file, mode: 'flat' as const, rowId: `flat::${file.path}` }));
     }, [changedFiles, conflictingFiles, files, hasSections, stagedFiles]);
+
     const countGroupStats = useCallback((groupFiles: ChangedFile[]) => ({
         added: groupFiles.reduce((acc, file) => acc + (file.added ?? 0), 0),
         removed: groupFiles.reduce((acc, file) => acc + (file.removed ?? 0), 0),
@@ -268,6 +316,133 @@ const ChangesPanelImpl: React.FC<ChangesPanelProps> = ({
     const mergeStats = useMemo(() => countGroupStats(conflictingFiles), [conflictingFiles, countGroupStats]);
     const stagedStats = useMemo(() => countGroupStats(stagedFiles), [countGroupStats, stagedFiles]);
     const changedStats = useMemo(() => countGroupStats(changedFiles), [changedFiles, countGroupStats]);
+
+    const handleStageAllChanged = useCallback(() => {
+        if (changedFiles.length === 0) {
+            return;
+        }
+        for (const file of changedFiles) {
+            onStage(file.path);
+        }
+    }, [changedFiles, onStage]);
+
+    const handleUnstageAll = useCallback(() => {
+        if (stagedFiles.length === 0) {
+            return;
+        }
+        for (const file of stagedFiles) {
+            onUnstage(file.path);
+        }
+    }, [onUnstage, stagedFiles]);
+
+    const { virtualRows, totalHeight } = useMemo(() => {
+        const nextRows: VirtualChangesRow[] = [];
+        let top = 0;
+
+        const pushRow = (row: Omit<VirtualChangesRow, 'top'>) => {
+            nextRows.push({ ...row, top } as VirtualChangesRow);
+            top += row.height;
+        };
+
+        if (hasSections) {
+            if (conflictingFiles.length > 0) {
+                pushRow({
+                    key: 'header::merge',
+                    kind: 'group-header',
+                    groupType: 'merge',
+                    title: 'Merged',
+                    stats: mergeStats,
+                    height: GROUP_HEADER_HEIGHT,
+                });
+                for (const file of conflictingFiles) {
+                    pushRow({
+                        key: `merge::${file.path}`,
+                        kind: 'file',
+                        file,
+                        mode: 'merge',
+                        rowId: `merge::${file.path}`,
+                        height: FILE_ROW_HEIGHT,
+                    });
+                }
+            }
+            if (stagedFiles.length > 0) {
+                pushRow({
+                    key: 'header::staged',
+                    kind: 'group-header',
+                    groupType: 'staged',
+                    title: 'Staged',
+                    stats: stagedStats,
+                    onAction: handleUnstageAll,
+                    actionTitle: 'Unstage All Changes',
+                    actionLabel: '−',
+                    height: GROUP_HEADER_HEIGHT,
+                });
+                for (const file of stagedFiles) {
+                    pushRow({
+                        key: `staged::${file.path}`,
+                        kind: 'file',
+                        file,
+                        mode: 'staged',
+                        rowId: `staged::${file.path}`,
+                        height: FILE_ROW_HEIGHT,
+                    });
+                }
+            }
+            if (changedFiles.length > 0) {
+                pushRow({
+                    key: 'header::changed',
+                    kind: 'group-header',
+                    groupType: 'changed',
+                    title: 'Changes',
+                    stats: changedStats,
+                    onAction: handleStageAllChanged,
+                    actionTitle: 'Stage All Changes',
+                    actionLabel: '+',
+                    height: GROUP_HEADER_HEIGHT,
+                });
+                for (const file of changedFiles) {
+                    pushRow({
+                        key: `changed::${file.path}`,
+                        kind: 'file',
+                        file,
+                        mode: 'changed',
+                        rowId: `changed::${file.path}`,
+                        height: FILE_ROW_HEIGHT,
+                    });
+                }
+            }
+        } else {
+            for (const file of files) {
+                pushRow({
+                    key: `flat::${file.path}`,
+                    kind: 'file',
+                    file,
+                    mode: 'flat',
+                    rowId: `flat::${file.path}`,
+                    height: FILE_ROW_HEIGHT,
+                });
+            }
+        }
+
+        return { virtualRows: nextRows, totalHeight: top };
+    }, [
+        hasSections,
+        conflictingFiles,
+        stagedFiles,
+        changedFiles,
+        files,
+        mergeStats,
+        stagedStats,
+        changedStats,
+        handleUnstageAll,
+        handleStageAllChanged,
+    ]);
+
+    const visibleRows = useMemo(() => {
+        const start = Math.max(0, scrollTop - OVERSCAN_PX);
+        const end = scrollTop + viewportHeight + OVERSCAN_PX;
+        return virtualRows.filter((row) => row.top + row.height >= start && row.top <= end);
+    }, [virtualRows, scrollTop, viewportHeight]);
 
     useEffect(() => {
         if (typeof window === 'undefined') return;
@@ -318,10 +493,17 @@ const ChangesPanelImpl: React.FC<ChangesPanelProps> = ({
             return;
         }
 
-        const item = itemRefs.current.get(selectedRowId);
-        item?.scrollIntoView({ block: 'nearest' });
+        const targetRow = virtualRows.find((r) => r.kind === 'file' && r.rowId === selectedRowId);
+        const list = listRef.current;
+        if (targetRow && list) {
+            if (targetRow.top < list.scrollTop) {
+                list.scrollTop = targetRow.top;
+            } else if (targetRow.top + targetRow.height > list.scrollTop + list.clientHeight) {
+                list.scrollTop = targetRow.top + targetRow.height - list.clientHeight;
+            }
+        }
         shouldAutoScrollRef.current = false;
-    }, [selectedRowId]);
+    }, [selectedRowId, virtualRows, listRef]);
 
     const handleItemClick = useCallback((rowId: string, path: string) => {
         setSelectedRowId(rowId);
@@ -363,7 +545,7 @@ const ChangesPanelImpl: React.FC<ChangesPanelProps> = ({
         }
 
         return false;
-    }, [displayedRows, onFileClick, selectedRowId]);
+    }, [displayedRows, listRef, onFileClick, selectedRowId]);
 
     const handleListKeyDown = useCallback((event: React.KeyboardEvent<HTMLDivElement>) => {
         const handled = navigateByKey(event.key);
@@ -378,7 +560,7 @@ const ChangesPanelImpl: React.FC<ChangesPanelProps> = ({
             return;
         }
         listRef.current?.focus();
-    }, []);
+    }, [listRef]);
 
     const stagedFilesCount = useMemo(
         () => files.filter((file) => !!file.staged && !file.conflicted).length,
@@ -420,24 +602,6 @@ const ChangesPanelImpl: React.FC<ChangesPanelProps> = ({
         }
     };
 
-    const handleStageAllChanged = useCallback(() => {
-        if (changedFiles.length === 0) {
-            return;
-        }
-        for (const file of changedFiles) {
-            onStage(file.path);
-        }
-    }, [changedFiles, onStage]);
-
-    const handleUnstageAll = useCallback(() => {
-        if (stagedFiles.length === 0) {
-            return;
-        }
-        for (const file of stagedFiles) {
-            onUnstage(file.path);
-        }
-    }, [onUnstage, stagedFiles]);
-
     const handleBranchChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
         const nextBranch = e.target.value;
         if (!nextBranch || nextBranch === branch) {
@@ -446,24 +610,6 @@ const ChangesPanelImpl: React.FC<ChangesPanelProps> = ({
         await onBranchChange(nextBranch);
     };
     const isCurrentBranchInList = branches.some((item) => item.name === branch);
-    const renderFiles = useCallback((filesGroup: ChangedFile[], mode: 'merge' | 'staged' | 'changed' | 'flat') => (
-        filesGroup.map((file) => (
-            <ChangesPanelItem
-                key={`${mode}::${file.path}`}
-                rowId={`${mode}::${file.path}`}
-                file={file}
-                mode={mode}
-                isActive={activeFilePath === file.path}
-                isSelected={selectedRowId === `${mode}::${file.path}`}
-                fileIconsStyle={fileIconsStyle}
-                onClick={handleItemClick}
-                onRevert={onRevert}
-                onStage={onStage}
-                onUnstage={onUnstage}
-                setItemRef={setItemRef}
-            />
-        ))
-    ), [activeFilePath, handleItemClick, onRevert, onStage, onUnstage, selectedRowId, setItemRef, fileIconsStyle]);
 
     return (
         <div className="changes-panel">
@@ -594,92 +740,78 @@ const ChangesPanelImpl: React.FC<ChangesPanelProps> = ({
                 aria-label="Changed files"
                 onKeyDown={handleListKeyDown}
                 onMouseDown={handleListMouseDown}
+                onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
             >
                 {files.length === 0 ? (
                     <div className="changes-empty">
                         No changes
                     </div>
-                ) : hasSections ? (
-                    <>
-                        {conflictingFiles.length > 0 && (
-                            <div className="changes-group">
-                                <div className="changes-group-title changes-group-title-conflicts">
-                                    <span className="changes-group-title-label">Merged</span>
-                                    <span className="changes-group-title-right">
-                                        {(mergeStats.added > 0 || mergeStats.removed > 0) && (
-                                            <span className="changes-group-stats">
-                                                {mergeStats.added > 0 && (
-                                                    <span className="changes-stat-added">+{mergeStats.added}</span>
-                                                )}
-                                                {mergeStats.removed > 0 && (
-                                                    <span className="changes-stat-removed">-{mergeStats.removed}</span>
-                                                )}
-                                            </span>
-                                        )}
-                                    </span>
-                                </div>
-                                {renderFiles(conflictingFiles, 'merge')}
-                            </div>
-                        )}
-                        {stagedFiles.length > 0 && (
-                            <div className="changes-group">
-                                <div className="changes-group-title changes-group-title-with-action changes-group-title-hover-action">
-                                    <span className="changes-group-title-label">Staged</span>
-                                    <span className="changes-group-title-right">
-                                        {(stagedStats.added > 0 || stagedStats.removed > 0) && (
-                                            <span className="changes-group-stats">
-                                                {stagedStats.added > 0 && (
-                                                    <span className="changes-stat-added">+{stagedStats.added}</span>
-                                                )}
-                                                {stagedStats.removed > 0 && (
-                                                    <span className="changes-stat-removed">-{stagedStats.removed}</span>
-                                                )}
-                                            </span>
-                                        )}
-                                        <button
-                                            className="changes-group-action-btn changes-group-action-btn-hover"
-                                            onClick={handleUnstageAll}
-                                            title="Unstage All Changes"
-                                            aria-label="Unstage All Changes"
-                                        >
-                                            −
-                                        </button>
-                                    </span>
-                                </div>
-                                {renderFiles(stagedFiles, 'staged')}
-                            </div>
-                        )}
-                        {changedFiles.length > 0 && (
-                            <div className="changes-group">
-                                <div className="changes-group-title changes-group-title-with-action changes-group-title-hover-action">
-                                    <span className="changes-group-title-label">Changes</span>
-                                    <span className="changes-group-title-right">
-                                        {(changedStats.added > 0 || changedStats.removed > 0) && (
-                                            <span className="changes-group-stats">
-                                                {changedStats.added > 0 && (
-                                                    <span className="changes-stat-added">+{changedStats.added}</span>
-                                                )}
-                                                {changedStats.removed > 0 && (
-                                                    <span className="changes-stat-removed">-{changedStats.removed}</span>
-                                                )}
-                                            </span>
-                                        )}
-                                        <button
-                                            className="changes-group-action-btn changes-group-action-btn-hover"
-                                            onClick={handleStageAllChanged}
-                                            title="Stage All Changes"
-                                            aria-label="Stage All Changes"
-                                        >
-                                            +
-                                        </button>
-                                    </span>
-                                </div>
-                                {renderFiles(changedFiles, 'changed')}
-                            </div>
-                        )}
-                    </>
                 ) : (
-                    renderFiles(files, 'flat')
+                    <div className="changes-virtual-spacer" style={{ height: totalHeight }}>
+                        {visibleRows.map((row) => {
+                            const style: React.CSSProperties = {
+                                transform: `translateY(${row.top}px)`,
+                                height: row.height,
+                            };
+
+                            if (row.kind === 'group-header') {
+                                const isMerge = row.groupType === 'merge';
+                                return (
+                                    <div
+                                        key={row.key}
+                                        style={style}
+                                        className={`changes-virtual-row changes-group-title ${
+                                            isMerge
+                                                ? 'changes-group-title-conflicts'
+                                                : 'changes-group-title-with-action changes-group-title-hover-action'
+                                        }`}
+                                    >
+                                        <span className="changes-group-title-label">{row.title}</span>
+                                        <span className="changes-group-title-right">
+                                            {(row.stats.added > 0 || row.stats.removed > 0) && (
+                                                <span className="changes-group-stats">
+                                                    {row.stats.added > 0 && (
+                                                        <span className="changes-stat-added">+{row.stats.added}</span>
+                                                    )}
+                                                    {row.stats.removed > 0 && (
+                                                        <span className="changes-stat-removed">-{row.stats.removed}</span>
+                                                    )}
+                                                </span>
+                                            )}
+                                            {row.onAction && (
+                                                <button
+                                                    className="changes-group-action-btn changes-group-action-btn-hover"
+                                                    onClick={row.onAction}
+                                                    title={row.actionTitle}
+                                                    aria-label={row.actionTitle}
+                                                >
+                                                    {row.actionLabel}
+                                                </button>
+                                            )}
+                                        </span>
+                                    </div>
+                                );
+                            }
+
+                            return (
+                                <ChangesPanelItem
+                                    key={row.key}
+                                    rowId={row.rowId}
+                                    file={row.file}
+                                    mode={row.mode}
+                                    style={style}
+                                    isActive={activeFilePath === row.file.path}
+                                    isSelected={selectedRowId === row.rowId}
+                                    fileIconsStyle={fileIconsStyle}
+                                    onClick={handleItemClick}
+                                    onRevert={onRevert}
+                                    onStage={onStage}
+                                    onUnstage={onUnstage}
+                                    setItemRef={setItemRef}
+                                />
+                            );
+                        })}
+                    </div>
                 )}
             </div>
         </div>

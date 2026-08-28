@@ -162,10 +162,17 @@
     overflow: hidden !important;
     background-color: transparent !important;
     box-sizing: border-box !important;
+    contain: strict;
+    isolation: isolate;
 }
 
 .layout .dv-split-view-container .dv-view:has(> .dv-groupview) {
     padding: 0 !important;
+}
+
+.layout .dv-groupview {
+    contain: strict;
+    isolation: isolate;
 }
 
 /* Opening a search result activates another pane. Keep Dockview from

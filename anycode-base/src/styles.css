@@ -3,6 +3,9 @@
   width: 100%;
   height: 100%;
   overflow: hidden;
+  contain: strict;
+  isolation: isolate;
+  will-change: transform;
 }
 
 :root {
@@ -35,6 +38,8 @@
   white-space: pre;
   outline: none;
   position: relative;
+  contain: layout size;
+  isolation: isolate;
 }
 
 .anyeditor::-webkit-scrollbar {
