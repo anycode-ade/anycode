@@ -345,7 +345,10 @@ mod tests {
         let uri = path_to_uri(path).unwrap();
         assert!(uri.to_string().contains("%20"));
         // "привет" in UTF-8 percent-encoded is %D0%BF%D1%80%D0%B8%D0%B2%D0%B5%D1%82
-        assert!(uri.to_string().contains("%D0%BF%D1%80%D0%B8%D0%B2%D0%B5%D1%82"));
+        assert!(
+            uri.to_string()
+                .contains("%D0%BF%D1%80%D0%B8%D0%B2%D0%B5%D1%82")
+        );
     }
 
     #[test]

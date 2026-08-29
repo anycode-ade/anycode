@@ -10,7 +10,9 @@
   "scripts": {
     "dev:demo": "pnpm --filter anycode dev:demo",
     "build:demo": "pnpm --filter anycode build:demo",
-    "test:demo": "pnpm --filter anycode test:demo"
+    "test:demo": "pnpm --filter anycode test:demo",
+    "test:perf": "pnpm --filter anycode test:perf",
+    "test:e2e:all": "pnpm --filter anycode test:e2e:all"
   },
   "devDependencies": {
     "@types/react": "^19.1.8",

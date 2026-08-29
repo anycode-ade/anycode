@@ -1,13 +1,13 @@
 use crate::acp_fs::AcpFsCommand;
 use crate::acp_history::AcpHistoryManager;
+use agent_client_protocol::schema::ProtocolVersion;
 use agent_client_protocol::schema::v1 as acp;
+use agent_client_protocol::schema::v1::SessionId;
 use agent_client_protocol::schema::v1::{
     RequestPermissionOutcome, RequestPermissionRequest, RequestPermissionResponse,
     SelectedPermissionOutcome,
 };
 use agent_client_protocol::{ByteStreams, Client, ConnectionTo};
-use agent_client_protocol::schema::ProtocolVersion;
-use agent_client_protocol::schema::v1::SessionId;
 use anyhow::{Context, Result, anyhow};
 use base64::Engine as _;
 use chrono::Utc;

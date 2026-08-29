@@ -374,7 +374,10 @@ async fn handle_file_modification(
     // Notify frontend using the absolute path to keep editor identity consistent.
     let file = path_str.to_string();
     socket
-        .emit("watcher:edits", &json! {{ "file": format_path(&file), "edits": edits }})
+        .emit(
+            "watcher:edits",
+            &json! {{ "file": format_path(&file), "edits": edits }},
+        )
         .await
         .map_err(|e| anyhow::anyhow!("Failed to emit edits: {}", e))?;
 

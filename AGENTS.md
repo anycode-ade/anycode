@@ -41,6 +41,8 @@ pnpm dev              # Start dev server (localhost:5173)
 pnpm build            # Production build
 ```
 
+Run `pnpm test:perf` only on request or for performance-related tasks.
+
 ### Backend (anycode-backend/)
 ```bash
 cargo build --release # Build release binary

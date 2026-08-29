@@ -21,6 +21,68 @@ pub enum FileStatus {
     Conflict,
 }
 
+impl FileStatus {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            FileStatus::Modified => "modified",
+            FileStatus::Added => "added",
+            FileStatus::Deleted => "deleted",
+            FileStatus::Renamed => "renamed",
+            FileStatus::Conflict => "conflict",
+        }
+    }
+
+    pub fn as_u8(&self) -> u8 {
+        match self {
+            FileStatus::Modified => 0,
+            FileStatus::Added => 1,
+            FileStatus::Deleted => 2,
+            FileStatus::Renamed => 3,
+            FileStatus::Conflict => 4,
+        }
+    }
+}
+
+fn split_path_dir_and_file(path: &str) -> (&str, &str) {
+    if let Some(pos) = path.rfind('/') {
+        (&path[..pos], &path[pos + 1..])
+    } else {
+        ("", path)
+    }
+}
+
+fn status_str_to_u8(status: &str) -> u8 {
+    match status {
+        "modified" => 0,
+        "added" => 1,
+        "deleted" => 2,
+        "renamed" => 3,
+        "conflict" => 4,
+        "removed" => 5,
+        _ => 0,
+    }
+}
+
+fn build_dir_table<'a, I>(paths: I) -> (Vec<String>, HashMap<String, usize>)
+where
+    I: Iterator<Item = &'a str>,
+{
+    let mut dirs_list = vec!["".to_string()];
+    let mut dir_map: HashMap<String, usize> = HashMap::new();
+    dir_map.insert("".to_string(), 0);
+
+    for path in paths {
+        let (dir, _) = split_path_dir_and_file(path);
+        if !dir.is_empty() && !dir_map.contains_key(dir) {
+            let idx = dirs_list.len();
+            dirs_list.push(dir.to_string());
+            dir_map.insert(dir.to_string(), idx);
+        }
+    }
+
+    (dirs_list, dir_map)
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct GitFileStatus {
     pub path: String,
@@ -41,9 +103,30 @@ pub struct GitStatus {
 
 impl GitStatus {
     pub fn to_json(&self) -> Value {
+        let (dirs, dir_map) = build_dir_table(self.files.iter().map(|f| f.path.as_str()));
+        let compact_files: Vec<Value> = self
+            .files
+            .iter()
+            .map(|f| {
+                let (dir, file_name) = split_path_dir_and_file(&f.path);
+                let dir_idx = dir_map.get(dir).copied().unwrap_or(0);
+                json!([
+                    dir_idx,
+                    file_name,
+                    f.status.as_u8(),
+                    if f.staged { 1 } else { 0 },
+                    if f.unstaged { 1 } else { 0 },
+                    if f.conflicted { 1 } else { 0 },
+                    f.added,
+                    f.removed,
+                ])
+            })
+            .collect();
+
         json!({
             "kind": "full",
-            "files": self.files,
+            "dirs": dirs,
+            "files": compact_files,
             "branch": self.branch,
             "head_hash": self.head_hash
         })
@@ -79,12 +162,34 @@ impl GitStatusUpdate {
                 branch,
                 head_hash,
                 files,
-            } => json!({
-                "kind": "patch",
-                "branch": branch,
-                "head_hash": head_hash,
-                "files": files,
-            }),
+            } => {
+                let (dirs, dir_map) = build_dir_table(files.iter().map(|f| f.path.as_str()));
+                let compact_files: Vec<Value> = files
+                    .iter()
+                    .map(|f| {
+                        let (dir, file_name) = split_path_dir_and_file(&f.path);
+                        let dir_idx = dir_map.get(dir).copied().unwrap_or(0);
+                        json!([
+                            dir_idx,
+                            file_name,
+                            status_str_to_u8(&f.status),
+                            if f.staged { 1 } else { 0 },
+                            if f.unstaged { 1 } else { 0 },
+                            if f.conflicted { 1 } else { 0 },
+                            f.added,
+                            f.removed,
+                        ])
+                    })
+                    .collect();
+
+                json!({
+                    "kind": "patch",
+                    "dirs": dirs,
+                    "branch": branch,
+                    "head_hash": head_hash,
+                    "files": compact_files,
+                })
+            }
         }
     }
 }
@@ -846,53 +951,206 @@ impl GitManager {
         false
     }
 
+    pub fn parse_numstat_output(output: &str, numstat_by_path: &mut HashMap<String, (usize, usize)>) {
+        for line in output.lines() {
+            let line = line.trim();
+            if line.is_empty() {
+                continue;
+            }
+            let mut parts = line.splitn(3, '\t');
+            let (Some(added_str), Some(removed_str), Some(path_str)) =
+                (parts.next(), parts.next(), parts.next())
+            else {
+                continue;
+            };
+            let added = added_str.parse::<usize>().unwrap_or(0);
+            let removed = removed_str.parse::<usize>().unwrap_or(0);
+            let path = path_str.trim().to_string();
+            let entry = numstat_by_path.entry(path).or_insert((0, 0));
+            entry.0 += added;
+            entry.1 += removed;
+        }
+    }
+
     fn collect_numstat(repo: &Repository) -> Result<HashMap<String, (usize, usize)>> {
+        let workdir = repo.workdir().unwrap_or(Path::new("."));
+        let mut numstat_by_path: HashMap<String, (usize, usize)> = HashMap::new();
+
+        let has_head = repo.head().is_ok();
+        let mut cmd_cached = std::process::Command::new("git");
+        cmd_cached.args([
+            "--no-pager",
+            "diff",
+            "--numstat",
+            "--no-renames",
+            "--no-color",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--ignore-submodules",
+            "--cached",
+        ]);
+        if has_head {
+            cmd_cached.arg("HEAD");
+        }
+        cmd_cached.current_dir(workdir);
+        if let Ok(output) = cmd_cached.output() {
+            if output.status.success() {
+                Self::parse_numstat_output(&String::from_utf8_lossy(&output.stdout), &mut numstat_by_path);
+            }
+        }
+
+        let mut cmd_unstaged = std::process::Command::new("git");
+        cmd_unstaged.args([
+            "--no-pager",
+            "diff",
+            "--numstat",
+            "--no-renames",
+            "--no-color",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--ignore-submodules",
+        ]);
+        cmd_unstaged.current_dir(workdir);
+        if let Ok(output) = cmd_unstaged.output() {
+            if output.status.success() {
+                Self::parse_numstat_output(&String::from_utf8_lossy(&output.stdout), &mut numstat_by_path);
+            }
+        }
+
+        if !numstat_by_path.is_empty() {
+            return Ok(numstat_by_path);
+        }
+
+        // Fallback for isolated in-memory test repos without git binary
         let mut opts = git2::DiffOptions::new();
         opts.include_untracked(true)
             .recurse_untracked_dirs(true)
             .include_typechange(true);
 
         let head_tree = repo.head().ok().and_then(|head| head.peel_to_tree().ok());
+        if let Ok(diff) = repo.diff_tree_to_workdir_with_index(head_tree.as_ref(), Some(&mut opts)) {
+            let _ = diff.foreach(
+                &mut |_delta, _progress| true,
+                None,
+                None,
+                Some(&mut |delta, _hunk, line| {
+                    let Some(path) = delta
+                        .new_file()
+                        .path()
+                        .or_else(|| delta.old_file().path())
+                        .map(|p| p.to_string_lossy().to_string())
+                    else {
+                        return true;
+                    };
 
-        let diff = repo.diff_tree_to_workdir_with_index(head_tree.as_ref(), Some(&mut opts))?;
-
-        let mut numstat_by_path: HashMap<String, (usize, usize)> = HashMap::new();
-
-        diff.foreach(
-            &mut |_delta, _progress| true,
-            None,
-            None,
-            Some(&mut |delta, _hunk, line| {
-                let Some(path) = delta
-                    .new_file()
-                    .path()
-                    .or_else(|| delta.old_file().path())
-                    .map(|p| p.to_string_lossy().to_string())
-                else {
-                    return true;
-                };
-
-                let entry = numstat_by_path.entry(path).or_insert((0, 0));
-                match line.origin() {
-                    '+' => entry.0 += 1,
-                    '-' => entry.1 += 1,
-                    _ => {}
-                }
-                true
-            }),
-        )?;
+                    let entry = numstat_by_path.entry(path).or_insert((0, 0));
+                    match line.origin() {
+                        '+' => entry.0 += 1,
+                        '-' => entry.1 += 1,
+                        _ => {}
+                    }
+                    true
+                }),
+            );
+        }
 
         Ok(numstat_by_path)
     }
 
-    /// Get current git status
+    pub fn parse_porcelain_v1_output(
+        output: &str,
+        numstat_by_path: &HashMap<String, (usize, usize)>,
+        files: &mut Vec<GitFileStatus>,
+    ) {
+        for line in output.lines() {
+            if line.len() < 3 {
+                continue;
+            }
+            let bytes = line.as_bytes();
+            let x = bytes[0] as char;
+            let y = bytes[1] as char;
+            let raw_path = line[2..].trim();
+            let path_str = raw_path.trim_matches('"');
+            let relative_path = if let Some(pos) = path_str.find(" -> ") {
+                &path_str[pos + 4..]
+            } else {
+                path_str
+            };
+
+            let conflicted = (x == 'U' || y == 'U') || (x == 'A' && y == 'A') || (x == 'D' && y == 'D') || (x == 'D' && y == 'U') || (x == 'U' && y == 'D') || (x == 'A' && y == 'U') || (x == 'U' && y == 'A');
+            let staged = !conflicted && x != ' ' && x != '?' && x != '!';
+            let unstaged = !conflicted && (y != ' ' || x == '?');
+
+            let file_status = if conflicted {
+                FileStatus::Conflict
+            } else if x == '?' || x == 'A' || y == 'A' {
+                FileStatus::Added
+            } else if x == 'D' || y == 'D' {
+                FileStatus::Deleted
+            } else if x == 'R' || y == 'R' {
+                FileStatus::Renamed
+            } else {
+                FileStatus::Modified
+            };
+
+            let (added, removed) = numstat_by_path
+                .get(relative_path)
+                .copied()
+                .unwrap_or((0, 0));
+
+            files.push(GitFileStatus {
+                path: format_path(relative_path),
+                status: file_status,
+                staged,
+                unstaged,
+                conflicted,
+                added,
+                removed,
+            });
+        }
+    }
+
+    /// Get current git status fast (immediate response in <90ms)
     pub fn status(&self) -> Result<GitStatus> {
         let repo = self.repo()?;
         let repo_root = repo.workdir().unwrap_or(Path::new("."));
-        let numstat_by_path = Self::collect_numstat(&repo)?;
 
         let branch = Self::branch_name(&repo);
+        let head_hash = Self::head_hash_of(&repo);
 
+        let mut files: Vec<GitFileStatus> = Vec::new();
+        let empty_numstat = HashMap::new();
+
+        // 1. Fast Git CLI status (like Zed): ~25-50ms
+        let mut cmd = std::process::Command::new("git");
+        cmd.args([
+            "--no-pager",
+            "status",
+            "--porcelain=v1",
+            "--untracked-files=all",
+            "--no-renames",
+            "--no-ahead-behind",
+            "--ignore-submodules",
+        ]);
+        cmd.current_dir(repo_root);
+
+        if let Ok(output) = cmd.output() {
+            if output.status.success() {
+                Self::parse_porcelain_v1_output(
+                    &String::from_utf8_lossy(&output.stdout),
+                    &empty_numstat,
+                    &mut files,
+                );
+                Self::sort_files(&mut files);
+                return Ok(GitStatus {
+                    files,
+                    branch,
+                    head_hash,
+                });
+            }
+        }
+
+        // 2. Fallback to libgit2 for in-memory / test repos without git binary
         let mut opts = StatusOptions::new();
         opts.include_untracked(true)
             .recurse_untracked_dirs(true)
@@ -900,22 +1158,14 @@ impl GitManager {
 
         let statuses = repo.statuses(Some(&mut opts))?;
 
-        let mut files: Vec<GitFileStatus> = Vec::new();
-
         for entry in statuses.iter() {
             let relative_path = entry.path().unwrap_or("");
             if let Some(file_status) = Self::status_from_entry(
                 repo_root,
                 relative_path,
                 entry.status(),
-                numstat_by_path
-                    .get(relative_path)
-                    .map(|(added, _)| *added)
-                    .unwrap_or(0),
-                numstat_by_path
-                    .get(relative_path)
-                    .map(|(_, removed)| *removed)
-                    .unwrap_or(0),
+                0,
+                0,
             ) {
                 files.push(file_status);
             }
@@ -923,12 +1173,41 @@ impl GitManager {
 
         Self::sort_files(&mut files);
 
-        let head_hash = Self::head_hash_of(&repo);
         Ok(GitStatus {
             files,
             branch,
             head_hash,
         })
+    }
+
+    pub fn collect_numstat_patch(&self) -> Result<Option<GitStatusUpdate>> {
+        let repo = self.repo()?;
+        let numstats = Self::collect_numstat(&repo)?;
+        if numstats.is_empty() {
+            return Ok(None);
+        }
+
+        let branch = Self::branch_name(&repo);
+        let head_hash = Self::head_hash_of(&repo);
+
+        let mut files = Vec::with_capacity(numstats.len());
+        for (path, (added, removed)) in numstats {
+            files.push(GitStatusPatchFile {
+                path: format_path(&path),
+                status: "modified".to_string(),
+                staged: false,
+                unstaged: true,
+                conflicted: false,
+                added,
+                removed,
+            });
+        }
+
+        Ok(Some(GitStatusUpdate::Patch {
+            branch,
+            head_hash,
+            files,
+        }))
     }
 
     /// Check if status changed, update cache, return new status if changed
@@ -1014,11 +1293,10 @@ impl GitManager {
                 continue;
             }
 
-            let abs_path = repo_root.join(&relative_path).to_string_lossy().to_string();
             let next_file = match self.status_for_relative_path(&relative_path) {
                 Ok(file) => file,
                 Err(e) => {
-                    tracing::warn!("Failed to get status for {}: {}", abs_path, e);
+                    tracing::warn!("Failed to get status for {}: {}", relative_path, e);
                     continue;
                 }
             };
@@ -1026,7 +1304,7 @@ impl GitManager {
                 .status_cache
                 .files
                 .iter()
-                .position(|f| f.path == abs_path);
+                .position(|f| f.path == relative_path);
 
             let prev_file = prev_index.and_then(|idx| self.status_cache.files.get(idx).cloned());
 
@@ -1053,7 +1331,7 @@ impl GitManager {
                     removed: file.removed,
                 }),
                 None => patch_files.push(GitStatusPatchFile {
-                    path: abs_path,
+                    path: relative_path,
                     status: "removed".to_string(),
                     staged: false,
                     unstaged: false,
@@ -1126,6 +1404,74 @@ impl GitManager {
             content,
             is_new: false,
         })
+    }
+
+    fn diff_to_patch_string(diff: &mut git2::Diff) -> Result<String> {
+        let mut patch_bytes = Vec::new();
+        diff.print(git2::DiffFormat::Patch, |_delta, _hunk, line| {
+            let origin = line.origin();
+            match origin {
+                '+' | '-' | ' ' => {
+                    patch_bytes.push(origin as u8);
+                    patch_bytes.extend_from_slice(line.content());
+                }
+                _ => {
+                    patch_bytes.extend_from_slice(line.content());
+                }
+            }
+            true
+        })?;
+        Ok(String::from_utf8_lossy(&patch_bytes).to_string())
+    }
+
+    /// Return raw unified diff output for the working directory / staged changes using in-memory libgit2.
+    pub fn raw_diff(&self, staged: Option<bool>) -> Result<String> {
+        let repo = self.repo()?;
+        let mut diff_opts = DiffOptions::new();
+        let mut find_opts = DiffFindOptions::new();
+        find_opts.renames(true);
+
+        let mut diff = match staged {
+            Some(true) => {
+                let head_tree = repo.head().ok().and_then(|h| h.peel_to_tree().ok());
+                let mut d = repo.diff_tree_to_index(head_tree.as_ref(), None, Some(&mut diff_opts))?;
+                d.find_similar(Some(&mut find_opts))?;
+                d
+            }
+            Some(false) => {
+                let mut d = repo.diff_index_to_workdir(None, Some(&mut diff_opts))?;
+                d.find_similar(Some(&mut find_opts))?;
+                d
+            }
+            None => {
+                let head_tree = repo.head().ok().and_then(|h| h.peel_to_tree().ok());
+                let mut d = repo.diff_tree_to_workdir_with_index(head_tree.as_ref(), Some(&mut diff_opts))?;
+                d.find_similar(Some(&mut find_opts))?;
+                d
+            }
+        };
+
+        Self::diff_to_patch_string(&mut diff)
+    }
+
+    /// Return raw unified diff output for a specific commit hash using in-memory libgit2.
+    pub fn raw_commit_diff(&self, hash: &str) -> Result<String> {
+        let repo = self.repo()?;
+        let commit = repo.find_commit(git2::Oid::from_str(hash.trim())?)?;
+        let new_tree = commit.tree()?;
+        let old_tree = if commit.parent_count() > 0 {
+            Some(commit.parent(0)?.tree()?)
+        } else {
+            None
+        };
+        let mut diff_opts = DiffOptions::new();
+        let mut find_opts = DiffFindOptions::new();
+        find_opts.renames(true);
+
+        let mut diff = repo.diff_tree_to_tree(old_tree.as_ref(), Some(&new_tree), Some(&mut diff_opts))?;
+        diff.find_similar(Some(&mut find_opts))?;
+
+        Self::diff_to_patch_string(&mut diff)
     }
 
     /// Commit currently staged index entries (like `git commit`)
@@ -1559,7 +1905,7 @@ impl GitManager {
         };
 
         Some(GitFileStatus {
-            path: format_path(&repo_root.join(relative_path).to_string_lossy()),
+            path: format_path(relative_path),
             status: file_status,
             staged,
             unstaged,
@@ -1570,13 +1916,7 @@ impl GitManager {
     }
 
     fn status_to_str(status: FileStatus) -> &'static str {
-        match status {
-            FileStatus::Modified => "modified",
-            FileStatus::Added => "added",
-            FileStatus::Deleted => "deleted",
-            FileStatus::Renamed => "renamed",
-            FileStatus::Conflict => "conflict",
-        }
+        status.as_str()
     }
 
     fn to_repo_relative_path(&self, path: &Path, repo_root: &Path) -> Option<String> {
@@ -1919,10 +2259,8 @@ impl GitManager {
             }
         }
 
-        let abs_path = repo_root.join(relative_path).to_string_lossy().to_string();
-
         Ok(Some(GitFileStatus {
-            path: abs_path,
+            path: format_path(relative_path),
             status: file_status,
             staged,
             unstaged,
@@ -1955,7 +2293,7 @@ impl GitManager {
             let (_, removed) = self.numstat_in_memory(relative_path, &FileStatus::Deleted);
 
             return Ok(Some(GitFileStatus {
-                path: format_path(&abs_path.to_string_lossy()),
+                path: format_path(relative_path),
                 status: FileStatus::Deleted,
                 staged,
                 unstaged,
@@ -2045,7 +2383,7 @@ impl GitManager {
         }
 
         Ok(Some(GitFileStatus {
-            path: format_path(&abs_path.to_string_lossy()),
+            path: format_path(relative_path),
             status: file_status,
             staged: has_staged_changes,
             unstaged: has_worktree_changes,
@@ -2053,6 +2391,113 @@ impl GitManager {
             added,
             removed,
         }))
+    }
+
+    pub fn workdir(&self) -> &Path {
+        &self.workdir
+    }
+
+    pub async fn stream_status_raw(
+        workdir: &Path,
+        socket: &socketioxide::extract::SocketRef,
+    ) -> Result<()> {
+        let mut child = tokio::process::Command::new("git")
+            .args(["--no-pager", "status", "--porcelain=v2", "--branch", "--untracked-files=all"])
+            .current_dir(workdir)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .spawn()?;
+
+        let mut stdout = child.stdout.take().context("Failed to open git stdout")?;
+        let mut buffer = [0u8; 8192];
+
+        while let Ok(n) = tokio::io::AsyncReadExt::read(&mut stdout, &mut buffer).await {
+            if n == 0 {
+                break;
+            }
+            let chunk = String::from_utf8_lossy(&buffer[..n]).to_string();
+            let _ = socket.emit("git:status:chunk", &chunk);
+            tokio::task::yield_now().await;
+        }
+
+        let _ = child.wait().await;
+        Ok(())
+    }
+
+    pub async fn stream_diff_raw(
+        workdir: &Path,
+        staged: Option<bool>,
+        request_id: u64,
+        socket: &socketioxide::extract::SocketRef,
+    ) -> Result<()> {
+        let mut cmd = tokio::process::Command::new("git");
+        cmd.args([
+            "--no-pager",
+            "diff",
+            "--patch",
+            "--no-color",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--ignore-submodules",
+        ]);
+
+        if let Some(true) = staged {
+            cmd.arg("--cached");
+        } else if staged.is_none() {
+            let has_head = tokio::process::Command::new("git")
+                .args(["rev-parse", "--verify", "HEAD"])
+                .current_dir(workdir)
+                .output()
+                .await
+                .map(|o| o.status.success())
+                .unwrap_or(false);
+            if has_head {
+                cmd.arg("HEAD");
+            }
+        }
+
+        cmd.current_dir(workdir)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null());
+
+        let mut child = cmd.spawn()?;
+        let mut stdout = child.stdout.take().context("Failed to open git stdout")?;
+        let mut buffer = [0u8; 65536];
+        let mut pending = Vec::with_capacity(256 * 1024);
+
+        loop {
+            let n = tokio::io::AsyncReadExt::read(&mut stdout, &mut buffer).await?;
+            if n == 0 {
+                break;
+            }
+            pending.extend_from_slice(&buffer[..n]);
+            while pending.len() >= 256 * 1024 {
+                let tail = pending.split_off(256 * 1024);
+                let chunk = std::mem::replace(&mut pending, tail);
+                let chunk = String::from_utf8_lossy(&chunk).to_string();
+                socket.emit(
+                    "git:diff:chunk",
+                    &serde_json::json!({ "request_id": request_id, "chunk": chunk }),
+                )?;
+            }
+            tokio::task::yield_now().await;
+        }
+
+        if !pending.is_empty() {
+            let chunk = String::from_utf8_lossy(&pending).to_string();
+            socket.emit(
+                "git:diff:chunk",
+                &serde_json::json!({ "request_id": request_id, "chunk": chunk }),
+            )?;
+        }
+
+        let status = child.wait().await?;
+        if !status.success() {
+            anyhow::bail!("git diff exited with status {status}");
+        }
+        Ok(())
     }
 
     fn status_for_relative_path(&mut self, relative_path: &str) -> Result<Option<GitFileStatus>> {

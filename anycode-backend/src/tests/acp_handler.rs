@@ -6,7 +6,10 @@ fn test_find_local_paths() {
     let temp_file = temp_dir.join("test_file_anycode.txt");
     std::fs::write(&temp_file, "hello").unwrap();
 
-    let prompt = format!("Please look at file://{} and write code", temp_file.display());
+    let prompt = format!(
+        "Please look at file://{} and write code",
+        temp_file.display()
+    );
     let paths = find_local_paths(&prompt);
     assert!(paths.contains(&temp_file));
 

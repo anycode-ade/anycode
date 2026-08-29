@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Socket } from 'socket.io-client';
 import { GitActionState } from '../components/ChangesPanel';
 import type { ChangedFile } from '../components';
+import { getFileName, joinPath } from '../utils';
 
 type UseGitParams = {
     wsRef: React.RefObject<Socket | null>;
@@ -81,8 +82,76 @@ const areChangedFilesEqual = (prev: ChangedFile, next: ChangedFile): boolean => 
     && prev.removed === next.removed
 );
 
-const sortChangedFiles = (files: ChangedFile[]): ChangedFile[] => {
-    return [...files].sort((a, b) => {
+const STATUS_NAMES: Array<ChangedFile['status'] | 'removed'> = [
+    'modified',
+    'added',
+    'deleted',
+    'renamed',
+    'conflict',
+    'removed',
+];
+
+export const normalizeGitFileItem = (item: any, dirs?: string[]): ChangedFile => {
+    if (Array.isArray(item)) {
+        if (dirs && typeof item[0] === 'number') {
+            const dir = dirs[item[0]] || '';
+            const path = dir ? joinPath(dir, item[1]) : item[1];
+            const status = typeof item[2] === 'number' ? (STATUS_NAMES[item[2]] || 'modified') : item[2];
+            return {
+                path,
+                status: status === 'removed' ? 'deleted' : status,
+                staged: Boolean(item[3]),
+                unstaged: Boolean(item[4]),
+                conflicted: Boolean(item[5]),
+                added: item[6] || 0,
+                removed: item[7] || 0,
+            };
+        }
+        return {
+            path: item[0],
+            status: item[1],
+            staged: Boolean(item[2]),
+            unstaged: Boolean(item[3]),
+            conflicted: Boolean(item[4]),
+            added: item[5] || 0,
+            removed: item[6] || 0,
+        };
+    }
+    return item;
+};
+
+export const normalizeGitPatchItem = (item: any, dirs?: string[]): GitPatchItem => {
+    if (Array.isArray(item)) {
+        if (dirs && typeof item[0] === 'number') {
+            const dir = dirs[item[0]] || '';
+            const path = dir ? joinPath(dir, item[1]) : item[1];
+            const status = typeof item[2] === 'number' ? (STATUS_NAMES[item[2]] || 'modified') : item[2];
+            return {
+                path,
+                status,
+                staged: Boolean(item[3]),
+                unstaged: Boolean(item[4]),
+                conflicted: Boolean(item[5]),
+                added: item[6] || 0,
+                removed: item[7] || 0,
+            };
+        }
+        return {
+            path: item[0],
+            status: item[1],
+            staged: Boolean(item[2]),
+            unstaged: Boolean(item[3]),
+            conflicted: Boolean(item[4]),
+            added: item[5] || 0,
+            removed: item[6] || 0,
+        };
+    }
+    return item;
+};
+
+const sortChangedFiles = (files: any[], dirs?: string[]): ChangedFile[] => {
+    const list = (files || []).map((f) => normalizeGitFileItem(f, dirs));
+    return list.sort((a, b) => {
         if (a.path < b.path) return -1;
         if (a.path > b.path) return 1;
 
@@ -113,6 +182,99 @@ const sortChangedFiles = (files: ChangedFile[]): ChangedFile[] => {
     });
 };
 
+export function parseGitPorcelainV2(rawText: string): {
+    branch: string;
+    headHash?: string;
+    files: ChangedFile[];
+} {
+    const lines = rawText.split('\n');
+    let branch = '';
+    let headHash: string | undefined;
+    const files: ChangedFile[] = [];
+
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line) continue;
+
+        if (line.startsWith('# branch.head ')) {
+            branch = line.slice(14).trim();
+        } else if (line.startsWith('# branch.oid ')) {
+            const oid = line.slice(13).trim();
+            if (oid && oid !== '(initial)') {
+                headHash = oid;
+            }
+        } else if (line.startsWith('1 ')) {
+            const space1 = line.indexOf(' ', 2);
+            if (space1 === -1) continue;
+            const xy = line.slice(2, space1);
+
+            let pathIdx = space1;
+            for (let s = 0; s < 7; s++) {
+                pathIdx = line.indexOf(' ', pathIdx + 1);
+                if (pathIdx === -1) break;
+            }
+            if (pathIdx === -1) continue;
+            const path = line.slice(pathIdx + 1).trim();
+
+            const staged = xy[0] !== '.';
+            const unstaged = xy[1] !== '.';
+            const status: ChangedFile['status'] = xy.includes('A')
+                ? 'added'
+                : xy.includes('D')
+                ? 'deleted'
+                : 'modified';
+
+            files.push({
+                path,
+                status,
+                staged,
+                unstaged,
+                conflicted: false,
+                added: 0,
+                removed: 0,
+            });
+        } else if (line.startsWith('2 ')) {
+            const parts = line.split('\t');
+            const mainParts = parts[0].split(' ');
+            const xy = mainParts[1] || 'R.';
+            const path = mainParts.slice(8).join(' ');
+            files.push({
+                path,
+                status: 'renamed',
+                staged: xy[0] !== '.',
+                unstaged: xy[1] !== '.',
+                conflicted: false,
+                added: 0,
+                removed: 0,
+            });
+        } else if (line.startsWith('u ')) {
+            const parts = line.split(' ');
+            const path = parts.slice(10).join(' ');
+            files.push({
+                path,
+                status: 'conflict',
+                staged: false,
+                unstaged: true,
+                conflicted: true,
+                added: 0,
+                removed: 0,
+            });
+        } else if (line.startsWith('? ')) {
+            files.push({
+                path: line.slice(2).trim(),
+                status: 'added',
+                staged: false,
+                unstaged: true,
+                conflicted: false,
+                added: 0,
+                removed: 0,
+            });
+        }
+    }
+
+    return { branch, headHash, files: sortChangedFiles(files) };
+}
+
 export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
     const [changedFiles, setChangedFiles] = useState<ChangedFile[]>([]);
     const [gitBranch, setGitBranch] = useState<string>('');
@@ -139,6 +301,7 @@ export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
     const historyRequestIdRef = useRef(0);
     const activeHistorySearchRequestIdRef = useRef<number | null>(null);
     const gitHeadHashRef = useRef<string | undefined>(undefined);
+    const gitDiffRequestIdRef = useRef(0);
 
     const cancelHistorySearch = useCallback(() => {
         const requestId = activeHistorySearchRequestIdRef.current;
@@ -324,12 +487,200 @@ export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
         })
     ), [isConnected, wsRef]);
 
+    const streamRawDiff = useCallback((
+        staged?: boolean,
+        onProgress?: (partialDiff: string) => void,
+    ): Promise<string> => {
+        return new Promise((resolve) => {
+            const socket = wsRef.current;
+            if (!socket || !isConnected) {
+                resolve('');
+                return;
+            }
+
+            const decoder = new TextDecoder('utf-8', { fatal: false });
+            let textAcc = '';
+            let isFirstChunk = true;
+            let lastFlushTime = 0;
+            let throttleTimer: ReturnType<typeof setTimeout> | null = null;
+            let timeoutTimer: ReturnType<typeof setTimeout> | null = null;
+            let inactivityTimer: ReturnType<typeof setTimeout> | null = null;
+            let isDone = false;
+            const requestId = ++gitDiffRequestIdRef.current;
+
+            const flushProgress = (diff: string) => {
+                lastFlushTime = Date.now();
+                onProgress?.(diff);
+            };
+
+            const finish = () => {
+                if (isDone) return;
+                isDone = true;
+                cleanup();
+                textAcc += decoder.decode();
+                resolve(textAcc);
+            };
+
+            const resetInactivityTimer = () => {
+                if (inactivityTimer) clearTimeout(inactivityTimer);
+                inactivityTimer = setTimeout(() => finish(), 1000);
+            };
+
+            const onChunk = (payload: ArrayBuffer | Uint8Array | string | { request_id?: number; chunk?: string }) => {
+                if (isDone) return;
+                let chunk: ArrayBuffer | Uint8Array | string = payload;
+                if (
+                    typeof payload === 'object'
+                    && payload !== null
+                    && !(payload instanceof ArrayBuffer)
+                    && !(payload instanceof Uint8Array)
+                ) {
+                    if (payload.request_id !== requestId) return;
+                    chunk = payload.chunk ?? '';
+                }
+                resetInactivityTimer();
+                if (typeof chunk === 'string') {
+                    textAcc += chunk;
+                } else {
+                    const u8 = chunk instanceof Uint8Array ? chunk : new Uint8Array(chunk);
+                    textAcc += decoder.decode(u8, { stream: true });
+                }
+
+                if (isFirstChunk) {
+                    isFirstChunk = false;
+                    flushProgress(textAcc);
+                } else {
+                    const now = Date.now();
+                    if (now - lastFlushTime >= 100) {
+                        if (throttleTimer) {
+                            clearTimeout(throttleTimer);
+                            throttleTimer = null;
+                        }
+                        flushProgress(textAcc);
+                    } else if (!throttleTimer) {
+                        throttleTimer = setTimeout(() => {
+                            throttleTimer = null;
+                            flushProgress(textAcc);
+                        }, 100 - (now - lastFlushTime));
+                    }
+                }
+            };
+
+            const onEnd = (payload?: { request_id?: number }) => {
+                if (payload?.request_id !== undefined && payload.request_id !== requestId) return;
+                finish();
+            };
+
+            const onDisconnect = () => {
+                finish();
+            };
+
+            const cleanup = () => {
+                if (inactivityTimer) {
+                    clearTimeout(inactivityTimer);
+                    inactivityTimer = null;
+                }
+                if (timeoutTimer) {
+                    clearTimeout(timeoutTimer);
+                    timeoutTimer = null;
+                }
+                if (throttleTimer) {
+                    clearTimeout(throttleTimer);
+                    throttleTimer = null;
+                }
+                socket.off('git:diff:chunk', onChunk);
+                socket.off('git:diff:end', onEnd);
+                socket.off('disconnect', onDisconnect);
+            };
+
+            socket.on('git:diff:chunk', onChunk);
+            socket.on('git:diff:end', onEnd);
+            socket.on('disconnect', onDisconnect);
+
+            socket.emit('git:diff:stream', { staged, request_id: requestId }, () => {
+                finish();
+            });
+
+            timeoutTimer = setTimeout(() => {
+                finish();
+            }, 10000);
+        });
+    }, [isConnected, wsRef]);
+
+    const streamGitStatus = useCallback((): Promise<ChangedFile[]> => {
+        return new Promise((resolve) => {
+            const socket = wsRef.current;
+            if (!socket || !isConnected) {
+                resolve([]);
+                return;
+            }
+
+            const decoder = new TextDecoder('utf-8', { fatal: false });
+            let textAcc = '';
+            let isDone = false;
+            let timeoutTimer: ReturnType<typeof setTimeout> | null = null;
+
+            const finish = () => {
+                if (isDone) return;
+                isDone = true;
+                cleanup();
+                textAcc += decoder.decode();
+                const parsed = parseGitPorcelainV2(textAcc);
+                setChangedFiles(parsed.files);
+                if (parsed.branch) setGitBranch(parsed.branch);
+                if (parsed.headHash) gitHeadHashRef.current = parsed.headHash;
+                resolve(parsed.files);
+            };
+
+            const onChunk = (chunk: ArrayBuffer | Uint8Array | string) => {
+                if (isDone) return;
+                if (typeof chunk === 'string') {
+                    textAcc += chunk;
+                } else {
+                    const u8 = chunk instanceof Uint8Array ? chunk : new Uint8Array(chunk);
+                    textAcc += decoder.decode(u8, { stream: true });
+                }
+                const parsed = parseGitPorcelainV2(textAcc);
+                if (parsed.files.length > 0) {
+                    setChangedFiles(parsed.files);
+                }
+                if (parsed.branch) {
+                    setGitBranch(parsed.branch);
+                }
+            };
+
+            const onEnd = () => {
+                finish();
+            };
+
+            const cleanup = () => {
+                if (timeoutTimer) {
+                    clearTimeout(timeoutTimer);
+                    timeoutTimer = null;
+                }
+                socket.off('git:status:chunk', onChunk);
+                socket.off('git:status:end', onEnd);
+            };
+
+            socket.on('git:status:chunk', onChunk);
+            socket.on('git:status:end', onEnd);
+
+            socket.emit('git:status:stream', () => {
+                finish();
+            });
+
+            timeoutTimer = setTimeout(() => {
+                finish();
+            }, 10000);
+        });
+    }, [isConnected, wsRef]);
+
     const fetchGitStatus = useCallback(() => {
         if (!wsRef.current || !isConnected) return;
 
         wsRef.current.emit('git:status', {}, (response: any) => {
             if (response.success) {
-                setChangedFiles(sortChangedFiles(response.files || []));
+                setChangedFiles(sortChangedFiles(response.files || [], response.dirs));
                 setGitBranch(response.branch || '');
                 gitHeadHashRef.current = response.head_hash;
             } else {
@@ -370,12 +721,14 @@ export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
     }, [wsRef, isConnected]);
 
     const handleGitStatusUpdate = useCallback((data: GitStatusUpdate) => {
+        const dirs = (data as any).dirs;
         if (data.kind === 'patch') {
             setGitBranch(data.branch || '');
             setChangedFiles((prev) => {
                 const next = new Map(prev.map((file) => [file.path, file]));
                 let structurallyChanged = false;
-                for (const item of data.files || []) {
+                for (const rawItem of (data.files as any[]) || []) {
+                    const item = normalizeGitPatchItem(rawItem, dirs);
                     if (item.status === 'removed') {
                         if (next.has(item.path)) {
                             next.delete(item.path);
@@ -396,13 +749,9 @@ export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
                             structurallyChanged = true;
                         } else {
                             const updated: ChangedFile = {
-                                path: item.path,
-                                status: item.status,
-                                staged: item.staged,
-                                unstaged: item.unstaged,
-                                conflicted: item.conflicted,
-                                added: item.added,
-                                removed: item.removed,
+                                ...existing,
+                                added: item.added ?? existing.added,
+                                removed: item.removed ?? existing.removed,
                             };
                             if (!areChangedFilesEqual(existing, updated)) {
                                 next.set(item.path, updated);
@@ -426,7 +775,7 @@ export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
 
         setGitBranch(data.branch || '');
         setChangedFiles((prev) => {
-            const nextFiles = sortChangedFiles(data.files || []);
+            const nextFiles = sortChangedFiles(data.files || [], dirs);
             if (prev.length !== nextFiles.length) {
                 const prevByPath = new Map(prev.map((file) => [file.path, file]));
                 return nextFiles.map((file) => {
@@ -588,6 +937,29 @@ export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
         });
     }, [fetchGitStatus, isConnected, wsRef]);
 
+    const fetchRawDiff = useCallback((
+        staged?: boolean,
+        onProgress?: (partialDiff: string) => void,
+    ): Promise<string> => {
+        return streamRawDiff(staged, onProgress);
+    }, [streamRawDiff]);
+
+    const fetchCommitRawDiff = useCallback((hash: string): Promise<string> => {
+        return new Promise((resolve) => {
+            if (!wsRef.current || !isConnected) {
+                resolve('');
+                return;
+            }
+            wsRef.current.emit('git:commit-diff-raw', { hash }, (response: any) => {
+                if (response?.success && typeof response.diff === 'string') {
+                    resolve(response.diff);
+                } else {
+                    resolve('');
+                }
+            });
+        });
+    }, [isConnected, wsRef]);
+
     return {
         changedFiles,
         gitBranch,
@@ -602,6 +974,10 @@ export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
         historyFilesLoading,
         historyPath,
         fetchGitStatus,
+        streamGitStatus,
+        fetchRawDiff,
+        streamRawDiff,
+        fetchCommitRawDiff,
         fetchOriginalFileContent,
         fetchBranches,
         fetchHistory,

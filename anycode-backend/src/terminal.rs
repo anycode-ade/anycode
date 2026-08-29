@@ -96,14 +96,17 @@ impl Terminal {
                                 Err(e) => {
                                     let valid_up_to = e.valid_up_to();
                                     if valid_up_to > 0 {
-                                        if let Ok(s) = std::str::from_utf8(&unprocessed[check_idx..check_idx + valid_up_to]) {
+                                        if let Ok(s) = std::str::from_utf8(
+                                            &unprocessed[check_idx..check_idx + valid_up_to],
+                                        ) {
                                             let _ = pty_output_tx.blocking_send(s.to_string());
                                         }
                                         check_idx += valid_up_to;
                                     }
                                     match e.error_len() {
                                         Some(err_len) => {
-                                            let _ = pty_output_tx.blocking_send(String::from("\u{FFFD}"));
+                                            let _ = pty_output_tx
+                                                .blocking_send(String::from("\u{FFFD}"));
                                             check_idx += err_len;
                                         }
                                         None => {

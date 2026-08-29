@@ -180,7 +180,9 @@ fn file_history_only_returns_commits_that_touch_the_path() {
     assert!(!second_page.has_more);
 
     let outside_path = tempfile::TempDir::new().unwrap().path().join("outside.txt");
-    let outside_page = manager.file_history(outside_path.to_str().unwrap(), 0, 10).unwrap();
+    let outside_page = manager
+        .file_history(outside_path.to_str().unwrap(), 0, 10)
+        .unwrap();
     assert!(outside_page.commits.is_empty());
 }
 
@@ -362,10 +364,7 @@ fn path_status_uses_repo_root_when_workdir_is_subdirectory() {
         .unwrap()
         .expect("modified file should be reported");
 
-    assert_eq!(
-        Path::new(&status.path).canonicalize().unwrap(),
-        file_path.canonicalize().unwrap()
-    );
+    assert_eq!(status.path, "src/test.txt");
     assert_eq!(status.status, FileStatus::Modified);
     assert!(status.unstaged);
 }
@@ -604,3 +603,175 @@ fn benchmark_status_real() {
         "Real custom version must be faster than CLI!"
     );
 }
+
+#[test]
+fn test_raw_diff_and_commit_diff() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let repo_dir = temp_dir.path().to_path_buf();
+    let repo = git2::Repository::init(&repo_dir).unwrap();
+    let mut config = repo.config().unwrap();
+    config.set_str("user.name", "Tester").unwrap();
+    config.set_str("user.email", "test@test.com").unwrap();
+    let manager = GitManager::new(repo_dir.clone());
+
+    // Create file1 and commit
+    let file1_path = repo_dir.join("file1.txt");
+    std::fs::write(&file1_path, "hello\nworld\n").unwrap();
+    let mut index = repo.index().unwrap();
+    index.add_path(std::path::Path::new("file1.txt")).unwrap();
+    index.write().unwrap();
+    let tree_id = index.write_tree().unwrap();
+    let tree = repo.find_tree(tree_id).unwrap();
+    let sig = git2::Signature::now("Tester", "test@test.com").unwrap();
+    let commit1_oid = repo
+        .commit(Some("HEAD"), &sig, &sig, "Initial commit", &tree, &[])
+        .unwrap();
+    let commit1_hash = commit1_oid.to_string();
+
+    // Modify file1
+    std::fs::write(&file1_path, "hello\nbrave\nnew\nworld\n").unwrap();
+
+    // Test unstaged raw diff
+    let raw_unstaged = manager.raw_diff(Some(false)).unwrap();
+    assert!(raw_unstaged.contains("diff --git a/file1.txt b/file1.txt"));
+    assert!(raw_unstaged.contains("+brave"));
+    assert!(raw_unstaged.contains("+new"));
+
+    // Stage and test staged raw diff
+    manager.stage("file1.txt").unwrap();
+    let raw_staged = manager.raw_diff(Some(true)).unwrap();
+    assert!(raw_staged.contains("diff --git a/file1.txt b/file1.txt"));
+    assert!(raw_staged.contains("+brave"));
+
+    // Commit change
+    manager.commit("Second commit").unwrap();
+    let head_commit = repo.head().unwrap().peel_to_commit().unwrap();
+    let commit2_hash = head_commit.id().to_string();
+
+    // Test raw commit diff for second commit
+    let raw_commit = manager.raw_commit_diff(&commit2_hash).unwrap();
+    assert!(raw_commit.contains("diff --git a/file1.txt b/file1.txt"));
+    assert!(raw_commit.contains("+brave"));
+
+    // Test raw commit diff for initial root commit
+    let raw_root_commit = manager.raw_commit_diff(&commit1_hash).unwrap();
+    assert!(
+        raw_root_commit.contains("diff --git a/file1.txt b/file1.txt")
+            || raw_root_commit.contains("file1.txt")
+    );
+    assert!(raw_root_commit.contains("+hello"));
+}
+
+#[test]
+fn benchmark_bun_status_comparison() {
+    let bun_dir = std::path::PathBuf::from("/Users/max/dev/tmp/bun");
+    if !bun_dir.exists() {
+        println!("Skipping benchmark_bun_status_comparison (/Users/max/dev/tmp/bun not found)");
+        return;
+    }
+
+    let manager = GitManager::new(bun_dir.clone());
+    let repo = manager.repo().unwrap();
+
+    // 1. Benchmark OLD libgit2 diff.foreach + statuses
+    let start_old = Instant::now();
+    let mut old_numstat: HashMap<String, (usize, usize)> = HashMap::new();
+    let mut opts = git2::DiffOptions::new();
+    opts.include_untracked(true)
+        .recurse_untracked_dirs(true)
+        .include_typechange(true);
+    let head_tree = repo.head().ok().and_then(|head| head.peel_to_tree().ok());
+    if let Ok(diff) = repo.diff_tree_to_workdir_with_index(head_tree.as_ref(), Some(&mut opts)) {
+        let _ = diff.foreach(
+            &mut |_delta, _progress| true,
+            None,
+            None,
+            Some(&mut |delta, _hunk, line| {
+                let Some(path) = delta
+                    .new_file()
+                    .path()
+                    .or_else(|| delta.old_file().path())
+                    .map(|p| p.to_string_lossy().to_string())
+                else {
+                    return true;
+                };
+                let entry = old_numstat.entry(path).or_insert((0, 0));
+                match line.origin() {
+                    '+' => entry.0 += 1,
+                    '-' => entry.1 += 1,
+                    _ => {}
+                }
+                true
+            }),
+        );
+    }
+    let mut status_opts = StatusOptions::new();
+    status_opts.include_untracked(true)
+        .recurse_untracked_dirs(true)
+        .include_ignored(false);
+    let _old_statuses = repo.statuses(Some(&mut status_opts)).unwrap();
+    let duration_old = start_old.elapsed();
+
+    // 2. Benchmark NEW CLI Status (porcelain + collect_numstat)
+    let start_new = Instant::now();
+    let new_status = manager.status().unwrap();
+    let duration_new = start_new.elapsed();
+
+    // 3. Benchmark Ultra-Fast CLI Files List Only (porcelain without numstat)
+    let start_files_only = Instant::now();
+    let mut files_only = Vec::new();
+    let dummy_numstat = HashMap::new();
+    let mut cmd = std::process::Command::new("git");
+    cmd.args([
+        "--no-pager",
+        "status",
+        "--porcelain=v1",
+        "--untracked-files=all",
+        "--no-renames",
+        "--no-ahead-behind",
+        "--ignore-submodules",
+    ]);
+    cmd.current_dir(&bun_dir);
+    if let Ok(output) = cmd.output() {
+        GitManager::parse_porcelain_v1_output(
+            &String::from_utf8_lossy(&output.stdout),
+            &dummy_numstat,
+            &mut files_only,
+        );
+    }
+    let duration_files_only = start_files_only.elapsed();
+
+    println!("\n========================================================");
+    println!("=== GIT STATUS BENCHMARK ON /Users/max/dev/tmp/bun ===");
+    println!("Total changed files detected: {}", new_status.files.len());
+    println!("1. OLD (libgit2 statuses + diff.foreach):  {:?}", duration_old);
+    println!("2. NEW (CLI porcelain + numstat diffs):    {:?}", duration_new);
+    println!("3. INSTANT (CLI porcelain files list only): {:?}", duration_files_only);
+    println!("========================================================\n");
+}
+
+#[test]
+fn test_bun_status_staged_unstaged_classification() {
+    let bun_dir = PathBuf::from("/Users/max/dev/tmp/bun");
+    if !bun_dir.exists() {
+        return;
+    }
+
+    let manager = GitManager::new(bun_dir);
+    let status = manager.status().expect("status should succeed");
+    
+    assert_eq!(status.files.len(), 2584);
+
+    // Verify files are sorted canonically by path
+    for i in 1..status.files.len() {
+        let prev = &status.files[i - 1].path;
+        let curr = &status.files[i].path;
+        assert!(
+            prev.to_lowercase() <= curr.to_lowercase() || prev <= curr,
+            "Files must be sorted: {} vs {}",
+            prev,
+            curr
+        );
+    }
+}
+

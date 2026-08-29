@@ -1,9 +1,21 @@
 import React, { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { AnycodeEditorReact } from 'anycode-react';
-import { AnycodeEditor, Code, MultiBufferCode, type MultiBufferEntry, type DefinitionRequest, type DefinitionResponse, type HoverRequest } from 'anycode-base';
+import {
+    AnycodeEditor,
+    Code,
+    MultiBufferCode,
+    DiffCode,
+    parseUnifiedDiff,
+    type MultiBufferEntry,
+    type DiffMultiBufferEntry,
+    type DefinitionRequest,
+    type DefinitionResponse,
+    type HoverRequest,
+} from 'anycode-base';
 import type { DockviewPanelApi } from 'dockview';
 import { LayoutPanelApiContext, LayoutVersionContext } from '../../components/layout/Layout';
 import type { FileState } from '../../types';
+import { normalizePath } from '../../utils';
 import './MultibufferPanel.css';
 
 export type MultibufferFile = {
@@ -23,8 +35,11 @@ type MultibufferPanelProps = {
     onClose: () => void;
     title?: string;
     ignoreEdits?: boolean;
+    rawDiff?: string;
+    isStreaming?: boolean;
     focusRequest?: { path: string; line?: number; column?: number; token: number };
     onActiveFileChange?: (fileId: string) => void;
+    onOpenFile?: (path: string) => void;
     onGoToDefinition?: (request: DefinitionRequest) => Promise<DefinitionResponse>;
     onHover?: (request: HoverRequest) => Promise<string | null>;
     onLoadDeletedFile?: (path: string) => Promise<string | null>;
@@ -52,8 +67,11 @@ const MultibufferPanel: React.FC<MultibufferPanelProps> = ({
     onClose,
     title = 'Review changes',
     ignoreEdits = false,
+    rawDiff,
+    isStreaming = false,
     focusRequest,
     onActiveFileChange,
+    onOpenFile,
     onGoToDefinition,
     onHover,
     onLoadDeletedFile,
@@ -66,15 +84,19 @@ const MultibufferPanel: React.FC<MultibufferPanelProps> = ({
     const originalCodeRef = useRef<MultiBufferCode | null>(null);
     const readyFilesRef = useRef<ReadyFile[]>([]);
     const editorStatesRef = useRef(editorStates);
+    const openFilesRef = useRef(openFiles);
     const onActiveFileChangeRef = useRef(onActiveFileChange);
+    const onOpenFileRef = useRef(onOpenFile);
     const loadedFileIdsRef = useRef(new Set<string>());
     const unsubscribeFileChangesRef = useRef(new Map<string, () => void>());
     const deletedEntriesRef = useRef(new Map<string, DeletedEntry>());
     const syncingRef = useRef(false);
     const generationRef = useRef(0);
+    const appliedRawDiffRef = useRef<string | undefined>(undefined);
     const [deletedEntriesVersion, setDeletedEntriesVersion] = useState(0);
     const fileById = useMemo(() => new Map(openFiles.map((file) => [file.id, file])), [openFiles]);
     const reviewFiles = files;
+    const hasRawDiff = rawDiff !== undefined && rawDiff.length > 0;
     const readyFiles = useMemo<ReadyFile[]>(() => files.flatMap((file) => {
             const fileState = fileById.get(file.id);
             const editor = editorStates.get(file.id);
@@ -110,7 +132,7 @@ const MultibufferPanel: React.FC<MultibufferPanelProps> = ({
         if (entriesChanged) {
             setDeletedEntriesVersion((version) => version + 1);
         }
-        if (ignoreEdits || !onLoadDeletedFile) return;
+        if (isStreaming || hasRawDiff || ignoreEdits || !onLoadDeletedFile) return;
 
         const missingFiles = deletedFiles.filter((file) => !deletedEntriesRef.current.has(file.id));
         if (missingFiles.length === 0) return;
@@ -139,13 +161,15 @@ const MultibufferPanel: React.FC<MultibufferPanelProps> = ({
         return () => {
             cancelled = true;
         };
-    }, [files, ignoreEdits, onLoadDeletedFile, panelKey]);
+    }, [files, hasRawDiff, ignoreEdits, isStreaming, onLoadDeletedFile, panelKey]);
 
     useEffect(() => {
         readyFilesRef.current = readyFiles;
         editorStatesRef.current = editorStates;
+        openFilesRef.current = openFiles;
         onActiveFileChangeRef.current = onActiveFileChange;
-    }, [editorStates, onActiveFileChange, readyFiles]);
+        onOpenFileRef.current = onOpenFile;
+    }, [editorStates, onActiveFileChange, onOpenFile, openFiles, readyFiles]);
 
     useEffect(() => {
         if (!sharedEditor) return;
@@ -204,6 +228,7 @@ const MultibufferPanel: React.FC<MultibufferPanelProps> = ({
             originalCodeRef.current = null;
             loadedFileIdsRef.current.clear();
             deletedEntriesRef.current.clear();
+            appliedRawDiffRef.current = undefined;
             setSharedEditor(null);
         };
     }, [ignoreEdits, panelKey]);
@@ -295,6 +320,41 @@ const MultibufferPanel: React.FC<MultibufferPanelProps> = ({
             });
         };
 
+        const materializeFile = (fileId: string): void => {
+            const currentCode = currentCodeRef.current;
+            if (!currentCode || !currentCode.isDiffEntry(fileId)) return;
+
+            const fileIdNorm = normalizePath(fileId);
+            const targetFile = reviewFiles.find((f) => {
+                if (f.id === fileId || f.path === fileId) return true;
+                const fNorm = normalizePath(f.path);
+                return fNorm === fileIdNorm || fNorm.endsWith('/' + fileIdNorm) || fileIdNorm.endsWith('/' + fNorm);
+            });
+            const targetPath = targetFile ? targetFile.path : fileId;
+
+            const targetNorm = normalizePath(targetPath);
+            const fileState = openFilesRef.current.find((f) => {
+                if (f.id === targetPath || f.id === fileId) return true;
+                const fNorm = normalizePath(f.id);
+                return fNorm === targetNorm || fNorm.endsWith('/' + targetNorm) || targetNorm.endsWith('/' + fNorm);
+            });
+            const fileEditor = editorStatesRef.current.get(targetPath)
+                || editorStatesRef.current.get(fileId)
+                || (fileState ? editorStatesRef.current.get(fileState.id) : undefined);
+
+            if (fileState && fileEditor) {
+                const originalContent = fileEditor.getOriginalText() ?? '';
+                const origCode = fileEditor.getOriginalCodeModel()
+                    ?? new Code(originalContent, fileState.path, fileState.language);
+                currentCode.materializeFile(fileId, fileEditor.getCodeModel(), origCode);
+                subscribeToFile({ file: { id: fileId, path: fileState.path }, fileState, editor: fileEditor });
+                loadedFileIdsRef.current.add(fileId);
+                sharedEditorRef.current?.refreshAfterExternalChange();
+            } else {
+                onOpenFileRef.current?.(targetPath);
+            }
+        };
+
         const sync = async () => {
             if (syncingRef.current) return;
             syncingRef.current = true;
@@ -305,89 +365,244 @@ const MultibufferPanel: React.FC<MultibufferPanelProps> = ({
                 let originalCode = originalCodeRef.current;
 
                 if (!editor || !currentCode || !originalCode) {
-                    const initialFiles = readyFilesRef.current;
-                    const firstReviewFileId = reviewFiles[0]?.id;
-                    if (
-                        !firstReviewFileId
-                        || !initialFiles.some(({ file }) => file.id === firstReviewFileId)
-                    ) return;
+                    if (rawDiff) {
+                        const parsedFiles = parseUnifiedDiff(rawDiff);
+                        const parsedMap = new Map<string, ParsedDiffFile>();
+                        for (const parsed of parsedFiles) {
+                            const id = parsed.id;
+                            const path = parsed.path;
+                            const norm = normalizePath(path);
+                            parsedMap.set(id, parsed);
+                            parsedMap.set(path, parsed);
+                            parsedMap.set(norm, parsed);
+                            if (path.startsWith('/')) parsedMap.set(path.slice(1), parsed);
+                            if (norm.startsWith('/')) parsedMap.set(norm.slice(1), parsed);
+                        }
 
-                    const entries = initialFiles.map(toEntry);
-                    currentCode = new MultiBufferCode(entries);
-                    originalCode = new MultiBufferCode(entries.map((entry) => ({
-                        ...entry,
-                        code: entry.originalCode,
-                        originalCode: entry.originalCode,
-                    })));
-                    editor = new AnycodeEditor('', 'multibuffer', '', {
-                        code: currentCode,
-                        originalCode,
-                        focusedDiffEnabled: true,
-                        ignoreEdits,
-                        codeFoldingEnabled: true,
-                        scrollbarMarkersEnabled: true,
-                    });
+                        const findParsed = (targetId: string, targetPath: string): ParsedDiffFile | undefined => {
+                            let exact = parsedMap.get(targetId) || parsedMap.get(targetPath);
+                            if (exact) return exact;
+                            const normId = normalizePath(targetId);
+                            const normPath = normalizePath(targetPath);
+                            exact = parsedMap.get(normId) || parsedMap.get(normPath);
+                            if (exact) return exact;
+                            const cleanId = normId.startsWith('/') ? normId.slice(1) : normId;
+                            const cleanPath = normPath.startsWith('/') ? normPath.slice(1) : normPath;
+                            return parsedMap.get(cleanId) || parsedMap.get(cleanPath);
+                        };
 
-                    currentCodeRef.current = currentCode;
-                    originalCodeRef.current = originalCode;
-                    sharedEditorRef.current = editor;
-                    currentCode.setOnFileChange(({ fileId, change }) => {
-                        editorStatesRef.current.get(fileId)?.notifyExternalChange(change);
-                    });
-                    editor.setOnCursorChange((position) => {
-                        const fileId = currentCodeRef.current?.getFileIdAtLine(position.line);
-                        if (fileId) onActiveFileChangeRef.current?.(fileId);
-                    });
-                    initialFiles.forEach(subscribeToFile);
+                        const entries: MultiBufferEntry[] = reviewFiles.map((file) => {
+                            const fileState = fileById.get(file.id) || fileById.get(file.path);
+                            const fileEditor = editorStates.get(file.id) || editorStates.get(file.path);
+                            if (fileState && fileEditor) {
+                                return {
+                                    id: file.id,
+                                    path: file.path,
+                                    added: file.added,
+                                    removed: file.removed,
+                                    readOnly: file.status === 'deleted',
+                                    code: fileEditor.getCodeModel(),
+                                    originalCode: fileEditor.getOriginalCodeModel()
+                                        ?? new Code(fileEditor.getOriginalText() ?? '', file.path, fileState.language),
+                                };
+                            }
 
-                    await editor.init();
-                    if (generationRef.current !== generation) {
-                        editor.clean();
-                        return;
-                    }
-                    if (onGoToDefinition) {
-                        editor.setGoToDefinitionProvider(onGoToDefinition);
-                    }
-                    editor.setDiffMode('diff');
-                    setSharedEditor(editor);
-                    initialFiles.forEach(({ file }) => loadedFileIdsRef.current.add(file.id));
-                    updateMultibufferErrors();
-                }
+                            const parsed = findParsed(file.id, file.path);
 
-                const currentFileIds = new Set(readyFilesRef.current.map(({ file }) => file.id));
-                const removedFileIds = [...loadedFileIdsRef.current]
-                    .filter((fileId) => !currentFileIds.has(fileId));
-                if (removedFileIds.length > 0) {
-                    currentCode.removeEntries(removedFileIds);
-                    originalCode.removeEntries(removedFileIds);
-                    removedFileIds.forEach((fileId) => {
-                        unsubscribeFileChangesRef.current.get(fileId)?.();
-                        unsubscribeFileChangesRef.current.delete(fileId);
-                        loadedFileIdsRef.current.delete(fileId);
-                    });
-                    editor.refreshAfterExternalChange();
-                    updateMultibufferErrors();
-                }
+                            const diffCode = parsed
+                                ? DiffCode.fromParsedFile(parsed, false)
+                                : new DiffCode(
+                                    file.path,
+                                    [],
+                                    [],
+                                    undefined,
+                                    file.added || 0,
+                                    file.removed || 0,
+                                    (file.status as any) || 'modified'
+                                );
 
-                const pendingFiles = readyFilesRef.current
-                    .filter(({ file }) => !loadedFileIdsRef.current.has(file.id));
-                if (pendingFiles.length > 0) {
-                    for (const pendingFile of pendingFiles) {
-                        const entry = toEntry(pendingFile);
-                        const insertionIndex = reviewFiles.findIndex((file) => file.id === pendingFile.file.id);
-                        await currentCode.addEntries([entry], insertionIndex);
-                        await originalCode.addEntries([{
+                            return {
+                                id: file.id,
+                                path: file.path,
+                                added: file.added,
+                                removed: file.removed,
+                                readOnly: file.status === 'deleted',
+                                diffCode,
+                                originalDiffCode: parsed ? DiffCode.fromParsedFile(parsed, true) : diffCode.getOriginalDiffCode(),
+                            };
+                        });
+
+                        currentCode = new MultiBufferCode(entries);
+                        originalCode = new MultiBufferCode(entries.map((entry) => {
+                            if (entry.kind === 'diff') {
+                                return {
+                                    ...entry,
+                                    diffCode: entry.originalDiffCode ?? entry.diffCode.getOriginalDiffCode(),
+                                };
+                            }
+                            return {
+                                ...entry,
+                                code: entry.originalCode,
+                                originalCode: entry.originalCode,
+                            };
+                        }));
+
+                        editor = new AnycodeEditor('', 'multibuffer', '', {
+                            code: currentCode,
+                            originalCode,
+                            focusedDiffEnabled: true,
+                            ignoreEdits,
+                            codeFoldingEnabled: true,
+                            scrollbarMarkersEnabled: true,
+                        });
+
+                        currentCodeRef.current = currentCode;
+                        originalCodeRef.current = originalCode;
+                        sharedEditorRef.current = editor;
+                        appliedRawDiffRef.current = rawDiff;
+
+                        currentCode.setOnFileChange(({ fileId, change }) => {
+                            editorStatesRef.current.get(fileId)?.notifyExternalChange(change);
+                        });
+                        editor.setOnCursorChange((position) => {
+                            const fileId = currentCodeRef.current?.getFileIdAtLine(position.line);
+                            if (fileId) {
+                                onActiveFileChangeRef.current?.(fileId);
+                                if (!ignoreEdits && currentCodeRef.current?.isDiffEntry(fileId)) {
+                                    void materializeFile(fileId);
+                                }
+                            }
+                        });
+
+                        await editor.init();
+                        if (generationRef.current !== generation) {
+                            editor.clean();
+                            return;
+                        }
+                        if (onGoToDefinition) {
+                            editor.setGoToDefinitionProvider(onGoToDefinition);
+                        }
+                        editor.setDiffMode('diff');
+                        setSharedEditor(editor);
+                        readyFilesRef.current.forEach(subscribeToFile);
+                        updateMultibufferErrors();
+                    } else {
+                        const initialFiles = readyFilesRef.current;
+                        const firstReviewFileId = reviewFiles[0]?.id;
+                        if (
+                            !firstReviewFileId
+                            || !initialFiles.some(({ file }) => file.id === firstReviewFileId)
+                        ) return;
+
+                        const entries = initialFiles.map(toEntry);
+                        currentCode = new MultiBufferCode(entries);
+                        originalCode = new MultiBufferCode(entries.map((entry) => ({
                             ...entry,
                             code: entry.originalCode,
                             originalCode: entry.originalCode,
-                        }], insertionIndex);
-                        if (generationRef.current !== generation) return;
+                        })));
+                        editor = new AnycodeEditor('', 'multibuffer', '', {
+                            code: currentCode,
+                            originalCode,
+                            focusedDiffEnabled: true,
+                            ignoreEdits,
+                            codeFoldingEnabled: true,
+                            scrollbarMarkersEnabled: true,
+                        });
 
-                        subscribeToFile(pendingFile);
-                        loadedFileIdsRef.current.add(pendingFile.file.id);
+                        currentCodeRef.current = currentCode;
+                        originalCodeRef.current = originalCode;
+                        sharedEditorRef.current = editor;
+                        currentCode.setOnFileChange(({ fileId, change }) => {
+                            editorStatesRef.current.get(fileId)?.notifyExternalChange(change);
+                        });
+                        editor.setOnCursorChange((position) => {
+                            const fileId = currentCodeRef.current?.getFileIdAtLine(position.line);
+                            if (fileId) onActiveFileChangeRef.current?.(fileId);
+                        });
+                        initialFiles.forEach(({ file }) => loadedFileIdsRef.current.add(file.id));
+                        initialFiles.forEach(subscribeToFile);
+
+                        await editor.init();
+                        if (generationRef.current !== generation) {
+                            editor.clean();
+                            return;
+                        }
+                        if (onGoToDefinition) {
+                            editor.setGoToDefinitionProvider(onGoToDefinition);
+                        }
+                        editor.setDiffMode('diff');
+                        setSharedEditor(editor);
+                        updateMultibufferErrors();
                     }
-                    editor.refreshAfterExternalChange();
-                    updateMultibufferErrors();
+                }
+
+                if (currentCode && originalCode && editor && rawDiff && rawDiff !== appliedRawDiffRef.current) {
+                    appliedRawDiffRef.current = rawDiff;
+                    const parsedFiles = parseUnifiedDiff(rawDiff);
+                    currentCode.applyParsedDiffs(parsedFiles, false);
+                    originalCode.applyParsedDiffs(parsedFiles, true);
+                    editor.recomputeDiffs();
+                    editor.render();
+                }
+
+                // JIT Materialization: If newly opened editors arrive, materialize them into Code
+                if (currentCode && editor) {
+                    let materializedAny = false;
+                    for (const readyFile of readyFilesRef.current) {
+                        const fileId = readyFile.file.id;
+                        if (readyFile.editor && readyFile.fileState && currentCode.isDiffEntry(fileId)) {
+                            const originalContent = readyFile.editor.getOriginalText() ?? '';
+                            const origCode = readyFile.editor.getOriginalCodeModel()
+                                ?? new Code(originalContent, readyFile.file.path, readyFile.fileState.language);
+                            currentCode.materializeFile(fileId, readyFile.editor.getCodeModel(), origCode);
+                            subscribeToFile(readyFile);
+                            loadedFileIdsRef.current.add(fileId);
+                            materializedAny = true;
+                        }
+                    }
+                    if (materializedAny) {
+                        editor.refreshAfterExternalChange();
+                        updateMultibufferErrors();
+                    }
+                }
+
+                if (!rawDiff) {
+                    const currentFileIds = new Set(readyFilesRef.current.map(({ file }) => file.id));
+                    const removedFileIds = [...loadedFileIdsRef.current]
+                        .filter((fileId) => !currentFileIds.has(fileId));
+                    if (removedFileIds.length > 0) {
+                        currentCode.removeEntries(removedFileIds);
+                        originalCode.removeEntries(removedFileIds);
+                        removedFileIds.forEach((fileId) => {
+                            unsubscribeFileChangesRef.current.get(fileId)?.();
+                            unsubscribeFileChangesRef.current.delete(fileId);
+                            loadedFileIdsRef.current.delete(fileId);
+                        });
+                        editor.refreshAfterExternalChange();
+                        updateMultibufferErrors();
+                    }
+
+                    const pendingFiles = readyFilesRef.current
+                        .filter(({ file }) => !loadedFileIdsRef.current.has(file.id));
+                    if (pendingFiles.length > 0) {
+                        for (const pendingFile of pendingFiles) {
+                            const entry = toEntry(pendingFile);
+                            const insertionIndex = reviewFiles.findIndex((file) => file.id === pendingFile.file.id);
+                            await currentCode.addEntries([entry], insertionIndex);
+                            await originalCode.addEntries([{
+                                ...entry,
+                                code: entry.originalCode,
+                                originalCode: entry.originalCode,
+                            }], insertionIndex);
+                            if (generationRef.current !== generation) return;
+
+                            subscribeToFile(pendingFile);
+                            loadedFileIdsRef.current.add(pendingFile.file.id);
+                        }
+                        editor.refreshAfterExternalChange();
+                        updateMultibufferErrors();
+                    }
                 }
             } finally {
                 syncingRef.current = false;
@@ -395,7 +610,7 @@ const MultibufferPanel: React.FC<MultibufferPanelProps> = ({
         };
 
         void sync();
-    }, [ignoreEdits, panelKey, readyFiles, reviewFiles]);
+    }, [hasRawDiff, ignoreEdits, isStreaming, panelKey, rawDiff, readyFiles, reviewFiles]);
 
     return (
         <div className="multibuffer-panel">
@@ -403,6 +618,9 @@ const MultibufferPanel: React.FC<MultibufferPanelProps> = ({
                 <div className="multibuffer-toolbar-title">
                     <span>{title}</span>
                     <span className="multibuffer-toolbar-count">{files.length} files</span>
+                    {isStreaming && (
+                        <span className="multibuffer-toolbar-streaming">updating...</span>
+                    )}
                 </div>
                 <button
                     className="search-close-button"

@@ -558,6 +558,25 @@ export class DemoSocket {
                 break;
             }
 
+            case 'git:status:stream': {
+                const files = Array.from(DEMO_CHANGED_FILES.values());
+                let porcelain = '# branch.head main\n';
+                for (const f of files) {
+                    porcelain += `1 .M N... 100644 100644 100644 1111 2222 ${f.path}\n`;
+                }
+                const buffer = new TextEncoder().encode(porcelain);
+                this.emitLocal('git:status:chunk', buffer);
+                this.emitLocal('git:status:end');
+                callback?.({ success: true });
+                break;
+            }
+
+            case 'git:diff:stream': {
+                this.emitLocal('git:diff:end', { request_id: payload?.request_id });
+                callback?.({ success: true, request_id: payload?.request_id });
+                break;
+            }
+
             case 'git:branches': {
                 callback?.({
                     success: true,

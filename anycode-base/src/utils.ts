@@ -407,3 +407,13 @@ export function getElementAtPosition(lineDiv: HTMLElement, column: number): Elem
     }
     return null;
 }
+
+export const normalizePath = (path: string): string => {
+    return path.replace(/\\/g, '/').replace(/^\.\/+/, '');
+};
+
+export const getFileName = (path: string): string => {
+    const normalized = normalizePath(path);
+    return normalized.split('/').pop() || path;
+};
+

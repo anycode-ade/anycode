@@ -4,10 +4,10 @@ version = "0.0.27"
 edition = "2024"
 
 [profile.release]
-opt-level = 3
-strip = true
-lto = true
-codegen-units = 1
+opt-level = 2
+strip = false
+lto = false
+codegen-units = 16
 panic = 'abort'
 
 [dependencies]

@@ -49,6 +49,7 @@ pub async fn handle_connect(socket: SocketRef, _state: State<AppState>) {
     socket.on("acp:undo", handle_acp_undo);
 
     socket.on("git:status", handle_git_status);
+    socket.on("git:status:stream", handle_git_status_stream);
     socket.on("git:file-original", handle_git_file_original);
     socket.on("git:history", handle_git_history);
     socket.on("git:history-search", handle_git_history_search);
@@ -66,6 +67,9 @@ pub async fn handle_connect(socket: SocketRef, _state: State<AppState>) {
     socket.on("git:revert", handle_git_revert);
     socket.on("git:stage", handle_git_stage);
     socket.on("git:unstage", handle_git_unstage);
+    socket.on("git:diff-raw", handle_git_diff_raw);
+    socket.on("git:diff:stream", handle_git_diff_stream);
+    socket.on("git:commit-diff-raw", handle_git_commit_diff_raw);
 
     socket.on("theme:list", handle_theme_list);
     socket.on("theme:get", handle_theme_get);

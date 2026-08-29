@@ -1,9 +1,13 @@
 import { Code, type Change, type Edit, type FoldRange, type HighlighedNode, type Position, type WordHighlight, type FilePosition, Operation } from './code';
 import { BinaryTokens } from './tokens';
 import type { Selection } from './selection';
+import type { Lang } from './lang';
 import { computeGitChangesWithStats, type DiffInfo, type DiffHunk, DiffModel } from './diff';
+import { DiffCode } from './diffCode';
+import { parseUnifiedDiff, type ParsedDiffFile } from './diffParser';
+import { normalizePath, getFileName } from './utils';
 
-export type MultiBufferEntry = {
+export type CodeMultiBufferEntry = {
     id: string;
     path: string;
     added?: number;
@@ -12,6 +16,22 @@ export type MultiBufferEntry = {
     code: Code;
     originalCode: Code;
 };
+
+export type DiffMultiBufferEntry = {
+    id: string;
+    path: string;
+    added?: number;
+    removed?: number;
+    readOnly?: boolean;
+    diffCode: DiffCode;
+    originalDiffCode?: DiffCode;
+};
+
+export type MultiBufferEntry = CodeMultiBufferEntry | DiffMultiBufferEntry;
+
+export function isDiffEntry(entry: MultiBufferEntry): entry is DiffMultiBufferEntry {
+    return 'diffCode' in entry;
+}
 
 export type MultiBufferFileChange = {
     fileId: string;
@@ -42,11 +62,6 @@ type CachedFileDiff = {
 
 const EMPTY_LINE = '\u200B';
 
-const getFileName = (path: string): string => {
-    const normalized = path.replace(/\\/g, '/');
-    return normalized.split('/').pop() || path;
-};
-
 const formatFileStats = (added: number, removed: number) => ({
     added: added > 0 ? `  +${added}` : '',
     removed: removed > 0 ? `${added > 0 ? ' ' : '  '}−${removed}` : '',
@@ -63,22 +78,45 @@ export class MultiBufferCode extends Code {
     private readonly fileDiffs = new Map<string, CachedFileDiff>();
     private readonly collapsedFiles = new Set<string>();
     private rows: IndexedRow[] = [];
+    private bodyStartIndices: number[] = [];
+    private originalBodyStarts: number[] = [];
     private indexDirty = true;
     private activeFileIndex = 0;
     private onChangeCallback: ((change: Change) => void) | null = null;
     private onFileChangeCallback: ((change: MultiBufferFileChange) => void) | null = null;
 
+    private readonly entryIndexMap = new Map<string, number>();
+
     constructor(entries: MultiBufferEntry[]) {
         super('', 'multibuffer', '');
         this.entries = entries;
         this.fileVersions = entries.map(() => 0);
-        this.filename = entries[0]?.path ?? 'multibuffer';
+        this.rebuildEntryIndexMap();
+        const first = entries[0];
+        this.filename = first ? (isDiffEntry(first) ? first.diffCode.path : first.path) : 'multibuffer';
+    }
+
+    private rebuildEntryIndexMap(): void {
+        this.entryIndexMap.clear();
+        for (let i = 0; i < this.entries.length; i++) {
+            const entry = this.entries[i];
+            this.entryIndexMap.set(entry.id, i);
+            this.entryIndexMap.set(entry.path, i);
+            const norm = normalizePath(entry.path);
+            this.entryIndexMap.set(norm, i);
+            if (entry.path.startsWith('/')) this.entryIndexMap.set(entry.path.slice(1), i);
+            if (norm.startsWith('/')) this.entryIndexMap.set(norm.slice(1), i);
+        }
     }
 
     public async init(): Promise<void> {
         // Current file buffers are owned and initialized by their regular
         // editors. Review only needs to initialize its separate baselines.
-        const baselines = new Set(this.entries.map((entry) => entry.originalCode));
+        const baselines = new Set(
+            this.entries
+                .filter((entry): entry is CodeMultiBufferEntry => !isDiffEntry(entry))
+                .map((entry) => entry.originalCode)
+        );
         await Promise.all([...baselines].map((code) => code.init()));
         this.indexDirty = true;
     }
@@ -89,7 +127,12 @@ export class MultiBufferCode extends Code {
         const insertionIndex = Math.max(0, Math.min(atIndex, this.entries.length));
         this.entries.splice(insertionIndex, 0, ...entries);
         this.fileVersions.splice(insertionIndex, 0, ...entries.map(() => 0));
-        const baselines = new Set(entries.map((entry) => entry.originalCode));
+        this.rebuildEntryIndexMap();
+        const baselines = new Set(
+            entries
+                .filter((entry): entry is CodeMultiBufferEntry => !isDiffEntry(entry))
+                .map((entry) => entry.originalCode)
+        );
         await Promise.all([...baselines].map((code) => code.init()));
         this.indexDirty = true;
     }
@@ -104,10 +147,141 @@ export class MultiBufferCode extends Code {
             this.fileVersions.splice(index, 1);
         }
 
+        this.rebuildEntryIndexMap();
         this.fileDiffs.clear();
         this.collapsedFiles.clear();
         this.activeFileIndex = Math.min(this.activeFileIndex, Math.max(0, this.entries.length - 1));
         this.indexDirty = true;
+    }
+
+    private findEntryIndex(fileId: string): number {
+        const found = this.entryIndexMap.get(fileId);
+        if (found !== undefined) return found;
+        const normalized = normalizePath(fileId);
+        const foundNorm = this.entryIndexMap.get(normalized);
+        if (foundNorm !== undefined) return foundNorm;
+        const clean = normalized.startsWith('/') ? normalized.slice(1) : normalized;
+        const foundClean = this.entryIndexMap.get(clean);
+        if (foundClean !== undefined) return foundClean;
+
+        return this.entries.findIndex((entry) => {
+            if (entry.id === fileId || entry.path === fileId) return true;
+            const entryNorm = normalizePath(entry.path);
+            return entryNorm === normalized || entryNorm.endsWith('/' + normalized) || normalized.endsWith('/' + entryNorm);
+        });
+    }
+
+    /**
+     * Seamlessly swaps a DiffCode entry to a live Code entry on demand.
+     */
+    public materializeFile(fileId: string, code: Code, originalCode: Code): boolean {
+        const index = this.findEntryIndex(fileId);
+        if (index < 0) return false;
+
+        const current = this.entries[index];
+        const prevLinesLength = isDiffEntry(current)
+            ? current.diffCode.linesLength()
+            : current.code.linesLength();
+
+        this.entries[index] = {
+            id: current.id,
+            path: current.path,
+            added: current.added,
+            removed: current.removed,
+            readOnly: current.readOnly,
+            code,
+            originalCode,
+        };
+        this.fileVersions[index] += 1;
+
+        if (code.linesLength() !== prevLinesLength) {
+            this.indexDirty = true;
+            this.linesCache.clear();
+            this.fileDiffs.delete(current.id);
+        }
+        return true;
+    }
+
+    /**
+     * Updates or sets DiffCode for a given file entry while preserving file ordering.
+     */
+    public setDiff(fileId: string, diffCode: DiffCode): boolean {
+        const index = this.findEntryIndex(fileId);
+        if (index < 0) return false;
+
+        const current = this.entries[index];
+        if (isDiffEntry(current)) {
+            current.diffCode = diffCode;
+            current.added = diffCode.added;
+            current.removed = diffCode.removed;
+            current.originalDiffCode = diffCode.getOriginalDiffCode();
+        } else {
+            this.entries[index] = {
+                id: current.id,
+                path: current.path,
+                added: diffCode.added,
+                removed: diffCode.removed,
+                readOnly: current.readOnly,
+                diffCode,
+                originalDiffCode: diffCode.getOriginalDiffCode(),
+            };
+        }
+        this.fileVersions[index] += 1;
+        this.fileDiffs.delete(current.id);
+        this.indexDirty = true;
+        return true;
+    }
+
+    /**
+     * Populates diff hunks across all matching file entries from a raw unified diff patch.
+     * Preserves the predefined order of entries in the MultiBuffer.
+     */
+    public setRawDiff(rawDiff: string, isOriginal: boolean = false): void {
+        const parsedFiles = parseUnifiedDiff(rawDiff);
+        this.applyParsedDiffs(parsedFiles, isOriginal);
+    }
+
+    public applyParsedDiffs(parsedFiles: ParsedDiffFile[], isOriginal: boolean = false): void {
+        for (const parsed of parsedFiles) {
+            const diffCode = DiffCode.fromParsedFile(parsed, isOriginal);
+            let index = this.entryIndexMap.get(parsed.id);
+            if (index === undefined) index = this.entryIndexMap.get(parsed.path);
+            if (index === undefined) index = this.findEntryIndex(parsed.id);
+            if (index < 0) index = this.findEntryIndex(parsed.path);
+
+            if (index >= 0) {
+                const current = this.entries[index];
+                if (isDiffEntry(current)) {
+                    current.diffCode = diffCode;
+                    current.added = diffCode.added;
+                    current.removed = diffCode.removed;
+                    current.originalDiffCode = diffCode.getOriginalDiffCode();
+                } else {
+                    this.entries[index] = {
+                        id: current.id,
+                        path: current.path,
+                        added: diffCode.added,
+                        removed: diffCode.removed,
+                        readOnly: current.readOnly,
+                        diffCode,
+                        originalDiffCode: diffCode.getOriginalDiffCode(),
+                    };
+                }
+                this.fileVersions[index] += 1;
+                this.fileDiffs.delete(current.id);
+            }
+        }
+        this.indexDirty = true;
+    }
+
+    public isDiffEntryAt(fileIndex: number): boolean {
+        const entry = this.entries[fileIndex];
+        return entry ? isDiffEntry(entry) : false;
+    }
+
+    public isDiffEntry(fileId: string): boolean {
+        const index = this.findEntryIndex(fileId);
+        return index >= 0 ? isDiffEntry(this.entries[index]) : false;
     }
 
     public setOnFileChange(callback: ((change: MultiBufferFileChange) => void) | null): void {
@@ -123,7 +297,7 @@ export class MultiBufferCode extends Code {
 
     public getFirstLineForFile(fileId: string): number | null {
         this.ensureIndex();
-        const fileIndex = this.entries.findIndex((entry) => entry.id === fileId || entry.path === fileId);
+        const fileIndex = this.findEntryIndex(fileId);
         if (fileIndex < 0) return null;
         const rowIndex = this.rows.findIndex((row) => row.fileIndex === fileIndex);
         return rowIndex >= 0 ? rowIndex : null;
@@ -132,12 +306,17 @@ export class MultiBufferCode extends Code {
     public getMultibufferLineNumber(line: number): number | null {
         this.ensureIndex();
         const row = this.rows[line];
-        return row?.kind === 'file' ? row.localLine : null;
+        if (!row || row.kind !== 'file') return null;
+        const entry = this.entries[row.fileIndex];
+        if (entry && isDiffEntry(entry)) {
+            return entry.diffCode.displayLineNumbers[row.localLine] ?? null;
+        }
+        return row.localLine;
     }
 
     public getMultibufferLineForLocalLine(fileId: string, localLine: number): number | null {
         this.ensureIndex();
-        const fileIndex = this.entries.findIndex((entry) => entry.id === fileId || entry.path === fileId);
+        const fileIndex = this.findEntryIndex(fileId);
         if (fileIndex < 0) return null;
         const rowIndex = this.rows.findIndex(
             (row) => row.fileIndex === fileIndex && row.kind === 'file' && row.localLine === localLine,
@@ -192,49 +371,58 @@ export class MultiBufferCode extends Code {
     }
 
     public getFileText(fileId: string): string | null {
-        return this.entries.find((entry) => entry.id === fileId)?.code.getContent() ?? null;
+        const index = this.findEntryIndex(fileId);
+        if (index < 0) return null;
+        const entry = this.entries[index];
+        return isDiffEntry(entry) ? entry.diffCode.getContent() : entry.code.getContent();
     }
 
     public notifyFileChanged(fileId: string): void {
-        const fileIndex = this.entries.findIndex((entry) => entry.id === fileId);
+        const fileIndex = this.findEntryIndex(fileId);
         if (fileIndex < 0) return;
-        this.fileVersions[fileIndex] += 1;
-        this.indexDirty = true;
+        this.markFileChanged(fileIndex);
     }
 
-    /**
-     * Compute the composite diff using per-file caches. Editing one file only
-     * invalidates that file's JsDiff result; the other files are remapped into
-     * the current global coordinate space without being diffed again.
-     */
-    public getMultibufferDiffs(): DiffModel {
+    public computeGitChanges(): DiffModel {
         this.ensureIndex();
         const allHunks: DiffHunk[] = [];
         let totalAdded = 0;
         let totalRemoved = 0;
+        let nextHunkId = 1;
 
         for (let fileIndex = 0; fileIndex < this.entries.length; fileIndex++) {
-            const cached = this.getCachedFileDiff(fileIndex);
-            totalAdded += cached.added;
-            totalRemoved += cached.removed;
+            const entry = this.entries[fileIndex];
+            const { diffs, added, removed } = this.getCachedFileDiff(fileIndex);
+            totalAdded += added;
+            totalRemoved += removed;
 
-            const currentBodyStart = this.getBodyStart(fileIndex, false);
-            if (currentBodyStart < 0) continue;
+            const bodyStartRow = this.getBodyStart(fileIndex, false);
             const originalBodyStart = this.getBodyStart(fileIndex, true);
-            for (const hunk of cached.diffs.getHunks()) {
+            if (bodyStartRow < 0 || this.collapsedFiles.has(entry.id)) continue;
+            const currentBodyStart = bodyStartRow + 1;
+
+            for (const hunk of diffs.getHunks()) {
+                const remappedOldLineNumbers = hunk.oldLineNumbers?.map((n) => originalBodyStart + n - 1);
+                const remappedGhostAnchorLine = hunk.ghostAnchorLine !== undefined
+                    ? currentBodyStart + hunk.ghostAnchorLine - 1
+                    : undefined;
+
                 allHunks.push({
-                    ...hunk,
-                    startLine: currentBodyStart + hunk.startLine,
-                    oldLineNumbers: hunk.oldLineNumbers?.map((line) => originalBodyStart + line),
-                    ghostAnchorLine: hunk.ghostAnchorLine === undefined
-                        ? undefined
-                        : currentBodyStart + hunk.ghostAnchorLine,
-                    hunkId: fileIndex * 1_000_000 + hunk.hunkId,
+                    hunkId: nextHunkId++,
+                    startLine: currentBodyStart + hunk.startLine - 1,
+                    lineCount: hunk.lineCount,
+                    changeType: hunk.changeType,
+                    oldLineNumbers: remappedOldLineNumbers,
+                    ghostAnchorLine: remappedGhostAnchorLine,
                 });
             }
         }
 
         return new DiffModel(allHunks, totalAdded, totalRemoved);
+    }
+
+    public getMultibufferDiffs(): DiffModel {
+        return this.computeGitChanges();
     }
 
     public getMultibufferHeader(line: number): string | null {
@@ -263,7 +451,8 @@ export class MultiBufferCode extends Code {
             headers.add(rowIndex);
             rowIndex += 1;
             if (!this.collapsedFiles.has(entry.id)) {
-                rowIndex += Math.max(1, entry.code.linesLength());
+                const count = isDiffEntry(entry) ? entry.diffCode.linesLength() : entry.code.linesLength();
+                rowIndex += Math.max(1, count);
             }
         }
         return headers;
@@ -353,7 +542,12 @@ export class MultiBufferCode extends Code {
                 { name: 'multibuffer-header-removed', text: stats.removed },
             ];
         }
-        return this.entries[row.fileIndex]?.code.getLineNodes(row.localLine) ?? [{ name: null, text: EMPTY_LINE }];
+        const entry = this.entries[row.fileIndex];
+        if (!entry) return [{ name: null, text: row.text }];
+        if (isDiffEntry(entry)) {
+            return entry.diffCode.getLineNodes(row.localLine) ?? [{ name: null, text: row.text }];
+        }
+        return entry.code.getLineNodes(row.localLine) ?? [{ name: null, text: EMPTY_LINE }];
     }
 
     public override getLineBinaryTokens(line: number): Uint32Array {
@@ -364,16 +558,24 @@ export class MultiBufferCode extends Code {
             const nodes = this.getLineNodes(line);
             return BinaryTokens.encode(nodes);
         }
-        return this.entries[row.fileIndex]?.code.getLineBinaryTokens(row.localLine) ?? new Uint32Array(0);
+        const entry = this.entries[row.fileIndex];
+        if (!entry) return BinaryTokens.encode([{ name: null, text: row.text }]);
+        if (isDiffEntry(entry)) {
+            const nodes = entry.diffCode.getLineNodes(row.localLine) ?? [{ name: null, text: row.text }];
+            return BinaryTokens.encode(nodes);
+        }
+        return entry.code.getLineBinaryTokens(row.localLine) ?? new Uint32Array(0);
     }
 
     public getFoldRanges(): FoldRange[] {
         this.ensureIndex();
         const ranges: FoldRange[] = [];
         for (let fileIndex = 0; fileIndex < this.entries.length; fileIndex++) {
-            const firstBodyRow = this.rows.findIndex((row) => row.fileIndex === fileIndex && row.kind === 'file');
+            const entry = this.entries[fileIndex];
+            if (isDiffEntry(entry)) continue;
+            const firstBodyRow = this.bodyStartIndices[fileIndex] ?? -1;
             if (firstBodyRow < 0) continue;
-            for (const range of this.entries[fileIndex].code.getFoldRanges()) {
+            for (const range of entry.code.getFoldRanges()) {
                 ranges.push({ ...range, startLine: firstBodyRow + range.startLine, endLine: firstBodyRow + range.endLine });
             }
         }
@@ -383,7 +585,9 @@ export class MultiBufferCode extends Code {
     public getWordAtOffset(offset: number): WordHighlight | null {
         const resolved = this.resolveOffset(offset);
         if (!resolved || resolved.row.kind === 'header') return null;
-        return this.entries[resolved.fileIndex].code.getWordAtOffset(resolved.localOffset);
+        const entry = this.entries[resolved.fileIndex];
+        if (!entry || isDiffEntry(entry)) return null;
+        return entry.code.getWordAtOffset(resolved.localOffset);
     }
 
     public search(pattern: string): { line: number; column: number }[] {
@@ -410,27 +614,40 @@ export class MultiBufferCode extends Code {
         return matches;
     }
 
-    public getIndent() {
-        return this.entries[this.activeFileIndex]?.code.getIndent() ?? null;
+    public override getIndent(): Lang['indent'] | null {
+        const entry = this.entries[this.activeFileIndex];
+        if (!entry || isDiffEntry(entry)) return null;
+        return entry.code.getIndent();
     }
 
     public getComment(): string {
-        return this.entries[this.activeFileIndex]?.code.getComment() ?? '';
+        const entry = this.entries[this.activeFileIndex];
+        if (!entry || isDiffEntry(entry)) return '';
+        return entry.code.getComment();
     }
 
     public getIndentationLevel(line: number, column?: number): number {
         const resolved = this.resolveLine(line);
-        return resolved ? this.entries[resolved.fileIndex].code.getIndentationLevel(resolved.localLine, column) : 0;
+        if (!resolved) return 0;
+        const entry = this.entries[resolved.fileIndex];
+        if (!entry || isDiffEntry(entry)) return 0;
+        return entry.code.getIndentationLevel(resolved.localLine, column);
     }
 
     public isOnlyIndentationBefore(line: number, column: number): boolean {
         const resolved = this.resolveLine(line);
-        return resolved ? this.entries[resolved.fileIndex].code.isOnlyIndentationBefore(resolved.localLine, column) : false;
+        if (!resolved) return false;
+        const entry = this.entries[resolved.fileIndex];
+        if (!entry || isDiffEntry(entry)) return false;
+        return entry.code.isOnlyIndentationBefore(resolved.localLine, column);
     }
 
     public prevIndentation(line: number, column: number): number {
         const resolved = this.resolveLine(line);
-        return resolved ? this.entries[resolved.fileIndex].code.prevIndentation(resolved.localLine, column) : 0;
+        if (!resolved) return 0;
+        const entry = this.entries[resolved.fileIndex];
+        if (!entry || isDiffEntry(entry)) return 0;
+        return entry.code.prevIndentation(resolved.localLine, column);
     }
 
     public setOnChange(callback: ((change: Change) => void) | null): void {
@@ -448,18 +665,13 @@ export class MultiBufferCode extends Code {
 
     public override undo(offset?: number): Change | undefined {
         const resolved = offset === undefined ? undefined : this.resolveOffset(offset);
-        console.log('[MultiBufferCode.undo]', {
-            cursorOffset: offset,
-            activeFileIndex: this.activeFileIndex,
-            resolvedFileIndex: resolved?.fileIndex,
-            fileId: resolved ? this.entries[resolved.fileIndex]?.id : undefined,
-            localOffset: resolved?.localOffset,
-        });
-        if (!resolved) return undefined;
-        if (resolved.row.kind === 'header') return undefined;
+        if (!resolved || resolved.row.kind === 'header') return undefined;
 
         const fileIndex = resolved.fileIndex;
-        const change = this.entries[fileIndex]?.code.undo();
+        const entry = this.entries[fileIndex];
+        if (!entry || isDiffEntry(entry)) return undefined;
+
+        const change = entry.code.undo();
         if (!change) return undefined;
         this.markFileChanged(fileIndex);
         return this.toGlobalChange(change, fileIndex);
@@ -471,7 +683,10 @@ export class MultiBufferCode extends Code {
         if (!resolved || resolved.row.kind === 'header') return null;
 
         const fileIndex = resolved.fileIndex;
-        const change = this.entries[fileIndex]?.code.redo() ?? null;
+        const entry = this.entries[fileIndex];
+        if (!entry || isDiffEntry(entry)) return null;
+
+        const change = entry.code.redo() ?? null;
         if (!change) return null;
         this.markFileChanged(fileIndex);
         return this.toGlobalChange(change, fileIndex);
@@ -491,7 +706,7 @@ export class MultiBufferCode extends Code {
         if (!resolved || resolved.row.kind === 'header') return;
 
         const entry = this.entries[resolved.fileIndex];
-        if (entry.readOnly) return;
+        if (!entry || isDiffEntry(entry) || entry.readOnly) return;
         const localOffset = Math.min(resolved.localOffset, entry.code.getContentLength());
         entry.code.insert(text, localOffset, true);
         this.markFileChanged(resolved.fileIndex);
@@ -509,7 +724,7 @@ export class MultiBufferCode extends Code {
         if (!start || !end || start.row.kind === 'header' || start.fileIndex !== end.fileIndex) return;
 
         const entry = this.entries[start.fileIndex];
-        if (entry.readOnly) return;
+        if (!entry || isDiffEntry(entry) || entry.readOnly) return;
         const maxLength = Math.max(0, entry.code.getContentLength() - start.localOffset);
         const removeLength = Math.min(length, maxLength);
         if (removeLength <= 0) return;
@@ -524,8 +739,9 @@ export class MultiBufferCode extends Code {
     }
 
     private notifyEdit(fileIndex: number, localEdit: Edit, globalEdit: Edit): void {
-        const fileId = this.entries[fileIndex].id;
-        this.onFileChangeCallback?.({ fileId, change: { edits: [localEdit] } });
+        const entry = this.entries[fileIndex];
+        if (!entry) return;
+        this.onFileChangeCallback?.({ fileId: entry.id, change: { edits: [localEdit] } });
         this.onChangeCallback?.({ edits: [globalEdit] });
     }
 
@@ -578,7 +794,11 @@ export class MultiBufferCode extends Code {
         if (!this.indexDirty) return;
         this.linesCache.clear();
         this.rows = [];
+        this.bodyStartIndices = new Array(this.entries.length);
+        this.originalBodyStarts = new Array(this.entries.length);
         let offset = 0;
+        let originalRunningOffset = 0;
+
         for (let fileIndex = 0; fileIndex < this.entries.length; fileIndex++) {
             const entry = this.entries[fileIndex];
             const { added, removed } = this.getCachedFileDiff(fileIndex);
@@ -588,16 +808,28 @@ export class MultiBufferCode extends Code {
             this.rows.push({ kind: 'header', fileIndex, localLine: -1, localStart: 0, text: header, start: offset });
             offset += header.length + 1;
 
-            const lines = entry.code.getLines();
+            this.bodyStartIndices[fileIndex] = this.rows.length;
+            this.originalBodyStarts[fileIndex] = originalRunningOffset;
+
+            const lines = isDiffEntry(entry) ? entry.diffCode.getLines() : entry.code.getLines();
             const fileLines = lines.length > 0 ? lines : [''];
+            const origLength = isDiffEntry(entry)
+                ? (entry.originalDiffCode?.linesLength() ?? entry.diffCode.linesLength())
+                : entry.originalCode.linesLength();
+            originalRunningOffset += 1 + Math.max(1, origLength);
+
             if (this.collapsedFiles.has(entry.id)) continue;
             for (let localLine = 0; localLine < fileLines.length; localLine++) {
                 const text = fileLines[localLine] ?? '';
+                const localStart = isDiffEntry(entry)
+                    ? entry.diffCode.getOffset(localLine, 0)
+                    : entry.code.getOffset(localLine, 0);
+
                 this.rows.push({
                     kind: 'file',
                     fileIndex,
                     localLine,
-                    localStart: entry.code.getOffset(localLine, 0),
+                    localStart,
                     text,
                     start: offset,
                 });
@@ -614,6 +846,14 @@ export class MultiBufferCode extends Code {
     private getCachedFileDiff(fileIndex: number): CachedFileDiff {
         const entry = this.entries[fileIndex];
         if (!entry) return { version: 0, diffs: DiffModel.empty(), added: 0, removed: 0 };
+        if (isDiffEntry(entry)) {
+            return {
+                version: 0,
+                diffs: entry.diffCode.getDiffs(),
+                added: entry.added ?? entry.diffCode.added,
+                removed: entry.removed ?? entry.diffCode.removed,
+            };
+        }
         const version = this.fileVersions[fileIndex];
         let cached = this.fileDiffs.get(entry.id);
         if (!cached || cached.version !== version) {
@@ -631,23 +871,22 @@ export class MultiBufferCode extends Code {
 
     private getBodyStart(fileIndex: number, original: boolean): number {
         if (!original) {
-            return this.rows.findIndex((row) => row.fileIndex === fileIndex && row.kind === 'file');
+            return this.bodyStartIndices[fileIndex] ?? -1;
         }
-
-        let start = 0;
-        for (let index = 0; index < fileIndex; index++) {
-            const code = original ? this.entries[index].originalCode : this.entries[index].code;
-            start += 1 + Math.max(1, code.linesLength());
-        }
-        return start + 1;
+        return (this.originalBodyStarts[fileIndex] ?? 0) + 2;
     }
 
     private activateFile(fileIndex: number): void {
         this.activeFileIndex = fileIndex;
         const entry = this.entries[fileIndex];
         if (entry) {
-            this.filename = entry.path;
-            this.language = entry.code.language;
+            if (isDiffEntry(entry)) {
+                this.filename = entry.diffCode.path;
+                this.language = entry.diffCode.language;
+            } else {
+                this.filename = entry.code.filename || entry.path;
+                this.language = entry.code.language;
+            }
         }
     }
 
@@ -674,7 +913,9 @@ export class MultiBufferCode extends Code {
         const entry = this.entries[fileIndex];
         if (!entry) return localOffset;
 
-        const position = entry.code.getPosition(localOffset);
+        const position = isDiffEntry(entry)
+            ? entry.diffCode.getPosition(localOffset)
+            : entry.code.getPosition(localOffset);
         const line = this.getMultibufferLineForLocalLine(entry.id, position.line);
         return line === null ? localOffset : this.getOffset(line, position.column);
     }

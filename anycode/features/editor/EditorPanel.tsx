@@ -28,9 +28,12 @@ type EditorPanelProps = {
     multibufferFiles?: MultibufferFile[];
     multibufferTitle?: string;
     multibufferIgnoreEdits?: boolean;
+    multibufferRawDiff?: string;
+    multibufferIsStreaming?: boolean;
     multibufferFocusRequest?: { path: string; line?: number; column?: number; token: number };
     onCloseMultibuffer?: () => void;
     onMultibufferActiveFileChange?: (paneId: string, fileId: string) => void;
+    onOpenFile?: (path: string) => void;
     onGoToDefinition?: (request: DefinitionRequest) => Promise<DefinitionResponse>;
     onLoadDeletedFile?: (path: string) => Promise<string | null>;
 };
@@ -42,9 +45,12 @@ export const EditorPanel = ({
     multibufferFiles = [],
     multibufferTitle,
     multibufferIgnoreEdits = false,
+    multibufferRawDiff,
+    multibufferIsStreaming = false,
     multibufferFocusRequest,
     onCloseMultibuffer,
     onMultibufferActiveFileChange,
+    onOpenFile,
     onGoToDefinition,
     onLoadDeletedFile,
 }: EditorPanelProps) => {
@@ -105,8 +111,11 @@ export const EditorPanel = ({
                     onClose={onCloseMultibuffer ?? (() => undefined)}
                     title={multibufferTitle}
                     ignoreEdits={multibufferIgnoreEdits}
+                    rawDiff={multibufferRawDiff}
+                    isStreaming={multibufferIsStreaming}
                     focusRequest={multibufferFocusRequest}
                     onActiveFileChange={(fileId) => onMultibufferActiveFileChange?.(panelKey, fileId)}
+                    onOpenFile={onOpenFile}
                     onGoToDefinition={onGoToDefinition}
                     onHover={editors.handleHover}
                     onLoadDeletedFile={onLoadDeletedFile}

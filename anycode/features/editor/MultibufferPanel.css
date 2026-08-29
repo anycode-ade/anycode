@@ -37,6 +37,38 @@
     font-weight: 500;
 }
 
+.multibuffer-toolbar-streaming {
+    color: var(--theme-accent, #79c0ff);
+    font-size: 0.85em;
+    font-weight: 500;
+    opacity: 0.85;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    margin-left: 4px;
+}
+
+.multibuffer-toolbar-streaming::before {
+    content: '';
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background-color: var(--theme-accent, #79c0ff);
+    animation: multibuffer-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes multibuffer-pulse {
+    0%, 100% {
+        opacity: 0.3;
+        transform: scale(0.85);
+    }
+    50% {
+        opacity: 1;
+        transform: scale(1.15);
+    }
+}
+
 .multibuffer-scroll {
     flex: 1 1 auto;
     min-height: 0;

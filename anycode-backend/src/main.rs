@@ -39,7 +39,10 @@ async fn main() -> Result<()> {
     let (acp_fs_tx, acp_fs_rx) = mpsc::channel::<acp_fs::AcpFsCommand>(32);
     let state = AppState::new(diagnostic_tx, acp_fs_tx);
 
-    let (layer, io) = SocketIo::builder().with_state(state.clone()).build_layer();
+    let (layer, io) = SocketIo::builder()
+        .max_buffer_size(1024)
+        .with_state(state.clone())
+        .build_layer();
     let cors = ServiceBuilder::new()
         .layer(CorsLayer::permissive())
         .layer(layer);

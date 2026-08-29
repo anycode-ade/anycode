@@ -666,6 +666,53 @@ export class Renderer {
         return Math.max(0, Math.round((row.hiddenStart + row.hiddenEnd) / 2));
     }
 
+    public isRealLineVisible(lineIndex: number): boolean {
+        if (!this.visualSegments || this.visualSegments.length === 0) return true;
+        for (const seg of this.visualSegments) {
+            if (seg.kind === 'real') {
+                if (lineIndex >= seg.startLine && lineIndex < seg.startLine + seg.count) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    public findNearestVisibleRealLine(lineIndex: number, preferNext: boolean): number {
+        if (!this.visualSegments || this.visualSegments.length === 0) return lineIndex;
+
+        // 1. If already visible, return lineIndex
+        for (const seg of this.visualSegments) {
+            if (seg.kind === 'real' && lineIndex >= seg.startLine && lineIndex < seg.startLine + seg.count) {
+                return lineIndex;
+            }
+        }
+
+        // 2. Find next or previous real line
+        if (preferNext) {
+            for (const seg of this.visualSegments) {
+                if (seg.kind === 'real' && seg.startLine > lineIndex) {
+                    return seg.startLine;
+                }
+            }
+            for (let i = this.visualSegments.length - 1; i >= 0; i--) {
+                const seg = this.visualSegments[i];
+                if (seg.kind === 'real') return seg.startLine + seg.count - 1;
+            }
+        } else {
+            for (let i = this.visualSegments.length - 1; i >= 0; i--) {
+                const seg = this.visualSegments[i];
+                if (seg.kind === 'real' && seg.startLine + seg.count - 1 < lineIndex) {
+                    return seg.startLine + seg.count - 1;
+                }
+            }
+            for (const seg of this.visualSegments) {
+                if (seg.kind === 'real') return seg.startLine;
+            }
+        }
+        return lineIndex;
+    }
+
     public getVisibleRealLineIndices(): Set<number> {
         const lines = new Set<number>();
         if (!this.visualSegments || this.visualSegments.length === 0) {

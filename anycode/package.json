@@ -11,7 +11,9 @@
     "build": "rimraf ../anycode-backend/dist && vite build && cpy dist ../anycode-backend --parents",
     "build:demo": "vite build --mode demo",
     "preview": "vite preview",
-    "test:demo": "playwright test"
+    "test:demo": "playwright test tests/demo.spec.ts",
+    "test:perf": "playwright test tests/scroll-perf.spec.ts",
+    "test:e2e:all": "playwright test"
   },
   "keywords": [],
   "author": "",

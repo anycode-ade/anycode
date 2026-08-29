@@ -209,7 +209,8 @@ fn find_local_paths(text: &str) -> Vec<PathBuf> {
                     let start = abs_idx - back_len;
                     if text.is_char_boundary(start) {
                         if let Some(candidate) = text.get(start..end_idx) {
-                            let candidate_clean = candidate.strip_prefix("file://").unwrap_or(candidate);
+                            let candidate_clean =
+                                candidate.strip_prefix("file://").unwrap_or(candidate);
                             let candidate_bytes = candidate_clean.as_bytes();
                             let is_absolute = candidate_clean.starts_with('/')
                                 || (candidate_bytes.len() >= 3

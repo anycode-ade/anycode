@@ -1396,37 +1396,16 @@ export class AnycodeEditor {
             return;
         }
 
-        const visibleLines = this.renderer.getVisibleRealLineIndices();
-        if (visibleLines.size === 0) return;
-        const visibleLineList = Array.from(visibleLines);
-
         const pos = result.ctx.code.getPosition(result.ctx.offset);
-        if (visibleLines.has(pos.line)) return;
+        if (this.renderer.isRealLineVisible(pos.line)) return;
 
         const preferNext =
             action === Action.ARROW_RIGHT
             || action === Action.ARROW_RIGHT_ALT
             || action === Action.ARROW_DOWN;
 
-        let targetLine: number | null = null;
-        if (preferNext) {
-            targetLine = visibleLineList.find((line) => line > pos.line) ?? null;
-            if (targetLine === null) {
-                targetLine = visibleLineList[visibleLineList.length - 1] ?? null;
-            }
-        } else {
-            for (let i = visibleLineList.length - 1; i >= 0; i--) {
-                if (visibleLineList[i] < pos.line) {
-                    targetLine = visibleLineList[i];
-                    break;
-                }
-            }
-            if (targetLine === null) {
-                targetLine = visibleLineList[0] ?? null;
-            }
-        }
-
-        if (targetLine === null) return;
+        const targetLine = this.renderer.findNearestVisibleRealLine(pos.line, preferNext);
+        if (targetLine === pos.line) return;
 
         const targetColumn = Math.min(pos.column, result.ctx.code.lineLength(targetLine));
         const targetOffset = result.ctx.code.getOffset(targetLine, targetColumn);
@@ -1986,15 +1965,20 @@ export class AnycodeEditor {
     private lastDiffOriginalVersion: number = -1;
     private lastDiffCurrentVersion: number = -1;
 
-    private recomputeDiffs(): void {
+    public recomputeDiffs(): void {
         if (!this.diffEnabled || !this.originalCode) {
             this.diffs = undefined;
             return;
         }
 
         const multibufferCode = this.code as Code & {
+            computeGitChanges?: () => DiffModel;
             getMultibufferDiffs?: () => DiffModel;
         };
+        if (multibufferCode.computeGitChanges) {
+            this.diffs = multibufferCode.computeGitChanges();
+            return;
+        }
         if (multibufferCode.getMultibufferDiffs) {
             this.diffs = multibufferCode.getMultibufferDiffs();
             return;

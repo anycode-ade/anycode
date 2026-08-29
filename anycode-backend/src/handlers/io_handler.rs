@@ -257,10 +257,7 @@ pub async fn handle_file_close(
     state: State<AppState>,
     ack: AckSender,
 ) {
-    info!(
-        "Received file:close: {}",
-        request.file.replace('\\', "/")
-    );
+    info!("Received file:close: {}", request.file.replace('\\', "/"));
 
     let sid = socket.id.as_str().to_string();
 
@@ -556,7 +553,10 @@ pub async fn handle_create(
         match std::fs::create_dir(&full_path) {
             Ok(_) => {
                 if is_temp {
-                    debug!("Temporary directory created successfully: {}", full_path_str);
+                    debug!(
+                        "Temporary directory created successfully: {}",
+                        full_path_str
+                    );
                 } else {
                     info!("Directory created successfully: {}", full_path_str);
                 }
@@ -576,7 +576,6 @@ pub async fn handle_create(
         }
     }
 }
-
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct DeleteRequest {
