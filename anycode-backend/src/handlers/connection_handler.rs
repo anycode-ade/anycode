@@ -67,8 +67,9 @@ pub async fn handle_connect(socket: SocketRef, _state: State<AppState>) {
     socket.on("git:revert", handle_git_revert);
     socket.on("git:stage", handle_git_stage);
     socket.on("git:unstage", handle_git_unstage);
+    socket.on("git:diff", handle_git_diff);
     socket.on("git:diff-raw", handle_git_diff_raw);
-    socket.on("git:diff:stream", handle_git_diff_stream);
+    socket.on("git:commit-diff", handle_git_commit_diff);
     socket.on("git:commit-diff-raw", handle_git_commit_diff_raw);
 
     socket.on("theme:list", handle_theme_list);

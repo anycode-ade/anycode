@@ -301,7 +301,6 @@ export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
     const historyRequestIdRef = useRef(0);
     const activeHistorySearchRequestIdRef = useRef<number | null>(null);
     const gitHeadHashRef = useRef<string | undefined>(undefined);
-    const gitDiffRequestIdRef = useRef(0);
 
     const cancelHistorySearch = useCallback(() => {
         const requestId = activeHistorySearchRequestIdRef.current;
@@ -487,123 +486,20 @@ export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
         })
     ), [isConnected, wsRef]);
 
-    const streamRawDiff = useCallback((
-        staged?: boolean,
-        onProgress?: (partialDiff: string) => void,
-    ): Promise<string> => {
+    const fetchRawDiff = useCallback((staged?: boolean): Promise<string> => {
         return new Promise((resolve) => {
             const socket = wsRef.current;
             if (!socket || !isConnected) {
                 resolve('');
                 return;
             }
-
-            const decoder = new TextDecoder('utf-8', { fatal: false });
-            let textAcc = '';
-            let isFirstChunk = true;
-            let lastFlushTime = 0;
-            let throttleTimer: ReturnType<typeof setTimeout> | null = null;
-            let timeoutTimer: ReturnType<typeof setTimeout> | null = null;
-            let inactivityTimer: ReturnType<typeof setTimeout> | null = null;
-            let isDone = false;
-            const requestId = ++gitDiffRequestIdRef.current;
-
-            const flushProgress = (diff: string) => {
-                lastFlushTime = Date.now();
-                onProgress?.(diff);
-            };
-
-            const finish = () => {
-                if (isDone) return;
-                isDone = true;
-                cleanup();
-                textAcc += decoder.decode();
-                resolve(textAcc);
-            };
-
-            const resetInactivityTimer = () => {
-                if (inactivityTimer) clearTimeout(inactivityTimer);
-                inactivityTimer = setTimeout(() => finish(), 1000);
-            };
-
-            const onChunk = (payload: ArrayBuffer | Uint8Array | string | { request_id?: number; chunk?: string }) => {
-                if (isDone) return;
-                let chunk: ArrayBuffer | Uint8Array | string = payload;
-                if (
-                    typeof payload === 'object'
-                    && payload !== null
-                    && !(payload instanceof ArrayBuffer)
-                    && !(payload instanceof Uint8Array)
-                ) {
-                    if (payload.request_id !== requestId) return;
-                    chunk = payload.chunk ?? '';
-                }
-                resetInactivityTimer();
-                if (typeof chunk === 'string') {
-                    textAcc += chunk;
+            socket.emit('git:diff', { staged }, (response: any) => {
+                if (response?.success && typeof response.diff === 'string') {
+                    resolve(response.diff);
                 } else {
-                    const u8 = chunk instanceof Uint8Array ? chunk : new Uint8Array(chunk);
-                    textAcc += decoder.decode(u8, { stream: true });
+                    resolve('');
                 }
-
-                if (isFirstChunk) {
-                    isFirstChunk = false;
-                    flushProgress(textAcc);
-                } else {
-                    const now = Date.now();
-                    if (now - lastFlushTime >= 100) {
-                        if (throttleTimer) {
-                            clearTimeout(throttleTimer);
-                            throttleTimer = null;
-                        }
-                        flushProgress(textAcc);
-                    } else if (!throttleTimer) {
-                        throttleTimer = setTimeout(() => {
-                            throttleTimer = null;
-                            flushProgress(textAcc);
-                        }, 100 - (now - lastFlushTime));
-                    }
-                }
-            };
-
-            const onEnd = (payload?: { request_id?: number }) => {
-                if (payload?.request_id !== undefined && payload.request_id !== requestId) return;
-                finish();
-            };
-
-            const onDisconnect = () => {
-                finish();
-            };
-
-            const cleanup = () => {
-                if (inactivityTimer) {
-                    clearTimeout(inactivityTimer);
-                    inactivityTimer = null;
-                }
-                if (timeoutTimer) {
-                    clearTimeout(timeoutTimer);
-                    timeoutTimer = null;
-                }
-                if (throttleTimer) {
-                    clearTimeout(throttleTimer);
-                    throttleTimer = null;
-                }
-                socket.off('git:diff:chunk', onChunk);
-                socket.off('git:diff:end', onEnd);
-                socket.off('disconnect', onDisconnect);
-            };
-
-            socket.on('git:diff:chunk', onChunk);
-            socket.on('git:diff:end', onEnd);
-            socket.on('disconnect', onDisconnect);
-
-            socket.emit('git:diff:stream', { staged, request_id: requestId }, () => {
-                finish();
             });
-
-            timeoutTimer = setTimeout(() => {
-                finish();
-            }, 10000);
         });
     }, [isConnected, wsRef]);
 
@@ -937,20 +833,13 @@ export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
         });
     }, [fetchGitStatus, isConnected, wsRef]);
 
-    const fetchRawDiff = useCallback((
-        staged?: boolean,
-        onProgress?: (partialDiff: string) => void,
-    ): Promise<string> => {
-        return streamRawDiff(staged, onProgress);
-    }, [streamRawDiff]);
-
     const fetchCommitRawDiff = useCallback((hash: string): Promise<string> => {
         return new Promise((resolve) => {
             if (!wsRef.current || !isConnected) {
                 resolve('');
                 return;
             }
-            wsRef.current.emit('git:commit-diff-raw', { hash }, (response: any) => {
+            wsRef.current.emit('git:commit-diff', { hash }, (response: any) => {
                 if (response?.success && typeof response.diff === 'string') {
                     resolve(response.diff);
                 } else {
@@ -976,8 +865,10 @@ export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
         fetchGitStatus,
         streamGitStatus,
         fetchRawDiff,
-        streamRawDiff,
+        streamRawDiff: fetchRawDiff,
         fetchCommitRawDiff,
+        fetchDiff: fetchRawDiff,
+        fetchCommitDiff: fetchCommitRawDiff,
         fetchOriginalFileContent,
         fetchBranches,
         fetchHistory,

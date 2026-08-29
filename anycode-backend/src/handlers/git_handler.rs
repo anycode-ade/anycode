@@ -432,19 +432,17 @@ pub async fn handle_git_unstage(
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
-pub struct GitDiffRawRequest {
+pub struct GitDiffRequest {
     #[serde(default)]
     pub staged: Option<bool>,
-    #[serde(default)]
-    pub request_id: u64,
 }
 
-pub async fn handle_git_diff_raw(
-    Data(request): Data<GitDiffRawRequest>,
+pub async fn handle_git_diff(
+    Data(request): Data<GitDiffRequest>,
     ack: AckSender,
     state: State<AppState>,
 ) {
-    info!("Received git:diff-raw: staged={:?}", request.staged);
+    info!("Received git:diff: staged={:?}", request.staged);
     let result = {
         let git = state.git_manager.lock().await;
         git.raw_diff(request.staged)
@@ -453,17 +451,19 @@ pub async fn handle_git_diff_raw(
     send_response(ack, result);
 }
 
+pub use handle_git_diff as handle_git_diff_raw;
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct GitCommitDiffRawRequest {
+pub struct GitCommitDiffRequest {
     pub hash: String,
 }
 
-pub async fn handle_git_commit_diff_raw(
-    Data(request): Data<GitCommitDiffRawRequest>,
+pub async fn handle_git_commit_diff(
+    Data(request): Data<GitCommitDiffRequest>,
     ack: AckSender,
     state: State<AppState>,
 ) {
-    info!("Received git:commit-diff-raw: hash={}", request.hash);
+    info!("Received git:commit-diff: hash={}", request.hash);
     let result = {
         let git = state.git_manager.lock().await;
         git.raw_commit_diff(&request.hash)
@@ -471,6 +471,8 @@ pub async fn handle_git_commit_diff_raw(
     };
     send_response(ack, result);
 }
+
+pub use handle_git_commit_diff as handle_git_commit_diff_raw;
 
 pub async fn handle_git_status_stream(socket: SocketRef, ack: AckSender, state: State<AppState>) {
     info!("Received git:status:stream");
@@ -488,48 +490,6 @@ pub async fn handle_git_status_stream(socket: SocketRef, ack: AckSender, state: 
             Err(e) => {
                 tracing::error!("Error streaming git status: {:?}", e);
                 let _ = ack.send(&json!({ "success": false, "error": e.to_string() }));
-            }
-        }
-    });
-}
-
-pub async fn handle_git_diff_stream(
-    socket: SocketRef,
-    Data(request): Data<GitDiffRawRequest>,
-    ack: AckSender,
-    state: State<AppState>,
-) {
-    info!(
-        "Received git:diff:stream: staged={:?}, request_id={}",
-        request.staged, request.request_id
-    );
-    let workdir = {
-        let git = state.git_manager.lock().await;
-        git.workdir().to_path_buf()
-    };
-    let request_id = request.request_id;
-    tokio::spawn(async move {
-        let res =
-            crate::git::GitManager::stream_diff_raw(&workdir, request.staged, request_id, &socket)
-                .await;
-        if let Err(e) = socket.emit("git:diff:end", &json!({ "request_id": request_id })) {
-            tracing::warn!(
-                "Failed to emit git:diff:end for request {}: {:?}",
-                request_id,
-                e
-            );
-        }
-        match res {
-            Ok(()) => {
-                let _ = ack.send(&json!({ "success": true, "request_id": request_id }));
-            }
-            Err(e) => {
-                tracing::error!("Error streaming git diff: {:?}", e);
-                let _ = ack.send(&json!({
-                    "success": false,
-                    "error": e.to_string(),
-                    "request_id": request_id
-                }));
             }
         }
     });

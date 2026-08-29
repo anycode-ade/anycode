@@ -93,7 +93,30 @@ const MultibufferPanel: React.FC<MultibufferPanelProps> = ({
     const syncingRef = useRef(false);
     const generationRef = useRef(0);
     const appliedRawDiffRef = useRef<string | undefined>(undefined);
+    const parsedDiffCacheRef = useRef<{
+        rawDiff: string;
+        files: ParsedDiffFile[];
+        map: Map<string, ParsedDiffFile>;
+    } | null>(null);
     const [deletedEntriesVersion, setDeletedEntriesVersion] = useState(0);
+
+    const getParsedDiffData = (diffText: string) => {
+        if (parsedDiffCacheRef.current && parsedDiffCacheRef.current.rawDiff === diffText) {
+            return parsedDiffCacheRef.current;
+        }
+        const files = parseUnifiedDiff(diffText);
+        const map = new Map<string, ParsedDiffFile>();
+        for (const file of files) {
+            map.set(file.id, file);
+            map.set(file.path, file);
+            const norm = normalizePath(file.path);
+            if (norm !== file.path) map.set(norm, file);
+        }
+        const cacheEntry = { rawDiff: diffText, files, map };
+        parsedDiffCacheRef.current = cacheEntry;
+        return cacheEntry;
+    };
+
     const fileById = useMemo(() => new Map(openFiles.map((file) => [file.id, file])), [openFiles]);
     const reviewFiles = files;
     const hasRawDiff = rawDiff !== undefined && rawDiff.length > 0;
@@ -366,29 +389,14 @@ const MultibufferPanel: React.FC<MultibufferPanelProps> = ({
 
                 if (!editor || !currentCode || !originalCode) {
                     if (rawDiff) {
-                        const parsedFiles = parseUnifiedDiff(rawDiff);
-                        const parsedMap = new Map<string, ParsedDiffFile>();
-                        for (const parsed of parsedFiles) {
-                            const id = parsed.id;
-                            const path = parsed.path;
-                            const norm = normalizePath(path);
-                            parsedMap.set(id, parsed);
-                            parsedMap.set(path, parsed);
-                            parsedMap.set(norm, parsed);
-                            if (path.startsWith('/')) parsedMap.set(path.slice(1), parsed);
-                            if (norm.startsWith('/')) parsedMap.set(norm.slice(1), parsed);
-                        }
+                        const { files: parsedFiles, map: parsedMap } = getParsedDiffData(rawDiff);
 
                         const findParsed = (targetId: string, targetPath: string): ParsedDiffFile | undefined => {
                             let exact = parsedMap.get(targetId) || parsedMap.get(targetPath);
                             if (exact) return exact;
                             const normId = normalizePath(targetId);
                             const normPath = normalizePath(targetPath);
-                            exact = parsedMap.get(normId) || parsedMap.get(normPath);
-                            if (exact) return exact;
-                            const cleanId = normId.startsWith('/') ? normId.slice(1) : normId;
-                            const cleanPath = normPath.startsWith('/') ? normPath.slice(1) : normPath;
-                            return parsedMap.get(cleanId) || parsedMap.get(cleanPath);
+                            return parsedMap.get(normId) || parsedMap.get(normPath);
                         };
 
                         const entries: MultiBufferEntry[] = reviewFiles.map((file) => {
@@ -539,7 +547,7 @@ const MultibufferPanel: React.FC<MultibufferPanelProps> = ({
 
                 if (currentCode && originalCode && editor && rawDiff && rawDiff !== appliedRawDiffRef.current) {
                     appliedRawDiffRef.current = rawDiff;
-                    const parsedFiles = parseUnifiedDiff(rawDiff);
+                    const { files: parsedFiles } = getParsedDiffData(rawDiff);
                     currentCode.applyParsedDiffs(parsedFiles, false);
                     originalCode.applyParsedDiffs(parsedFiles, true);
                     editor.recomputeDiffs();

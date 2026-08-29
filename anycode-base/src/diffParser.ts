@@ -14,6 +14,18 @@ export interface ParsedDiffFile {
     diffs: DiffModel;
 }
 
+export type DiffFile = ParsedDiffFile;
+
+export function ensureDiffModel(file: any): DiffModel {
+    if (file.diffs instanceof DiffModel) {
+        return file.diffs;
+    }
+    const hunks = file.diffHunks || file.diffs?.hunks || [];
+    const model = new DiffModel(hunks, file.added || 0, file.removed || 0);
+    file.diffs = model;
+    return model;
+}
+
 interface RawDiffHunkItem {
     kind: 'context' | 'added' | 'removed';
     text: string;
@@ -21,54 +33,160 @@ interface RawDiffHunkItem {
     newLine?: number;
 }
 
+function unquoteGitPath(path: string): string {
+    const trimmed = path.trim();
+    if (trimmed.length >= 2 && trimmed.startsWith('"') && trimmed.endsWith('"')) {
+        try {
+            return JSON.parse(trimmed);
+        } catch {
+            return trimmed.slice(1, -1);
+        }
+    }
+    return trimmed;
+}
+
+function parseHunkHeader(
+    raw: string,
+    start: number,
+    end: number,
+): { oldLine: number; oldCount: number; newLine: number; newCount: number } | null {
+    // Format: @@ -oldStart[,oldCount] +newStart[,newCount] @@
+    if (!raw.startsWith('@@ -', start)) return null;
+    let pos = start + 4; // after '@@ -'
+
+    let oldLine = 0;
+    while (pos < end && raw.charCodeAt(pos) >= 48 && raw.charCodeAt(pos) <= 57) {
+        oldLine = oldLine * 10 + (raw.charCodeAt(pos) - 48);
+        pos++;
+    }
+
+    let oldCount = 1;
+    if (pos < end && raw.charCodeAt(pos) === 44) { // ','
+        pos++;
+        oldCount = 0;
+        while (pos < end && raw.charCodeAt(pos) >= 48 && raw.charCodeAt(pos) <= 57) {
+            oldCount = oldCount * 10 + (raw.charCodeAt(pos) - 48);
+            pos++;
+        }
+    }
+
+    while (pos < end && raw.charCodeAt(pos) !== 43) { // '+'
+        pos++;
+    }
+    if (pos >= end || raw.charCodeAt(pos) !== 43) return null;
+    pos++; // after '+'
+
+    let newLine = 0;
+    while (pos < end && raw.charCodeAt(pos) >= 48 && raw.charCodeAt(pos) <= 57) {
+        newLine = newLine * 10 + (raw.charCodeAt(pos) - 48);
+        pos++;
+    }
+
+    let newCount = 1;
+    if (pos < end && raw.charCodeAt(pos) === 44) { // ','
+        pos++;
+        newCount = 0;
+        while (pos < end && raw.charCodeAt(pos) >= 48 && raw.charCodeAt(pos) <= 57) {
+            newCount = newCount * 10 + (raw.charCodeAt(pos) - 48);
+            pos++;
+        }
+    }
+
+    return { oldLine, oldCount, newLine, newCount };
+}
+
+function extractGitHeaderPaths(line: string): { oldPath: string; newPath: string } {
+    const trimmed = line.trim();
+    if (trimmed.startsWith('"')) {
+        const firstEndQuote = trimmed.indexOf('"', 1);
+        if (firstEndQuote !== -1) {
+            const oldPart = trimmed.substring(1, firstEndQuote);
+            const remainder = trimmed.substring(firstEndQuote + 1).trim();
+            if (remainder.startsWith('"') && remainder.endsWith('"')) {
+                const newPart = remainder.substring(1, remainder.length - 1);
+                return {
+                    oldPath: oldPart.startsWith('a/') ? oldPart.substring(2) : oldPart,
+                    newPath: newPart.startsWith('b/') ? newPart.substring(2) : newPart,
+                };
+            }
+        }
+    }
+
+    const bIdx = trimmed.lastIndexOf(' b/');
+    if (bIdx !== -1 && trimmed.startsWith('a/')) {
+        return {
+            oldPath: trimmed.substring(2, bIdx),
+            newPath: trimmed.substring(bIdx + 3),
+        };
+    }
+
+    return { oldPath: '', newPath: '' };
+}
+
 /**
- * Parses raw unified diff string (e.g. from `git diff` or `git show`) into structured ParsedDiffFile array.
+ * Fast unified diff parser using index cursor scanning without rawDiff.split() or RegExp allocations.
  */
 export function parseUnifiedDiff(rawDiff: string): ParsedDiffFile[] {
     if (!rawDiff || !rawDiff.trim()) return [];
 
-    const lines = rawDiff.split(/\r?\n/);
+    const len = rawDiff.length;
     const files: ParsedDiffFile[] = [];
 
-    let i = 0;
-    while (i < lines.length) {
-        const line = lines[i];
+    let lineStart = 0;
 
-        if (!line.startsWith('diff --git ')) {
-            i++;
+    const getLineEnd = (start: number): number => {
+        const next = rawDiff.indexOf('\n', start);
+        return next === -1 ? len : next;
+    };
+
+    const getLineText = (start: number, end: number): string => {
+        let actualEnd = end;
+        if (actualEnd > start && rawDiff.charCodeAt(actualEnd - 1) === 13) { // '\r'
+            actualEnd--;
+        }
+        return rawDiff.substring(start, actualEnd);
+    };
+
+    while (lineStart < len) {
+        const lineEnd = getLineEnd(lineStart);
+
+        if (!rawDiff.startsWith('diff --git ', lineStart)) {
+            lineStart = lineEnd < len ? lineEnd + 1 : len;
             continue;
         }
 
-        // Header line: diff --git a/path/to/file b/path/to/file
-        const gitHeaderMatch = line.match(/^diff --git a\/(.+) b\/(.+)$/);
-        let oldPath = gitHeaderMatch ? gitHeaderMatch[1] : '';
-        let newPath = gitHeaderMatch ? gitHeaderMatch[2] : '';
+        // Header line: diff --git a/... b/...
+        const headerText = getLineText(lineStart + 11, lineEnd);
+        const { oldPath: headerOld, newPath: headerNew } = extractGitHeaderPaths(headerText);
+        let oldPath = headerOld;
+        let newPath = headerNew;
         let status: 'modified' | 'added' | 'deleted' | 'renamed' = 'modified';
 
-        i++;
-        // Read file metadata headers (new file mode, deleted file mode, rename from/to, similarity, ---, +++)
-        while (i < lines.length && !lines[i].startsWith('diff --git ') && !lines[i].startsWith('@@ ')) {
-            const meta = lines[i];
-            if (meta.startsWith('new file mode ')) {
+        lineStart = lineEnd < len ? lineEnd + 1 : len;
+
+        // Read file metadata headers (new file mode, deleted file mode, rename from/to, ---, +++)
+        while (lineStart < len && !rawDiff.startsWith('diff --git ', lineStart) && !rawDiff.startsWith('@@ ', lineStart)) {
+            const metaEnd = getLineEnd(lineStart);
+            if (rawDiff.startsWith('new file mode ', lineStart)) {
                 status = 'added';
-            } else if (meta.startsWith('deleted file mode ')) {
+            } else if (rawDiff.startsWith('deleted file mode ', lineStart)) {
                 status = 'deleted';
-            } else if (meta.startsWith('rename from ')) {
+            } else if (rawDiff.startsWith('rename from ', lineStart)) {
                 status = 'renamed';
-                oldPath = meta.substring('rename from '.length).trim();
-            } else if (meta.startsWith('rename to ')) {
+                oldPath = unquoteGitPath(getLineText(lineStart + 12, metaEnd));
+            } else if (rawDiff.startsWith('rename to ', lineStart)) {
                 status = 'renamed';
-                newPath = meta.substring('rename to '.length).trim();
-            } else if (meta.startsWith('--- a/')) {
-                oldPath = meta.substring('--- a/'.length).trim();
-            } else if (meta.startsWith('--- /dev/null')) {
+                newPath = unquoteGitPath(getLineText(lineStart + 10, metaEnd));
+            } else if (rawDiff.startsWith('--- a/', lineStart)) {
+                oldPath = unquoteGitPath(getLineText(lineStart + 6, metaEnd));
+            } else if (rawDiff.startsWith('--- /dev/null', lineStart)) {
                 status = 'added';
-            } else if (meta.startsWith('+++ b/')) {
-                newPath = meta.substring('+++ b/'.length).trim();
-            } else if (meta.startsWith('+++ /dev/null')) {
+            } else if (rawDiff.startsWith('+++ b/', lineStart)) {
+                newPath = unquoteGitPath(getLineText(lineStart + 6, metaEnd));
+            } else if (rawDiff.startsWith('+++ /dev/null', lineStart)) {
                 status = 'deleted';
             }
-            i++;
+            lineStart = metaEnd < len ? metaEnd + 1 : len;
         }
 
         const filePath = status === 'deleted' ? (oldPath || newPath) : (newPath || oldPath);
@@ -79,71 +197,83 @@ export function parseUnifiedDiff(rawDiff: string): ParsedDiffFile[] {
         let totalAdded = 0;
         let totalRemoved = 0;
 
-        while (i < lines.length && !lines[i].startsWith('diff --git ')) {
-            const hunkHeader = lines[i];
-            if (!hunkHeader.startsWith('@@ ')) {
-                i++;
+        while (lineStart < len && !rawDiff.startsWith('diff --git ', lineStart)) {
+            const hunkLineEnd = getLineEnd(lineStart);
+            if (!rawDiff.startsWith('@@ ', lineStart)) {
+                lineStart = hunkLineEnd < len ? hunkLineEnd + 1 : len;
                 continue;
             }
 
-            const hunkMatch = hunkHeader.match(/^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/);
-            if (!hunkMatch) {
-                i++;
+            const parsedHunkHeader = parseHunkHeader(rawDiff, lineStart, hunkLineEnd);
+            if (!parsedHunkHeader) {
+                lineStart = hunkLineEnd < len ? hunkLineEnd + 1 : len;
                 continue;
             }
 
-            const oldCount = hunkMatch[2] !== undefined ? parseInt(hunkMatch[2], 10) : 1;
-            const newCount = hunkMatch[4] !== undefined ? parseInt(hunkMatch[4], 10) : 1;
-            let oldLineNum = parseInt(hunkMatch[1], 10);
-            let newLineNum = parseInt(hunkMatch[3], 10);
+            const { oldCount, newCount, oldLine: startOldLine, newLine: startNewLine } = parsedHunkHeader;
+            let oldLineNum = startOldLine;
+            let newLineNum = startNewLine;
             let parsedOld = 0;
             let parsedNew = 0;
-            i++;
+
+            lineStart = hunkLineEnd < len ? hunkLineEnd + 1 : len;
 
             const currentHunkItems: RawDiffHunkItem[] = [];
 
-            while (i < lines.length && !lines[i].startsWith('diff --git ') && !lines[i].startsWith('@@ ')) {
+            while (lineStart < len && !rawDiff.startsWith('diff --git ', lineStart) && !rawDiff.startsWith('@@ ', lineStart)) {
                 if (parsedOld >= oldCount && parsedNew >= newCount) {
                     break;
                 }
 
-                const hunkLine = lines[i];
-                if (hunkLine.startsWith('\\ No newline at end of file')) {
-                    i++;
+                const itemEnd = getLineEnd(lineStart);
+                if (rawDiff.startsWith('\\ No newline at end of file', lineStart)) {
+                    lineStart = itemEnd < len ? itemEnd + 1 : len;
                     continue;
                 }
 
-                if (hunkLine.startsWith('+')) {
+                const firstChar = rawDiff.charCodeAt(lineStart);
+
+                if (firstChar === 43) { // '+'
                     totalAdded++;
                     parsedNew++;
                     currentHunkItems.push({
                         kind: 'added',
-                        text: hunkLine.substring(1),
+                        text: getLineText(lineStart + 1, itemEnd),
                         newLine: newLineNum++,
                     });
-                } else if (hunkLine.startsWith('-')) {
+                } else if (firstChar === 45) { // '-'
                     totalRemoved++;
                     parsedOld++;
                     currentHunkItems.push({
                         kind: 'removed',
-                        text: hunkLine.substring(1),
+                        text: getLineText(lineStart + 1, itemEnd),
                         oldLine: oldLineNum++,
                     });
-                } else if (hunkLine.startsWith(' ') || (hunkLine === '' && (parsedOld < oldCount || parsedNew < newCount))) {
-                    const text = hunkLine.startsWith(' ') ? hunkLine.substring(1) : '';
+                } else if (firstChar === 32) { // ' '
                     parsedOld++;
                     parsedNew++;
                     currentHunkItems.push({
                         kind: 'context',
-                        text,
+                        text: getLineText(lineStart + 1, itemEnd),
+                        oldLine: oldLineNum++,
+                        newLine: newLineNum++,
+                    });
+                } else if (lineStart === itemEnd || (lineStart + 1 === itemEnd && rawDiff.charCodeAt(lineStart) === 13)) {
+                    // Empty line inside hunk
+                    parsedOld++;
+                    parsedNew++;
+                    currentHunkItems.push({
+                        kind: 'context',
+                        text: '',
                         oldLine: oldLineNum++,
                         newLine: newLineNum++,
                     });
                 } else {
-                    // Unexpected line inside hunk, break hunk parsing
+                    // Unexpected line inside hunk, break hunk
                     break;
                 }
-                i++;
+
+                lineStart = itemEnd < len ? itemEnd + 1 : len;
             }
 
             if (currentHunkItems.length > 0) {
@@ -174,7 +304,6 @@ export function parseUnifiedDiff(rawDiff: string): ParsedDiffFile[] {
                     continue;
                 }
 
-                // Group contiguous modified/added/removed changes
                 const removedItems: RawDiffHunkItem[] = [];
                 const addedItems: RawDiffHunkItem[] = [];
 
@@ -197,7 +326,7 @@ export function parseUnifiedDiff(rawDiff: string): ParsedDiffFile[] {
                     for (const rem of removedItems) {
                         oldLines.push(rem.text);
                         oldLineNumbers.push(rem.oldLine);
-                        oldLineIndices.push(oldLines.length); // 1-indexed in oldLines
+                        oldLineIndices.push(oldLines.length);
                     }
 
                     for (const add of addedItems) {
@@ -228,7 +357,7 @@ export function parseUnifiedDiff(rawDiff: string): ParsedDiffFile[] {
                         changeType: 'added',
                     });
                 } else if (removedItems.length > 0) {
-                    // Pure Deleted (Ghost lines)
+                    // Deleted (Ghost lines)
                     const oldLineIndices: number[] = [];
                     for (const rem of removedItems) {
                         oldLines.push(rem.text);
@@ -236,7 +365,6 @@ export function parseUnifiedDiff(rawDiff: string): ParsedDiffFile[] {
                         oldLineIndices.push(oldLines.length);
                     }
 
-                    // For pure deletion, ghostAnchorLine is the line after which ghosts attach
                     const anchorLine = Math.max(1, newLines.length);
 
                     diffHunks.push({
@@ -262,8 +390,8 @@ export function parseUnifiedDiff(rawDiff: string): ParsedDiffFile[] {
             removed: totalRemoved,
             newLines,
             oldLines,
-            newLineNumbers: newLineNumbers ?? [],
-            oldLineNumbers: oldLineNumbers ?? [],
+            newLineNumbers,
+            oldLineNumbers,
             diffs: new DiffModel(diffHunks, totalAdded, totalRemoved),
         });
     }

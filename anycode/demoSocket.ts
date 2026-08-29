@@ -571,9 +571,11 @@ export class DemoSocket {
                 break;
             }
 
-            case 'git:diff:stream': {
-                this.emitLocal('git:diff:end', { request_id: payload?.request_id });
-                callback?.({ success: true, request_id: payload?.request_id });
+            case 'git:diff':
+            case 'git:diff-raw':
+            case 'git:commit-diff':
+            case 'git:commit-diff-raw': {
+                callback?.({ success: true, diff: '' });
                 break;
             }
 

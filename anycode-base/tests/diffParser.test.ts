@@ -82,6 +82,33 @@ index 1234567..0000000
         expect(files[1].oldLines).toHaveLength(2);
     });
 
+    it('parses paths with spaces and quotes', () => {
+        const diff = `diff --git "a/src/my file with spaces.ts" "b/src/my file with spaces.ts"
+index 1111111..2222222 100644
+--- "a/src/my file with spaces.ts"
++++ "b/src/my file with spaces.ts"
+@@ -1,1 +1,2 @@
+ const a = 1;
++const b = 2;
+`;
+        const files = parseUnifiedDiff(diff);
+        expect(files).toHaveLength(1);
+        expect(files[0].path).toBe('src/my file with spaces.ts');
+        expect(files[0].added).toBe(1);
+        expect(files[0].removed).toBe(0);
+    });
+
+    it('parses CRLF line endings and renames', () => {
+        const diff = `diff --git a/old-name.ts b/new-name.ts\r\nsimilarity index 90%\r\nrename from old-name.ts\r\nrename to new-name.ts\r\n--- a/old-name.ts\r\n+++ b/new-name.ts\r\n@@ -1,2 +1,2 @@\r\n const x = 1;\r\n-const y = 2;\r\n+const y = 3;\r\n`;
+        const files = parseUnifiedDiff(diff);
+        expect(files).toHaveLength(1);
+        expect(files[0].path).toBe('new-name.ts');
+        expect(files[0].oldPath).toBe('old-name.ts');
+        expect(files[0].status).toBe('renamed');
+        expect(files[0].added).toBe(1);
+        expect(files[0].removed).toBe(1);
+    });
+
     it('creates DiffCode and integrates with MultiBufferCode', async () => {
         const diff = `diff --git a/a.ts b/a.ts
 --- a/a.ts
