@@ -1,5 +1,5 @@
 import { Code } from "../code";
-import { AnycodeLine } from "../types";
+import { AnycodeLine, Point } from "../types";
 import { findNodeAndOffset, findPrevWord } from "../utils";
 import { Completion, completionKindMap } from "../lsp";
 
@@ -28,14 +28,14 @@ export class CompletionRenderer {
         completions: Completion[],
         selectedIndex: number,
         code: Code,
-        offset: number,
+        point: Point,
         onCompletionClick: (index: number) => void
     ) {
         if (!this.completionContainer) {
             this.completionContainer = document.createElement('div');
             this.completionContainer.className = 'completion-box glass';
             this.container.appendChild(this.completionContainer);
-            this.move(code, offset);
+            this.move(code, point);
         }
 
         const fragment = document.createDocumentFragment();
@@ -62,11 +62,12 @@ export class CompletionRenderer {
         });
 
         this.completionContainer.replaceChildren(fragment);
-        this.move(code, offset);
+        this.move(code, point);
     }
 
-    public move(code: Code, offset: number) {
-        let { line, column } = code.getPosition(offset);
+    public move(code: Code, point: Point) {
+        const line = point.row;
+        const column = point.column;
         let lineStr = code.line(line);
         let prev = findPrevWord(lineStr, column);
 

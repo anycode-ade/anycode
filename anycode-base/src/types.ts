@@ -1,6 +1,5 @@
 export interface AnycodeLine extends HTMLDivElement {
     lineNumber: number;
-    offset: number;
     hash: number | string;
 }
 
@@ -53,6 +52,11 @@ export interface SparseGhostGroup {
 }
 
 export type Pos = { row: number; col: number };
+
+export interface Point {
+    row: number;
+    column: number;
+}
 
 export interface BracketMatch {
     openOffset: number;

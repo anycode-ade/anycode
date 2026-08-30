@@ -15,7 +15,8 @@ import {
 } from 'web-tree-sitter';
 import History from './history';
 import { Selection } from './selection';
-import { BracketMatch } from './types';
+import { BracketMatch, type Point } from './types';
+export type { Point };
 import {
     getGraphemeAt, getNextGraphemeIndex, getPrevGraphemeIndex,
     getWasmPath, isWordGrapheme,
@@ -73,7 +74,7 @@ export type Edit = {
 };
 
 export type EditState = {
-    offset: number;
+    cursor?: Point;
     selection?: Selection;
 };
 
@@ -247,7 +248,7 @@ export class Code {
     protected linesCache = new LruCache<number, Uint32Array>(500);
 
     private history = new History<Change>()
-    private changeActive: boolean = false;
+    protected changeActive: boolean = false;
     private changeEdits: Edit[] = [];
     private changeStateBefore?: EditState;
     private changeStateAfter?: EditState;
@@ -527,7 +528,35 @@ export class Code {
 
     public getPosition(offset: number): Position {
         let p = this.buffer.getPositionAt(offset);
-        return { line: p.lineNumber -1, column: p.column -1};
+        return { line: p.lineNumber - 1, column: p.column - 1 };
+    }
+
+    public getPoint(offset: number): Point {
+        const pos = this.getPosition(offset);
+        return { row: pos.line, column: pos.column };
+    }
+
+    public insertAt(point: Point, text: string, addHistory: boolean = false): void {
+        const offset = this.getOffset(point.row, point.column);
+        this.insert(text, offset, addHistory);
+    }
+
+    public removeRange(start: Point, end: Point, addHistory: boolean = false): void {
+        const startOffset = this.getOffset(start.row, start.column);
+        const endOffset = this.getOffset(end.row, end.column);
+        const [sortedStart, sortedEnd] = startOffset <= endOffset ? [startOffset, endOffset] : [endOffset, startOffset];
+        this.remove(sortedStart, sortedEnd - sortedStart, addHistory);
+    }
+
+    public getTextRange(start: Point, end: Point): string {
+        const [sortedStart, sortedEnd] =
+            start.row < end.row || (start.row === end.row && start.column <= end.column)
+                ? [start, end]
+                : [end, start];
+        return this.getIntervalContent(
+            sortedStart.row, sortedStart.column,
+            sortedEnd.row, sortedEnd.column
+        );
     }
 
     public getLineByOffset(offset: number): number {
@@ -545,6 +574,22 @@ export class Code {
 
     public length(): number {
         return this.buffer.getLength()
+    }
+
+    public isLineEditable(_line: number): boolean {
+        return true;
+    }
+
+    public findFirstEditableLine(): number {
+        return 0;
+    }
+
+    public clampPoint(point: Point, _preferDirection: -1 | 1 = 1): Point {
+        const totalLines = this.linesLength();
+        if (totalLines === 0) return { row: 0, column: 0 };
+        const row = Math.max(0, Math.min(point.row, totalLines - 1));
+        const col = Math.max(0, Math.min(point.column, this.lineLength(row)));
+        return { row, column: col };
     }
 
     public linesLength(): number {
@@ -715,12 +760,12 @@ export class Code {
         this.changeEdits = [];
     }
 
-    setStateBefore(offset: number, selection?: Selection) {
-        this.changeStateBefore = { offset, selection: selection?.clone() };
+    setStateBefore(cursor: Point, selection?: Selection) {
+        this.changeStateBefore = { cursor: { ...cursor }, selection: selection?.clone() };
     }
 
-    setStateAfter(offset: number, selection?: Selection) {
-        this.changeStateAfter = { offset, selection: selection?.clone() };
+    setStateAfter(cursor: Point, selection?: Selection) {
+        this.changeStateAfter = { cursor: { ...cursor }, selection: selection?.clone() };
     }
 
     commit() {
@@ -744,7 +789,7 @@ export class Code {
         }
     }
 
-    public undo(_offset?: number): Change | undefined {
+    public undo(_cursor?: Point): Change | undefined {
         const change = this.history.undo();
         if (!change) return undefined;
 
@@ -775,7 +820,7 @@ export class Code {
         return change;
     }
 
-    public redo(_offset?: number): Change | null {
+    public redo(_cursor?: Point): Change | null {
         const change = this.history.redo();
         if (!change) return null;
         const edits = change.edits;
@@ -916,14 +961,14 @@ export class Code {
         return { startLine, endLine };
     }
 
-    getIndent(): Lang["indent"] | null {
+    getIndent(_line?: number): Lang["indent"] | null {
         if (!this.language) return null;
 
         const language = this.getLang(this.language!);
         return language?.indent || null;
     }
 
-    getComment(): string {
+    getComment(_line?: number): string {
         if (!this.language) return "";
 
         const language = this.getLang(this.language!);
@@ -1334,11 +1379,12 @@ export class Code {
         return { text, token: classs };
     }
 
-    public getMatchingBracket(offset: number): BracketMatch | null {
+    public getMatchingBracket(pos: Point | number): BracketMatch | null {
         const totalLines = this.linesLength();
         if (totalLines === 0) return null;
 
-        const bracket = this.findBracketAtPosition(offset);
+        const point: Point = typeof pos === 'number' ? this.getPoint(pos) : pos;
+        const bracket = this.findBracketAtPosition(point);
         if (!bracket) return null;
 
         const { line, column, char, offset: bracketOffset } = bracket;
@@ -1356,30 +1402,30 @@ export class Code {
             : this.findMatchingOpen(bracketOffset, line, column, openChar, closeChar);
     }
 
-    private findBracketAtPosition(offset: number): { 
+    private findBracketAtPosition(pos: Point | number): { 
         line: number; 
         column: number; 
         char: string; 
         offset: number;
     } | null {
-        const pos = this.getPosition(offset);
-        const text = this.line(pos.line);
+        const point: Point = typeof pos === 'number' ? this.getPoint(pos) : pos;
+        const text = this.line(point.row);
 
-        if (pos.column < text.length && BRACKET_PAIRS[text[pos.column]]) {
+        if (point.column < text.length && BRACKET_PAIRS[text[point.column]]) {
             return {
-                line: pos.line,
-                column: pos.column,
-                char: text[pos.column],
-                offset: this.getOffset(pos.line, pos.column)
+                line: point.row,
+                column: point.column,
+                char: text[point.column],
+                offset: this.getOffset(point.row, point.column)
             };
         }
 
-        if (pos.column > 0 && BRACKET_PAIRS[text[pos.column - 1]]) {
+        if (point.column > 0 && BRACKET_PAIRS[text[point.column - 1]]) {
             return {
-                line: pos.line,
-                column: pos.column - 1,
-                char: text[pos.column - 1],
-                offset: this.getOffset(pos.line, pos.column - 1)
+                line: point.row,
+                column: point.column - 1,
+                char: text[point.column - 1],
+                offset: this.getOffset(point.row, point.column - 1)
             };
         }
 

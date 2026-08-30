@@ -1,6 +1,6 @@
 import React, { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { AnycodeEditorReact } from 'anycode-react';
-import { AnycodeEditor, Code, MultiBufferCode, type MultiBufferEntry, type DefinitionRequest, type DefinitionResponse, type HoverRequest } from 'anycode-base';
+import { AnycodeEditor, Code, MultiBufferCode, type MultiBufferEntry, type DefinitionRequest, type DefinitionResponse, type HoverRequest, type CompletionRequest, type Completion, type ReferencesRequest } from 'anycode-base';
 import type { DockviewPanelApi } from 'dockview';
 import { LayoutPanelApiContext, LayoutVersionContext } from '../../components/layout/Layout';
 import type { FileState } from '../../types';
@@ -27,6 +27,8 @@ type MultibufferPanelProps = {
     onActiveFileChange?: (fileId: string) => void;
     onGoToDefinition?: (request: DefinitionRequest) => Promise<DefinitionResponse>;
     onHover?: (request: HoverRequest) => Promise<string | null>;
+    onCompletion?: (request: CompletionRequest) => Promise<Completion[]>;
+    onReferencesPeek?: (request: ReferencesRequest) => Promise<void>;
     onLoadDeletedFile?: (path: string) => Promise<string | null>;
 };
 
@@ -56,6 +58,8 @@ const MultibufferPanel: React.FC<MultibufferPanelProps> = ({
     onActiveFileChange,
     onGoToDefinition,
     onHover,
+    onCompletion,
+    onReferencesPeek,
     onLoadDeletedFile,
 }) => {
     const panel = useContext(LayoutPanelApiContext) as DockviewPanelApi | null;
@@ -73,6 +77,7 @@ const MultibufferPanel: React.FC<MultibufferPanelProps> = ({
     const syncingRef = useRef(false);
     const generationRef = useRef(0);
     const isInternalChangeRef = useRef(false);
+    const lastHandledFocusTokenRef = useRef<number | null>(null);
     const [deletedEntriesVersion, setDeletedEntriesVersion] = useState(0);
     const fileById = useMemo(() => new Map(openFiles.map((file) => [file.id, file])), [openFiles]);
     const reviewFiles = files;
@@ -160,20 +165,10 @@ const MultibufferPanel: React.FC<MultibufferPanelProps> = ({
 
     useEffect(() => {
         if (!focusRequest || !sharedEditor) return;
+        if (lastHandledFocusTokenRef.current === focusRequest.token) return;
+
         const currentCode = currentCodeRef.current;
         if (!currentCode) return;
-
-        let targetLine: number | null = null;
-        if (focusRequest.line !== undefined) {
-            targetLine = currentCode.getMultibufferLineForLocalLine(focusRequest.path, focusRequest.line);
-        }
-        if (targetLine === null) {
-            targetLine = currentCode.getFirstLineForFile(focusRequest.path);
-        }
-        if (targetLine === null) return;
-
-        const column = focusRequest.column ?? 0;
-        sharedEditor.requestFocus(targetLine, column, true);
 
         const targetFile = reviewFiles.find((file) => (
             file.id === focusRequest.path
@@ -181,8 +176,26 @@ const MultibufferPanel: React.FC<MultibufferPanelProps> = ({
             || focusRequest.path.endsWith('/' + file.id)
             || focusRequest.path.endsWith('/' + file.path)
         ));
+        const resolvedPath = targetFile?.id ?? targetFile?.path ?? focusRequest.path;
+
+        let targetLine: number | null = null;
+        if (focusRequest.line !== undefined) {
+            targetLine = currentCode.getMultibufferLineForLocalLine(resolvedPath, focusRequest.line)
+                ?? currentCode.getMultibufferLineForLocalLine(focusRequest.path, focusRequest.line);
+        }
+        if (targetLine === null) {
+            targetLine = currentCode.getFirstLineForFile(resolvedPath)
+                ?? currentCode.getFirstLineForFile(focusRequest.path);
+        }
+        if (targetLine === null) return;
+
+        lastHandledFocusTokenRef.current = focusRequest.token;
+
+        const column = focusRequest.column ?? 0;
+        sharedEditor.requestFocus(targetLine, column, true);
+
         onActiveFileChangeRef.current?.(targetFile?.id ?? focusRequest.path);
-    }, [focusRequest, reviewFiles, sharedEditor]);
+    }, [focusRequest, readyFiles, reviewFiles, sharedEditor]);
 
     useEffect(() => {
         if (sharedEditor && onGoToDefinition) {
@@ -191,7 +204,13 @@ const MultibufferPanel: React.FC<MultibufferPanelProps> = ({
         if (sharedEditor && onHover) {
             sharedEditor.setHoverProvider(onHover);
         }
-    }, [onGoToDefinition, onHover, sharedEditor]);
+        if (sharedEditor && onCompletion) {
+            sharedEditor.setCompletionProvider(onCompletion);
+        }
+        if (sharedEditor && onReferencesPeek) {
+            sharedEditor.setReferencesPeekProvider(onReferencesPeek);
+        }
+    }, [onCompletion, onGoToDefinition, onHover, onReferencesPeek, sharedEditor]);
 
     useEffect(() => {
         generationRef.current += 1;
@@ -269,21 +288,19 @@ const MultibufferPanel: React.FC<MultibufferPanelProps> = ({
                 if (isInternalChangeRef.current) return;
                 const currentCode = currentCodeRef.current;
                 const editor = sharedEditorRef.current;
-                if (!currentCode || !editor) return;
-
-                const pos = currentCode.getPosition(editor.offset);
-                const fileId = currentCode.getFileIdAtLine(pos.line);
-                const localLine = currentCode.getMultibufferLineNumber(pos.line);
-                const col = pos.column;
+                const fileId = currentCode.getFileIdAtLine(editor.cursor.row);
+                const localLine = currentCode.getMultibufferLineNumber(editor.cursor.row);
+                const col = editor.cursor.column;
 
                 currentCode.notifyFileChanged(readyFile.file.id);
 
                 if (fileId && localLine !== null) {
                     const targetLine = currentCode.getMultibufferLineForLocalLine(fileId, localLine);
                     if (targetLine !== null) {
-                        editor.offset = currentCode.getOffset(targetLine, col);
+                        editor.cursor = { row: targetLine, column: col };
                     }
                 }
+
                 editor.refreshAfterExternalChange();
                 updateMultibufferErrors();
             });
@@ -332,14 +349,6 @@ const MultibufferPanel: React.FC<MultibufferPanelProps> = ({
                     currentCodeRef.current = currentCode;
                     originalCodeRef.current = originalCode;
                     sharedEditorRef.current = editor;
-                    currentCode.setOnFileChange(({ fileId, change }) => {
-                        isInternalChangeRef.current = true;
-                        try {
-                            editorStatesRef.current.get(fileId)?.notifyExternalChange(change);
-                        } finally {
-                            isInternalChangeRef.current = false;
-                        }
-                    });
                     editor.setOnCursorChange((position) => {
                         const fileId = currentCodeRef.current?.getFileIdAtLine(position.line);
                         if (fileId) onActiveFileChangeRef.current?.(fileId);

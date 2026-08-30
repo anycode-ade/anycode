@@ -1,5 +1,5 @@
 import { Code } from "../code";
-import { AnycodeLine } from "../types";
+import { AnycodeLine, Point } from "../types";
 import { findNodeAndOffset } from "../utils";
 
 /**
@@ -21,7 +21,7 @@ export class HoverRenderer {
         this.getLineFn = getLine;
     }
 
-    public render(content: string, code: Code, offset: number) {
+    public render(content: string, code: Code, point: Point) {
         const text = content.trim();
         if (!text) {
             this.close();
@@ -35,13 +35,14 @@ export class HoverRenderer {
         }
 
         this.hoverContainer.textContent = text;
-        this.move(code, offset);
+        this.move(code, point);
     }
 
-    public move(code: Code, offset: number) {
+    public move(_code: Code, point: Point) {
         if (!this.hoverContainer) return;
 
-        const { line, column } = code.getPosition(offset);
+        const line = point.row;
+        const column = point.column;
         const lineDiv = this.getLineFn(line);
         const pos = lineDiv ? findNodeAndOffset(lineDiv, Math.max(column, 0) + 1) : null;
 

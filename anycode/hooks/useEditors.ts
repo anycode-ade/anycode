@@ -1538,6 +1538,7 @@ export const useEditors = ({ wsRef, isConnected, onFileClosed }: UseEditorsParam
         handleDiagnostics,
         handleGoToDefinition,
         handleHover,
+        handleCompletion,
         handleWatcherEdits,
         handleGitUpdate,
         undoCursor,

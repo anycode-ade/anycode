@@ -1,6 +1,6 @@
-import { Code, type Change, type Edit, type FoldRange, type HighlighedNode, type Position, type WordHighlight, type FilePosition, Operation } from './code';
+import { Code, type Change, type Edit, type EditState, type FoldRange, type HighlighedNode, type Position, type WordHighlight, type FilePosition, Operation, type Point } from './code';
 import { BinaryTokens } from './tokens';
-import type { Selection } from './selection';
+import { Selection } from './selection';
 import { computeGitChangesWithStats, type DiffInfo, type DiffHunk, DiffModel } from './diff';
 
 export type MultiBufferEntry = {
@@ -65,6 +65,7 @@ export class MultiBufferCode extends Code {
     private rows: IndexedRow[] = [];
     private indexDirty = true;
     private activeFileIndex = 0;
+    private activeTxFileIndex: number | null = null;
     private onChangeCallback: ((change: Change) => void) | null = null;
     private onFileChangeCallback: ((change: MultiBufferFileChange) => void) | null = null;
 
@@ -118,6 +119,7 @@ export class MultiBufferCode extends Code {
         this.ensureIndex();
         const row = this.rows[line];
         if (!row) return null;
+        this.activateFile(row.fileIndex);
         return this.entries[row.fileIndex]?.id ?? null;
     }
 
@@ -173,6 +175,44 @@ export class MultiBufferCode extends Code {
             candidate += direction;
         }
         return candidate;
+    }
+
+    public override isLineEditable(line: number): boolean {
+        this.ensureIndex();
+        const row = this.rows[line];
+        if (!row || row.kind === 'header') return false;
+        return !this.entries[row.fileIndex]?.readOnly;
+    }
+
+    public override findFirstEditableLine(): number {
+        this.ensureIndex();
+        const idx = this.rows.findIndex((r) => r.kind !== 'header' && !this.entries[r.fileIndex]?.readOnly);
+        return idx !== -1 ? idx : 0;
+    }
+
+    public override clampPoint(point: Point, preferDirection: -1 | 1 = 1): Point {
+        this.ensureIndex();
+        if (this.rows.length === 0) return { row: 0, column: 0 };
+        let row = Math.max(0, Math.min(point.row, this.rows.length - 1));
+        if (this.rows[row]?.kind === 'header') {
+            let candidate = row + preferDirection;
+            while (candidate >= 0 && candidate < this.rows.length && this.rows[candidate].kind === 'header') {
+                candidate += preferDirection;
+            }
+            if (candidate >= 0 && candidate < this.rows.length && this.rows[candidate].kind !== 'header') {
+                row = candidate;
+            } else {
+                candidate = row - preferDirection;
+                while (candidate >= 0 && candidate < this.rows.length && this.rows[candidate].kind === 'header') {
+                    candidate -= preferDirection;
+                }
+                if (candidate >= 0 && candidate < this.rows.length && this.rows[candidate].kind !== 'header') {
+                    row = candidate;
+                }
+            }
+        }
+        const col = Math.max(0, Math.min(point.column, this.lineLength(row)));
+        return { row, column: col };
     }
 
     public toggleMultibufferFileAtLine(line: number): boolean {
@@ -323,6 +363,11 @@ export class MultiBufferCode extends Code {
         };
     }
 
+    public override getPoint(offset: number): Point {
+        const pos = this.getPosition(offset);
+        return { row: pos.line, column: pos.column };
+    }
+
     public getOffset(line: number, column: number): number {
         this.ensureIndex();
         const row = this.rows[line];
@@ -334,6 +379,13 @@ export class MultiBufferCode extends Code {
 
     public getIntervalContent2(from: number, to: number): string {
         return this.getContent().slice(Math.max(0, from), Math.max(0, to));
+    }
+
+    public override getTextRange(start: Point, end: Point): string {
+        const startOffset = this.getOffset(start.row, start.column);
+        const endOffset = this.getOffset(end.row, end.column);
+        const [sortedStart, sortedEnd] = startOffset <= endOffset ? [startOffset, endOffset] : [endOffset, startOffset];
+        return this.getIntervalContent2(sortedStart, sortedEnd);
     }
 
     public override getLineNodes(line: number): HighlighedNode[] {
@@ -410,11 +462,19 @@ export class MultiBufferCode extends Code {
         return matches;
     }
 
-    public getIndent() {
+    public override getIndent(line?: number) {
+        if (typeof line === 'number') {
+            const resolved = this.resolveLine(line);
+            return resolved ? this.entries[resolved.fileIndex]?.code.getIndent(resolved.localLine) ?? null : null;
+        }
         return this.entries[this.activeFileIndex]?.code.getIndent() ?? null;
     }
 
-    public getComment(): string {
+    public override getComment(line?: number): string {
+        if (typeof line === 'number') {
+            const resolved = this.resolveLine(line);
+            return resolved ? this.entries[resolved.fileIndex]?.code.getComment(resolved.localLine) ?? '' : '';
+        }
         return this.entries[this.activeFileIndex]?.code.getComment() ?? '';
     }
 
@@ -441,68 +501,180 @@ export class MultiBufferCode extends Code {
         // MultiBufferCode does not own history. Each file's Code does.
     }
 
-    public override tx(): void {}
-    public override setStateBefore(_offset: number, _selection?: Selection): void {}
-    public override setStateAfter(_offset: number, _selection?: Selection): void {}
-    public override commit(): void {}
+    public override tx(): void {
+        this.changeActive = true;
+        this.activeTxFileIndex = null;
+    }
 
-    public override undo(offset?: number): Change | undefined {
-        const resolved = offset === undefined ? undefined : this.resolveOffset(offset);
-        console.log('[MultiBufferCode.undo]', {
-            cursorOffset: offset,
-            activeFileIndex: this.activeFileIndex,
-            resolvedFileIndex: resolved?.fileIndex,
-            fileId: resolved ? this.entries[resolved.fileIndex]?.id : undefined,
-            localOffset: resolved?.localOffset,
-        });
-        if (!resolved) return undefined;
-        if (resolved.row.kind === 'header') return undefined;
+    public override setStateBefore(cursor: Point, selection?: Selection): void {
+        this.ensureIndex();
+        const row = this.rows[cursor.row];
+        if (row && row.kind !== 'header') {
+            this.activeTxFileIndex = row.fileIndex;
+            const entry = this.entries[row.fileIndex];
+            if (entry && !entry.readOnly) {
+                entry.code.tx();
+                const localCursor = { row: row.localLine, column: cursor.column };
+                let localSelection: Selection | undefined = undefined;
+                if (selection) {
+                    const startRow = this.rows[selection.start.row];
+                    const endRow = this.rows[selection.end.row];
+                    if (startRow?.kind === 'file' && endRow?.kind === 'file' && startRow.fileIndex === row.fileIndex && endRow.fileIndex === row.fileIndex) {
+                        localSelection = new Selection(
+                            { row: startRow.localLine, column: selection.start.column },
+                            { row: endRow.localLine, column: selection.end.column }
+                        );
+                    }
+                }
+                entry.code.setStateBefore(localCursor, localSelection);
+            }
+        }
+    }
 
-        const fileIndex = resolved.fileIndex;
+    public override setStateAfter(cursor: Point, selection?: Selection): void {
+        if (this.activeTxFileIndex !== null) {
+            this.ensureIndex();
+            const row = this.rows[cursor.row];
+            if (row && row.kind !== 'header' && row.fileIndex === this.activeTxFileIndex) {
+                const entry = this.entries[this.activeTxFileIndex];
+                if (entry && !entry.readOnly) {
+                    const localCursor = { row: row.localLine, column: cursor.column };
+                    let localSelection: Selection | undefined = undefined;
+                    if (selection) {
+                        const startRow = this.rows[selection.start.row];
+                        const endRow = this.rows[selection.end.row];
+                        if (startRow?.kind === 'file' && endRow?.kind === 'file' && startRow.fileIndex === this.activeTxFileIndex && endRow.fileIndex === this.activeTxFileIndex) {
+                            localSelection = new Selection(
+                                { row: startRow.localLine, column: selection.start.column },
+                                { row: endRow.localLine, column: selection.end.column }
+                            );
+                        }
+                    }
+                    entry.code.setStateAfter(localCursor, localSelection);
+                }
+            }
+        }
+    }
+
+    public override insertAt(point: Point, text: string, addHistory: boolean = false): void {
+        this.ensureIndex();
+        const row = this.rows[point.row];
+        if (!row || row.kind === 'header') return;
+        const entry = this.entries[row.fileIndex];
+        if (entry.readOnly) return;
+        if (this.activeTxFileIndex === null) {
+            this.activeTxFileIndex = row.fileIndex;
+            if (this.changeActive) {
+                entry.code.tx();
+            }
+        }
+        const localOffset = entry.code.getOffset(row.localLine, point.column);
+        entry.code.insert(text, localOffset, this.changeActive ? false : addHistory);
+        this.markFileChanged(row.fileIndex);
+    }
+
+    public override removeRange(start: Point, end: Point, addHistory: boolean = false): void {
+        this.ensureIndex();
+        const startRow = this.rows[start.row];
+        const endRow = this.rows[end.row];
+        if (!startRow || !endRow || startRow.kind === 'header' || endRow.kind === 'header') return;
+        if (startRow.fileIndex !== endRow.fileIndex) return;
+
+        const entry = this.entries[startRow.fileIndex];
+        if (entry.readOnly) return;
+
+        if (this.activeTxFileIndex === null) {
+            this.activeTxFileIndex = startRow.fileIndex;
+            if (this.changeActive) {
+                entry.code.tx();
+            }
+        }
+
+        const startLocalOffset = entry.code.getOffset(startRow.localLine, start.column);
+        const endLocalOffset = entry.code.getOffset(endRow.localLine, end.column);
+        const [sortedStart, sortedEnd] = startLocalOffset <= endLocalOffset
+            ? [startLocalOffset, endLocalOffset]
+            : [endLocalOffset, startLocalOffset];
+        const removeLen = sortedEnd - sortedStart;
+        if (removeLen <= 0) return;
+
+        const text = entry.code.getIntervalContent2(sortedStart, sortedEnd);
+        entry.code.remove(sortedStart, removeLen, this.changeActive ? false : addHistory);
+        this.markFileChanged(startRow.fileIndex);
+    }
+
+    public override insert(text: string, offset: number, addHistory: boolean = false): void {
+        this.insertRaw(text, offset, addHistory);
+    }
+
+    public override remove(offset: number, length: number, addHistory: boolean = false): void {
+        this.removeRaw(offset, length, addHistory);
+    }
+
+    public override commit(): void {
+        if (this.activeTxFileIndex !== null) {
+            const entry = this.entries[this.activeTxFileIndex];
+            if (entry && !entry.readOnly) {
+                entry.code.commit();
+            }
+        }
+        this.changeActive = false;
+        this.activeTxFileIndex = null;
+    }
+
+    public override undo(cursor?: Point): Change | undefined {
+        let fileIndex = this.activeFileIndex;
+        if (cursor) {
+            this.ensureIndex();
+            const row = this.rows[cursor.row];
+            if (row && row.kind !== 'header') {
+                fileIndex = row.fileIndex;
+            }
+        }
+
         const change = this.entries[fileIndex]?.code.undo();
         if (!change) return undefined;
         this.markFileChanged(fileIndex);
         return this.toGlobalChange(change, fileIndex);
     }
 
-    public override redo(offset?: number): Change | null {
-        if (offset === undefined) return null;
-        const resolved = this.resolveOffset(offset);
-        if (!resolved || resolved.row.kind === 'header') return null;
+    public override redo(cursor?: Point): Change | null {
+        let fileIndex = this.activeFileIndex;
+        if (cursor) {
+            this.ensureIndex();
+            const row = this.rows[cursor.row];
+            if (row && row.kind !== 'header') {
+                fileIndex = row.fileIndex;
+            }
+        }
 
-        const fileIndex = resolved.fileIndex;
         const change = this.entries[fileIndex]?.code.redo() ?? null;
         if (!change) return null;
         this.markFileChanged(fileIndex);
         return this.toGlobalChange(change, fileIndex);
     }
 
-    public insert(text: string, offset: number): void {
-        this.insertRaw(text, offset);
-    }
-
-    public remove(offset: number, length: number): void {
-        this.removeRaw(offset, length);
-    }
-
-    private insertRaw(text: string, offset: number): void {
+    private insertRaw(text: string, offset: number, addHistory: boolean = false): void {
         if (!text) return;
         const resolved = this.resolveOffset(offset);
         if (!resolved || resolved.row.kind === 'header') return;
 
         const entry = this.entries[resolved.fileIndex];
         if (entry.readOnly) return;
+
+        if (this.activeTxFileIndex === null) {
+            this.activeTxFileIndex = resolved.fileIndex;
+            if (this.changeActive) {
+                entry.code.tx();
+            }
+        }
+
         const localOffset = Math.min(resolved.localOffset, entry.code.getContentLength());
-        entry.code.insert(text, localOffset, true);
+        entry.code.insert(text, localOffset, this.changeActive ? false : addHistory);
         this.markFileChanged(resolved.fileIndex);
-        this.notifyEdit(
-            resolved.fileIndex,
-            { operation: Operation.Insert, start: localOffset, text },
-            { operation: Operation.Insert, start: offset, text },
-        );
     }
 
-    private removeRaw(offset: number, length: number): void {
+    private removeRaw(offset: number, length: number, addHistory: boolean = false): void {
         if (length <= 0) return;
         const start = this.resolveOffset(offset);
         const end = this.resolveOffset(Math.max(offset, offset + length - 1));
@@ -510,23 +682,20 @@ export class MultiBufferCode extends Code {
 
         const entry = this.entries[start.fileIndex];
         if (entry.readOnly) return;
+
+        if (this.activeTxFileIndex === null) {
+            this.activeTxFileIndex = start.fileIndex;
+            if (this.changeActive) {
+                entry.code.tx();
+            }
+        }
+
         const maxLength = Math.max(0, entry.code.getContentLength() - start.localOffset);
         const removeLength = Math.min(length, maxLength);
         if (removeLength <= 0) return;
         const text = entry.code.getIntervalContent2(start.localOffset, start.localOffset + removeLength);
-        entry.code.remove(start.localOffset, removeLength, true);
+        entry.code.remove(start.localOffset, removeLength, this.changeActive ? false : addHistory);
         this.markFileChanged(start.fileIndex);
-        this.notifyEdit(
-            start.fileIndex,
-            { operation: Operation.Remove, start: start.localOffset, text },
-            { operation: Operation.Remove, start: offset, text },
-        );
-    }
-
-    private notifyEdit(fileIndex: number, localEdit: Edit, globalEdit: Edit): void {
-        const fileId = this.entries[fileIndex].id;
-        this.onFileChangeCallback?.({ fileId, change: { edits: [localEdit] } });
-        this.onChangeCallback?.({ edits: [globalEdit] });
     }
 
     private resolveLine(line: number): { fileIndex: number; localLine: number } | null {
@@ -617,7 +786,8 @@ export class MultiBufferCode extends Code {
         const version = this.fileVersions[fileIndex];
         let cached = this.fileDiffs.get(entry.id);
         if (!cached || cached.version !== version) {
-            const result = computeGitChangesWithStats(entry.originalCode.getLines(), entry.code.getLines());
+            const originalLines = entry.originalCode ? entry.originalCode.getLines() : entry.code.getLines();
+            const result = computeGitChangesWithStats(originalLines, entry.code.getLines());
             cached = {
                 version,
                 diffs: result.diffs,
@@ -657,16 +827,62 @@ export class MultiBufferCode extends Code {
     }
 
     private toGlobalChange(change: Change, fileIndex: number): Change {
+        const entry = this.entries[fileIndex];
+        let stateBefore: EditState | undefined = undefined;
+        let stateAfter: EditState | undefined = undefined;
+
+        if (entry && change.stateBefore) {
+            let cursor: Point | undefined = undefined;
+            if (change.stateBefore.cursor) {
+                const globalRow = this.getMultibufferLineForLocalLine(entry.id, change.stateBefore.cursor.row);
+                if (globalRow !== null) {
+                    cursor = { row: globalRow, column: change.stateBefore.cursor.column };
+                }
+            }
+            let selection: Selection | undefined = undefined;
+            if (change.stateBefore.selection) {
+                const startRow = this.getMultibufferLineForLocalLine(entry.id, change.stateBefore.selection.start.row);
+                const endRow = this.getMultibufferLineForLocalLine(entry.id, change.stateBefore.selection.end.row);
+                if (startRow !== null && endRow !== null) {
+                    selection = new Selection(
+                        { row: startRow, column: change.stateBefore.selection.start.column },
+                        { row: endRow, column: change.stateBefore.selection.end.column }
+                    );
+                }
+            }
+            stateBefore = { cursor, selection };
+        }
+
+        if (entry && change.stateAfter) {
+            let cursor: Point | undefined = undefined;
+            if (change.stateAfter.cursor) {
+                const globalRow = this.getMultibufferLineForLocalLine(entry.id, change.stateAfter.cursor.row);
+                if (globalRow !== null) {
+                    cursor = { row: globalRow, column: change.stateAfter.cursor.column };
+                }
+            }
+            let selection: Selection | undefined = undefined;
+            if (change.stateAfter.selection) {
+                const startRow = this.getMultibufferLineForLocalLine(entry.id, change.stateAfter.selection.start.row);
+                const endRow = this.getMultibufferLineForLocalLine(entry.id, change.stateAfter.selection.end.row);
+                if (startRow !== null && endRow !== null) {
+                    selection = new Selection(
+                        { row: startRow, column: change.stateAfter.selection.start.column },
+                        { row: endRow, column: change.stateAfter.selection.end.column }
+                    );
+                }
+            }
+            stateAfter = { cursor, selection };
+        }
+
         return {
             ...change,
             edits: change.edits.map((edit) => ({
                 ...edit,
                 start: this.toGlobalOffset(fileIndex, edit.start),
             })),
-            // MultiBuffer does not record cursor state; local file state
-            // cannot be used as a global MultiBuffer offset.
-            stateBefore: undefined,
-            stateAfter: undefined,
+            stateBefore,
+            stateAfter,
         };
     }
 

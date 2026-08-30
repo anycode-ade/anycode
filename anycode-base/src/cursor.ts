@@ -8,7 +8,7 @@ export function removeCursor() {
 }
 
 export function moveCursor(
-    lineDiv: HTMLElement,
+    lineDiv: AnycodeLine,
     column: number,
     focus: boolean = true,
     visualIndex?: number,
@@ -18,9 +18,10 @@ export function moveCursor(
     cachedClientHeight?: number
 ) {
     if (!lineDiv || !lineDiv.isConnected) {
+        removeCursor();
         return;
     }
-    
+
     let character: number = column;
     const children = lineDiv.children;
     const len = children.length;
@@ -70,18 +71,18 @@ export function moveCursor(
     // Special handling for BR elements: set cursor relative to parent, not inside BR
     let ch: Node;
     let chunkOffset: number;
-    
+
     if (chunk.tagName === 'BR') {
         const parent = chunk.parentElement;
         if (!parent || brChildIndex === -1) return;
-        
+
         ch = parent;
         chunkOffset = brChildIndex;
     } else {
         ch = chunk.firstChild || chunk;
         chunkOffset = chunkCharacter;
     }
-    
+
     if (focus) {
         const scrollable = lineDiv?.parentElement?.parentElement;
         if (scrollable) {

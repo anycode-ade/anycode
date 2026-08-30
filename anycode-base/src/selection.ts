@@ -1,63 +1,73 @@
-import { AnycodeLine, Pos } from "./types";
+import { AnycodeLine, Pos, Point } from "./types";
 import { getLineTextLength, isDiagnosticElement, isInsideDiagnostic } from "./utils";
-import { Code } from "./code";
+
+export function comparePoints(a: Point, b: Point): number {
+    if (a.row !== b.row) return a.row - b.row;
+    return a.column - b.column;
+}
+
+export function pointsEqual(a: Point | null | undefined, b: Point | null | undefined): boolean {
+    if (a === b) return true;
+    if (!a || !b) return false;
+    return a.row === b.row && a.column === b.column;
+}
 
 export class Selection {
-    public anchor: number | null;
-    public cursor: number | null;
+    public anchor: Point;
+    public cursor: Point;
 
-    constructor(anchor: number, cursor: number) {
-        this.anchor = anchor;
-        this.cursor = cursor;
+    constructor(anchor: Point, cursor: Point) {
+        this.anchor = { row: anchor.row, column: anchor.column };
+        this.cursor = { row: cursor.row, column: cursor.column };
     }
 
-    public reset(pos: number) {
-        this.anchor = pos;
-        this.cursor = pos;
+    public reset(pos: Point) {
+        this.anchor = { row: pos.row, column: pos.column };
+        this.cursor = { row: pos.row, column: pos.column };
     }
 
-    public updateCursor(pos: number) {
-        this.cursor = pos;
+    public updateCursor(pos: Point) {
+        this.cursor = { row: pos.row, column: pos.column };
     }
 
-    fromCursor(cursor: number): Selection {
-        return new Selection(this.anchor!, cursor);
+    fromCursor(cursor: Point): Selection {
+        return new Selection(this.anchor, cursor);
     }
 
     public isEmpty(): boolean {
-        return this.anchor === this.cursor;
+        return this.anchor.row === this.cursor.row && this.anchor.column === this.cursor.column;
     }
 
     public nonEmpty(): boolean {
         return !this.isEmpty();
     }
 
-    public sorted(): [number, number] {
-        return this.anchor! <= this.cursor!
-            ? [this.anchor!, this.cursor!]
-            : [this.cursor!, this.anchor!];
+    public sorted(): [Point, Point] {
+        return this.isBackward()
+            ? [{ ...this.cursor }, { ...this.anchor }]
+            : [{ ...this.anchor }, { ...this.cursor }];
     }
 
     public isBackward(): boolean {
-        return this.cursor! < this.anchor!;
+        return comparePoints(this.cursor, this.anchor) < 0;
     }
 
-    public get start(): number {
-        return Math.min(this.anchor!, this.cursor!);
+    public get start(): Point {
+        return this.sorted()[0];
     }
 
-    public get end(): number {
-        return Math.max(this.anchor!, this.cursor!);
+    public get end(): Point {
+        return this.sorted()[1];
     }
 
     public equals(other: Selection): boolean {
         const [startA, endA] = this.sorted();
         const [startB, endB] = other.sorted();
-        return startA === startB && endA === endB;
+        return pointsEqual(startA, startB) && pointsEqual(endA, endB);
     }
 
     public clone(): Selection {
-        return new Selection(this.anchor!, this.cursor!);
+        return new Selection(this.anchor, this.cursor);
     }
 }
 
@@ -140,154 +150,106 @@ export function resolveAbsoluteOffset(node: Node, nodeOffset: number): Pos | nul
     return { row: lineDiv.lineNumber, col: offset };
 }
 
-
 interface DOMPosition {
     node: Node;
     offset: number;
 }
 
 function resolveDOMPosition(
-    offset: number, lines: AnycodeLine[], code: Code,
+    point: Point, lines: AnycodeLine[]
 ): DOMPosition | null {
+    const line = lines.find((l) => l.lineNumber === point.row);
+    if (!line) return null;
 
-    const pos = code.getPosition(offset);
-    const lineLength = code.line(pos.line).length;
+    const lineLength = getLineTextLength(line);
+    const targetColumn = Math.max(0, Math.min(lineLength, point.column));
 
-    if (pos.column === 0 && lineLength === 0 && offset > 0) {
-        offset = offset - 1;
-    }
-
-    for (const line of lines) {
-        const lineOffset = code.getOffset(line.lineNumber, 0);
-        const lineLength = getLineTextLength(line);
-
-        if (offset >= lineOffset && offset <= lineOffset + lineLength) {
-            let remaining = offset - lineOffset;
-
-            if (lineLength === 0 && remaining === 0) {
-                const firstChild = Array.from(line.childNodes)
-                    .find(child => !isDiagnosticElement(child));
-                if (firstChild) {
-                    const textNode = firstChild.firstChild || firstChild;
-                    return { node: textNode, offset: 0 };
-                }
-            }
-
-            for (const span of line.childNodes) {
-                if (isDiagnosticElement(span)) continue;
-                const len = span.textContent?.length ?? 0;
-
-                if (remaining <= len) {
-                    const textNode = span.firstChild || span;
-                    return { node: textNode, offset: remaining };
-                }
-                remaining -= len;
-            }
-
-            const lineChildren = Array.from(line.childNodes).filter(child => !isDiagnosticElement(child));
-            const lastSpan = lineChildren[lineChildren.length - 1];
-            if (lastSpan) {
-                const lastLen = lastSpan.textContent?.length ?? 0;
-                const textNode = lastSpan.firstChild || lastSpan;
-                return { node: textNode, offset: lastLen };
-            }
+    if (lineLength === 0 || targetColumn === 0) {
+        const firstChild = Array.from(line.childNodes).find(
+            (child) => !isDiagnosticElement(child)
+        );
+        if (firstChild) {
+            const textNode = firstChild.firstChild || firstChild;
+            return { node: textNode, offset: 0 };
         }
     }
+
+    let remaining = targetColumn;
+    for (const span of line.childNodes) {
+        if (isDiagnosticElement(span)) continue;
+        const len = span.textContent?.length ?? 0;
+
+        if (remaining <= len) {
+            const textNode = span.firstChild || span;
+            return { node: textNode, offset: remaining };
+        }
+        remaining -= len;
+    }
+
+    const lineChildren = Array.from(line.childNodes).filter(
+        (child) => !isDiagnosticElement(child)
+    );
+    const lastSpan = lineChildren[lineChildren.length - 1];
+    if (lastSpan) {
+        const lastLen = lastSpan.textContent?.length ?? 0;
+        const textNode = lastSpan.firstChild || lastSpan;
+        return { node: textNode, offset: lastLen };
+    }
+
     return null;
 }
 
 export function renderSelection(
-    selection: Selection, lines: AnycodeLine[], code: Code
+    selection: Selection, lines: AnycodeLine[]
 ) {
-    // console.log("setSelectionFromOffsets ", selection);
-    const [selectionStart, selectionEnd] = selection.sorted(); // DOM needs sorted
-
     if (lines.length === 0) return;
-
-    // Check if the same selection is already active
-    const currentSelection = getSelection();
-    if (currentSelection) {
-        const currentStartOffset = code.getOffset(currentSelection.start.row, currentSelection.start.col);
-        const currentEndOffset = code.getOffset(currentSelection.end.row, currentSelection.end.col);
-        const [newStart, newEnd] = selection.sorted();
-
-        if (currentStartOffset === newStart && currentEndOffset === newEnd) {
-            return;
-        }
-    }
 
     // Ensure all lines are connected to the DOM before proceeding
     for (const line of lines) {
         if (!line.isConnected) {
-            console.warn('setSelectionFromOffsets: line is not connected to DOM');
             return;
         }
     }
 
-    const firstLine = lines[0];
-    const lastLine = lines[lines.length - 1];
+    const [selectionStart, selectionEnd] = selection.sorted();
 
-    const visibleStart = code.getOffset(firstLine.lineNumber, 0);
-    const visibleEnd =
-        code.getOffset(lastLine.lineNumber, 0) +
-        getLineTextLength(lastLine);
+    // Sort lines by line number
+    const sortedLines = [...lines].sort((a, b) => a.lineNumber - b.lineNumber);
+    const firstLine = sortedLines[0];
+    const lastLine = sortedLines[sortedLines.length - 1];
 
-    const clampedStart = Math.max(selectionStart, visibleStart);
-    const clampedEnd = Math.min(selectionEnd, visibleEnd);
-    if (clampedStart > clampedEnd) return;
+    if (selectionEnd.row < firstLine.lineNumber || selectionStart.row > lastLine.lineNumber) {
+        const sel = window.getSelection();
+        if (sel) sel.removeAllRanges();
+        return;
+    }
 
-    let finalStart = clampedStart;
-    let finalEnd = clampedEnd;
+    const effectiveStart: Point = selectionStart.row < firstLine.lineNumber
+        ? { row: firstLine.lineNumber, column: 0 }
+        : selectionStart;
 
-    // Adjust start offset if it falls within a fold gap
-    let startAdjusted = false;
-    for (const line of lines) {
-        const lineOffset = code.getOffset(line.lineNumber, 0);
-        const lineLength = getLineTextLength(line);
-        const lineEnd = lineOffset + lineLength;
+    const effectiveEnd: Point = selectionEnd.row > lastLine.lineNumber
+        ? { row: lastLine.lineNumber, column: getLineTextLength(lastLine) }
+        : selectionEnd;
 
-        if (finalStart >= lineOffset && finalStart <= lineEnd) {
-            startAdjusted = true;
-            break;
-        }
-        if (finalStart < lineOffset) {
-            finalStart = lineOffset;
-            startAdjusted = true;
-            break;
+    // Check if the same selection is already active in the DOM
+    const currentSelection = getSelection();
+    if (currentSelection) {
+        if (
+            currentSelection.start.row === effectiveStart.row &&
+            currentSelection.start.col === effectiveStart.column &&
+            currentSelection.end.row === effectiveEnd.row &&
+            currentSelection.end.col === effectiveEnd.column
+        ) {
+            return;
         }
     }
-    if (!startAdjusted) return;
 
-    // Adjust end offset if it falls within a fold gap
-    let endAdjusted = false;
-    for (let i = lines.length - 1; i >= 0; i--) {
-        const line = lines[i];
-        const lineOffset = code.getOffset(line.lineNumber, 0);
-        const lineLength = getLineTextLength(line);
-        const lineEnd = lineOffset + lineLength;
-
-        if (finalEnd >= lineOffset && finalEnd <= lineEnd) {
-            endAdjusted = true;
-            break;
-        }
-        if (finalEnd > lineEnd) {
-            finalEnd = lineEnd;
-            endAdjusted = true;
-            break;
-        }
-    }
-    if (!endAdjusted) return;
-
-    if (finalStart > finalEnd) return;
-
-    const clamped = new Selection(finalStart, finalEnd);
-
-    const startPos = resolveDOMPosition(clamped.start, lines, code);
-    const endPos = resolveDOMPosition(clamped.end, lines, code);
+    const startPos = resolveDOMPosition(effectiveStart, sortedLines);
+    const endPos = resolveDOMPosition(effectiveEnd, sortedLines);
 
     if (!startPos || !endPos) return;
 
-    // Ensure we're working with the correct document context
     const doc = startPos.node.ownerDocument || document;
     const range = doc.createRange();
     const sel = window.getSelection();
@@ -296,12 +258,10 @@ export function renderSelection(
     range.setStart(startPos.node, startPos.offset);
     range.setEnd(endPos.node, endPos.offset);
 
-    // Ensure the range is valid and in the same document as the selection
     try {
         sel.removeAllRanges();
         sel.addRange(range);
-        // console.log("addRange", range);
     } catch (error) {
-        console.warn('Failed to add range to selection:', error);
+        console.warn("Failed to add range to selection:", error);
     }
 }

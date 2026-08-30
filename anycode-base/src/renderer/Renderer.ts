@@ -1,6 +1,6 @@
 import { Code, HighlighedNode } from "../code";
 import { BinaryTokens } from "../tokens";
-import { AnycodeLine, RowElements, SparseGhostGroup } from "../types";
+import { AnycodeLine, Point, RowElements, SparseGhostGroup } from "../types";
 import { isGhostElement, objectHash, minimize } from "../utils";
 import { moveCursor, removeCursor } from "../cursor";
 import { EditorState, EditorSettings } from "../editor";
@@ -1220,10 +1220,9 @@ export class Renderer {
     public renderCursorOrSelection(state: EditorState, focus: boolean = false) {
         if (!state.cursorActive || state.readOnly) return;
 
-        const { code, offset, selection } = state;
+        const { code, cursor, selection } = state;
         if (!selection || selection.isEmpty()) {
-            const { line, column } = code.getPosition(offset);
-            this.renderCursor(line, column, focus, state);
+            this.renderCursor(cursor.row, cursor.column, focus, state);
         } else {
             this.renderSelection(code, selection!);
         }
@@ -1232,6 +1231,10 @@ export class Renderer {
 
     public renderCursor(line: number, column: number, focus: boolean = false, state?: EditorState) {
         this.codeContent.classList.remove('selecting');
+        if (state?.code && !state.code.isLineEditable(line)) {
+            removeCursor();
+            return;
+        }
         const lineDiv = this.getLine(line);
         if (lineDiv) {
             const visualIndex = this.getVisualIndexForLine(line);
@@ -1274,10 +1277,10 @@ export class Renderer {
             if (!l.isConnected) { attached = false; break; }
         }
         if (attached) {
-            renderSelection(selection, lines, code);
+            renderSelection(selection, lines);
         } else {
             requestAnimationFrame(() => {
-                renderSelection(selection, this.getLines(), code);
+                renderSelection(selection, this.getLines());
             });
         }
     }
@@ -1317,11 +1320,12 @@ export class Renderer {
     }
 
     public revealCursor(state: EditorState, focusLine: number | null = null): boolean {
-        const { code, offset, settings } = state;
+        const { code, cursor, settings } = state;
         if (!code) return false;
 
-        let { line } = code.getPosition(offset);
-        if (focusLine !== null) line = focusLine;
+        let line = focusLine !== null
+            ? focusLine
+            : cursor.row;
 
         // For plain files without folds or diffs, visual and source line
         // indices are identical. Avoid scanning all rendered rows.
@@ -1370,11 +1374,10 @@ export class Renderer {
     }
 
     public revealCursorCenter(state: EditorState): boolean {
-        const { code, offset } = state;
+        const { code, cursor } = state;
         if (!code) return false;
 
-        const { line } = code.getPosition(offset);
-        return this.revealLineCenter(state, line);
+        return this.revealLineCenter(state, cursor.row);
     }
 
     private revealLineCenter(state: EditorState, line: number): boolean {
@@ -1418,14 +1421,14 @@ export class Renderer {
         completions: Completion[],
         selectedIndex: number,
         code: Code,
-        offset: number,
+        point: Point,
         onCompletionClick: (index: number) => void
     ) {
-        this.completionRenderer.render(completions, selectedIndex, code, offset, onCompletionClick);
+        this.completionRenderer.render(completions, selectedIndex, code, point, onCompletionClick);
     }
 
-    public moveCompletion(code: Code, offset: number) {
-        this.completionRenderer.move(code, offset);
+    public moveCompletion(code: Code, point: Point) {
+        this.completionRenderer.move(code, point);
     }
 
     public closeCompletion() {
@@ -1440,12 +1443,12 @@ export class Renderer {
         this.completionRenderer.highlight(index);
     }
 
-    public renderHover(content: string, code: Code, offset: number) {
-        this.hoverRenderer.render(content, code, offset);
+    public renderHover(content: string, code: Code, point: Point) {
+        this.hoverRenderer.render(content, code, point);
     }
 
-    public moveHover(code: Code, offset: number) {
-        this.hoverRenderer.move(code, offset);
+    public moveHover(code: Code, point: Point) {
+        this.hoverRenderer.move(code, point);
     }
 
     public closeHover() {

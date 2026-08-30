@@ -1,4 +1,4 @@
-import { Operation, type Code } from "./code";
+import { Operation, type Code, type Point } from "./code";
 import { Selection } from "./selection";
 import { getIndentation, getPrevGraphemeIndex, getNextGraphemeIndex, findPrevWord } from "./utils";
 
@@ -35,16 +35,26 @@ export enum Action {
 }
 
 export type ActionContext = {
-    offset: number;
+    cursor: Point;
     code: Code;
     selection?: Selection;
-    event?: KeyboardEvent
+    event?: KeyboardEvent;
 };
 
 export type ActionResult = {
     changed: boolean;
     ctx: ActionContext;
 };
+
+function syncCursor(ctx: ActionContext, row: number, column: number): void {
+    ctx.cursor = { row, column };
+}
+
+export function isCrossFileSelection(ctx: ActionContext): boolean {
+    if (!ctx.selection || ctx.selection.isEmpty()) return false;
+    const [start, end] = ctx.selection.sorted();
+    return !ctx.code.isSameFileBody(start.row, end.row);
+}
 
 export const executeAction = async (
     action: Action, ctx: ActionContext
@@ -81,173 +91,177 @@ export const executeAction = async (
 };
 
 export const handleTextInput = (ctx: ActionContext): ActionResult => {
+    if (!ctx.code.isLineEditable(ctx.cursor.row) || isCrossFileSelection(ctx)) {
+        return { ctx, changed: false };
+    }
+
     ctx.code.tx();
-    ctx.code.setStateBefore(ctx.offset, ctx.selection);
-    
+    ctx.code.setStateBefore(ctx.cursor, ctx.selection);
+
+    let event: KeyboardEvent | undefined = ctx.event;
+
     if (ctx.selection?.nonEmpty()) {
         removeSelection(ctx);
     }
-    
-    const { line, column } = ctx.code.getPosition(ctx.offset);
-    let text = ctx.event!.key;
-    ctx.code.insert(text, ctx.offset);
-    ctx.offset = ctx.code.getOffset(line, column + text.length);
 
-    ctx.code.setStateAfter(ctx.offset, ctx.selection);
+    if (event?.key) {
+        ctx.code.insertAt(ctx.cursor, event.key);
+        syncCursor(ctx, ctx.cursor.row, ctx.cursor.column + event.key.length);
+    }
+
+    ctx.selection = undefined;
+    ctx.code.setStateAfter(ctx.cursor, ctx.selection);
     ctx.code.commit();
-    
+
     return { ctx, changed: true };
 };
 
-export const removeSelection = (ctx: ActionContext): ActionResult => {
-    if (!ctx.selection?.nonEmpty()) return { ctx, changed: false };
-    
+export const removeSelection = (ctx: ActionContext) => {
+    if (!ctx.selection) return;
+
     let [start, end] = ctx.selection.sorted();
-    let len = ctx.code.length();
-    if (end > len) { end = len } // todo fix end bug
-    const targetPos = ctx.code.getPosition(start);
-    ctx.code.remove(start, end - start);
-    ctx.offset = ctx.code.getOffset(targetPos.line, targetPos.column);
+    ctx.code.removeRange(start, end);
+
+    ctx.cursor = { ...start };
     ctx.selection = undefined;
-    return { ctx, changed: true };
-}
+};
 
 export const handleBackspace = (ctx: ActionContext): ActionResult => {
+    if (!ctx.code.isLineEditable(ctx.cursor.row) || isCrossFileSelection(ctx)) {
+        return { ctx, changed: false };
+    }
+
     let event: KeyboardEvent | undefined = ctx.event;
     
     ctx.code.tx();
-    ctx.code.setStateBefore(ctx.offset, ctx.selection);
+    ctx.code.setStateBefore(ctx.cursor, ctx.selection);
 
     if (ctx.selection?.nonEmpty()) {
         removeSelection(ctx);
-        ctx.code.setStateAfter(ctx.offset, ctx.selection);
+        ctx.code.setStateAfter(ctx.cursor, ctx.selection);
         ctx.code.commit();
         return { ctx, changed: true };
     }
 
-    if (ctx.offset <= 0) { return { ctx, changed: false } }
+    const { row: line, column } = ctx.cursor;
+    if (line === 0 && column === 0) {
+        return { ctx, changed: false };
+    }
 
-    const { line, column } = ctx.code.getPosition(ctx.offset);
     const lineText = ctx.code.line(line);
-    
-    // Calculate the start position for deletion
-    let removeStart: number;
     let targetLine = line;
     let targetCol = column;
+    let startPoint: Point;
     
     if (event?.metaKey) {
-        // Meta+Backspace: delete to start of line
-        removeStart = ctx.code.getOffset(line, 0);
-        targetCol = 0;
-        if (removeStart > 0 && removeStart === ctx.offset) {
-            removeStart -= 1;
-            const prevPos = ctx.code.getPosition(removeStart);
-            targetLine = prevPos.line;
-            targetCol = prevPos.column;
+        if (column === 0 && line > 0) {
+            const prevLine = ctx.code.getPrevLine(line);
+            if (prevLine < 0 || !ctx.code.isLineEditable(prevLine) || !ctx.code.isSameFileBody(line, prevLine)) {
+                return { ctx, changed: false };
+            }
+            targetLine = prevLine;
+            targetCol = ctx.code.lineLength(targetLine);
+            startPoint = { row: targetLine, column: targetCol };
+        } else {
+            targetCol = 0;
+            startPoint = { row: line, column: 0 };
         }
     } else if (event?.altKey) {
-        // Alt+Backspace: delete to start of word
-        // If at start of line, join with previous line
         if (column === 0 && line > 0) {
-            removeStart = ctx.offset - 1;
-            const prevPos = ctx.code.getPosition(removeStart);
-            targetLine = prevPos.line;
-            targetCol = prevPos.column;
+            const prevLine = ctx.code.getPrevLine(line);
+            if (prevLine < 0 || !ctx.code.isLineEditable(prevLine) || !ctx.code.isSameFileBody(line, prevLine)) {
+                return { ctx, changed: false };
+            }
+            targetLine = prevLine;
+            targetCol = ctx.code.lineLength(targetLine);
+            startPoint = { row: targetLine, column: targetCol };
         } else {
-            const wordStartCol = findPrevWord(lineText, column);
-            removeStart = ctx.code.getOffset(line, wordStartCol);
-            targetCol = wordStartCol;
-        }
-        if (removeStart > 0 && removeStart === ctx.offset) {
-            removeStart -= 1;
-            const prevPos = ctx.code.getPosition(removeStart);
-            targetLine = prevPos.line;
-            targetCol = prevPos.column;
+            targetCol = findPrevWord(lineText, column);
+            startPoint = { row: line, column: targetCol };
         }
     } else {
-        // Regular backspace
-        // At start of line: join with previous line by removing the newline
         if (column === 0 && line > 0) {
-            removeStart = ctx.offset - 1;
-            const prevPos = ctx.code.getPosition(removeStart);
-            targetLine = prevPos.line;
-            targetCol = prevPos.column;
+            const prevLine = ctx.code.getPrevLine(line);
+            if (prevLine < 0 || !ctx.code.isLineEditable(prevLine) || !ctx.code.isSameFileBody(line, prevLine)) {
+                return { ctx, changed: false };
+            }
+            targetLine = prevLine;
+            targetCol = ctx.code.lineLength(targetLine);
+            startPoint = { row: targetLine, column: targetCol };
         } else {
-            const isRemoveIndent = column > 0 && ctx.code.getIndent() &&
+            const isRemoveIndent = column > 0 && ctx.code.getIndent(line) &&
                 ctx.code.isOnlyIndentationBefore(line, column);
             
             if (isRemoveIndent) {
-                // vscode like: remove to previous indentation level
                 targetCol = ctx.code.prevIndentation(line, column);
-                removeStart = ctx.code.getOffset(line, 0) + targetCol;
             } else {
-                // delete previous grapheme cluster
                 targetCol = getPrevGraphemeIndex(lineText, column);
-                removeStart = ctx.code.getOffset(line, targetCol);
             }
+            startPoint = { row: line, column: targetCol };
         }
     }
     
-    // Perform the deletion
-    const removeLen = ctx.offset - removeStart;
-    if (removeLen > 0) {
-        ctx.code.remove(removeStart, removeLen);
-        ctx.offset = ctx.code.getOffset(targetLine, targetCol);
-    }
+    ctx.code.removeRange(startPoint, ctx.cursor);
+    syncCursor(ctx, targetLine, targetCol);
 
-    ctx.code.setStateAfter(ctx.offset, ctx.selection);
+    ctx.code.setStateAfter(ctx.cursor, ctx.selection);
     ctx.code.commit();
 
     return { ctx, changed: true };
 };
 
 export const handleEnter = (ctx: ActionContext): ActionResult => {
+    if (!ctx.code.isLineEditable(ctx.cursor.row) || isCrossFileSelection(ctx)) {
+        return { ctx, changed: false };
+    }
+
     let event: KeyboardEvent | undefined = ctx.event;
 
     ctx.code.tx();
-    ctx.code.setStateBefore(ctx.offset, ctx.selection);
+    ctx.code.setStateBefore(ctx.cursor, ctx.selection);
 
     if (ctx.selection?.nonEmpty()) {
         removeSelection(ctx);
     }
 
     if (event?.metaKey) {
-        const { line } = ctx.code.getPosition(ctx.offset);
-        const lineLength = ctx.code.lineLength(line);
-        ctx.offset = ctx.code.getOffset(line, lineLength);
+        const lineLength = ctx.code.lineLength(ctx.cursor.row);
+        syncCursor(ctx, ctx.cursor.row, lineLength);
     }
 
-    const { line, column } = ctx.code.getPosition(ctx.offset);
+    const { row: line, column } = ctx.cursor;
     const currentLine = ctx.code.line(line);
 
     const indent = getIndentation(currentLine, column);
     const newlineWithIndent = '\n' + indent;
 
-    ctx.code.insert(newlineWithIndent, ctx.offset);
-    ctx.offset = ctx.code.getOffset(line + 1, indent.length);
+    ctx.code.insertAt(ctx.cursor, newlineWithIndent);
+    syncCursor(ctx, line + 1, indent.length);
     
     ctx.selection = undefined;
-    ctx.code.setStateAfter(ctx.offset, ctx.selection);
+    ctx.code.setStateAfter(ctx.cursor, ctx.selection);
     ctx.code.commit();
 
     return { ctx, changed: true };
 };
 
 export const handleUndo = (ctx: ActionContext): ActionResult => {
-    const change = ctx.code.undo(ctx.offset);
+    const change = ctx.code.undo(ctx.cursor);
 
     if (change) {
         if (change.stateBefore) { 
             // use state before to restore cursor and selection
-            ctx.offset = change.stateBefore.offset;
+            if (change.stateBefore.cursor) {
+                syncCursor(ctx, change.stateBefore.cursor.row, change.stateBefore.cursor.column);
+            }
             ctx.selection = change.stateBefore.selection;
         } else {
             // calculate new cursor position
             for (const edit of change.edits) {
                 if (edit.operation === Operation.Insert) {
-                    ctx.offset = edit.start;
+                    ctx.cursor = ctx.code.getPoint(edit.start);
                 } else if (edit.operation === Operation.Remove) {
-                    ctx.offset = edit.start + edit.text.length;
+                    ctx.cursor = ctx.code.getPoint(edit.start + edit.text.length);
                 }
             }
             ctx.selection = undefined;
@@ -259,20 +273,22 @@ export const handleUndo = (ctx: ActionContext): ActionResult => {
 };
 
 export const handleRedo = (ctx: ActionContext): ActionResult => {
-    const change = ctx.code.redo(ctx.offset);
+    const change = ctx.code.redo(ctx.cursor);
 
     if (change) {
-        if (change.stateAfter) {
+        if (change.stateAfter) { 
             // use state after to restore cursor and selection
-            ctx.offset = change.stateAfter.offset;
+            if (change.stateAfter.cursor) {
+                syncCursor(ctx, change.stateAfter.cursor.row, change.stateAfter.cursor.column);
+            }
             ctx.selection = change.stateAfter.selection;
         } else {
             // calculate new cursor position
             for (const edit of change.edits) {
                 if (edit.operation === Operation.Insert) {
-                    ctx.offset = edit.start + edit.text.length;
+                    ctx.cursor = ctx.code.getPoint(edit.start + edit.text.length);
                 } else if (edit.operation === Operation.Remove) {
-                    ctx.offset = edit.start;
+                    ctx.cursor = ctx.code.getPoint(edit.start);
                 }
             }
             ctx.selection = undefined;
@@ -284,8 +300,11 @@ export const handleRedo = (ctx: ActionContext): ActionResult => {
 };
 
 export const handleSelectAll = (ctx: ActionContext): ActionResult => {
-    ctx.selection = new Selection(0, ctx.code.length());
-    return { ctx, changed: true };
+    const firstRow = ctx.code.findFirstEditableLine();
+    const lastRow = Math.max(0, ctx.code.linesLength() - 1);
+    const lastCol = ctx.code.lineLength(lastRow);
+    ctx.selection = new Selection({ row: firstRow, column: 0 }, { row: lastRow, column: lastCol });
+    return { ctx, changed: false };
 };
 
 export const handleCopy = async (ctx: ActionContext): Promise<ActionResult> => {
@@ -294,11 +313,8 @@ export const handleCopy = async (ctx: ActionContext): Promise<ActionResult> => {
     }
 
     try {
-        let [start, end] = ctx.selection.sorted();
-        let len = ctx.code.length();
-        if (end > len) end = len; // todo: fix end bug
-
-        let content = ctx.code.getIntervalContent2(start, end);
+        const [start, end] = ctx.selection.sorted();
+        const content = ctx.code.getTextRange(start, end);
         await copyToClipboard(content);
     } catch (err) {
         console.error('Failed to copy:', err);
@@ -346,27 +362,25 @@ export const handlePaste = async (ctx: ActionContext): Promise<ActionResult> => 
 };
 
 export const handlePasteText = (ctx: ActionContext, text: string): ActionResult => {
-    let o = ctx.offset;
-
-    ctx.code.tx();
-    ctx.code.setStateBefore(ctx.offset, ctx.selection);
-
-    if (ctx.selection?.nonEmpty()) {
-        const [start, end] = ctx.selection!.sorted();
-        const targetPos = ctx.code.getPosition(start);
-        ctx.code.remove(start, end - start);
-        o = ctx.code.getOffset(targetPos.line, targetPos.column);
-        ctx.selection = undefined;
+    if (!ctx.code.isLineEditable(ctx.cursor.row) || isCrossFileSelection(ctx)) {
+        return { ctx, changed: false };
     }
 
-    const { line, column } = ctx.code.getPosition(o);
-    const toInsert = smartPaste(ctx.code, o, text);
-    ctx.code.insert(toInsert, o);
+    ctx.code.tx();
+    ctx.code.setStateBefore(ctx.cursor, ctx.selection);
+
+    if (ctx.selection?.nonEmpty()) {
+        removeSelection(ctx);
+    }
+
+    const { row: line, column } = ctx.cursor;
+    const toInsert = smartPaste(ctx.code, ctx.cursor, text);
+    ctx.code.insertAt(ctx.cursor, toInsert);
     const pastedLines = toInsert.split('\n');
     const targetLine = line + pastedLines.length - 1;
     const targetCol = pastedLines.length === 1 ? column + toInsert.length : pastedLines[pastedLines.length - 1].length;
-    ctx.offset = ctx.code.getOffset(targetLine, targetCol);
-    ctx.code.setStateAfter(ctx.offset, ctx.selection);
+    syncCursor(ctx, targetLine, targetCol);
+    ctx.code.setStateAfter(ctx.cursor, ctx.selection);
     ctx.code.commit();
 
     return { ctx, changed: true };
@@ -374,24 +388,17 @@ export const handlePasteText = (ctx: ActionContext, text: string): ActionResult 
 
 /**
  * Smart paste with indentation awareness.
- * 
- * 1. Determine the indentation level at the cursor (`base_level`).
- * 2. The first line of the pasted block is inserted at the cursor level (trimmed).
- * 3. Subsequent lines adjust their indentation **relative to the previous non-empty line in the pasted block**:
- *    - Compute `diff` = change in indentation from the previous non-empty line in the source block (clamped ±1).
- *    - Apply `diff` to `prev_nonempty_level` to calculate the new insertion level.
- * 4. Empty lines are inserted as-is and do not affect subsequent indentation.
- * 
- * This ensures that pasted blocks keep their relative structure while aligning to the cursor.
  */
-export function smartPaste(code: Code, offset: number, text: string): string {
-    const { line, column } = code.getPosition(offset);
+export function smartPaste(code: Code, cursor: Point, text: string): string {
+    const { row: line, column } = cursor;
     const baseLevel = code.getIndentationLevel(line, column);
-    const indent = code.getIndent();
+    const indent = code.getIndent(line);
     
     if (!indent) {
         return text;
     }
+
+    const indentStep = indent.unit === ' ' ? ' '.repeat(indent.width) : '\t';
     
     const lines = text.split('\n');
     if (lines.length === 0) {
@@ -403,116 +410,106 @@ export function smartPaste(code: Code, offset: number, text: string): string {
     for (const lineText of lines) {
         let level = 0;
         let rest = lineText;
-        const indentUnit = indent.unit === ' ' ? ' '.repeat(indent.width) : '\t';
-        
-        while (rest.startsWith(indentUnit)) {
+        while (rest.startsWith(indentStep)) {
             level++;
-            rest = rest.substring(indentUnit.length);
+            rest = rest.slice(indentStep.length);
         }
         lineLevels.push(level);
     }
     
-    const result: string[] = [];
-    
-    // First line is inserted at cursor level (trimmed)
-    const firstLineTrimmed = lines[0].trimStart();
-    result.push(firstLineTrimmed);
-    
-    let prevNonEmptyLevel = baseLevel;
-    let prevLineLevelInBlock = lineLevels[0];
-    
+    // Find minimum indentation among non-empty lines (excluding first line)
+    let minLevel = Infinity;
     for (let i = 1; i < lines.length; i++) {
-        const lineText = lines[i];
-        
-        if (lineText.trim() === '') {
-            // Empty lines are inserted as-is
-            result.push(lineText);
-            continue;
+        if (lines[i].trim().length > 0) {
+            minLevel = Math.min(minLevel, lineLevels[i]);
         }
-        
-        // diff relative to previous non-empty line in the source block
-        const diff = Math.max(-1, Math.min(1, lineLevels[i] - prevLineLevelInBlock));
-        const newLevel = Math.max(0, prevNonEmptyLevel + diff);
-        
-        const indentUnit = indent.unit === ' ' ? ' '.repeat(indent.width) : '\t';
-        const indents = indentUnit.repeat(newLevel);
-        const resultLine = indents + lineText.trimStart();
-        result.push(resultLine);
-        
-        // Update levels only for non-empty line
-        prevNonEmptyLevel = newLevel;
-        prevLineLevelInBlock = lineLevels[i];
+    }
+    if (minLevel === Infinity) {
+        minLevel = 0;
+    }
+    
+    // Re-indent lines: first line stays as-is, subsequent lines are adjusted relative to baseLevel
+    const result: string[] = [];
+    for (let i = 0; i < lines.length; i++) {
+        if (i === 0) {
+            result.push(lines[0]);
+        } else {
+            const lineText = lines[i];
+            if (lineText.trim().length === 0) {
+                result.push('');
+            } else {
+                const relativeLevel = lineLevels[i] - minLevel;
+                const newLevel = Math.max(0, baseLevel + relativeLevel);
+                const trimmed = lineText.trimStart();
+                result.push(indentStep.repeat(newLevel) + trimmed);
+            }
+        }
     }
     
     return result.join('\n');
 }
 
-
 export const handleDuplicate = async (ctx: ActionContext): Promise<ActionResult> => {
-    let start: number, end: number, textToDuplicate: string, insertPos: number;
+    if (!ctx.code.isLineEditable(ctx.cursor.row) || isCrossFileSelection(ctx)) {
+        return { ctx, changed: false };
+    }
+
+    let textToDuplicate: string;
     let targetLine: number, targetCol: number;
+    let insertPoint: Point;
 
     if (ctx.selection?.nonEmpty()) {
-        // Duplicate the selected text after the selection
-        [start, end] = ctx.selection.sorted();
-        textToDuplicate = ctx.code.getIntervalContent2(start, end);
-        insertPos = end;
-        const endPos = ctx.code.getPosition(end);
+        const [start, end] = ctx.selection.sorted();
+        textToDuplicate = ctx.code.getTextRange(start, end);
+        insertPoint = end;
         const dupLines = textToDuplicate.split('\n');
-        targetLine = endPos.line + dupLines.length - 1;
-        targetCol = dupLines.length === 1 ? endPos.column + textToDuplicate.length : dupLines[dupLines.length - 1].length;
+        targetLine = end.row + dupLines.length - 1;
+        targetCol = dupLines.length === 1 ? end.column + textToDuplicate.length : dupLines[dupLines.length - 1].length;
     } else {
         // Duplicate the whole line at the cursor
-        const { line, column } = ctx.code.getPosition(ctx.offset);
-        start = ctx.code.getOffset(line, 0);
-        // Include the line break if not last line
-        if (line < ctx.code.linesLength() - 1) {
-            end = ctx.code.getOffset(line + 1, 0);
-        } else {
-            end = ctx.code.length();
-        }
-        textToDuplicate = ctx.code.getIntervalContent2(start, end);
-        insertPos = end;
+        const { row: line, column } = ctx.cursor;
+        const lineContent = ctx.code.line(line);
+        textToDuplicate = '\n' + lineContent;
+        insertPoint = { row: line, column: lineContent.length };
         targetLine = line + 1;
         targetCol = column;
     }
 
     ctx.code.tx();
-    ctx.code.setStateBefore(ctx.offset, ctx.selection);
+    ctx.code.setStateBefore(ctx.cursor, ctx.selection);
 
-    ctx.code.insert(textToDuplicate, insertPos);
+    ctx.code.insertAt(insertPoint, textToDuplicate);
     
-    ctx.offset = ctx.code.getOffset(targetLine, targetCol);
+    syncCursor(ctx, targetLine, targetCol);
     ctx.selection = undefined;
 
-    ctx.code.setStateAfter(ctx.offset, ctx.selection);
+    ctx.code.setStateAfter(ctx.cursor, ctx.selection);
     ctx.code.commit();
     return { ctx, changed: true };
-}
+};
 
 export const handleCut = async (ctx: ActionContext): Promise<ActionResult> => {
-    if (!ctx.selection || ctx.selection.isEmpty()) {
+    if (!ctx.selection || ctx.selection.isEmpty() || isCrossFileSelection(ctx)) {
+        return { ctx, changed: false };
+    }
+
+    const [start, end] = ctx.selection.sorted();
+    if (!ctx.code.isLineEditable(start.row) || !ctx.code.isLineEditable(end.row)) {
         return { ctx, changed: false };
     }
 
     try {
-        let [start, end] = ctx.selection.sorted();
-        let len = ctx.code.length();
-        if (end > len) end = len; // todo: fix end bug
-
-        let content = ctx.code.getIntervalContent2(start, end);
+        const content = ctx.code.getTextRange(start, end);
         await copyToClipboard(content);
 
-        const targetPos = ctx.code.getPosition(start);
-
         ctx.code.tx();
-        ctx.code.setStateBefore(ctx.offset, ctx.selection);
+        ctx.code.setStateBefore(ctx.cursor, ctx.selection);
 
-        ctx.code.remove(start, end - start);
+        ctx.code.removeRange(start, end);
         
-        ctx.offset = ctx.code.getOffset(targetPos.line, targetPos.column);
+        syncCursor(ctx, start.row, start.column);
         ctx.selection = undefined;
-        ctx.code.setStateAfter(ctx.offset, ctx.selection);
+        ctx.code.setStateAfter(ctx.cursor, ctx.selection);
         ctx.code.commit();
         return { ctx, changed: true };
     } catch (err) {
@@ -522,28 +519,33 @@ export const handleCut = async (ctx: ActionContext): Promise<ActionResult> => {
 };
 
 export const handleTab = (ctx: ActionContext): ActionResult => {
+    if (isCrossFileSelection(ctx)) {
+        return { ctx, changed: false };
+    }
+
     let linesToHandle: number[] = [];
 
     if (ctx.selection && !ctx.selection.isEmpty()) {
-        const selectionStart = ctx.code.getPosition(ctx.selection.start);
-        const selectionEnd = ctx.code.getPosition(ctx.selection.end);
-        for (let i = selectionStart.line; i <= selectionEnd.line; i++) {
+        const [start, end] = ctx.selection.sorted();
+        for (let i = start.row; i <= end.row; i++) {
             linesToHandle.push(i);
         }
     } else {
-        const { line } = ctx.code.getPosition(ctx.offset);
-        linesToHandle = [line];
+        linesToHandle = [ctx.cursor.row];
     }
 
-    const indent = ctx.code.getIndent();
+    if (linesToHandle.some((line) => !ctx.code.isLineEditable(line))) {
+        return { ctx, changed: false };
+    }
+
+    const targetRow = linesToHandle[0] ?? ctx.cursor.row;
+    const indent = ctx.code.getIndent(targetRow);
     const indentText = indent?.unit === ' ' 
         ? ' '.repeat(indent.width) 
         : '\t';
 
-    const { line: currentLineNum, column: currentColNum } = ctx.code.getPosition(ctx.offset);
-
     ctx.code.tx();
-    ctx.code.setStateBefore(ctx.offset, ctx.selection);
+    ctx.code.setStateBefore(ctx.cursor, ctx.selection);
 
     linesToHandle.reverse();
 
@@ -555,48 +557,51 @@ export const handleTab = (ctx: ActionContext): ActionResult => {
     }
 
     if (ctx.selection && !ctx.selection.isEmpty()) {
-        let [smin, smax] = ctx.selection.sorted();
-        let anchor = ctx.selection.anchor!;
-        let is_selection_forward = ctx.selection.anchor == smin;
-        if (is_selection_forward) {
-            ctx.offset += indentText.length * indents_added;
-            anchor += indentText.length;
-        } else {
-            ctx.offset += indentText.length;
-            anchor += indentText.length * indents_added;
-        }
-        ctx.selection = new Selection(anchor, ctx.offset);
+        const newAnchor: Point = {
+            row: ctx.selection.anchor.row,
+            column: ctx.selection.anchor.column + indentText.length,
+        };
+        const newCursor: Point = {
+            row: ctx.cursor.row,
+            column: ctx.cursor.column + indentText.length,
+        };
+        ctx.selection = new Selection(newAnchor, newCursor);
+        syncCursor(ctx, newCursor.row, newCursor.column);
     } else {
-        ctx.offset = ctx.code.getOffset(currentLineNum, currentColNum + indentText.length);
+        syncCursor(ctx, ctx.cursor.row, ctx.cursor.column + indentText.length);
     }
 
-    ctx.code.setStateAfter(ctx.offset, ctx.selection);
+    ctx.code.setStateAfter(ctx.cursor, ctx.selection);
     ctx.code.commit();
     return { ctx, changed: true };
 };
 
-
 export const handleUnTab = (ctx: ActionContext): ActionResult => {
+    if (isCrossFileSelection(ctx)) {
+        return { ctx, changed: false };
+    }
+
     let linesToHandle: number[] = [];
 
     if (ctx.selection && !ctx.selection.isEmpty()) {
-        const selectionStart = ctx.code.getPosition(ctx.selection.start);
-        const selectionEnd = ctx.code.getPosition(ctx.selection.end);
-        for (let i = selectionStart.line; i <= selectionEnd.line; i++) {
+        const [start, end] = ctx.selection.sorted();
+        for (let i = start.row; i <= end.row; i++) {
             linesToHandle.push(i);
         }
     } else {
-        const { line } = ctx.code.getPosition(ctx.offset);
-        linesToHandle = [line];
+        linesToHandle = [ctx.cursor.row];
     }
 
-    const indent = ctx.code.getIndent();
+    if (linesToHandle.some((line) => !ctx.code.isLineEditable(line))) {
+        return { ctx, changed: false };
+    }
+
+    const targetRow = linesToHandle[0] ?? ctx.cursor.row;
+    const indent = ctx.code.getIndent(targetRow);
     const indentText = indent?.unit === ' ' ? ' '.repeat(indent.width) : '\t';
 
-    const { line: currentLineNum, column: currentColNum } = ctx.code.getPosition(ctx.offset);
-
     ctx.code.tx();
-    ctx.code.setStateBefore(ctx.offset, ctx.selection);
+    ctx.code.setStateBefore(ctx.cursor, ctx.selection);
 
     linesToHandle.reverse();
 
@@ -613,43 +618,49 @@ export const handleUnTab = (ctx: ActionContext): ActionResult => {
     }
 
     if (ctx.selection && !ctx.selection.isEmpty()) {
-        let [smin, smax] = ctx.selection.sorted();
-        let anchor = ctx.selection.anchor!;
-        let is_selection_forward = ctx.selection.anchor == smin;
-        if (is_selection_forward) {
-            ctx.offset -= indentText.length * lines_untabbed;
-            anchor -= indentText.length;
-        } else {
-            ctx.offset -= indentText.length;
-            anchor -= indentText.length * lines_untabbed;
-        }
-        ctx.selection = new Selection(anchor, ctx.offset);
+        const newAnchor: Point = {
+            row: ctx.selection.anchor.row,
+            column: Math.max(0, ctx.selection.anchor.column - indentText.length),
+        };
+        const newCursor: Point = {
+            row: ctx.cursor.row,
+            column: Math.max(0, ctx.cursor.column - indentText.length),
+        };
+        ctx.selection = new Selection(newAnchor, newCursor);
+        syncCursor(ctx, newCursor.row, newCursor.column);
     } else {
-        ctx.offset = ctx.code.getOffset(currentLineNum, Math.max(0, currentColNum - (lines_untabbed > 0 ? indentText.length : 0)));
+        syncCursor(ctx, ctx.cursor.row, Math.max(0, ctx.cursor.column - (lines_untabbed > 0 ? indentText.length : 0)));
     }
 
-    ctx.code.setStateAfter(ctx.offset, ctx.selection);
+    ctx.code.setStateAfter(ctx.cursor, ctx.selection);
     ctx.code.commit();
 
     return { ctx, changed: true };
 };
 
 export const handleToggleComment = (ctx: ActionContext): ActionResult => {
-    const comment = ctx.code.getComment();
-    if (!comment) return { ctx, changed: false };
+    if (isCrossFileSelection(ctx)) {
+        return { ctx, changed: false };
+    }
 
     let linesToHandle: number[] = [];
 
     if (ctx.selection && !ctx.selection.isEmpty()) {
-        const selectionStart = ctx.code.getPosition(ctx.selection.start);
-        const selectionEnd = ctx.code.getPosition(ctx.selection.end);
-        for (let i = selectionStart.line; i <= selectionEnd.line; i++) {
+        const [start, end] = ctx.selection.sorted();
+        for (let i = start.row; i <= end.row; i++) {
             linesToHandle.push(i);
         }
     } else {
-        const { line } = ctx.code.getPosition(ctx.offset);
-        linesToHandle = [line];
+        linesToHandle = [ctx.cursor.row];
     }
+
+    if (linesToHandle.some((line) => !ctx.code.isLineEditable(line))) {
+        return { ctx, changed: false };
+    }
+
+    const targetRow = linesToHandle[0] ?? ctx.cursor.row;
+    const comment = ctx.code.getComment(targetRow);
+    if (!comment) return { ctx, changed: false };
 
     const commentFound = linesToHandle.some(line => {
         const lineText = ctx.code.line(line);
@@ -657,10 +668,8 @@ export const handleToggleComment = (ctx: ActionContext): ActionResult => {
         return matches.length > 0;
     });
 
-    const { line: currentLineNum, column: currentColNum } = ctx.code.getPosition(ctx.offset);
-
     ctx.code.tx();
-    ctx.code.setStateBefore(ctx.offset, ctx.selection);
+    ctx.code.setStateBefore(ctx.cursor, ctx.selection);
 
     linesToHandle.reverse();
 
@@ -688,65 +697,47 @@ export const handleToggleComment = (ctx: ActionContext): ActionResult => {
     }
 
     if (ctx.selection && !ctx.selection.isEmpty()) {
-        let [smin, smax] = ctx.selection.sorted();
-        let anchor = ctx.selection.anchor!;
-        let is_selection_forward = ctx.selection.anchor == smin;
-        if (is_selection_forward) {
-            if (!commentFound) {
-                ctx.offset += comment.length * comments_added;
-                anchor += comment.length;
-            }
-            else {
-                ctx.offset -= comment.length * comments_removed;
-                anchor -= comment.length;
-            }
-        } else {
-            if (!commentFound) {
-                ctx.offset += comment.length;
-                anchor += comment.length * comments_added;
-            }
-            else {
-                ctx.offset -= comment.length;
-                anchor -= comment.length * comments_removed;
-            }
-        }
-        ctx.selection = new Selection(anchor, ctx.offset);
+        const delta = commentFound ? -comment.length : comment.length;
+        const newAnchor: Point = {
+            row: ctx.selection.anchor.row,
+            column: Math.max(0, ctx.selection.anchor.column + delta),
+        };
+        const newCursor: Point = {
+            row: ctx.cursor.row,
+            column: Math.max(0, ctx.cursor.column + delta),
+        };
+        ctx.selection = new Selection(newAnchor, newCursor);
+        syncCursor(ctx, newCursor.row, newCursor.column);
     } else {
-        if (!commentFound) {
-            ctx.offset = ctx.code.getOffset(currentLineNum, currentColNum + (comments_added > 0 ? comment.length : 0));
-        } else {
-            ctx.offset = ctx.code.getOffset(currentLineNum, Math.max(0, currentColNum - (comments_removed > 0 ? comment.length : 0)));
-        }
+        const delta = commentFound ? -(comments_removed > 0 ? comment.length : 0) : (comments_added > 0 ? comment.length : 0);
+        syncCursor(ctx, ctx.cursor.row, Math.max(0, ctx.cursor.column + delta));
     }
 
-    ctx.code.setStateAfter(ctx.offset, ctx.selection);
+    ctx.code.setStateAfter(ctx.cursor, ctx.selection);
     ctx.code.commit();
 
     return { ctx, changed: true };
 };
 
 export const moveArrowDown = (ctx: ActionContext): ActionResult => {
-    if (ctx.offset < 0) return { ctx, changed: false };
+    const { row, column } = ctx.cursor;
+    if (row >= ctx.code.linesLength() - 1) return { ctx, changed: false };
 
-    const { line, column } = ctx.code.getPosition(ctx.offset);
-    if (line >= ctx.code.linesLength() - 1) return { ctx, changed: false };
-
-    const nextLine = ctx.code.getNextLine(line);
-    if (nextLine >= ctx.code.linesLength()) return { ctx, changed: false };
+    const nextLine = ctx.code.getNextLine(row);
+    if (nextLine >= ctx.code.linesLength() || !ctx.code.isLineEditable(nextLine)) return { ctx, changed: false };
     const nextCol = Math.min(column, ctx.code.lineLength(nextLine));
-    const originalOffset = ctx.offset;
-    ctx.offset = ctx.code.getOffset(nextLine, nextCol);
+    const originalCursor = { ...ctx.cursor };
+    syncCursor(ctx, nextLine, nextCol);
     
     if (ctx.event?.shiftKey) {
         if (!ctx.selection) {
-            // Initialize selection with original offset as anchor
-            ctx.selection = new Selection(originalOffset, ctx.offset);
+            ctx.selection = new Selection(originalCursor, ctx.cursor);
         } else {
-            ctx.selection = ctx.selection.fromCursor(ctx.offset);
+            ctx.selection = ctx.selection.fromCursor(ctx.cursor);
         }
     } else {
         if (ctx.selection) {
-            ctx.selection.reset(ctx.offset);
+            ctx.selection.reset(ctx.cursor);
         }
     }
 
@@ -754,31 +745,29 @@ export const moveArrowDown = (ctx: ActionContext): ActionResult => {
 };
 
 export const moveArrowUp = (ctx: ActionContext): ActionResult => {
-    if (ctx.offset < 0) return { ctx, changed: false };
-
-    const { line, column } = ctx.code.getPosition(ctx.offset);
-    if (line === 0) {
-        ctx.offset = ctx.code.getOffset(0, 0);
+    const { row, column } = ctx.cursor;
+    const firstEditable = ctx.code.findFirstEditableLine();
+    if (row <= firstEditable) {
+        syncCursor(ctx, firstEditable, 0);
         return { ctx, changed: false };
     }
 
-    const prevLine = ctx.code.getPrevLine(line);
-    if (prevLine < 0) return { ctx, changed: false };
+    const prevLine = ctx.code.getPrevLine(row);
+    if (prevLine < 0 || !ctx.code.isLineEditable(prevLine)) return { ctx, changed: false };
 
     const prevCol = Math.min(column, ctx.code.lineLength(prevLine));
-    const originalOffset = ctx.offset;
-    ctx.offset = ctx.code.getOffset(prevLine, prevCol);
+    const originalCursor = { ...ctx.cursor };
+    syncCursor(ctx, prevLine, prevCol);
     
     if (ctx.event?.shiftKey) {
         if (!ctx.selection) {
-            // Initialize selection with original offset as anchor
-            ctx.selection = new Selection(originalOffset, ctx.offset);
+            ctx.selection = new Selection(originalCursor, ctx.cursor);
         } else {
-            ctx.selection = ctx.selection.fromCursor(ctx.offset);
+            ctx.selection = ctx.selection.fromCursor(ctx.cursor);
         }
     } else {
         if (ctx.selection) {
-            ctx.selection.reset(ctx.offset);
+            ctx.selection.reset(ctx.cursor);
         }
     }
 
@@ -786,17 +775,14 @@ export const moveArrowUp = (ctx: ActionContext): ActionResult => {
 };
 
 export const moveArrowRight = (ctx: ActionContext, alt: boolean): ActionResult => {
-    if (ctx.offset >= ctx.code.length()) return { ctx, changed: false };
-
-    const originalOffset = ctx.offset;
+    const originalCursor = { ...ctx.cursor };
+    const { row, column } = ctx.cursor;
 
     if (alt) {
-        const { line, column } = ctx.code.getPosition(ctx.offset);
-        const lineTextAll = ctx.code.line(line);
+        const lineTextAll = ctx.code.line(row);
         const s = lineTextAll.slice(column);
         const match = s.match(/^[ \t]*\w+/);
         const jump = match ? match[0].length : 1;
-        // advance by grapheme clusters equal to jump
         const lineText = lineTextAll;
         let col = column;
         for (let i = 0; i < jump; i++) {
@@ -804,45 +790,39 @@ export const moveArrowRight = (ctx: ActionContext, alt: boolean): ActionResult =
             if (nextCol === col) { col++; } else { col = nextCol; }
         }
         if (col >= lineText.length) {
-            // At end of line, jump to next line start if exists
-            const nextLine = ctx.code.getNextLine(line);
-            if (nextLine < ctx.code.linesLength()) {
-                ctx.offset = ctx.code.getOffset(nextLine, 0);
+            const nextLine = ctx.code.getNextLine(row);
+            if (nextLine < ctx.code.linesLength() && ctx.code.isLineEditable(nextLine)) {
+                syncCursor(ctx, nextLine, 0);
             } else {
-                ctx.offset = ctx.code.getOffset(line, lineText.length);
+                syncCursor(ctx, row, lineText.length);
             }
         } else {
-            const newOffset = ctx.code.getOffset(line, col);
-            ctx.offset = newOffset;
+            syncCursor(ctx, row, col);
         }
     } else {
         if (ctx.selection && !ctx.selection.isEmpty() && !ctx.event?.shiftKey) {
-            ctx.offset = ctx.selection.end;
+            syncCursor(ctx, ctx.selection.end.row, ctx.selection.end.column);
         } else {
-            const { line, column } = ctx.code.getPosition(ctx.offset);
-            const lineText = ctx.code.line(line);
+            const lineText = ctx.code.line(row);
             if (column >= lineText.length) {
-                // at end of line -> go to start of next line if available
-                const nextLine = ctx.code.getNextLine(line);
-                if (nextLine < ctx.code.linesLength()) {
-                    ctx.offset = ctx.code.getOffset(nextLine, 0);
+                const nextLine = ctx.code.getNextLine(row);
+                if (nextLine < ctx.code.linesLength() && ctx.code.isLineEditable(nextLine)) {
+                    syncCursor(ctx, nextLine, 0);
                 } else {
-                    // already at end of buffer
                     return { ctx, changed: false };
                 }
             } else {
                 const nextCol = getNextGraphemeIndex(lineText, column);
-                ctx.offset = ctx.code.getOffset(line, nextCol);
+                syncCursor(ctx, row, nextCol);
             }
         }
     }
     
     if (ctx.event?.shiftKey) {
         if (!ctx.selection) {
-            // Initialize selection with original offset as anchor
-            ctx.selection = new Selection(originalOffset, ctx.offset);
+            ctx.selection = new Selection(originalCursor, ctx.cursor);
         } else {
-            ctx.selection = ctx.selection.fromCursor(ctx.offset);
+            ctx.selection = ctx.selection.fromCursor(ctx.cursor);
         }
     } else {
         if (ctx.selection) {
@@ -854,50 +834,47 @@ export const moveArrowRight = (ctx: ActionContext, alt: boolean): ActionResult =
 };
 
 export const moveArrowLeft = (ctx: ActionContext, alt: boolean): ActionResult => {
-    if (ctx.offset <= 0) return { ctx, changed: false };
+    const originalCursor = { ...ctx.cursor };
+    const { row, column } = ctx.cursor;
+    const firstEditable = ctx.code.findFirstEditableLine();
 
-    const originalOffset = ctx.offset;
+    if (row <= firstEditable && column === 0) return { ctx, changed: false };
+
     if (alt) {
-        const { line, column } = ctx.code.getPosition(ctx.offset);
-        const s = ctx.code.line(line).slice(0, column);
+        const s = ctx.code.line(row).slice(0, column);
         const match = s.match(/\w+[ \t]*$/);
         const jump = match ? match[0].length : 1;
-        // move left by grapheme clusters equal to jump
-        const lineText = ctx.code.line(line);
+        const lineText = ctx.code.line(row);
         let col = column;
         for (let i = 0; i < jump; i++) {
             const prevCol = getPrevGraphemeIndex(lineText, col);
             if (prevCol === col) { col--; } else { col = prevCol; }
             if (col <= 0) { col = 0; break; }
         }
-        const newOffset = ctx.code.getOffset(line, col);
-        ctx.offset = newOffset;
+        syncCursor(ctx, row, col);
     } else {
         if (ctx.selection && !ctx.selection.isEmpty() && !ctx.event?.shiftKey) {
-            ctx.offset = ctx.selection.start;
+            syncCursor(ctx, ctx.selection.start.row, ctx.selection.start.column);
         } else {
-            const { line, column } = ctx.code.getPosition(ctx.offset);
-            if (column === 0 && line > 0) {
-                // move to end of previous line
-                const prevLine = ctx.code.getPrevLine(line);
-                if (prevLine >= 0) {
+            if (column === 0 && row > firstEditable) {
+                const prevLine = ctx.code.getPrevLine(row);
+                if (prevLine >= 0 && ctx.code.isLineEditable(prevLine)) {
                     const prevLineLen = ctx.code.line(prevLine).length;
-                    ctx.offset = ctx.code.getOffset(prevLine, prevLineLen);
+                    syncCursor(ctx, prevLine, prevLineLen);
                 }
             } else {
-                const lineText = ctx.code.line(line);
+                const lineText = ctx.code.line(row);
                 const prevCol = getPrevGraphemeIndex(lineText, column);
-                ctx.offset = ctx.code.getOffset(line, prevCol);
+                syncCursor(ctx, row, prevCol);
             }
         }
     }
     
     if (ctx.event?.shiftKey) {
         if (!ctx.selection) {
-            // Initialize selection with original offset as anchor
-            ctx.selection = new Selection(originalOffset, ctx.offset);
+            ctx.selection = new Selection(originalCursor, ctx.cursor);
         } else {
-            ctx.selection = ctx.selection.fromCursor(ctx.offset);
+            ctx.selection = ctx.selection.fromCursor(ctx.cursor);
         }
     } else {
         if (ctx.selection) {
@@ -909,10 +886,10 @@ export const moveArrowLeft = (ctx: ActionContext, alt: boolean): ActionResult =>
 };
 
 export const handleEsc = (ctx: ActionContext): ActionResult => {
-    if (!ctx.selection?.isEmpty()) {
+    if (ctx.selection && !ctx.selection.isEmpty()) {
         ctx.selection = undefined;
         return { ctx, changed: true };
     }
 
     return { ctx, changed: false };
-}
+};

@@ -1,8 +1,8 @@
 import { CSS_CLASS } from "./constants";
-import { Code, Change, Position, Operation, type FoldRange, WordHighlight, areWordHighlightsEqual } from "./code";
+import { Code, Change, Position, Operation, type FoldRange, WordHighlight, areWordHighlightsEqual, type Point } from "./code";
 import { Renderer } from './renderer/Renderer';
 import { getPosFromMouse } from './mouse';
-import { Selection, hasDiagnosticSelection } from "./selection";
+import { Selection, hasDiagnosticSelection, pointsEqual } from "./selection";
 import {
     Completion,
     CompletionRequest,
@@ -62,7 +62,7 @@ export interface EditorOptions {
 export interface EditorState {
     code: Code;
     originalCode?: Code;
-    offset: number;
+    cursor: Point;
     selection: Selection | null;
     cursorActive: boolean;
     runLines: number[];
@@ -81,7 +81,7 @@ export interface EditorState {
 
 export class AnycodeEditor {
     private code: Code;
-    private offset: number;
+    private cursor: Point = { row: 0, column: 0 };
     private settings: EditorSettings;
     private editorFontSettingsHandler: ((event: Event) => void) | null = null;
     private renderer!: Renderer;
@@ -96,7 +96,7 @@ export class AnycodeEditor {
     private selection: Selection | null = null;
     private autoScrollTimer: number | null = null;
     private isWordSelection: boolean = false;
-    private wordSelectionAnchor: number = 0;
+    private wordSelectionAnchor: Point = { row: 0, column: 0 };
     private isLineSelection: boolean = false;
     private lineSelectionAnchor: number = 0;
 
@@ -120,7 +120,7 @@ export class AnycodeEditor {
     private onCursorChangeCallback: ((newCursor: Position, oldCursor: Position) => void) | null = null;
     private hoverDebounceTimer: number | null = null;
     private hoverRequestToken = 0;
-    private hoverOffset: number | null = null;
+    private hoverPoint: Point | null = null;
 
     private needFocus = false;
     private cursorActive = true;
@@ -140,6 +140,8 @@ export class AnycodeEditor {
     private wordHighlightEnabled: boolean;
     private scrollbarMarkersEnabled: boolean;
     private wordHighlight: WordHighlight | null = null;
+    private isApplyingInternalEdit = false;
+    private unsubscribeCodeChanges: (() => void) | null = null;
 
     constructor(
         initialText = '',
@@ -156,12 +158,16 @@ export class AnycodeEditor {
         this.wordHighlightEnabled = options.wordHighlightEnabled ?? true;
         this.scrollbarMarkersEnabled = options.scrollbarMarkersEnabled ?? true;
         this.originalCode = options.originalCode;
+        this.unsubscribeCodeChanges = this.code.addChangeListener(() => {
+            if (this.isApplyingInternalEdit) return;
+            this.refreshAfterExternalChange();
+        });
         // Set initial cursor position
         if (options.line !== undefined && options.column !== undefined) {
-            this.offset = this.code.getOffset(options.line, options.column);
+            this.cursor = this.code.clampPoint({ row: options.line, column: options.column });
             this.needFocus = true;
         } else {
-            this.offset = 0;
+            this.cursor = { row: this.code.findFirstEditableLine(), column: 0 };
         }
 
         this.settings = {
@@ -258,13 +264,17 @@ export class AnycodeEditor {
             window.removeEventListener('anycode:editor-font-settings', this.editorFontSettingsHandler);
             this.editorFontSettingsHandler = null;
         }
+        if (this.unsubscribeCodeChanges) {
+            this.unsubscribeCodeChanges();
+            this.unsubscribeCodeChanges = null;
+        }
         this.clearPendingHover();
         this.closeHover();
         if (this.scrollAnimationFrameId !== null) {
             cancelAnimationFrame(this.scrollAnimationFrameId);
             this.scrollAnimationFrameId = null;
         }
-        this.offset = 0;
+        this.cursor = { row: 0, column: 0 };
         this.selection = null;
 
         if (this.wrapper && this.wrapper.parentElement) {
@@ -353,7 +363,10 @@ export class AnycodeEditor {
         }
 
         this.selection = null;
-        this.offset = Math.min(this.offset, this.code.getContentLength());
+        this.cursor = {
+            row: Math.min(this.cursor.row, Math.max(0, this.code.linesLength() - 1)),
+            column: Math.min(this.cursor.column, this.code.lineLength(Math.min(this.cursor.row, Math.max(0, this.code.linesLength() - 1)))),
+        };
 
         this.recomputeDiffs();
 
@@ -370,6 +383,7 @@ export class AnycodeEditor {
     }
 
     public refreshAfterExternalChange(): void {
+        this.cursor = this.code.clampPoint(this.cursor);
         this.recomputeDiffs();
 
         if (this.search.isActive()) {
@@ -401,7 +415,7 @@ export class AnycodeEditor {
         }
 
         const [start, end] = this.selection.sorted();
-        return this.code.getIntervalContent2(start, end);
+        return this.code.getTextRange(start, end);
     }
 
     public getTextLength(): number {
@@ -471,12 +485,21 @@ export class AnycodeEditor {
     }
 
     public getCursor(): { line: number, column: number } {
-        return this.code.getPosition(this.offset);
+        return { line: this.cursor.row, column: this.cursor.column };
+    }
+
+    public getCursorPoint(): Point {
+        return { ...this.cursor };
     }
 
     public setCursor(line: number, column: number): void {
-        const offset = this.code.getOffset(line, column);
-        this.offset = offset;
+        this.cursor = this.code.clampPoint({ row: line, column });
+        this.updateWordHighlight();
+        this.renderCursorOrSelection();
+    }
+
+    public setCursorPoint(point: Point): void {
+        this.cursor = this.code.clampPoint(point);
         this.updateWordHighlight();
         this.renderCursorOrSelection();
     }
@@ -493,7 +516,7 @@ export class AnycodeEditor {
             }
             return;
         }
-        const highlight = this.code.getWordAtOffset(this.offset);
+        const highlight = this.code.getWordAtPosition(this.cursor.row, this.cursor.column);
         const hasChanged = !areWordHighlightsEqual(highlight, this.wordHighlight);
         
         if (hasChanged) {
@@ -518,10 +541,11 @@ export class AnycodeEditor {
         endColumn: number,
         center: boolean = false,
     ): void {
-        const startOffset = this.code.getOffset(startLine, startColumn);
-        const endOffset = this.code.getOffset(endLine, endColumn);
-        this.selection = new Selection(startOffset, endOffset);
-        this.offset = endOffset;
+        this.selection = new Selection(
+            { row: startLine, column: startColumn },
+            { row: endLine, column: endColumn }
+        );
+        this.cursor = this.code.clampPoint({ row: endLine, column: endColumn });
         this.updateWordHighlight();
 
         if (center) {
@@ -547,8 +571,7 @@ export class AnycodeEditor {
 
     public requestFocus(line: number, column: number, center: boolean = false): void {
         this.needFocus = true;
-        const offset = this.code.getOffset(line, column);
-        this.offset = offset;
+        this.cursor = this.code.clampPoint({ row: line, column });
         if (!this.readOnly) {
             this.codeContent.focus();
         }
@@ -560,7 +583,9 @@ export class AnycodeEditor {
     }
 
     public requestedFocus(): boolean {
-        return this.needFocus;
+        const needed = this.needFocus;
+        this.needFocus = false;
+        return needed;
     }
 
     public setRunButtonLines(lines: number[]) {
@@ -631,7 +656,7 @@ export class AnycodeEditor {
 
     private closeHover() {
         this.renderer.closeHover();
-        this.hoverOffset = null;
+        this.hoverPoint = null;
     }
 
     private setupEventListeners() {
@@ -743,8 +768,10 @@ export class AnycodeEditor {
 
     public onAttach() {
         this.restoreScroll();
+        this.cursor = this.code.clampPoint(this.cursor);
+        this.recomputeDiffs();
         const state = this.getEditorState();
-        this.renderer.renderScroll(state);
+        this.renderer.render(state);
         this.renderer.renderCursorOrSelection(state);
     }
 
@@ -765,7 +792,7 @@ export class AnycodeEditor {
         return {
             code: this.code,
             originalCode: this.originalCode,
-            offset: this.offset,
+            cursor: this.cursor,
             selection: this.selection,
             cursorActive: this.cursorActive,
             runLines: this.runLines,
@@ -862,7 +889,7 @@ export class AnycodeEditor {
             return;
         }
 
-        const oldCursor = this.code.getPosition(this.offset);
+        const oldCursor: Position = { line: this.cursor.row, column: this.cursor.column };
 
         if (this.selection && this.selection.nonEmpty()) { return; }
         if (isInsideDiagnostic(e.target as Node)) { return; }
@@ -879,24 +906,25 @@ export class AnycodeEditor {
         if (
             multibufferCode.getMultibufferHeader?.(pos.row) !== null
             && multibufferCode.getMultibufferHeader !== undefined
-            && multibufferCode.toggleMultibufferFileAtLine?.(pos.row)
         ) {
-            this.renderer.clearExpandedDiffRanges();
-            this.offset = Math.min(this.code.getOffset(pos.row, 0), this.code.getContentLength());
-            this.selection = null;
-            this.recomputeDiffs();
-            this.renderer.render(this.getEditorState());
+            if (multibufferCode.toggleMultibufferFileAtLine?.(pos.row)) {
+                this.renderer.clearExpandedDiffRanges();
+                this.selection = null;
+                this.recomputeDiffs();
+                this.cursor = this.code.clampPoint(this.cursor);
+                this.renderer.render(this.getEditorState());
+            }
             if (this.onCursorChangeCallback) {
-                this.onCursorChangeCallback(this.code.getPosition(this.offset), oldCursor);
+                this.onCursorChangeCallback({ line: pos.row, column: 0 }, oldCursor);
             }
             return;
         }
 
+        if (!this.code.isLineEditable(pos.row)) {
+            return;
+        }
 
-        const o = this.code.getOffset(pos.row, pos.col);
-        //if (o == this.offset) { return; }
-
-        this.offset = o;
+        this.cursor = { row: pos.row, column: pos.col };
         this.updateWordHighlight();
 
         this.activateCursor();
@@ -907,7 +935,7 @@ export class AnycodeEditor {
 
         if (this.onCursorChangeCallback) {
             this.onCursorChangeCallback(
-                this.code.getPosition(this.offset), oldCursor
+                { line: this.cursor.row, column: this.cursor.column }, oldCursor
             );
         }
 
@@ -979,10 +1007,11 @@ export class AnycodeEditor {
         }
 
         try {
+            const { file, line, column } = this.code.resolvePosition(row, col);
             const referencesRequest: ReferencesRequest = {
-                file: this.code.filename,
-                row: row,
-                column: col
+                file,
+                row: line,
+                column,
             };
 
             await this.referencesPeekProvider(referencesRequest);
@@ -1049,10 +1078,14 @@ export class AnycodeEditor {
         const pos = getPosFromMouse(e);
         if (!pos) return;
 
+        if (!this.code.isLineEditable(pos.row)) {
+            return;
+        }
+
         if (e.detail === 2) { // double click
             this.selectWord(pos.row, pos.col);
             this.isWordSelection = true;
-            this.wordSelectionAnchor = this.code.getOffset(pos.row, pos.col);
+            this.wordSelectionAnchor = { row: pos.row, column: pos.col };
             return;
         }
 
@@ -1065,16 +1098,16 @@ export class AnycodeEditor {
 
         this.isWordSelection = false;
         this.isLineSelection = false;
-        const o = this.code.getOffset(pos.row, pos.col);
+        const targetPoint: Point = { row: pos.row, column: pos.col };
 
         if (e.shiftKey && this.selection) {
-            this.selection.updateCursor(o);
+            this.selection.updateCursor(targetPoint);
             this.renderer.renderSelection(this.code, this.selection);
         } else {
             if (this.selection) {
-                this.selection.reset(o);
+                this.selection.reset(targetPoint);
             } else {
-                this.selection = new Selection(o, o);
+                this.selection = new Selection(targetPoint, targetPoint);
             }
         }
     }
@@ -1100,15 +1133,15 @@ export class AnycodeEditor {
                 return;
             }
 
-            const hoverOffset = this.code.getOffset(pos.row, pos.col);
-            if (this.renderer.isHoverOpen() && this.hoverOffset === hoverOffset) {
-                this.renderer.moveHover(this.code, hoverOffset);
+            const hoverPoint: Point = { row: pos.row, column: pos.col };
+            if (this.renderer.isHoverOpen() && this.hoverPoint && pointsEqual(this.hoverPoint, hoverPoint)) {
+                this.renderer.moveHover(this.code, hoverPoint);
                 return;
             }
 
             this.clearPendingHover();
             this.hoverDebounceTimer = window.setTimeout(() => {
-                this.requestHover(pos.row, pos.col, hoverOffset).catch(() => {
+                this.requestHover(pos.row, pos.col).catch(() => {
                     this.closeHover();
                 });
             }, 1000);
@@ -1122,72 +1155,62 @@ export class AnycodeEditor {
         let oldSelection = this.selection?.clone();
 
         if (pos && this.selection) {
-            const { row, col } = pos;
-            const currentOffset = this.code.getOffset(row, col);
+            const clamped = this.code.clampPoint({ row: pos.row, column: pos.col });
+            const { row, column: col } = clamped;
 
             if (this.isWordSelection) {
                 const line = this.code.line(row);
-                const currentPos = this.code.getPosition(currentOffset);
-
                 const anchor = this.wordSelectionAnchor;
-                const anchorPos = this.code.getPosition(anchor);
-                const anchorLine = this.code.line(anchorPos.line);
+                const anchorLine = this.code.line(anchor.row);
 
-                const direction = currentOffset < anchor ? 'backward' : 'forward';
+                const isBackward = row < anchor.row || (row === anchor.row && col < anchor.column);
 
-                if (direction === 'backward') {
+                if (isBackward) {
                     // Selection is moving left (backward) — find start of current word
-                    const wordStartCol = findPrevWord(line, currentPos.column);
-                    const newCursor = this.code.getOffset(row, wordStartCol);
+                    const wordStartCol = findPrevWord(line, col);
+                    const newCursor: Point = { row, column: wordStartCol };
 
                     // Extend selection to the end of the anchor word
-                    const anchorEndCol = findNextWord(anchorLine, anchorPos.column);
-                    const anchorEnd = this.code.getOffset(anchorPos.line, anchorEndCol);
+                    const anchorEndCol = findNextWord(anchorLine, anchor.column);
+                    const anchorEnd: Point = { row: anchor.row, column: anchorEndCol };
 
                     // Update selection from new word start to anchor word end
                     this.selection = new Selection(newCursor, anchorEnd);
-                    this.offset = newCursor;
-                } else if (direction === 'forward') {
+                    this.cursor = newCursor;
+                } else {
                     // Selection is moving right (forward) — find end of current word
-                    const wordEndCol = findNextWord(line, currentPos.column);
-                    const newCursor = this.code.getOffset(row, wordEndCol);
+                    const wordEndCol = findNextWord(line, col);
+                    const newCursor: Point = { row, column: wordEndCol };
 
                     // Extend selection from the start of the anchor word
-                    const anchorStartCol = findPrevWord(anchorLine, anchorPos.column);
-                    const anchorStart = this.code.getOffset(anchorPos.line, anchorStartCol);
+                    const anchorStartCol = findPrevWord(anchorLine, anchor.column);
+                    const anchorStart: Point = { row: anchor.row, column: anchorStartCol };
 
                     // Update selection from anchor word start to new word end
                     this.selection = new Selection(anchorStart, newCursor);
-                    this.offset = newCursor;
-                } else {
-                    // Cursor hasn't moved — select the current word under cursor
-                    const startCol = findPrevWord(line, currentPos.column);
-                    const endCol = findNextWord(line, currentPos.column);
-                    const start = this.code.getOffset(row, startCol);
-                    const end = this.code.getOffset(row, endCol);
-
-                    this.selection = new Selection(start, end);
-                    this.offset = end;
+                    this.cursor = newCursor;
                 }
             } else if (this.isLineSelection) {
                 const anchorRow = this.lineSelectionAnchor;
 
                 if (row < anchorRow) {
                     // Selection moving up
-                    const start = this.code.getOffset(row, 0);
-                    const end = this.code.getOffset(anchorRow, this.code.lineLength(anchorRow));
+                    const start: Point = { row, column: 0 };
+                    const end: Point = { row: anchorRow, column: this.code.lineLength(anchorRow) };
                     this.selection = new Selection(start, end);
-                    this.offset = start;
+                    this.cursor = start;
                 } else {
                     // Selection moving down or same line
-                    const start = this.code.getOffset(anchorRow, 0);
-                    const end = this.code.getOffset(row, this.code.lineLength(row));
+                    const start: Point = { row: anchorRow, column: 0 };
+                    const end: Point = { row, column: this.code.lineLength(row) };
                     this.selection = new Selection(start, end);
-                    this.offset = end;
+                    this.cursor = end;
                 }
             } else {
                 // Standard selection mode — update the cursor directly
-                this.selection.updateCursor(currentOffset);
+                const targetPoint: Point = { row, column: col };
+                this.selection.updateCursor(targetPoint);
+                this.cursor = targetPoint;
             }
 
             if (oldSelection && !oldSelection.equals(this.selection)) {
@@ -1197,7 +1220,7 @@ export class AnycodeEditor {
         }
     }
 
-    private async requestHover(row: number, col: number, hoverOffset: number): Promise<void> {
+    private async requestHover(row: number, col: number): Promise<void> {
         if (!this.hoverProvider) return;
 
         const requestToken = ++this.hoverRequestToken;
@@ -1216,8 +1239,9 @@ export class AnycodeEditor {
             return;
         }
 
-        this.hoverOffset = hoverOffset;
-        this.renderer.renderHover(hoverText, this.code, hoverOffset);
+        const point: Point = { row, column: col };
+        this.hoverPoint = point;
+        this.renderer.renderHover(hoverText, this.code, point);
     }
 
     private autoScroll(e: MouseEvent) {
@@ -1266,28 +1290,25 @@ export class AnycodeEditor {
     }
 
     private selectWord(row: number, col: number) {
+        if (!this.code.isLineEditable(row)) return;
         const line = this.code.line(row);
 
         const startCol = findPrevWord(line, col);
         const endCol = findNextWord(line, col);
 
-        const start = this.code.getOffset(row, startCol);
-        const end = this.code.getOffset(row, endCol);
-
-        this.selection = new Selection(start, end);
-
-        this.offset = end;
+        this.selection = new Selection({ row, column: startCol }, { row, column: endCol });
+        this.cursor = { row, column: endCol };
+        this.wordSelectionAnchor = { row, column: col };
         this.renderer.renderSelection(this.code, this.selection);
     }
 
     private selectLine(row: number) {
+        if (!this.code.isLineEditable(row)) return;
         const lineLen = this.code.lineLength(row);
-        const start = this.code.getOffset(row, 0);
-        const end = this.code.getOffset(row, lineLen);
 
-        this.selection = new Selection(start, end);
-
-        this.offset = end;
+        this.selection = new Selection({ row, column: 0 }, { row, column: lineLen });
+        this.cursor = { row, column: lineLen };
+        this.lineSelectionAnchor = row;
         this.renderer.renderSelection(this.code, this.selection);
     }
 
@@ -1336,24 +1357,21 @@ export class AnycodeEditor {
         // Special-case go to definition: handle directly
         if (action === Action.GO_TO_DEFINITION) {
             event.preventDefault();
-            const { line, column } = this.code.getPosition(this.offset);
-            this.goToDefinition(line, column).catch(console.error);
+            this.goToDefinition(this.cursor.row, this.cursor.column).catch(console.error);
             return;
         }
 
         if (action === Action.REFERENCES) {
             event.preventDefault();
             if (this.ignoreEdits) return;
-            const { line, column } = this.code.getPosition(this.offset);
-            this.openReferencesPeek(line, column).catch(console.error);
+            this.openReferencesPeek(this.cursor.row, this.cursor.column).catch(console.error);
             return;
         }
 
         if (action === Action.HOVER) {
             event.preventDefault();
             if (!this.hoverProvider) return;
-            const { line, column } = this.code.getPosition(this.offset);
-            this.requestHover(line, column, this.offset).catch(() => {
+            this.requestHover(this.cursor.row, this.cursor.column).catch(() => {
                 this.closeHover();
             });
             return;
@@ -1362,15 +1380,20 @@ export class AnycodeEditor {
         event.preventDefault();
 
         const ctx: ActionContext = {
-            offset: this.offset,
+            cursor: this.cursor,
             code: this.code,
             selection: this.selection || undefined,
             event: event
         };
 
-        const result = await executeAction(action, ctx);
-        this.adjustFocusedDiffNavigationOffset(result, action);
-        this.applyEditResult(result);
+        this.isApplyingInternalEdit = true;
+        try {
+            const result = await executeAction(action, ctx);
+            this.adjustFocusedDiffNavigationOffset(result, action);
+            this.applyEditResult(result);
+        } finally {
+            this.isApplyingInternalEdit = false;
+        }
 
         if (this.isCompletionOpen) {
             await this.showCompletion();
@@ -1400,8 +1423,8 @@ export class AnycodeEditor {
         if (visibleLines.size === 0) return;
         const visibleLineList = Array.from(visibleLines);
 
-        const pos = result.ctx.code.getPosition(result.ctx.offset);
-        if (visibleLines.has(pos.line)) return;
+        const pos = result.ctx.cursor;
+        if (visibleLines.has(pos.row)) return;
 
         const preferNext =
             action === Action.ARROW_RIGHT
@@ -1410,13 +1433,13 @@ export class AnycodeEditor {
 
         let targetLine: number | null = null;
         if (preferNext) {
-            targetLine = visibleLineList.find((line) => line > pos.line) ?? null;
+            targetLine = visibleLineList.find((line) => line > pos.row) ?? null;
             if (targetLine === null) {
                 targetLine = visibleLineList[visibleLineList.length - 1] ?? null;
             }
         } else {
             for (let i = visibleLineList.length - 1; i >= 0; i--) {
-                if (visibleLineList[i] < pos.line) {
+                if (visibleLineList[i] < pos.row) {
                     targetLine = visibleLineList[i];
                     break;
                 }
@@ -1429,11 +1452,10 @@ export class AnycodeEditor {
         if (targetLine === null) return;
 
         const targetColumn = Math.min(pos.column, result.ctx.code.lineLength(targetLine));
-        const targetOffset = result.ctx.code.getOffset(targetLine, targetColumn);
-        result.ctx.offset = targetOffset;
+        result.ctx.cursor = { row: targetLine, column: targetColumn };
 
         if (result.ctx.selection && result.ctx.event?.shiftKey) {
-            result.ctx.selection = result.ctx.selection.fromCursor(targetOffset);
+            result.ctx.selection = result.ctx.selection.fromCursor(result.ctx.cursor);
         }
     }
 
@@ -1516,23 +1538,23 @@ export class AnycodeEditor {
 
     private applyEditResult(result: ActionResult) {
         const textChanged = result.changed;
-        const offsetChanged = result.ctx.offset !== this.offset;
+        const cursorChanged = !pointsEqual(result.ctx.cursor, this.cursor);
         const selectionChanged = this.selection !== result.ctx.selection;
 
-        if (!textChanged && !offsetChanged && !selectionChanged) return;
+        if (!textChanged && !cursorChanged && !selectionChanged) return;
 
         if (textChanged) {
             this.code = result.ctx.code;
             this.recomputeDiffs();
         }
-        if (offsetChanged) {
-            this.offset = result.ctx.offset;
+        if (cursorChanged) {
+            this.cursor = { ...result.ctx.cursor };
         }
         if (selectionChanged) this.selection = result.ctx.selection || null;
 
         if (textChanged) {
             this.wordHighlight = null;
-        } else if (offsetChanged) {
+        } else if (cursorChanged) {
             this.updateWordHighlight();
         }
 
@@ -1546,8 +1568,8 @@ export class AnycodeEditor {
             this.renderer.renderChanges(state);
             this.renderer.renderWordHighlight(state);
             this.renderer.revealCursor(state);
-        } else if (offsetChanged || selectionChanged) {
-            const didScrollToCursor = this.renderer.revealCursor(state);
+        } else if (cursorChanged || selectionChanged) {
+            const didScrollToCursor = cursorChanged ? this.renderer.revealCursor(state) : false;
             if (didScrollToCursor) {
                 // Scroll event will render the cursor, avoid double render
             } else {
@@ -1565,31 +1587,36 @@ export class AnycodeEditor {
         e.stopPropagation();
         if (this.ignoreEdits) return;
 
-        if (e.inputType === 'deleteContentBackward') {
-            const ctx: ActionContext = {
-                offset: this.offset,
-                code: this.code,
-                selection: this.selection || undefined,
-            };
-            const result = await executeAction(Action.BACKSPACE, ctx);
-            this.applyEditResult(result);
-            return;
-        } else if (e.inputType === 'deleteContentForward') {
-        } else if (e.inputType.startsWith('delete')) {
-        } else {
-            // Default case for insertion or other input events
-            let key = e.data ?? '';
-            if (key === '') return;
+        this.isApplyingInternalEdit = true;
+        try {
+            if (e.inputType === 'deleteContentBackward') {
+                const ctx: ActionContext = {
+                    cursor: this.cursor,
+                    code: this.code,
+                    selection: this.selection || undefined,
+                };
+                const result = await executeAction(Action.BACKSPACE, ctx);
+                this.applyEditResult(result);
+                return;
+            } else if (e.inputType === 'deleteContentForward') {
+            } else if (e.inputType.startsWith('delete')) {
+            } else {
+                // Default case for insertion or other input events
+                let key = e.data ?? '';
+                if (key === '') return;
 
-            const ctx: ActionContext = {
-                offset: this.offset,
-                code: this.code,
-                selection: this.selection || undefined,
-                event: { key } as KeyboardEvent
-            };
+                const ctx: ActionContext = {
+                    cursor: this.cursor,
+                    code: this.code,
+                    selection: this.selection || undefined,
+                    event: { key } as KeyboardEvent
+                };
 
-            const result = await executeAction(Action.TEXT_INPUT, ctx);
-            this.applyEditResult(result);
+                const result = await executeAction(Action.TEXT_INPUT, ctx);
+                this.applyEditResult(result);
+            }
+        } finally {
+            this.isApplyingInternalEdit = false;
         }
     }
 
@@ -1613,13 +1640,18 @@ export class AnycodeEditor {
         if (!pastedText) return;
 
         const ctx: ActionContext = {
-            offset: this.offset,
+            cursor: this.cursor,
             code: this.code,
             selection: this.selection || undefined,
         };
 
-        let result = handlePasteText(ctx, pastedText);
-        this.applyEditResult(result);
+        this.isApplyingInternalEdit = true;
+        try {
+            let result = handlePasteText(ctx, pastedText);
+            this.applyEditResult(result);
+        } finally {
+            this.isApplyingInternalEdit = false;
+        }
     }
 
     public async toggleCompletion() {
@@ -1642,10 +1674,12 @@ export class AnycodeEditor {
         this.clearPendingHover();
         this.closeHover();
 
-        let { line, column } = this.code.getPosition(this.offset);
+        const cursorRow = this.cursor.row;
+        const cursorCol = this.cursor.column;
+        const { file, line, column } = this.code.resolvePosition(cursorRow, cursorCol);
 
         let newCompletions = await this.completionProvider({
-            file: this.code.filename, row: line, column: column
+            file, row: line, column
         });
 
         if (!Array.isArray(newCompletions) || newCompletions.length === 0) {
@@ -1655,9 +1689,9 @@ export class AnycodeEditor {
             return;
         }
 
-        let lineStr = this.code.line(line);
-        let prev = findPrevWord(lineStr, column)
-        let prevWord = lineStr.substring(prev, column)
+        let lineStr = this.code.line(cursorRow);
+        let prev = findPrevWord(lineStr, cursorCol);
+        let prevWord = lineStr.substring(prev, cursorCol);
 
         newCompletions.sort((a, b) => {
             let sa = scoreMatches(a.label, prevWord);
@@ -1671,7 +1705,7 @@ export class AnycodeEditor {
 
         this.renderer.renderCompletion(
             this.completions, this.selectedCompletionIndex,
-            this.code, this.offset,
+            this.code, this.cursor,
             this.applyCompletion.bind(this)
         );
         this.isCompletionOpen = true;
@@ -1682,7 +1716,8 @@ export class AnycodeEditor {
         if (index < 0 || index >= this.completions.length) return;
         if (!this.isCompletionOpen) return;
 
-        let { line, column } = this.code.getPosition(this.offset);
+        const line = this.cursor.row;
+        const column = this.cursor.column;
         let completionItem = this.completions[index];
         let text = completionItem.insertText !== undefined ? completionItem.insertText : completionItem.label;
 
@@ -1691,13 +1726,11 @@ export class AnycodeEditor {
         let { start: replaceStart, end: replaceEnd } = getCompletionRange(lineStr, column);
 
         this.code.tx();
-        this.code.setStateBefore(this.offset, this.selection || undefined);
-        let startOffset = this.code.getOffset(line, replaceStart);
-        let endOffset = this.code.getOffset(line, replaceEnd);
-        this.code.remove(startOffset, endOffset - startOffset);
-        this.code.insert(text, startOffset);
-        this.offset = startOffset + text.length;
-        this.code.setStateAfter(this.offset, this.selection || undefined);
+        this.code.setStateBefore(this.cursor, this.selection || undefined);
+        this.code.removeRange({ row: line, column: replaceStart }, { row: line, column: replaceEnd });
+        this.code.insertAt({ row: line, column: replaceStart }, text);
+        this.cursor = { row: line, column: replaceStart + text.length };
+        this.code.setStateAfter(this.cursor, this.selection || undefined);
         this.code.commit();
 
         this.renderer.closeCompletion();
@@ -1750,9 +1783,8 @@ export class AnycodeEditor {
             let pattern = this.search.getPattern();
 
             if (this.selection && !this.selection.isEmpty()) {
-                let [start, end] = this.selection!.sorted();
-                let content = this.code.getIntervalContent2(start, end);
-                pattern = content;
+                const [start, end] = this.selection!.sorted();
+                pattern = this.code.getTextRange(start, end);
             }
 
             let matches = this.code.search(pattern);
@@ -1760,7 +1792,8 @@ export class AnycodeEditor {
             this.search.setMatches(matches);
 
             // Find the first match
-            let { line, column } = this.code.getPosition(this.offset);
+            const line = this.cursor.row;
+            const column = this.cursor.column;
             let foundIndex = matches.findIndex((match) => match.line > line ||
                 (match.line === line && match.column + pattern.length >= column)
             );
@@ -1843,10 +1876,12 @@ export class AnycodeEditor {
             if (selectedMatch) {
                 this.renderer.removeAllHighlights(this.search);
                 this.renderer.removeSearch(this.getEditorState());
-                let start = this.code.getOffset(selectedMatch.line, selectedMatch.column);
-                let end = start + this.search.getPattern().length;
-                this.offset = end;
-                this.selection = new Selection(start, end);
+                const patternLen = this.search.getPattern().length;
+                this.cursor = { row: selectedMatch.line, column: selectedMatch.column + patternLen };
+                this.selection = new Selection(
+                    { row: selectedMatch.line, column: selectedMatch.column },
+                    { row: selectedMatch.line, column: selectedMatch.column + patternLen }
+                );
                 this.search.clear();
                 this.container.focus();
                 let focused = this.renderer.revealCursor(this.getEditorState(), selectedMatch.line);
@@ -1879,7 +1914,8 @@ export class AnycodeEditor {
         this.search.setPattern(pattern);
 
         // Find first match after cursor
-        const { line, column } = this.code.getPosition(this.offset);
+        const line = this.cursor.row;
+        const column = this.cursor.column;
         let foundIndex = matches.findIndex((match) =>
             match.line > line ||
             (match.line === line && match.column >= column)
@@ -1897,7 +1933,7 @@ export class AnycodeEditor {
         if (change.edits.length === 0) return;
 
         this.code.tx();
-        this.code.setStateBefore(this.offset, this.selection || undefined);
+        this.code.setStateBefore(this.cursor, this.selection || undefined);
         for (const edit of change.edits) {
             if (edit.operation === Operation.Insert) {
                 this.code.insert(edit.text, edit.start);
@@ -1905,7 +1941,7 @@ export class AnycodeEditor {
                 this.code.remove(edit.start, edit.text.length);
             }
         }
-        this.code.setStateAfter(this.offset, this.selection || undefined);
+        this.code.setStateAfter(this.cursor, this.selection || undefined);
         this.code.commit();
 
         this.recomputeDiffs();

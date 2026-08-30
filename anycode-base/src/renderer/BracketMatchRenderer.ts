@@ -15,11 +15,11 @@ export class BracketMatchRenderer {
     }
 
     public render(state: EditorState) {
-        const { code, offset, selection } = state;
+        const { code, cursor, selection } = state;
         const targets: Element[] = [];
 
         if (!selection || selection.isEmpty()) {
-            const match = code.getMatchingBracket(offset);
+            const match = code.getMatchingBracket(cursor);
             if (match) {
                 const openPosition = code.getPosition(match.openOffset);
                 const closePosition = code.getPosition(match.closeOffset);

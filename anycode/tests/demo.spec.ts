@@ -988,4 +988,61 @@ test.describe('Anycode Live Demo Mode E2E Tests', () => {
         // Verify the header updated with added lines (+1 initial edit + 10 enters = +11)
         await expect(headerRow).toContainText('+11');
     });
+
+    test('should edit in file editor, edit in multibuffer review, close multibuffer, and keep all edits in file editor', async ({ page }) => {
+        // 1. Open file (README.md) from Files panel
+        const filesPanel = page.getByRole('region', { name: 'Files' });
+        const readmeFile = filesPanel.getByText('README.md').first();
+        await expect(readmeFile).toBeVisible({ timeout: 10000 });
+        await readmeFile.click();
+
+        // 2. Make an edit in the single-file editor
+        const initialEditor = page.locator('.editor-container').filter({
+            hasNot: page.locator('.multibuffer-panel'),
+        }).first();
+        const initialLine = initialEditor.locator('.code .line').first();
+        await expect(initialLine).toBeVisible({ timeout: 10000 });
+        await initialLine.click();
+        await page.keyboard.press('End');
+        await page.keyboard.type('-file-edit-1');
+
+        // Verify initial edit is rendered in file editor
+        await expect(initialLine).toContainText('-file-edit-1');
+
+        // 3. Open Multibuffer Review from Changes panel
+        await page.getByText(/^Changes$/i).first().click();
+        const changesPanel = page.locator('.changes-panel');
+        await expect(changesPanel.getByText('README.md').first()).toBeVisible({ timeout: 10000 });
+        await changesPanel.getByRole('button', { name: 'Review all changes' }).click();
+
+        // Verify Multibuffer is opened
+        const multibuffer = page.locator('.multibuffer-panel');
+        await expect(multibuffer).toBeVisible({ timeout: 10000 });
+
+        // 4. Make an edit to README.md inside Multibuffer Review
+        const reviewLine = multibuffer.locator('.code .line').filter({ hasText: '-file-edit-1' }).first();
+        await expect(reviewLine).toBeVisible({ timeout: 10000 });
+        await reviewLine.click();
+        await page.keyboard.press('End');
+        await page.keyboard.type('-multibuffer-edit-2');
+
+        // Verify both edits are visible in Multibuffer Review
+        await expect(reviewLine).toContainText('-file-edit-1-multibuffer-edit-2');
+
+        // 5. Close Multibuffer Review panel via the "Close review" button in the toolbar
+        const closeReviewBtn = multibuffer.getByRole('button', { name: 'Close review' });
+        await expect(closeReviewBtn).toBeVisible({ timeout: 5000 });
+        await closeReviewBtn.click();
+
+        // Verify Multibuffer is closed
+        await expect(multibuffer).not.toBeVisible();
+
+        // 6. Verify single file editor is back and has both edits intact
+        const fileEditor = page.locator('.editor-container').filter({
+            hasNot: page.locator('.multibuffer-panel'),
+        }).first();
+        const fileEditorLine = fileEditor.locator('.code .line').first();
+        await expect(fileEditorLine).toBeVisible({ timeout: 10000 });
+        await expect(fileEditorLine).toContainText('-file-edit-1-multibuffer-edit-2');
+    });
 });

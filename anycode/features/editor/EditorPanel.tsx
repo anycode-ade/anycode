@@ -109,8 +109,21 @@ export const EditorPanel = ({
                     onActiveFileChange={(fileId) => onMultibufferActiveFileChange?.(panelKey, fileId)}
                     onGoToDefinition={onGoToDefinition}
                     onHover={editors.handleHover}
+                    onCompletion={editors.handleCompletion}
+                    onReferencesPeek={(req) => editors.openReferencesPeek(req, panelKey)}
                     onLoadDeletedFile={onLoadDeletedFile}
                 />
+                {referencesPeek ? (
+                    <ReferencesPeek
+                        state={referencesPeek}
+                        onClose={() => {
+                            editors.closeReferencesPeek(panelKey);
+                            editors.focusEditorInPane(panelKey);
+                        }}
+                        onSelectItem={(index) => editors.setSelectedReferenceInPeek(panelKey, index)}
+                        onOpenItem={(index) => editors.openReferenceFromPeek(panelKey, index)}
+                    />
+                ) : null}
             </div>
         );
     }
