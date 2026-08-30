@@ -34,7 +34,7 @@ import { TerminalPanel } from './features/terminal/TerminalPanel';
 import { AgentPanel } from './features/agents/AgentPanel';
 import { BrowserPanel } from './features/browser/BrowserPanel';
 import { type DiffMode } from './types/diffMode';
-import { normalizePath } from './utils';
+import { normalizePath, uriToFilePath } from './utils';
 import { useSettings } from './hooks/useSettings';
 
 const toMultibufferFiles = (files: ChangedFile[]): MultibufferFile[] => files.map((file) => ({
@@ -402,7 +402,7 @@ const App: React.FC = () => {
         const response = await editors.handleGoToDefinition(request);
         const definition = Array.isArray(response) ? response[0] : response;
         if (definition && definition.uri && definition.range) {
-            const filePath = definition.uri.replace('file://', '');
+            const filePath = uriToFilePath(definition.uri);
             const line = definition.range.start.line;
             const column = definition.range.start.character;
             focusReviewFile(paneId, filePath, line, column);

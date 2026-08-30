@@ -2,6 +2,24 @@ export const normalizePath = (path: string): string => {
     return path.replace(/\\/g, '/');
 };
 
+export const uriToFilePath = (uriOrPath: string): string => {
+    if (!uriOrPath || !uriOrPath.startsWith('file://')) return uriOrPath;
+
+    const rawPath = uriOrPath.slice('file://'.length);
+    try {
+        const decodedPath = decodeURIComponent(rawPath);
+        // file:///C:/... is the canonical URI form for Windows, but the
+        // local filesystem path must be C:/..., without the URI root slash.
+        return /^\/[A-Za-z]:\//.test(decodedPath)
+            ? decodedPath.slice(1)
+            : decodedPath;
+    } catch {
+        return /^\/[A-Za-z]:\//.test(rawPath)
+            ? rawPath.slice(1)
+            : rawPath;
+    }
+};
+
 export const getFileName = (path: string): string => {
     const normalized = normalizePath(path);
     const parts = normalized.split('/');

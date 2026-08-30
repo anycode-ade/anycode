@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AnycodeEditor, AnycodeEditorReact } from 'anycode-react';
 import type { ReferencesPeekItem, ReferencesPeekState } from '../../types';
-import { getFileName, getLanguageFromFileName } from '../../utils';
+import { getFileName, getLanguageFromFileName, uriToFilePath } from '../../utils';
 import './ReferencesPeek.css';
 
 type ReferenceGroup = {
@@ -17,16 +17,7 @@ type ReferencesPeekProps = {
 };
 
 const resolveItemPath = (item: ReferencesPeekItem): string => {
-    const source = item.uri || item.file || '';
-    if (!source.startsWith('file://')) {
-        return source;
-    }
-    const rawPath = source.slice('file://'.length);
-    try {
-        return decodeURIComponent(rawPath);
-    } catch {
-        return rawPath;
-    }
+    return uriToFilePath(item.uri || item.file || '');
 };
 
 let referencesPeekEditorCounter = 0;

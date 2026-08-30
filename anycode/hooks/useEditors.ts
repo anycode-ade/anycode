@@ -11,7 +11,7 @@ import {
     type WatcherEdits,
 } from '../types';
 import { BATCH_DELAY_MS } from '../constants';
-import { getFileName, getLanguageFromFileName } from '../utils';
+import { getFileName, getLanguageFromFileName, uriToFilePath } from '../utils';
 import { loadItem, loadOpenFiles, saveItem, saveOpenFiles } from '../storage';
 import type { DiffMode } from '../types/diffMode';
 import { DEFAULT_DIFF_VIEW_MODE, getNextDiffMode } from '../types/diffMode';
@@ -116,28 +116,6 @@ const normalizeHoverResponse = (response: any): string | null => {
 
     return null;
 };
-
-const uriToFilePath = (uriOrPath: string): string => {
-    if (!uriOrPath) return '';
-    if (!uriOrPath.startsWith('file://')) {
-        return uriOrPath;
-    }
-
-    const rawPath = uriOrPath.slice('file://'.length);
-    try {
-        const decodedPath = decodeURIComponent(rawPath);
-        // file:///C:/... is the canonical URI form for Windows, but the
-        // local filesystem path must be C:/..., without the URI root slash.
-        return /^\/[A-Za-z]:\//.test(decodedPath)
-            ? decodedPath.slice(1)
-            : decodedPath;
-    } catch {
-        return /^\/[A-Za-z]:\//.test(rawPath)
-            ? rawPath.slice(1)
-            : rawPath;
-    }
-};
-
 
 const getPersistedActiveFileId = (files: FileState[], activeFileId: string | null): string | null => {
     if (activeFileId && files.some((file) => file.id === activeFileId)) {
@@ -1290,7 +1268,7 @@ export const useEditors = ({ wsRef, isConnected, onFileClosed }: UseEditorsParam
         }
 
         if (!targetFileId) {
-            targetFileId = uri.replace('file://', '');
+            targetFileId = uriToFilePath(uri);
         }
 
         diagnosticsRef.current.set(targetFileId, diags);
