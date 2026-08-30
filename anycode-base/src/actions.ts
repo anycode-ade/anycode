@@ -88,9 +88,10 @@ export const handleTextInput = (ctx: ActionContext): ActionResult => {
         removeSelection(ctx);
     }
     
+    const { line, column } = ctx.code.getPosition(ctx.offset);
     let text = ctx.event!.key;
     ctx.code.insert(text, ctx.offset);
-    ctx.offset += text.length;
+    ctx.offset = ctx.code.getOffset(line, column + text.length);
 
     ctx.code.setStateAfter(ctx.offset, ctx.selection);
     ctx.code.commit();
@@ -104,8 +105,9 @@ export const removeSelection = (ctx: ActionContext): ActionResult => {
     let [start, end] = ctx.selection.sorted();
     let len = ctx.code.length();
     if (end > len) { end = len } // todo fix end bug
+    const targetPos = ctx.code.getPosition(start);
     ctx.code.remove(start, end - start);
-    ctx.offset = start;
+    ctx.offset = ctx.code.getOffset(targetPos.line, targetPos.column);
     ctx.selection = undefined;
     return { ctx, changed: true };
 }
@@ -130,41 +132,58 @@ export const handleBackspace = (ctx: ActionContext): ActionResult => {
     
     // Calculate the start position for deletion
     let removeStart: number;
+    let targetLine = line;
+    let targetCol = column;
     
     if (event?.metaKey) {
         // Meta+Backspace: delete to start of line
         removeStart = ctx.code.getOffset(line, 0);
+        targetCol = 0;
         if (removeStart > 0 && removeStart === ctx.offset) {
             removeStart -= 1;
+            const prevPos = ctx.code.getPosition(removeStart);
+            targetLine = prevPos.line;
+            targetCol = prevPos.column;
         }
     } else if (event?.altKey) {
         // Alt+Backspace: delete to start of word
         // If at start of line, join with previous line
         if (column === 0 && line > 0) {
             removeStart = ctx.offset - 1;
+            const prevPos = ctx.code.getPosition(removeStart);
+            targetLine = prevPos.line;
+            targetCol = prevPos.column;
         } else {
             const wordStartCol = findPrevWord(lineText, column);
             removeStart = ctx.code.getOffset(line, wordStartCol);
+            targetCol = wordStartCol;
         }
         if (removeStart > 0 && removeStart === ctx.offset) {
             removeStart -= 1;
+            const prevPos = ctx.code.getPosition(removeStart);
+            targetLine = prevPos.line;
+            targetCol = prevPos.column;
         }
     } else {
         // Regular backspace
         // At start of line: join with previous line by removing the newline
         if (column === 0 && line > 0) {
             removeStart = ctx.offset - 1;
+            const prevPos = ctx.code.getPosition(removeStart);
+            targetLine = prevPos.line;
+            targetCol = prevPos.column;
         } else {
             const isRemoveIndent = column > 0 && ctx.code.getIndent() &&
                 ctx.code.isOnlyIndentationBefore(line, column);
             
             if (isRemoveIndent) {
                 // vscode like: remove to previous indentation level
-                removeStart = ctx.code.getOffset(line, 0) + ctx.code.prevIndentation(line, column);
+                targetCol = ctx.code.prevIndentation(line, column);
+                removeStart = ctx.code.getOffset(line, 0) + targetCol;
             } else {
                 // delete previous grapheme cluster
-                const prevCol = getPrevGraphemeIndex(lineText, column);
-                removeStart = ctx.code.getOffset(line, prevCol);
+                targetCol = getPrevGraphemeIndex(lineText, column);
+                removeStart = ctx.code.getOffset(line, targetCol);
             }
         }
     }
@@ -173,7 +192,7 @@ export const handleBackspace = (ctx: ActionContext): ActionResult => {
     const removeLen = ctx.offset - removeStart;
     if (removeLen > 0) {
         ctx.code.remove(removeStart, removeLen);
-        ctx.offset = removeStart;
+        ctx.offset = ctx.code.getOffset(targetLine, targetCol);
     }
 
     ctx.code.setStateAfter(ctx.offset, ctx.selection);
@@ -205,7 +224,7 @@ export const handleEnter = (ctx: ActionContext): ActionResult => {
     const newlineWithIndent = '\n' + indent;
 
     ctx.code.insert(newlineWithIndent, ctx.offset);
-    ctx.offset += newlineWithIndent.length;
+    ctx.offset = ctx.code.getOffset(line + 1, indent.length);
     
     ctx.selection = undefined;
     ctx.code.setStateAfter(ctx.offset, ctx.selection);
@@ -334,14 +353,19 @@ export const handlePasteText = (ctx: ActionContext, text: string): ActionResult 
 
     if (ctx.selection?.nonEmpty()) {
         const [start, end] = ctx.selection!.sorted();
+        const targetPos = ctx.code.getPosition(start);
         ctx.code.remove(start, end - start);
-        o = start;
+        o = ctx.code.getOffset(targetPos.line, targetPos.column);
         ctx.selection = undefined;
     }
 
+    const { line, column } = ctx.code.getPosition(o);
     const toInsert = smartPaste(ctx.code, o, text);
     ctx.code.insert(toInsert, o);
-    ctx.offset = o + toInsert.length;
+    const pastedLines = toInsert.split('\n');
+    const targetLine = line + pastedLines.length - 1;
+    const targetCol = pastedLines.length === 1 ? column + toInsert.length : pastedLines[pastedLines.length - 1].length;
+    ctx.offset = ctx.code.getOffset(targetLine, targetCol);
     ctx.code.setStateAfter(ctx.offset, ctx.selection);
     ctx.code.commit();
 
@@ -425,14 +449,18 @@ export function smartPaste(code: Code, offset: number, text: string): string {
 
 
 export const handleDuplicate = async (ctx: ActionContext): Promise<ActionResult> => {
-    let start: number, end: number, textToDuplicate: string, insertPos: number, newOffset: number;
+    let start: number, end: number, textToDuplicate: string, insertPos: number;
+    let targetLine: number, targetCol: number;
 
     if (ctx.selection?.nonEmpty()) {
         // Duplicate the selected text after the selection
         [start, end] = ctx.selection.sorted();
         textToDuplicate = ctx.code.getIntervalContent2(start, end);
         insertPos = end;
-        newOffset = insertPos + textToDuplicate.length;
+        const endPos = ctx.code.getPosition(end);
+        const dupLines = textToDuplicate.split('\n');
+        targetLine = endPos.line + dupLines.length - 1;
+        targetCol = dupLines.length === 1 ? endPos.column + textToDuplicate.length : dupLines[dupLines.length - 1].length;
     } else {
         // Duplicate the whole line at the cursor
         const { line, column } = ctx.code.getPosition(ctx.offset);
@@ -445,7 +473,8 @@ export const handleDuplicate = async (ctx: ActionContext): Promise<ActionResult>
         }
         textToDuplicate = ctx.code.getIntervalContent2(start, end);
         insertPos = end;
-        newOffset = ctx.code.getOffset(line + 1, column);
+        targetLine = line + 1;
+        targetCol = column;
     }
 
     ctx.code.tx();
@@ -453,7 +482,7 @@ export const handleDuplicate = async (ctx: ActionContext): Promise<ActionResult>
 
     ctx.code.insert(textToDuplicate, insertPos);
     
-    ctx.offset = newOffset;
+    ctx.offset = ctx.code.getOffset(targetLine, targetCol);
     ctx.selection = undefined;
 
     ctx.code.setStateAfter(ctx.offset, ctx.selection);
@@ -474,12 +503,14 @@ export const handleCut = async (ctx: ActionContext): Promise<ActionResult> => {
         let content = ctx.code.getIntervalContent2(start, end);
         await copyToClipboard(content);
 
+        const targetPos = ctx.code.getPosition(start);
+
         ctx.code.tx();
         ctx.code.setStateBefore(ctx.offset, ctx.selection);
 
         ctx.code.remove(start, end - start);
         
-        ctx.offset = start;
+        ctx.offset = ctx.code.getOffset(targetPos.line, targetPos.column);
         ctx.selection = undefined;
         ctx.code.setStateAfter(ctx.offset, ctx.selection);
         ctx.code.commit();
@@ -509,6 +540,8 @@ export const handleTab = (ctx: ActionContext): ActionResult => {
         ? ' '.repeat(indent.width) 
         : '\t';
 
+    const { line: currentLineNum, column: currentColNum } = ctx.code.getPosition(ctx.offset);
+
     ctx.code.tx();
     ctx.code.setStateBefore(ctx.offset, ctx.selection);
 
@@ -534,7 +567,7 @@ export const handleTab = (ctx: ActionContext): ActionResult => {
         }
         ctx.selection = new Selection(anchor, ctx.offset);
     } else {
-        ctx.offset += indentText.length;
+        ctx.offset = ctx.code.getOffset(currentLineNum, currentColNum + indentText.length);
     }
 
     ctx.code.setStateAfter(ctx.offset, ctx.selection);
@@ -559,6 +592,8 @@ export const handleUnTab = (ctx: ActionContext): ActionResult => {
 
     const indent = ctx.code.getIndent();
     const indentText = indent?.unit === ' ' ? ' '.repeat(indent.width) : '\t';
+
+    const { line: currentLineNum, column: currentColNum } = ctx.code.getPosition(ctx.offset);
 
     ctx.code.tx();
     ctx.code.setStateBefore(ctx.offset, ctx.selection);
@@ -590,7 +625,7 @@ export const handleUnTab = (ctx: ActionContext): ActionResult => {
         }
         ctx.selection = new Selection(anchor, ctx.offset);
     } else {
-        ctx.offset -= indentText.length;
+        ctx.offset = ctx.code.getOffset(currentLineNum, Math.max(0, currentColNum - (lines_untabbed > 0 ? indentText.length : 0)));
     }
 
     ctx.code.setStateAfter(ctx.offset, ctx.selection);
@@ -621,6 +656,8 @@ export const handleToggleComment = (ctx: ActionContext): ActionResult => {
         const matches = ctx.code.searchOnLine(line, lineText.length, comment);
         return matches.length > 0;
     });
+
+    const { line: currentLineNum, column: currentColNum } = ctx.code.getPosition(ctx.offset);
 
     ctx.code.tx();
     ctx.code.setStateBefore(ctx.offset, ctx.selection);
@@ -675,8 +712,11 @@ export const handleToggleComment = (ctx: ActionContext): ActionResult => {
         }
         ctx.selection = new Selection(anchor, ctx.offset);
     } else {
-        if (!commentFound) ctx.offset += comment.length;
-        else ctx.offset -= comment.length;
+        if (!commentFound) {
+            ctx.offset = ctx.code.getOffset(currentLineNum, currentColNum + (comments_added > 0 ? comment.length : 0));
+        } else {
+            ctx.offset = ctx.code.getOffset(currentLineNum, Math.max(0, currentColNum - (comments_removed > 0 ? comment.length : 0)));
+        }
     }
 
     ctx.code.setStateAfter(ctx.offset, ctx.selection);

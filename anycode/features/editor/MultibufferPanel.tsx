@@ -72,6 +72,7 @@ const MultibufferPanel: React.FC<MultibufferPanelProps> = ({
     const deletedEntriesRef = useRef(new Map<string, DeletedEntry>());
     const syncingRef = useRef(false);
     const generationRef = useRef(0);
+    const isInternalChangeRef = useRef(false);
     const [deletedEntriesVersion, setDeletedEntriesVersion] = useState(0);
     const fileById = useMemo(() => new Map(openFiles.map((file) => [file.id, file])), [openFiles]);
     const reviewFiles = files;
@@ -265,6 +266,7 @@ const MultibufferPanel: React.FC<MultibufferPanelProps> = ({
             if (!readyFile.editor) return;
             if (unsubscribeFileChangesRef.current.has(readyFile.file.id)) return;
             const unsubscribeChange = readyFile.editor.addOnChangeListener(() => {
+                if (isInternalChangeRef.current) return;
                 const currentCode = currentCodeRef.current;
                 const editor = sharedEditorRef.current;
                 if (!currentCode || !editor) return;
@@ -276,10 +278,9 @@ const MultibufferPanel: React.FC<MultibufferPanelProps> = ({
 
                 currentCode.notifyFileChanged(readyFile.file.id);
 
-                if (fileId) {
-                    const firstLine = currentCode.getFirstLineForFile(fileId);
-                    if (firstLine !== null) {
-                        const targetLine = localLine !== null ? firstLine + localLine : firstLine;
+                if (fileId && localLine !== null) {
+                    const targetLine = currentCode.getMultibufferLineForLocalLine(fileId, localLine);
+                    if (targetLine !== null) {
                         editor.offset = currentCode.getOffset(targetLine, col);
                     }
                 }
@@ -332,7 +333,12 @@ const MultibufferPanel: React.FC<MultibufferPanelProps> = ({
                     originalCodeRef.current = originalCode;
                     sharedEditorRef.current = editor;
                     currentCode.setOnFileChange(({ fileId, change }) => {
-                        editorStatesRef.current.get(fileId)?.notifyExternalChange(change);
+                        isInternalChangeRef.current = true;
+                        try {
+                            editorStatesRef.current.get(fileId)?.notifyExternalChange(change);
+                        } finally {
+                            isInternalChangeRef.current = false;
+                        }
                     });
                     editor.setOnCursorChange((position) => {
                         const fileId = currentCodeRef.current?.getFileIdAtLine(position.line);

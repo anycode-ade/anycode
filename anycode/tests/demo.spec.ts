@@ -899,4 +899,93 @@ test.describe('Anycode Live Demo Mode E2E Tests', () => {
         await expect(page.locator('html')).toHaveAttribute('data-scrollbar-preview', 'true');
         await expect(page.locator('html')).not.toHaveAttribute('data-scrollbar-preview', 'true', { timeout: 3000 });
     });
+
+    test('should insert 10 new lines on 10 consecutive Enter presses in Multibuffer Review and advance the cursor on each step', async ({ page }) => {
+        const filesPanel = page.getByRole('region', { name: 'Files' });
+        const readmeFile = filesPanel.getByText('README.md').first();
+        await expect(readmeFile).toBeVisible({ timeout: 10000 });
+        await readmeFile.click();
+
+        const initialEditor = page.locator('.editor-container').filter({
+            hasNot: page.locator('.multibuffer-panel'),
+        }).first();
+        const initialLine = initialEditor.locator('.code .line').first();
+        await expect(initialLine).toBeVisible({ timeout: 10000 });
+        await initialLine.click();
+        await page.keyboard.type('test-line');
+
+        await page.getByText(/^Changes$/i).first().click();
+        const changesPanel = page.locator('.changes-panel');
+        await changesPanel.getByRole('button', { name: 'Review all changes' }).click();
+
+        const multibuffer = page.locator('.multibuffer-panel');
+        await expect(multibuffer).toBeVisible({ timeout: 10000 });
+
+        const headerRow = multibuffer.locator('.multibuffer-file-header-row').first();
+        await expect(headerRow).toBeVisible({ timeout: 10000 });
+
+        const reviewLine = multibuffer.locator('.code .line').filter({ hasText: 'test-line' }).first();
+        await expect(reviewLine).toBeVisible({ timeout: 10000 });
+        await reviewLine.click();
+
+        const getCaretInfo = async () => page.evaluate(() => {
+            const sel = window.getSelection();
+            if (!sel || sel.rangeCount === 0) return null;
+            const node = sel.anchorNode;
+            const lineEl = (node instanceof Element ? node.closest('.line') : node?.parentElement?.closest('.line')) as HTMLElement | null;
+            if (!lineEl) return null;
+
+            const lineNumber = (lineEl as any)?.lineNumber ?? null;
+            const isCollapsed = sel.isCollapsed;
+
+            let column = 0;
+            try {
+                const range = sel.getRangeAt(0);
+                const preCaretRange = range.cloneRange();
+                preCaretRange.selectNodeContents(lineEl);
+                preCaretRange.setEnd(range.endContainer, range.endOffset);
+                column = preCaretRange.toString().length;
+            } catch {
+                column = 0;
+            }
+
+            return { lineNumber, column, isCollapsed };
+        });
+
+        await expect.poll(getCaretInfo).not.toBeNull();
+        const initialInfo = (await getCaretInfo())!;
+        const initialLineNumber = initialInfo.lineNumber;
+
+        for (let i = 1; i <= 10; i++) {
+            await page.keyboard.press('Enter');
+
+            // 1. Check caret after Enter: moved to next line, column 0, collapsed
+            await expect.poll(getCaretInfo).toEqual({
+                lineNumber: initialLineNumber + i,
+                column: 0,
+                isCollapsed: true,
+            });
+
+            // 2. Type text on the new line: check caret advances to column 3
+            await page.keyboard.type('xyz');
+            await expect.poll(getCaretInfo).toEqual({
+                lineNumber: initialLineNumber + i,
+                column: 3,
+                isCollapsed: true,
+            });
+
+            // 3. Backspace 3 chars: check caret returns to column 0
+            await page.keyboard.press('Backspace');
+            await page.keyboard.press('Backspace');
+            await page.keyboard.press('Backspace');
+            await expect.poll(getCaretInfo).toEqual({
+                lineNumber: initialLineNumber + i,
+                column: 0,
+                isCollapsed: true,
+            });
+        }
+
+        // Verify the header updated with added lines (+1 initial edit + 10 enters = +11)
+        await expect(headerRow).toContainText('+11');
+    });
 });
