@@ -1,9 +1,14 @@
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { Code } from '../src/code';
 import { MultiBufferCode } from '../src/multibuffer';
 import { Selection } from '../src/selection';
+import { setWasmBasePath } from '../src/utils';
+import * as path from 'path';
 
 describe('MultiBufferCode', () => {
+    beforeAll(() => {
+        setWasmBasePath(path.resolve(__dirname, '../wasm') + '/');
+    });
     it('keeps deleted-file entries read-only', () => {
         const currentCode = new Code('', 'deleted.ts', '');
         const multibuffer = new MultiBufferCode([{
@@ -466,5 +471,36 @@ describe('MultiBufferCode', () => {
         expect(file1.getContent()).toBe('line1\nline2');
         
         expect(file2.getContent()).toBe('lineA\nlineB');
+    });
+
+    it('caches getFoldRanges results and invalidates properly on edits and file state changes', async () => {
+        const jsCode1 = new Code('function foo() {\n  return 1;\n}', 'a.js', 'javascript');
+        const jsCode2 = new Code('function bar() {\n  return 2;\n}', 'b.js', 'javascript');
+        await jsCode1.init();
+        await jsCode2.init();
+
+        const multibuffer = new MultiBufferCode([
+            { id: 'a.js', path: 'a.js', code: jsCode1, originalCode: new Code('', 'a.js', '') },
+            { id: 'b.js', path: 'b.js', code: jsCode2, originalCode: new Code('', 'b.js', '') },
+        ]);
+
+        const ranges1 = multibuffer.getFoldRanges();
+        expect(ranges1.length).toBeGreaterThan(0);
+
+        // Same reference returned from cache
+        const ranges2 = multibuffer.getFoldRanges();
+        expect(ranges2).toBe(ranges1);
+
+        // Edit inside buffer invalidates cache
+        multibuffer.insertAt({ row: 1, column: 0 }, '// comment\n');
+        const ranges3 = multibuffer.getFoldRanges();
+        expect(ranges3).not.toBe(ranges1);
+
+        // Collapsing file invalidates cache
+        multibuffer.toggleMultibufferFileAtLine(0);
+        const ranges4 = multibuffer.getFoldRanges();
+        expect(ranges4).not.toBe(ranges3);
+        // Only b.js ranges should remain
+        expect(ranges4.length).toBeLessThan(ranges3.length);
     });
 });

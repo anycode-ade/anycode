@@ -18,6 +18,17 @@ export type MultiBufferFileChange = {
     change: Change;
 };
 
+export type MultiBufferHeaderInfo = {
+    fileIndex: number;
+    fileId: string;
+    path: string;
+    fileName: string;
+    line: number;
+    collapsed: boolean;
+    added: number;
+    removed: number;
+};
+
 type IndexedRow = {
     kind: 'header' | 'file';
     fileIndex: number;
@@ -63,7 +74,9 @@ export class MultiBufferCode extends Code {
     private readonly fileDiffs = new Map<string, CachedFileDiff>();
     private readonly collapsedFiles = new Set<string>();
     private rows: IndexedRow[] = [];
+    private headerInfos: MultiBufferHeaderInfo[] = [];
     private indexDirty = true;
+    private cachedFoldRanges: FoldRange[] | null = null;
     private activeFileIndex = 0;
     private activeTxFileIndex: number | null = null;
     private onChangeCallback: ((change: Change) => void) | null = null;
@@ -283,6 +296,11 @@ export class MultiBufferCode extends Code {
         return row?.kind === 'header' ? row.text : null;
     }
 
+    public getFileHeaders(): MultiBufferHeaderInfo[] {
+        this.ensureIndex();
+        return this.headerInfos;
+    }
+
     public override isSameFileBody(lineA: number, lineB: number): boolean {
         this.ensureIndex();
         const rowA = this.rows[lineA];
@@ -419,16 +437,28 @@ export class MultiBufferCode extends Code {
         return this.entries[row.fileIndex]?.code.getLineBinaryTokens(row.localLine) ?? new Uint32Array(0);
     }
 
-    public getFoldRanges(): FoldRange[] {
+    public override getFoldRanges(): FoldRange[] {
         this.ensureIndex();
+        if (this.cachedFoldRanges !== null) {
+            return this.cachedFoldRanges;
+        }
+
         const ranges: FoldRange[] = [];
         for (let fileIndex = 0; fileIndex < this.entries.length; fileIndex++) {
-            const firstBodyRow = this.rows.findIndex((row) => row.fileIndex === fileIndex && row.kind === 'file');
-            if (firstBodyRow < 0) continue;
-            for (const range of this.entries[fileIndex].code.getFoldRanges()) {
-                ranges.push({ ...range, startLine: firstBodyRow + range.startLine, endLine: firstBodyRow + range.endLine });
+            const headerInfo = this.headerInfos[fileIndex];
+            if (!headerInfo || headerInfo.collapsed) continue;
+            const firstBodyRow = headerInfo.line + 1;
+            const entryFoldRanges = this.entries[fileIndex].code.getFoldRanges();
+            for (let i = 0; i < entryFoldRanges.length; i++) {
+                const range = entryFoldRanges[i];
+                ranges.push({
+                    ...range,
+                    startLine: firstBodyRow + range.startLine,
+                    endLine: firstBodyRow + range.endLine,
+                });
             }
         }
+        this.cachedFoldRanges = ranges;
         return ranges;
     }
 
@@ -746,20 +776,35 @@ export class MultiBufferCode extends Code {
     private ensureIndex(): void {
         if (!this.indexDirty) return;
         this.linesCache.clear();
+        this.cachedFoldRanges = null;
         this.rows = [];
+        this.headerInfos = [];
         let offset = 0;
+        let line = 0;
         for (let fileIndex = 0; fileIndex < this.entries.length; fileIndex++) {
             const entry = this.entries[fileIndex];
             const { added, removed } = this.getCachedFileDiff(fileIndex);
             const stats = formatFileStats(added, removed);
-            const indicator = this.collapsedFiles.has(entry.id) ? '▸' : '▾';
+            const collapsed = this.collapsedFiles.has(entry.id);
+            const indicator = collapsed ? '▸' : '▾';
             const header = `${indicator} ${getFileName(entry.path)}${stats.added}${stats.removed}`;
             this.rows.push({ kind: 'header', fileIndex, localLine: -1, localStart: 0, text: header, start: offset });
+            this.headerInfos.push({
+                fileIndex,
+                fileId: entry.id,
+                path: entry.path,
+                fileName: getFileName(entry.path),
+                line,
+                collapsed,
+                added,
+                removed,
+            });
             offset += header.length + 1;
+            line += 1;
 
+            if (collapsed) continue;
             const lines = entry.code.getLines();
             const fileLines = lines.length > 0 ? lines : [''];
-            if (this.collapsedFiles.has(entry.id)) continue;
             for (let localLine = 0; localLine < fileLines.length; localLine++) {
                 const text = fileLines[localLine] ?? '';
                 this.rows.push({
@@ -771,6 +816,7 @@ export class MultiBufferCode extends Code {
                     start: offset,
                 });
                 offset += text.length + 1;
+                line += 1;
             }
         }
         if (this.rows.length > 0) {

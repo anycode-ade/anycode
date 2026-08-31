@@ -18,6 +18,7 @@ import { DiagnosticRenderer } from "./DiagnosticRenderer";
 import { ScrollbarMarkersRenderer } from "./ScrollbarMarkersRenderer";
 import { WordHighlightRenderer } from "./WordHighlightRenderer";
 import { BracketMatchRenderer } from "./BracketMatchRenderer";
+import { StickyHeaderRenderer } from "./StickyHeaderRenderer";
 
 const MAX_SCROLLBAR_MARKER_LINES = 5000;
 
@@ -68,6 +69,8 @@ export class Renderer {
     private wordHighlightRenderer: WordHighlightRenderer;
     private bracketMatchRenderer: BracketMatchRenderer;
     private scrollbarMarkersRenderer: ScrollbarMarkersRenderer;
+    private stickyHeaderRenderer: StickyHeaderRenderer;
+    private wrapper?: HTMLDivElement;
     private visualSegments: VisualSegment[] | null = null;
     private totalVisualRows: number = 0;
     private lastTotalLines: number = 0;
@@ -93,13 +96,17 @@ export class Renderer {
         codeContent: HTMLDivElement,
         scrollbarMarkersEnabled: boolean = true,
         onImmediateScroll?: () => void,
-        wrapper?: HTMLDivElement
+        wrapper?: HTMLDivElement,
+        onToggleMultibufferHeader?: (line: number) => void,
+        onJumpToMultibufferHeader?: (line: number) => void,
+        stickyHeaderEnabled: boolean = true
     ) {
         this.container = container;
         this.buttonsColumn = buttonsColumn;
         this.gutter = gutter;
         this.foldsColumn = foldsColumn;
         this.codeContent = codeContent;
+        this.wrapper = wrapper;
 
         // Initialize renderers
         const diagnosticRenderer = new DiagnosticRenderer();
@@ -141,6 +148,16 @@ export class Renderer {
             wrapper,
             (isDragging, state) => this.setFastScroll(isDragging, state)
         );
+        this.stickyHeaderRenderer = new StickyHeaderRenderer(
+            container,
+            wrapper,
+            {
+                onToggleCollapse: onToggleMultibufferHeader,
+                onJumpToFile: onJumpToMultibufferHeader,
+                getVisualIndexForLine: (line: number) => this.getVisualIndexForLine(line),
+            },
+            stickyHeaderEnabled
+        );
     }
 
     public setDiffEnabled(enabled: boolean) {
@@ -154,6 +171,7 @@ export class Renderer {
             this.expandBufferRafId = null;
         }
         this.scrollbarMarkersRenderer.clean();
+        this.stickyHeaderRenderer.clean();
     }
 
     public cancelCursorRaf(): void {
@@ -518,13 +536,25 @@ export class Renderer {
         this.renderViewport(state);
         const wordLines = this.wordHighlightRenderer.render(state, state.scrollbarMarkersEnabled);
         this.renderScrollbarMarkers(state, true, wordLines);
+        this.stickyHeaderRenderer.render(state, this.lastScrollTop);
     }
 
-    private renderViewport(state: EditorState, bufferOverride?: number) {
+    private renderViewport(
+        state: EditorState,
+        bufferOverride?: number,
+        scrollTopOverride?: number,
+        viewHeightOverride?: number
+    ) {
         const { settings, readOnly, search } = state;
 
         const totalVisualRows = this.getVisualRowCount();
-        const { startIndex, endIndex } = this.getVisibleRange(totalVisualRows, settings, bufferOverride);
+        const { startIndex, endIndex } = this.getVisibleRange(
+            totalVisualRows,
+            settings,
+            bufferOverride,
+            scrollTopOverride,
+            viewHeightOverride
+        );
 
         const itemHeight = settings.lineHeight;
         const paddingTop = Math.round(startIndex * itemHeight);
@@ -627,7 +657,7 @@ export class Renderer {
      * Get visual index for a real line number.
      * This accounts for ghost lines and hidden lines.
      */
-    private getVisualIndexForLine(lineIndex: number): number {
+    public getVisualIndexForLine(lineIndex: number): number {
         if (!this.visualSegments || this.visualSegments.length === 0) {
             return lineIndex;
         }
@@ -692,9 +722,15 @@ export class Renderer {
         }
     }
 
-    private getVisibleRange(totalVisualRows: number, settings: EditorSettings, bufferOverride?: number) {
-        const scrollTop = this.container.scrollTop;
-        const viewHeight = this.container.clientHeight;
+    private getVisibleRange(
+        totalVisualRows: number,
+        settings: EditorSettings,
+        bufferOverride?: number,
+        scrollTopOverride?: number,
+        viewHeightOverride?: number
+    ) {
+        const scrollTop = scrollTopOverride !== undefined ? scrollTopOverride : this.container.scrollTop;
+        const viewHeight = viewHeightOverride !== undefined ? viewHeightOverride : this.container.clientHeight;
         this.lastScrollTop = scrollTop;
         if (viewHeight > 0) this.lastClientHeight = viewHeight;
 
@@ -709,7 +745,7 @@ export class Renderer {
             visibleCount = Math.ceil(viewHeight / itemHeight);
         } else {
             const parentHeight = this.container.parentElement?.clientHeight || 0;
-            const fallbackHeight = parentHeight > 0 ? parentHeight : window.innerHeight;
+            const fallbackHeight = parentHeight > 0 ? parentHeight : (typeof window !== 'undefined' ? window.innerHeight : 600);
             visibleCount = Math.min(Math.floor(fallbackHeight / itemHeight), totalVisualRows);
         }
 
@@ -736,6 +772,7 @@ export class Renderer {
         const viewHeight = this.container.clientHeight;
         if (viewHeight > 0) this.lastClientHeight = viewHeight;
         this.scrollbarMarkersRenderer.updateThumbPosition(currentScrollTop, true, viewHeight);
+        this.stickyHeaderRenderer.render(state, currentScrollTop);
         const { settings, readOnly, search } = state;
         const lineHeight = settings.lineHeight;
         const buffer = settings.buffer;
@@ -774,10 +811,10 @@ export class Renderer {
             }
         }
 
-        const { startIndex, endIndex } = this.getVisibleRange(totalVisualRows, settings);
+        const { startIndex, endIndex } = this.getVisibleRange(totalVisualRows, settings, undefined, currentScrollTop, viewHeight);
 
         this.ensureSpacers(this.codeContent);
-        this.ensureSpacers(this.gutter);
+        this.gutter.firstChild || this.ensureSpacers(this.gutter);
         this.ensureSpacers(this.buttonsColumn);
         this.ensureSpacers(this.foldsColumn);
 
@@ -810,11 +847,11 @@ export class Renderer {
             if (isFarJump) {
                 // Two-phase far-jump: render minimal visible window on frame 1 for instant sub-frame paint,
                 // then expand to full buffer in subsequent RAF.
-                this.renderViewport(state, 2);
+                this.renderViewport(state, 2, currentScrollTop, viewHeight);
                 this.scheduleExpandBuffer(state);
             } else {
                 // Rebuild only the viewport DOM; the structural row model stays cached.
-                this.renderViewport(state);
+                this.renderViewport(state, undefined, currentScrollTop, viewHeight);
             }
             return;
         }
@@ -910,10 +947,6 @@ export class Renderer {
         gutterBottomSpacer.style.height = bottomPx;
         btnBottomSpacer.style.height = bottomPx;
         foldsBottomSpacer.style.height = bottomPx;
-    }
-
-    public updateScrollbarThumb() {
-        this.scrollbarMarkersRenderer.updateThumbPosition(this.lastScrollTop, true);
     }
 
     /**
@@ -1145,7 +1178,7 @@ export class Renderer {
         // Render cursor or selection
         this.renderCursorOrSelection(state);
         this.updateContentMinWidth(state, visible.startIndex, visible.endIndex);
-
+        this.stickyHeaderRenderer.render(state, this.lastScrollTop);
     }
 
     private updateFoldableStarts(state: EditorState) {
@@ -1335,9 +1368,14 @@ export class Renderer {
         const cursorTop = visualIndex * settings.lineHeight;
         const cursorBottom = cursorTop + settings.lineHeight;
 
+        const topPadding = (state.stickyHeaderEnabled && typeof (state.code as any)?.getFileHeaders === 'function')
+            ? settings.lineHeight
+            : 0;
+        const topPaddingLines = topPadding > 0 ? 1 : 0;
+
         const renderedRange = this.getRenderedRange();
         const isFarInsideRenderedRange = renderedRange !== null
-            && visualIndex >= renderedRange.startIndex + settings.buffer
+            && visualIndex >= renderedRange.startIndex + settings.buffer + topPaddingLines
             && visualIndex < renderedRange.endIndex - settings.buffer;
         if (isFarInsideRenderedRange) {
             return false;
@@ -1347,20 +1385,20 @@ export class Renderer {
         const viewportBottom = viewportTop + this.container.clientHeight;
 
         const bottomPaddingLines = 0;
-        const padding = settings.lineHeight * bottomPaddingLines;
+        const bottomPadding = settings.lineHeight * bottomPaddingLines;
 
-        const isCursorVisible = cursorTop >= viewportTop
-            && cursorBottom <= viewportBottom - padding;
+        const isCursorVisible = cursorTop >= viewportTop + topPadding
+            && cursorBottom <= viewportBottom - bottomPadding;
         if (isCursorVisible) {
             return false;
         }
 
         let targetScrollTop = viewportTop;
 
-        if (cursorTop < viewportTop) {
-            targetScrollTop = cursorTop;
-        } else if (cursorBottom > viewportBottom - padding) {
-            targetScrollTop = cursorBottom - this.container.clientHeight + padding;
+        if (cursorTop < viewportTop + topPadding) {
+            targetScrollTop = Math.max(0, cursorTop - topPadding);
+        } else if (cursorBottom > viewportBottom - bottomPadding) {
+            targetScrollTop = cursorBottom - this.container.clientHeight + bottomPadding;
         }
 
         const tolerance = 2;
@@ -1577,7 +1615,18 @@ export class Renderer {
         const foldsLeft = 32 + gutterWidth;
         this.container.style.setProperty("--anycode-gutter-width", `${gutterWidth}px`);
         this.container.style.setProperty("--anycode-folds-left", `${foldsLeft}px`);
+        if (this.wrapper && this.wrapper !== this.container) {
+            this.wrapper.style.setProperty("--anycode-gutter-width", `${gutterWidth}px`);
+            this.wrapper.style.setProperty("--anycode-folds-left", `${foldsLeft}px`);
+        }
         (this.container as any)._stickyWidth = undefined;
     }
 
+    public setStickyHeaderEnabled(enabled: boolean, state?: EditorState): void {
+        this.stickyHeaderRenderer.setEnabled(enabled, state, this.lastScrollTop);
+    }
+
+    public getStickyHeaderActiveLine(): number | null {
+        return this.stickyHeaderRenderer.getActiveLine();
+    }
 }

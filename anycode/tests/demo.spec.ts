@@ -574,6 +574,67 @@ test.describe('Anycode Live Demo Mode E2E Tests', () => {
         await expect(singleLineGaps).toHaveCount(0);
     });
 
+    test('should show sticky file header in Multibuffer Review when scrolled down and handle clicks', async ({ page }) => {
+        const historyTab = page.getByText(/^History$/i).first();
+        await historyTab.click();
+        const historyList = page.locator('.history-panel').getByRole('list', { name: 'Git history' });
+        const firstCommit = historyList.locator('.history-commit-row').first();
+        await firstCommit.click();
+
+        const reviewBtn = historyList.locator('.history-review-button, button:has-text("Review")').first();
+        await expect(reviewBtn).toBeVisible({ timeout: 5000 });
+        await reviewBtn.click();
+
+        const multibuffer = page.locator('.multibuffer-panel');
+        await expect(multibuffer).toBeVisible({ timeout: 10000 });
+
+        const editorContainer = page.locator('.multibuffer-editor-shell .anyeditor').first();
+        await expect(editorContainer).toBeVisible({ timeout: 10000 });
+
+        const stickyHeader = page.locator('.multibuffer-editor-shell .anyeditor-sticky-header');
+
+        // Initially at scrollTop = 0, sticky header should be hidden
+        await expect(stickyHeader).toBeHidden();
+
+        // Scroll down into the first file
+        await editorContainer.evaluate((el) => {
+            el.scrollTop = 150;
+            el.dispatchEvent(new Event('scroll'));
+        });
+
+        // Sticky header should become visible
+        await expect(stickyHeader).toBeVisible();
+        const initialFileName = (await stickyHeader.locator('.sticky-header-path').innerText()).trim();
+        expect(initialFileName.length).toBeGreaterThan(0);
+
+        // Click chevron on sticky header to collapse file
+        const stickyChevron = stickyHeader.locator('.sticky-header-chevron');
+        await stickyChevron.click();
+
+        // After collapsing, the editor scrolls to the collapsed header row which now shows collapsed icon
+        const firstHeaderRow = page.locator('.multibuffer-file-header-row').first();
+        await expect(firstHeaderRow).toContainText('▸');
+        await expect(stickyHeader).toBeHidden();
+
+        // Expand again by clicking the header row
+        await firstHeaderRow.click();
+        await expect(firstHeaderRow).toContainText('▾');
+
+        // Scroll down again - sticky header appears
+        await editorContainer.evaluate((el) => {
+            el.scrollTop = 150;
+            el.dispatchEvent(new Event('scroll'));
+        });
+        await expect(stickyHeader).toBeVisible();
+
+        // Click file name path in sticky header to jump to file top
+        const stickyPath = stickyHeader.locator('.sticky-header-path');
+        await stickyPath.click();
+
+        await expect.poll(() => editorContainer.evaluate((el) => el.scrollTop)).toBe(0);
+        await expect(stickyHeader).toBeHidden();
+    });
+
     test('should preserve scroll position in Multibuffer Review when switching panels', async ({ page }) => {
         const historyTab = page.getByText(/^History$/i).first();
         await historyTab.click();

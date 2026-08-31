@@ -138,7 +138,7 @@
 
 .multibuffer-editor-shell .anyeditor {
     overflow: auto;
-    overscroll-behavior: contain;
+    overscroll-behavior: none;
 }
 
 .multibuffer-file-loading,

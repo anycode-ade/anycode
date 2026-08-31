@@ -52,6 +52,7 @@ export interface EditorOptions {
     codeFoldingEnabled?: boolean;
     wordHighlightEnabled?: boolean;
     scrollbarMarkersEnabled?: boolean;
+    stickyHeaderEnabled?: boolean;
     scrollbarStyle?: ScrollbarStyle;
     scrollbarMinSize?: number;
     scrollbarWidth?: number;
@@ -75,6 +76,7 @@ export interface EditorState {
     codeFoldingEnabled: boolean;
     wordHighlightEnabled: boolean;
     scrollbarMarkersEnabled: boolean;
+    stickyHeaderEnabled: boolean;
     wordHighlight: WordHighlight | null;
     search: Search;
 }
@@ -139,6 +141,7 @@ export class AnycodeEditor {
     
     private wordHighlightEnabled: boolean;
     private scrollbarMarkersEnabled: boolean;
+    private stickyHeaderEnabled: boolean;
     private wordHighlight: WordHighlight | null = null;
     private isApplyingInternalEdit = false;
     private unsubscribeCodeChanges: (() => void) | null = null;
@@ -157,6 +160,7 @@ export class AnycodeEditor {
         this.codeFoldingEnabled = options.codeFoldingEnabled ?? true;
         this.wordHighlightEnabled = options.wordHighlightEnabled ?? true;
         this.scrollbarMarkersEnabled = options.scrollbarMarkersEnabled ?? true;
+        this.stickyHeaderEnabled = options.stickyHeaderEnabled ?? true;
         this.originalCode = options.originalCode;
         this.unsubscribeCodeChanges = this.code.addChangeListener(() => {
             if (this.isApplyingInternalEdit) return;
@@ -206,6 +210,7 @@ export class AnycodeEditor {
             addCssToDocument(css, 'anyeditor-theme');
         }
         this.createDomElements();
+        this.onScroll = this.onScroll.bind(this);
         this.renderer = new Renderer(
             this.container,
             this.buttonsColumn,
@@ -214,7 +219,10 @@ export class AnycodeEditor {
             this.codeContent,
             this.scrollbarMarkersEnabled,
             () => this.renderScrollImmediate(),
-            this.wrapper
+            this.wrapper,
+            (line) => this.toggleMultibufferHeader(line),
+            (line) => this.jumpToMultibufferHeader(line),
+            this.stickyHeaderEnabled
         );
         this.renderer.setFocusedDiffMode(this.focusedDiffEnabled, this.focusedDiffContextLines);
     }
@@ -222,6 +230,7 @@ export class AnycodeEditor {
     private createDomElements() {
         this.wrapper = document.createElement('div');
         this.wrapper.className = 'anyeditor-wrapper';
+        this.wrapper.style.setProperty('--anycode-line-height', `${this.settings.lineHeight}px`);
 
         this.container = document.createElement('div');
         this.container.className = 'anyeditor';
@@ -294,6 +303,47 @@ export class AnycodeEditor {
 
     public setFastScroll(enabled: boolean) {
         this.renderer?.setFastScroll(enabled, this.getEditorState());
+    }
+
+    public setStickyHeaderEnabled(enabled: boolean) {
+        this.stickyHeaderEnabled = enabled;
+        this.renderer?.setStickyHeaderEnabled(enabled, this.getEditorState());
+    }
+
+    public toggleMultibufferHeader(line: number): boolean {
+        const multibufferCode = this.code as Code & {
+            getMultibufferHeader?: (line: number) => string | null;
+            toggleMultibufferFileAtLine?: (line: number) => boolean;
+        };
+        if (
+            multibufferCode.getMultibufferHeader?.(line) !== null
+            && multibufferCode.getMultibufferHeader !== undefined
+        ) {
+            const oldCursor: Position = { line: this.cursor.row, column: this.cursor.column };
+            if (multibufferCode.toggleMultibufferFileAtLine?.(line)) {
+                this.renderer.clearExpandedDiffRanges();
+                this.selection = null;
+                this.recomputeDiffs();
+                this.cursor = this.code.clampPoint(this.cursor);
+                const visualIndex = this.renderer.getVisualIndexForLine(line);
+                const headerScrollTop = visualIndex * this.settings.lineHeight;
+                if (this.container.scrollTop > headerScrollTop) {
+                    this.container.scrollTop = headerScrollTop;
+                }
+                this.renderer.render(this.getEditorState());
+            }
+            if (this.onCursorChangeCallback) {
+                this.onCursorChangeCallback({ line, column: 0 }, oldCursor);
+            }
+            return true;
+        }
+        return false;
+    }
+
+    public jumpToMultibufferHeader(line: number): void {
+        const visualIndex = this.renderer.getVisualIndexForLine(line);
+        const targetScrollTop = visualIndex * this.settings.lineHeight;
+        this.container.scrollTo({ top: targetScrollTop, behavior: 'smooth' });
     }
 
     public setOnChange(func: (t: Change) => void) {
@@ -733,6 +783,19 @@ export class AnycodeEditor {
         this.lastScrollTop = this.container.scrollTop;
     }
 
+    private onScroll() {
+        this.scrollAnimationFrameId = null;
+        if (!this.container.isConnected) return;
+        if (this.container.clientHeight === 0 && this.container.clientWidth === 0) return;
+        const scrollTop = this.container.scrollTop;
+        if (scrollTop !== this.lastScrollTop) {
+            let state = this.getEditorState();
+            this.renderer.renderScroll(state);
+            this.lastScrollTop = scrollTop;
+        }
+        this.needFocus = false;
+    }
+
     private handleScroll(e: Event) {
         if (!this.container.isConnected) return;
         if (this.container.clientHeight === 0 && this.container.clientWidth === 0) return;
@@ -740,22 +803,9 @@ export class AnycodeEditor {
         this.clearPendingHover();
         this.closeHover();
 
-        this.renderer.updateScrollbarThumb();
-
         if (this.scrollAnimationFrameId !== null) return;
 
-        this.scrollAnimationFrameId = requestAnimationFrame(() => {
-            this.scrollAnimationFrameId = null;
-            if (!this.container.isConnected) return;
-            if (this.container.clientHeight === 0 && this.container.clientWidth === 0) return;
-            const scrollTop = this.container.scrollTop;
-            if (scrollTop !== this.lastScrollTop) {
-                let state = this.getEditorState();
-                this.renderer.renderScroll(state);
-                this.lastScrollTop = scrollTop;
-            }
-            this.needFocus = false;
-        });
+        this.scrollAnimationFrameId = requestAnimationFrame(this.onScroll);
     }
 
     public hasScroll() {
@@ -808,6 +858,7 @@ export class AnycodeEditor {
             codeFoldingEnabled: this.codeFoldingEnabled,
             wordHighlightEnabled: this.wordHighlightEnabled,
             scrollbarMarkersEnabled: this.scrollbarMarkersEnabled,
+            stickyHeaderEnabled: this.stickyHeaderEnabled,
             wordHighlight: this.wordHighlight,
             search: this.search,
         };
@@ -835,6 +886,9 @@ export class AnycodeEditor {
         if (this.settings.lineHeight === nextLineHeight) return;
         this.settings.lineHeight = nextLineHeight;
         this.container.style.setProperty('--anycode-line-height', `${nextLineHeight}px`);
+        if (this.wrapper) {
+            this.wrapper.style.setProperty('--anycode-line-height', `${nextLineHeight}px`);
+        }
         this.render();
     }
 
@@ -899,24 +953,7 @@ export class AnycodeEditor {
         const pos = getPosFromMouse(e);
         if (!pos) { return; }
 
-        const multibufferCode = this.code as Code & {
-            getMultibufferHeader?: (line: number) => string | null;
-            toggleMultibufferFileAtLine?: (line: number) => boolean;
-        };
-        if (
-            multibufferCode.getMultibufferHeader?.(pos.row) !== null
-            && multibufferCode.getMultibufferHeader !== undefined
-        ) {
-            if (multibufferCode.toggleMultibufferFileAtLine?.(pos.row)) {
-                this.renderer.clearExpandedDiffRanges();
-                this.selection = null;
-                this.recomputeDiffs();
-                this.cursor = this.code.clampPoint(this.cursor);
-                this.renderer.render(this.getEditorState());
-            }
-            if (this.onCursorChangeCallback) {
-                this.onCursorChangeCallback({ line: pos.row, column: 0 }, oldCursor);
-            }
+        if (this.toggleMultibufferHeader(pos.row)) {
             return;
         }
 

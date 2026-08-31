@@ -3,6 +3,7 @@
   width: 100%;
   height: 100%;
   overflow: hidden;
+  overscroll-behavior: none;
   contain: strict;
   isolation: isolate;
   will-change: transform;
@@ -28,6 +29,7 @@
   width: 100%;
   overflow: auto;
   overflow-anchor: none;
+  overscroll-behavior: none;
   scrollbar-width: none;
   -ms-overflow-style: none;
   font-family: var(--editor-font-family, monospace);
@@ -277,44 +279,97 @@
 }
 
 .anyeditor .line,
-.anyeditor .multibuffer-file-header-row {
-  cursor: text;
+.anyeditor .multibuffer-file-header-row,
+.anyeditor-wrapper .anyeditor-sticky-header {
   height: var(--anycode-line-height);
   line-height: var(--anycode-line-height);
   box-sizing: border-box;
   overflow: hidden;
-}
-
-.anyeditor .multibuffer-file-header-row {
-  border-radius: 0 5px 5px 0;
-  color: var(--theme-editor-foreground, var(--theme-foreground, #1f2937));
-  background: var(--multibuffer-header-background);
-  font-family: var(--interface-font-family, sans-serif);
-  font-size: var(--interface-font-size, 13px);
-  font-weight: var(--interface-font-weight, 700);
-}
-
-.anyeditor .multibuffer-file-header-row .multibuffer-header-added {
-  color: var(--theme-git-added, #79c97d);
-}
-
-.anyeditor .multibuffer-file-header-row .multibuffer-header-removed {
-  color: var(--theme-git-removed, rgba(248, 65, 61, 1));
+  contain: layout style;
 }
 
 .anyeditor .multibuffer-file-header-row,
-.anyeditor .gutter .ln.multibuffer-file-header-gutter,
-.anyeditor .buttons .bt.multibuffer-file-header-gutter,
-.anyeditor .folds .fd.multibuffer-file-header-gutter {
-
+.anyeditor-wrapper .anyeditor-sticky-header {
+  color: var(--theme-editor-foreground, var(--foreground-color, #fff));
+  background: var(--multibuffer-header-background);
+  font-family: var(--editor-font-family, monospace);
+  font-size: var(--editor-font-size, 14px);
+  font-weight: var(--editor-font-weight, 700);
+  white-space: pre;
 }
 
-.anyeditor {
-  --multibuffer-header-background: color-mix(
-    in srgb,
-    var(--background-color, #1e1e1e) 88%,
-    var(--theme-foreground, #ffffff) 12%
-  );
+.anyeditor .multibuffer-file-header-row {
+  cursor: text;
+  position: relative;
+  margin-left: calc(-1 * (var(--anycode-folds-left, 80px) + 24px));
+  padding-left: 10px;
+  z-index: 12;
+}
+
+.anyeditor .multibuffer-file-header-row .multibuffer-header,
+.anyeditor-wrapper .anyeditor-sticky-header .multibuffer-header {
+  color: var(--theme-editor-foreground, var(--foreground-color, #fff));
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+}
+
+.anyeditor .multibuffer-file-header-row .multibuffer-header-added,
+.anyeditor-wrapper .anyeditor-sticky-header .multibuffer-header-added {
+  color: var(--theme-git-added, #79c97d);
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+}
+
+.anyeditor .multibuffer-file-header-row .multibuffer-header-removed,
+.anyeditor-wrapper .anyeditor-sticky-header .multibuffer-header-removed {
+  color: var(--theme-git-removed, rgba(248, 65, 61, 1));
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+}
+
+.anyeditor,
+.anyeditor-wrapper {
+  --multibuffer-header-background: var(--background-color, #1e1e1e);
+}
+
+.anyeditor-wrapper .anyeditor-sticky-header {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: none;
+  align-items: center;
+  z-index: 25;
+  user-select: none;
+  padding-left: 10px;
+  padding-right: 16px;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.anyeditor-wrapper .anyeditor-sticky-header .sticky-header-content {
+  display: inline-flex;
+  align-items: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: pre;
+  min-width: 0;
+}
+
+.anyeditor-wrapper .anyeditor-sticky-header .sticky-header-chevron {
+  cursor: pointer;
+}
+
+.anyeditor-wrapper .anyeditor-sticky-header .sticky-header-chevron:hover {
+  opacity: 0.8;
+}
+
+.anyeditor-wrapper .anyeditor-sticky-header .sticky-header-path {
+  text-overflow: ellipsis;
+  overflow: hidden;
 }
 
 .anyeditor .gutter .ln.multibuffer-file-header-gutter,
@@ -332,6 +387,7 @@
 .anyeditor .buttons .bt,
 .anyeditor .folds .fd {
   height: var(--anycode-line-height);
+  contain: layout style;
 }
 
 .anyeditor .gutter {
