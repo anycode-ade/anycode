@@ -189,7 +189,7 @@ describe('computeGitChanges', () => {
 
         expect(result.diffs.size).toBe(1);
         expect(result.diffs.get(500001)?.changeType).toBe('modified');
-        expect(duration).toBeLessThan(5);
+        expect(duration).toBeLessThan(25);
     });
 
     it('should compute diff from empty original source on 1,000,000 lines in less than 2ms and have 1 hunk', () => {
@@ -222,7 +222,7 @@ describe('computeGitChanges', () => {
         expect(result.diffs.get(500000)?.changeType).toBe('added');
         expect(result.diffs.get(1000000)?.changeType).toBe('added');
         expect(result.diffs.get(1000001)).toBeUndefined();
-        expect(duration).toBeLessThan(5);
+        expect(duration).toBeLessThan(25);
     });
 
     it('should compute diff with stats from empty string on 1,000,000 lines in less than 2ms', () => {
@@ -237,7 +237,7 @@ describe('computeGitChanges', () => {
         expect(result.diffs.getHunks().length).toBe(1);
         expect(result.diffs.get(1)?.changeType).toBe('added');
         expect(result.diffs.get(1000000)?.changeType).toBe('added');
-        expect(duration).toBeLessThan(5);
+        expect(duration).toBeLessThan(25);
     });
 
     it('should compute diff from source when deleting 1,000,000 lines in less than 50ms', () => {

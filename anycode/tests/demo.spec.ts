@@ -571,11 +571,17 @@ test.describe('Anycode Live Demo Mode E2E Tests', () => {
         const reviewBtn = historyList.locator('.history-review-button, button:has-text("Review")').first();
         await expect(reviewBtn).toBeVisible({ timeout: 5000 });
         await reviewBtn.click();
+        await expect(page.locator('.multibuffer-panel').first()).toBeVisible({ timeout: 10000 });
         await expect(page.locator('.multibuffer-file-header-row').first()).toBeVisible({ timeout: 10000 });
+
+        // Wait for multibuffer entries to finish mounting and settle
+        await page.waitForTimeout(500);
 
         const gaps = page.locator('.multibuffer-editor-shell .diff-gap');
         await expect(gaps.first()).toBeVisible({ timeout: 10000 });
         const initialGapCount = await gaps.count();
+        expect(initialGapCount).toBeGreaterThan(0);
+
         await gaps.first().click({ timeout: 5000 });
         await expect(async () => {
             const newGapCount = await gaps.count();
