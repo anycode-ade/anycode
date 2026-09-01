@@ -15,7 +15,7 @@ export let vesper = {
     "number": "#b1fce5",
     "constant": '#f6c99f',
     "comment": "#686767",
-    "accent_color": "#b1fce5",
+    "accent_color": "#f6c99f",
     "accent_color2": "#a0a0a0"
 };
 
@@ -86,7 +86,7 @@ export let anycode = {
     "number": "#b1fce5",
     "constant": '#f6c99f',
     "comment": "#727171",
-    "accent_color": "#b1fce5",
+    "accent_color": "#A5FCB6",
     "accent_color2": "#a0a0a0"
 };
 

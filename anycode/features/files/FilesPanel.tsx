@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { TreeNodeComponent } from '../../components';
+import { TreeNodeComponent, type ChangedFile } from '../../components';
 import type { TreeNode } from '../../types';
 import { Icons } from '../../components/Icons';
 import { usePersistedScroll } from '../../hooks/usePersistedScroll';
+import { normalizePath } from '../../utils';
 
 type FilesPanelProps = {
     fileTree: TreeNode[];
     activeNodeId: string | null;
+    changedFiles?: ChangedFile[];
     focusRequestToken: number | null;
     onActivateNode: (nodeId: string) => void;
     onToggle: (nodeId: string) => void;
@@ -45,6 +47,7 @@ interface CreatingNodeState {
 export const FilesPanel = ({
     fileTree,
     activeNodeId,
+    changedFiles,
     focusRequestToken,
     onActivateNode,
     onToggle,
@@ -67,6 +70,25 @@ export const FilesPanel = ({
     const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
     const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
     const [creatingNode, setCreatingNode] = useState<CreatingNodeState | null>(null);
+
+    const gitStatusMap = useMemo(() => {
+        const map = new Map<string, string>();
+        if (!changedFiles || changedFiles.length === 0) return map;
+        for (const file of changedFiles) {
+            const norm = normalizePath(file.path).replace(/^\/+/, '');
+            const status = file.status || 'modified';
+            map.set(norm, status);
+
+            let parent = norm;
+            while (parent.includes('/')) {
+                parent = parent.substring(0, parent.lastIndexOf('/'));
+                if (!map.has(parent)) {
+                    map.set(parent, 'modified');
+                }
+            }
+        }
+        return map;
+    }, [changedFiles]);
 
     const handleNodeRef = useCallback((nodeId: string, element: HTMLDivElement | null) => {
         if (element) {
@@ -362,6 +384,7 @@ export const FilesPanel = ({
                                 node={node}
                                 activeNodeId={activeNodeId}
                                 fileIconsStyle={fileIconsStyle}
+                                gitStatusMap={gitStatusMap}
                                 onNodeRef={handleNodeRef}
                                 onActivate={onActivateNode}
                                 onToggle={onToggle}

@@ -120,6 +120,7 @@ export class AnycodeEditor {
     private goToDefinitionProvider: ((request: DefinitionRequest) => Promise<DefinitionResponse>) | null = null;
     private referencesPeekProvider: ((request: ReferencesRequest) => Promise<void>) | null = null;
     private onCursorChangeCallback: ((newCursor: Position, oldCursor: Position) => void) | null = null;
+    private onMultibufferToggleCallback: (() => void) | null = null;
     private hoverDebounceTimer: number | null = null;
     private hoverRequestToken = 0;
     private hoverPoint: Point | null = null;
@@ -330,6 +331,7 @@ export class AnycodeEditor {
                 if (this.container.scrollTop > headerScrollTop) {
                     this.container.scrollTop = headerScrollTop;
                 }
+                this.onMultibufferToggleCallback?.();
                 this.renderer.render(this.getEditorState());
             }
             if (this.onCursorChangeCallback) {
@@ -524,6 +526,12 @@ export class AnycodeEditor {
         this.readOnlyListenersAttached = true;
         this.handleScroll = this.handleScroll.bind(this);
         this.container.addEventListener("scroll", this.handleScroll);
+
+        this.handleClick = this.handleClick.bind(this);
+        this.codeContent.addEventListener('click', this.handleClick);
+        this.gutter.addEventListener('click', this.handleClick);
+        this.buttonsColumn.addEventListener('click', this.handleClick);
+        this.foldsColumn.addEventListener('click', this.handleClick);
     }
 
     public getContainer(): HTMLDivElement {
@@ -696,6 +704,10 @@ export class AnycodeEditor {
         this.onCursorChangeCallback = callback;
     }
 
+    public setOnMultibufferToggle(callback: (() => void) | null) {
+        this.onMultibufferToggleCallback = callback;
+    }
+
     private clearPendingHover() {
         if (this.hoverDebounceTimer) {
             window.clearTimeout(this.hoverDebounceTimer);
@@ -719,6 +731,7 @@ export class AnycodeEditor {
         this.handleClick = this.handleClick.bind(this);
         this.codeContent.addEventListener('click', this.handleClick);
         this.gutter.addEventListener('click', this.handleClick);
+        this.buttonsColumn.addEventListener('click', this.handleClick);
         this.foldsColumn.addEventListener('click', this.handleClick);
 
         this.handleKeydown = this.handleKeydown.bind(this);
@@ -752,6 +765,10 @@ export class AnycodeEditor {
     private removeEventListeners() {
         if (this.readOnlyListenersAttached) {
             this.container.removeEventListener("scroll", this.handleScroll);
+            this.codeContent.removeEventListener('click', this.handleClick);
+            this.gutter.removeEventListener('click', this.handleClick);
+            this.buttonsColumn.removeEventListener('click', this.handleClick);
+            this.foldsColumn.removeEventListener('click', this.handleClick);
             this.readOnlyListenersAttached = false;
         }
         if (!this.listenersAttached) return;
@@ -760,6 +777,7 @@ export class AnycodeEditor {
         this.container.removeEventListener("scroll", this.handleScroll);
         this.codeContent.removeEventListener('click', this.handleClick);
         this.gutter.removeEventListener('click', this.handleClick);
+        this.buttonsColumn.removeEventListener('click', this.handleClick);
         this.foldsColumn.removeEventListener('click', this.handleClick);
         this.codeContent.removeEventListener('keydown', this.handleKeydown);
         this.codeContent.removeEventListener('paste', this.handlePasteEvent);

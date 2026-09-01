@@ -17,7 +17,7 @@ export interface GapElementData {
 
 const gapElementDataMap = new WeakMap<HTMLElement, GapElementData>();
 
-const setGapElementData = (el: HTMLElement, data: GapElementData): void => {
+export const setGapElementData = (el: HTMLElement, data: GapElementData): void => {
     gapElementDataMap.set(el, data);
 };
 
@@ -134,7 +134,7 @@ export class DiffRenderer {
         settings: EditorSettings,
         originalText: string,
         originalNodes?: HighlighedNode[],
-        wordHighlight?: WordHighlight | null
+        wordHighlight?: WordHighlight | null,
     ): GhostLine {
         const { hunkId } = ghostRow;
         
@@ -148,17 +148,18 @@ export class DiffRenderer {
         ghostLine.originalLineIndex = ghostRow.originalLineIndex;
 
         const emptyGutter = document.createElement('div') as HTMLDivElement & GhostElement;
-        emptyGutter.className = CSS_CLASS.GUTTER;
+        emptyGutter.className = `${CSS_CLASS.GUTTER} ${CSS_CLASS.LINE_DELETED_GHOST}`;
         emptyGutter.isGhost = true;
         emptyGutter.hunkId = hunkId;
+        emptyGutter.textContent = '';
 
         const emptyButton = document.createElement('div') as HTMLDivElement & GhostElement;
-        emptyButton.className = CSS_CLASS.BUTTONS;
+        emptyButton.className = `${CSS_CLASS.BUTTONS} ${CSS_CLASS.LINE_DELETED_GHOST}`;
         emptyButton.isGhost = true;
         emptyButton.hunkId = hunkId;
 
         const emptyFold = document.createElement('div') as HTMLDivElement & GhostElement;
-        emptyFold.className = CSS_CLASS.FOLDS;
+        emptyFold.className = `${CSS_CLASS.FOLDS} ${CSS_CLASS.LINE_DELETED_GHOST}`;
         emptyFold.isGhost = true;
         emptyFold.hunkId = hunkId;
 
@@ -333,23 +334,23 @@ export class DiffRenderer {
 
         const step = Math.max(1, amount);
 
-        if (side === 'up') {
+        if (side === 'down') {
             const nextEnd = Math.min(hiddenEnd, hiddenStart + step - 1);
             this.focusedDiffExpandedRanges.push({ start: hiddenStart, end: nextEnd });
             return true;
         }
 
-        if (side === 'down') {
+        if (side === 'up') {
             const nextStart = Math.max(hiddenStart, hiddenEnd - step + 1);
             this.focusedDiffExpandedRanges.push({ start: nextStart, end: hiddenEnd });
             return true;
         }
 
         // 'both'
-        const upEnd = Math.min(hiddenEnd, hiddenStart + step - 1);
-        const downStart = Math.max(hiddenStart, hiddenEnd - step + 1);
-        this.focusedDiffExpandedRanges.push({ start: hiddenStart, end: upEnd });
-        this.focusedDiffExpandedRanges.push({ start: downStart, end: hiddenEnd });
+        const downEnd = Math.min(hiddenEnd, hiddenStart + step - 1);
+        const upStart = Math.max(hiddenStart, hiddenEnd - step + 1);
+        this.focusedDiffExpandedRanges.push({ start: hiddenStart, end: downEnd });
+        this.focusedDiffExpandedRanges.push({ start: upStart, end: hiddenEnd });
         return true;
     }
 
@@ -371,15 +372,12 @@ export class DiffRenderer {
 
 
     public clearAllDiffs(): void {
-        const gutterLines = this.gutter.querySelectorAll(`.${CSS_CLASS.GUTTER}.${CSS_CLASS.DIFF_CHANGED}, .${CSS_CLASS.GUTTER}.${CSS_CLASS.DIFF_ADDED}, .${CSS_CLASS.GUTTER}.${CSS_CLASS.DIFF_DELETED}`);
-        gutterLines.forEach((gutterLine) => {
-            gutterLine.classList.remove(CSS_CLASS.DIFF_CHANGED, CSS_CLASS.DIFF_ADDED, CSS_CLASS.DIFF_DELETED);
-        });
+        const classes = [CSS_CLASS.DIFF_CHANGED, CSS_CLASS.DIFF_ADDED, CSS_CLASS.DIFF_DELETED];
+        const selector = `.${CSS_CLASS.DIFF_CHANGED}, .${CSS_CLASS.DIFF_ADDED}, .${CSS_CLASS.DIFF_DELETED}`;
 
-        const codeLines = this.codeContent.querySelectorAll(`.${CSS_CLASS.LINE}.${CSS_CLASS.DIFF_CHANGED}, .${CSS_CLASS.LINE}.${CSS_CLASS.DIFF_ADDED}, .${CSS_CLASS.LINE}.${CSS_CLASS.DIFF_DELETED}`);
-        codeLines.forEach((codeLine: Element) => {
-            codeLine.classList.remove(CSS_CLASS.DIFF_CHANGED, CSS_CLASS.DIFF_ADDED, CSS_CLASS.DIFF_DELETED);
-        });
+        for (const container of [this.gutter, this.codeContent, this.buttonsColumn, this.foldsColumn]) {
+            container.querySelectorAll(selector).forEach((el) => el.classList.remove(...classes));
+        }
 
         // Clear all ghost lines
         this.clearAllGhostLines();
@@ -402,51 +400,26 @@ export class DiffRenderer {
     ): { code: HTMLElement; gutter: HTMLElement; btn: HTMLElement; fold: HTMLElement } {
         const code = document.createElement('div');
         code.className = `${CSS_CLASS.LINE} ${CSS_CLASS.DIFF_GAP}`;
+        code.title = `Click to expand ${row.hiddenCount} hidden ${row.hiddenCount === 1 ? 'line' : 'lines'}`;
         setGapElementData(code, {
-            hiddenStart: row.hiddenStart,
-            hiddenEnd: row.hiddenEnd,
-            expandStep: 5,
-            expandDirection: 'all',
-        });
-
-        const labelBtn = document.createElement('button');
-        labelBtn.className = `${CSS_CLASS.DIFF_GAP_EXPAND_BTN} ${CSS_CLASS.DIFF_GAP_EXPAND_BTN_LABEL}`;
-        labelBtn.type = 'button';
-        labelBtn.textContent = `${row.hiddenCount} unmodified ${row.hiddenCount === 1 ? 'line' : 'lines'}`;
-        setGapElementData(labelBtn, {
             hiddenStart: row.hiddenStart,
             hiddenEnd: row.hiddenEnd,
             expandStep: 0,
             expandDirection: 'all',
         });
-        code.appendChild(labelBtn);
+
+        const divider = document.createElement('div');
+        divider.className = 'diff-gap-divider';
+        setGapElementData(divider, {
+            hiddenStart: row.hiddenStart,
+            hiddenEnd: row.hiddenEnd,
+            expandStep: 0,
+            expandDirection: 'all',
+        });
+        code.appendChild(divider);
 
         const gutter = document.createElement('div');
         gutter.className = `${CSS_CLASS.GUTTER} ${CSS_CLASS.DIFF_GAP_GUTTER}`;
-
-        const upBtn = document.createElement('button');
-        upBtn.className = `${CSS_CLASS.DIFF_GAP_EXPAND_BTN} ${CSS_CLASS.DIFF_GAP_GUTTER_BTN} ${CSS_CLASS.DIFF_GAP_GUTTER_BTN_UP}`;
-        upBtn.type = 'button';
-        upBtn.ariaLabel = 'Expand hidden lines up';
-        setGapElementData(upBtn, {
-            hiddenStart: row.hiddenStart,
-            hiddenEnd: row.hiddenEnd,
-            expandStep: 5,
-            expandDirection: 'up',
-        });
-        gutter.appendChild(upBtn);
-
-        const downBtn = document.createElement('button');
-        downBtn.className = `${CSS_CLASS.DIFF_GAP_EXPAND_BTN} ${CSS_CLASS.DIFF_GAP_GUTTER_BTN} ${CSS_CLASS.DIFF_GAP_GUTTER_BTN_DOWN}`;
-        downBtn.type = 'button';
-        downBtn.ariaLabel = 'Expand hidden lines down';
-        setGapElementData(downBtn, {
-            hiddenStart: row.hiddenStart,
-            hiddenEnd: row.hiddenEnd,
-            expandStep: 5,
-            expandDirection: 'down',
-        });
-        gutter.appendChild(downBtn);
 
         const btn = document.createElement('div');
         btn.className = `${CSS_CLASS.BUTTONS} ${CSS_CLASS.DIFF_GAP_BTN}`;

@@ -414,10 +414,15 @@ export class MultiBufferCode extends Code {
             const entry = this.entries[row.fileIndex];
             const { added, removed } = this.getCachedFileDiff(row.fileIndex);
             const stats = formatFileStats(added, removed);
+            const collapsed = this.collapsedFiles.has(entry.id);
             return [
                 {
+                    name: `multibuffer-header-chevron ${collapsed ? 'collapsed' : 'expanded'}`,
+                    text: '  ',
+                },
+                {
                     name: 'multibuffer-header',
-                    text: `${this.collapsedFiles.has(entry.id) ? '▸' : '▾'} ${getFileName(entry.path)}`,
+                    text: getFileName(entry.path),
                 },
                 { name: 'multibuffer-header-added', text: stats.added },
                 { name: 'multibuffer-header-removed', text: stats.removed },
@@ -786,8 +791,7 @@ export class MultiBufferCode extends Code {
             const { added, removed } = this.getCachedFileDiff(fileIndex);
             const stats = formatFileStats(added, removed);
             const collapsed = this.collapsedFiles.has(entry.id);
-            const indicator = collapsed ? '▸' : '▾';
-            const header = `${indicator} ${getFileName(entry.path)}${stats.added}${stats.removed}`;
+            const header = `  ${getFileName(entry.path)}${stats.added}${stats.removed}`;
             this.rows.push({ kind: 'header', fileIndex, localLine: -1, localStart: 0, text: header, start: offset });
             this.headerInfos.push({
                 fileIndex,

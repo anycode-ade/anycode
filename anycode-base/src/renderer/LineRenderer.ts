@@ -14,6 +14,8 @@ import { EditorSettings } from "../editor";
 import { DiffInfo, DiffModel } from "../diff";
 import { DiagnosticRenderer } from "./DiagnosticRenderer";
 
+import { setGapElementData } from "./DiffRenderer";
+
 /**
  * LineRenderer is responsible for creating line elements.
  * It doesn't manage DOM or query lines - just creates elements.
@@ -155,12 +157,27 @@ export class LineRenderer {
                 div.classList.add(CSS_CLASS.DIFF_CHANGED);
             } else if (diffInfo?.changeType === 'added') {
                 div.classList.add(CSS_CLASS.DIFF_ADDED);
-            } else if (diffInfo?.changeType === 'deleted') {
-                div.classList.add(CSS_CLASS.DIFF_DELETED);
             }
         }
 
         return div;
+    }
+
+    private createGapExpandButton(
+        gap: { hiddenStart: number; hiddenEnd: number },
+        direction: 'up' | 'down'
+    ): HTMLButtonElement {
+        const btn = document.createElement('button');
+        btn.className = `${CSS_CLASS.DIFF_GAP_EXPAND_BTN} ${direction}`;
+        btn.type = 'button';
+        btn.ariaLabel = `Expand hidden lines ${direction}`;
+        setGapElementData(btn, {
+            hiddenStart: gap.hiddenStart,
+            hiddenEnd: gap.hiddenEnd,
+            expandStep: 5,
+            expandDirection: direction,
+        });
+        return btn;
     }
 
     /**
@@ -170,7 +187,9 @@ export class LineRenderer {
         lineNumber: number,
         runLines: number[],
         errorLines: Map<number, string>,
-        settings: EditorSettings
+        settings: EditorSettings,
+        gapBefore?: { hiddenStart: number; hiddenEnd: number },
+        gapAfter?: { hiddenStart: number; hiddenEnd: number },
     ): ButtonColumnElement {
         const div = document.createElement('div') as ButtonColumnElement;
         div.className = CSS_CLASS.BUTTONS;
@@ -179,14 +198,22 @@ export class LineRenderer {
         const isRun = runLines.includes(lineNumber);
 
         if (isRun) {
-            div.textContent = '▶';
-            div.title = `Run line ${lineNumber + 1}`;
-            div.style.color = '#888';
-            div.style.fontSize = '20px';
-            div.style.cursor = 'pointer';
-            div.onclick = () => {
+            const runSpan = document.createElement('span');
+            runSpan.textContent = '▶';
+            runSpan.title = `Run line ${lineNumber + 1}`;
+            runSpan.style.color = '#888';
+            runSpan.style.fontSize = '20px';
+            runSpan.style.cursor = 'pointer';
+            runSpan.onclick = () => {
                 console.log(`Run line ${lineNumber + 1}`);
             };
+            div.appendChild(runSpan);
+        }
+
+        if (gapBefore) {
+            div.appendChild(this.createGapExpandButton(gapBefore, 'up'));
+        } else if (gapAfter) {
+            div.appendChild(this.createGapExpandButton(gapAfter, 'down'));
         }
 
         return div;
@@ -204,13 +231,26 @@ export class LineRenderer {
         displayLineNumber?: number,
         binaryTokens?: Uint32Array,
         lineText?: string,
+        gapBefore?: { hiddenStart: number; hiddenEnd: number },
+        gapAfter?: { hiddenStart: number; hiddenEnd: number },
     ): RealRowElements {
         const code = this.createLineWrapper(lineNumber, nodes, errorLines, settings, diffs, wordHighlight, binaryTokens, lineText);
         const gutter = this.createLineNumber(lineNumber, settings, diffs, displayLineNumber);
-        const btn = this.createLineButtons(lineNumber, runLines, errorLines, settings);
+        const btn = this.createLineButtons(lineNumber, runLines, errorLines, settings, gapBefore, gapAfter);
         const fold = document.createElement('div') as FoldColumnElement;
         fold.className = CSS_CLASS.FOLDS;
         fold.lineNumber = lineNumber;
+
+        if (diffs) {
+            const diffInfo = diffs.get(lineNumber + 1);
+            if (diffInfo?.changeType === 'modified') {
+                btn.classList.add(CSS_CLASS.DIFF_CHANGED);
+                fold.classList.add(CSS_CLASS.DIFF_CHANGED);
+            } else if (diffInfo?.changeType === 'added') {
+                btn.classList.add(CSS_CLASS.DIFF_ADDED);
+                fold.classList.add(CSS_CLASS.DIFF_ADDED);
+            }
+        }
 
         if (foldIndicator.canFold) {
             const toggle = document.createElement('button') as FoldElement;

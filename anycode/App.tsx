@@ -662,6 +662,7 @@ const App: React.FC = () => {
                     <FilesPanel
                         fileTree={fileTree.fileTree}
                         activeNodeId={fileTree.activeNodeId}
+                        changedFiles={git.changedFiles}
                         focusRequestToken={layout.getFocusRequestToken('files')}
                         onActivateNode={fileTree.setActiveNode}
                         onToggle={fileTree.toggleNode}

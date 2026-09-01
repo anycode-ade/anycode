@@ -87,6 +87,8 @@ export class Renderer {
     private expandBufferRafId: number | null = null;
     private isFastScroll: boolean = false;
     private cursorRafId: number | null = null;
+    private gapBeforeMap: Map<number, { hiddenStart: number; hiddenEnd: number }> = new Map();
+    private gapAfterMap: Map<number, { hiddenStart: number; hiddenEnd: number }> = new Map();
 
     constructor(
         container: HTMLDivElement,
@@ -227,6 +229,8 @@ export class Renderer {
             }
         }
         this.totalGhostLines = totalGhosts;
+        this.gapBeforeMap = new Map();
+        this.gapAfterMap = new Map();
 
         // 2. Focused diff visible ranges
         const focusedRanges = this.diffRenderer.computeVisibleRanges(totalRealLines, diffs, code);
@@ -275,6 +279,8 @@ export class Renderer {
         }
 
         const segments: VisualSegment[] = [];
+        const gapBeforeMap = new Map<number, { hiddenStart: number; hiddenEnd: number }>();
+        const gapAfterMap = new Map<number, { hiddenStart: number; hiddenEnd: number }>();
         let currentVisualIndex = 0;
         let ghostIdx = 0;
         let lastRealEnd = -1;
@@ -284,13 +290,20 @@ export class Renderer {
 
             // Gap before this range?
             if (focusedRanges !== undefined && range.start > lastRealEnd + 1) {
+                const hiddenStart = lastRealEnd + 1;
+                const hiddenEnd = range.start - 1;
                 segments.push({
                     kind: 'separator',
-                    hiddenStart: lastRealEnd + 1,
-                    hiddenEnd: range.start - 1,
+                    hiddenStart,
+                    hiddenEnd,
                     startVisualIndex: currentVisualIndex,
                 });
                 currentVisualIndex += 1;
+
+                if (lastRealEnd >= 0) {
+                    gapAfterMap.set(lastRealEnd, { hiddenStart, hiddenEnd });
+                }
+                gapBeforeMap.set(range.start, { hiddenStart, hiddenEnd });
             }
 
             // Real lines within this range (handling folds and ghosts)
@@ -377,13 +390,19 @@ export class Renderer {
 
         // Trailing gap for focused diff?
         if (focusedRanges !== undefined && lastRealEnd < totalRealLines - 1) {
+            const hiddenStart = lastRealEnd + 1;
+            const hiddenEnd = totalRealLines - 1;
             segments.push({
                 kind: 'separator',
-                hiddenStart: lastRealEnd + 1,
-                hiddenEnd: totalRealLines - 1,
+                hiddenStart,
+                hiddenEnd,
                 startVisualIndex: currentVisualIndex,
             });
             currentVisualIndex += 1;
+
+            if (lastRealEnd >= 0) {
+                gapAfterMap.set(lastRealEnd, { hiddenStart, hiddenEnd });
+            }
         }
 
         // EOF ghosts (anchored after last line)
@@ -400,6 +419,8 @@ export class Renderer {
             currentVisualIndex += g.ghostCount;
         }
 
+        this.gapBeforeMap = gapBeforeMap;
+        this.gapAfterMap = gapAfterMap;
         this.visualSegments = segments;
         this.totalVisualRows = currentVisualIndex;
     }
@@ -982,13 +1003,18 @@ export class Renderer {
         const binaryTokens = code.getLineBinaryTokens(lineIndex);
         const syntaxNodes = precomputedNodes || [];
         const displayLineNumber = multibufferCode.getMultibufferLineNumber?.(lineIndex) ?? undefined;
-        const elements = this.lineRenderer.createLineElements(
-            lineIndex, syntaxNodes, errorLines, settings,
-            diffs, runLines, this.getFoldIndicator(lineIndex), state.wordHighlight,
-            displayLineNumber, binaryTokens, lineText
-        );
+        const gapBefore = this.gapBeforeMap.get(lineIndex);
+        const gapAfter = this.gapAfterMap.get(lineIndex);
         const header = multibufferCode.getMultibufferHeader?.(lineIndex);
-        if (header !== null && header !== undefined) {
+        const isHeader = header !== null && header !== undefined;
+        const rowErrorLines = isHeader ? new Map<number, string>() : errorLines;
+        const elements = this.lineRenderer.createLineElements(
+            lineIndex, syntaxNodes, rowErrorLines, settings,
+            diffs, runLines, this.getFoldIndicator(lineIndex), state.wordHighlight,
+            displayLineNumber, binaryTokens, lineText,
+            gapBefore, gapAfter
+        );
+        if (isHeader) {
             elements.code.classList.add("multibuffer-file-header-row");
             elements.code.contentEditable = "false";
             elements.gutter.classList.add("multibuffer-file-header-gutter");
@@ -1445,6 +1471,10 @@ export class Renderer {
         if (lines.length) {
             for (let i = 0; i < lines.length; i++) {
                 const lineDiv = lines[i];
+                if (lineDiv.classList.contains("multibuffer-file-header-row")) {
+                    this.lineRenderer.renderDiagnostics(lineDiv, null);
+                    continue;
+                }
                 const lineNumber = lineDiv.lineNumber;
 
                 const message = errorLines.get(lineNumber);

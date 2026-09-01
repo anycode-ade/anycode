@@ -110,6 +110,27 @@
     color: var(--text-color, #e0e0e0);
 }
 
+.tree-item-content .tree-name.git-status-modified,
+.tree-item-content.file .tree-name.git-status-modified,
+.tree-item-content.directory .tree-name.git-status-modified,
+.tree-item-content .tree-name.git-status-added,
+.tree-item-content .tree-name.git-status-untracked,
+.tree-item-content.file .tree-name.git-status-added,
+.tree-item-content.file .tree-name.git-status-untracked,
+.tree-item-content.directory .tree-name.git-status-added,
+.tree-item-content.directory .tree-name.git-status-untracked,
+.tree-item-content .tree-name.git-status-deleted,
+.tree-item-content.file .tree-name.git-status-deleted,
+.tree-item-content.directory .tree-name.git-status-deleted,
+.tree-item-content .tree-name.git-status-renamed,
+.tree-item-content.file .tree-name.git-status-renamed,
+.tree-item-content.directory .tree-name.git-status-renamed,
+.tree-item-content .tree-name.git-status-conflict,
+.tree-item-content.file .tree-name.git-status-conflict,
+.tree-item-content.directory .tree-name.git-status-conflict {
+    color: var(--theme-accent-background, #007acc);
+}
+
 .tree-size {
     color: var(--text-color-secondary, #888);
     font-size: 0.71em;

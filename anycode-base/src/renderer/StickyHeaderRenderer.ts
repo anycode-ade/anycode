@@ -175,9 +175,12 @@ export class StickyHeaderRenderer {
 
         this.currentActiveLine = current.header.line;
 
-        const chevronText = `${current.header.collapsed ? '▸' : '▾'} `;
-        if (this.chevronEl.textContent !== chevronText) {
-            this.chevronEl.textContent = chevronText;
+        const chevronClass = `sticky-header-chevron ${current.header.collapsed ? 'collapsed' : 'expanded'}`;
+        if (this.chevronEl.className !== chevronClass) {
+            this.chevronEl.className = chevronClass;
+        }
+        if (this.chevronEl.textContent !== '') {
+            this.chevronEl.textContent = '';
         }
 
         if (this.fileNameEl.textContent !== current.header.fileName) {

@@ -56,7 +56,9 @@ const ToolCallMessage: React.FC<{
     <div className="acp-message acp-message-tool_call">
       <div className={`acp-message-content ${isExpanded ? 'acp-tool-call-content-expanded' : 'acp-tool-call-content-collapsed'}`}>
         <div className="acp-tool-call-toggle" onClick={onToggle} style={{ cursor: 'pointer' }}>
-          <span className="acp-toggle-icon">{isExpanded ? '▼' : '▶'}</span>
+          <span className="acp-toggle-icon acp-tool-call-icon">
+            <Icons.TerminalBox size={14} />
+          </span>
           <div className="acp-tool-call-toggle-main">
             <div className="acp-tool-call-toggle-title">
               {toggleStats && (
@@ -1152,11 +1154,6 @@ const ThoughtMessage: React.FC<{
           onClick={shouldToggle ? onToggle : undefined}
           style={shouldToggle ? { cursor: 'pointer' } : undefined}
         >
-          {shouldToggle && (
-            <span className="acp-toggle-icon acp-thought-toggle-inline">
-              {expanded ? '▼' : '▶'}
-            </span>
-          )}
           {expanded ? (
             <div className="acp-thought-markdown">
               <MarkdownTextBlock content={message.content.trim()} />

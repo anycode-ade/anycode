@@ -353,6 +353,9 @@ const MultibufferPanel: React.FC<MultibufferPanelProps> = ({
                         const fileId = currentCodeRef.current?.getFileIdAtLine(position.line);
                         if (fileId) onActiveFileChangeRef.current?.(fileId);
                     });
+                    editor.setOnMultibufferToggle(() => {
+                        updateMultibufferErrors();
+                    });
                     initialFiles.forEach(subscribeToFile);
 
                     await editor.init();

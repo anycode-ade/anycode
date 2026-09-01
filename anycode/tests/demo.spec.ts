@@ -535,7 +535,8 @@ test.describe('Anycode Live Demo Mode E2E Tests', () => {
         await reviewBtn.click();
         const headerRow = page.locator('.multibuffer-file-header-row').first();
         await expect(headerRow).toBeVisible({ timeout: 10000 });
-        await expect(headerRow).toContainText('▾');
+        const chevron = headerRow.locator('.multibuffer-header-chevron');
+        await expect(chevron).toHaveClass(/expanded/);
 
         const firstBodyLine = page.locator('.line:not(.multibuffer-file-header-row)').first();
         await expect(firstBodyLine).toBeVisible({ timeout: 10000 });
@@ -544,7 +545,7 @@ test.describe('Anycode Live Demo Mode E2E Tests', () => {
 
         // Collapse
         await headerRow.click();
-        await expect(headerRow).toContainText('▸');
+        await expect(chevron).toHaveClass(/collapsed/);
 
         // Compare DOM line contents during collapse
         const currentBodyLinesText = await page.locator('.line:not(.multibuffer-file-header-row)').allInnerTexts();
@@ -553,25 +554,33 @@ test.describe('Anycode Live Demo Mode E2E Tests', () => {
 
         // Expand again
         await headerRow.click();
-        await expect(headerRow).toContainText('▾');
+        await expect(chevron).toHaveClass(/expanded/);
         const lineTextAfter = (await firstBodyLine.innerText()).trim();
         expect(lineTextAfter).toBe(lineTextBefore);
     });
 
-    test('should render single unmodified lines as code instead of 1-line gap buttons', async ({ page }) => {
+    test('should expand hidden diff gap lines when expand button is clicked in Multibuffer Review', async ({ page }) => {
         const historyTab = page.getByText(/^History$/i).first();
         await historyTab.click();
         const historyList = page.locator('.history-panel').getByRole('list', { name: 'Git history' });
         const firstCommit = historyList.locator('.history-commit-row').first();
+        await expect(firstCommit).toBeVisible({ timeout: 5000 });
         await firstCommit.click();
+        await page.waitForTimeout(300);
 
         const reviewBtn = historyList.locator('.history-review-button, button:has-text("Review")').first();
         await expect(reviewBtn).toBeVisible({ timeout: 5000 });
         await reviewBtn.click();
         await expect(page.locator('.multibuffer-file-header-row').first()).toBeVisible({ timeout: 10000 });
 
-        const singleLineGaps = page.locator('.diff-gap-expand-btn').filter({ hasText: /^1 unmodified line$/ });
-        await expect(singleLineGaps).toHaveCount(0);
+        const gaps = page.locator('.multibuffer-editor-shell .diff-gap');
+        await expect(gaps.first()).toBeVisible({ timeout: 10000 });
+        const initialGapCount = await gaps.count();
+        await gaps.first().click({ timeout: 5000 });
+        await expect(async () => {
+            const newGapCount = await gaps.count();
+            expect(newGapCount).toBeLessThan(initialGapCount);
+        }).toPass({ timeout: 5000 });
     });
 
     test('should show sticky file header in Multibuffer Review when scrolled down and handle clicks', async ({ page }) => {
@@ -613,12 +622,13 @@ test.describe('Anycode Live Demo Mode E2E Tests', () => {
 
         // After collapsing, the editor scrolls to the collapsed header row which now shows collapsed icon
         const firstHeaderRow = page.locator('.multibuffer-file-header-row').first();
-        await expect(firstHeaderRow).toContainText('▸');
+        const firstChevron = firstHeaderRow.locator('.multibuffer-header-chevron');
+        await expect(firstChevron).toHaveClass(/collapsed/);
         await expect(stickyHeader).toBeHidden();
 
         // Expand again by clicking the header row
         await firstHeaderRow.click();
-        await expect(firstHeaderRow).toContainText('▾');
+        await expect(firstChevron).toHaveClass(/expanded/);
 
         // Scroll down again - sticky header appears
         await editorContainer.evaluate((el) => {

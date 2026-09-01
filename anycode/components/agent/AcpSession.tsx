@@ -193,6 +193,18 @@ const useAutoScroll = (messages: AcpMessage[], isProcessing: boolean, agentId: s
     };
   }, []);
 
+  const prevAgentIdRef = useRef(agentId);
+  const isInitialSettleRef = useRef(true);
+
+  useLayoutEffect(() => {
+    prevAgentIdRef.current = agentId;
+    isInitialSettleRef.current = true;
+
+    if (contentRef.current) {
+      scrollToBottom('auto');
+    }
+  }, [agentId]);
+
   useEffect(() => {
     if (pendingAutoScrollRafRef.current !== null) {
       cancelAnimationFrame(pendingAutoScrollRafRef.current);
@@ -203,16 +215,16 @@ const useAutoScroll = (messages: AcpMessage[], isProcessing: boolean, agentId: s
       pendingAutoScrollRafRef.current = requestAnimationFrame(() => {
         pendingAutoScrollRafRef.current = null;
         if (!autoScrollEnabledRef.current) return;
-        scrollToBottom('smooth');
+        scrollToBottom('auto');
       });
     }
-  }, [messages, isProcessing]);
+  }, [messages, isProcessing, agentId]);
 
   useLayoutEffect(() => {
     if (!forceScrollAfterUpdateRef.current) return;
 
     forceScrollAfterUpdateRef.current = false;
-    scrollToBottom('smooth');
+    scrollToBottom('auto');
   }, [messages, isProcessing]);
 
   useEffect(() => {
@@ -224,7 +236,7 @@ const useAutoScroll = (messages: AcpMessage[], isProcessing: boolean, agentId: s
     const scrollAfterLayoutSettles = () => {
       settleRaf = requestAnimationFrame(() => {
         if (autoScrollEnabledRef.current) {
-          scrollToBottom('smooth');
+          scrollToBottom('auto');
         }
       });
     };
@@ -239,12 +251,12 @@ const useAutoScroll = (messages: AcpMessage[], isProcessing: boolean, agentId: s
 
     const observer = new ResizeObserver(() => {
       if (!autoScrollEnabledRef.current) return;
-      scrollToBottom('smooth');
+      scrollToBottom('auto');
     });
 
     observer.observe(innerElement);
     return () => observer.disconnect();
-  }, []);
+  }, [agentId]);
 
   const enableAutoScroll = () => {
     forceScrollAfterUpdateRef.current = true;

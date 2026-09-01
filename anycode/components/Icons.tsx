@@ -189,6 +189,13 @@ export const Icons = {
       <line x1="12" y1="19" x2="20" y2="19" />
     </svg>
   ),
+  TerminalBox: ({ size = 16 }: { size?: number }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="3" width="18" height="18" rx="4.5" stroke="currentColor" strokeWidth="2" />
+      <polyline points="7.5 8.5 11 12 7.5 15.5" stroke="currentColor" strokeWidth="2" />
+      <line x1="12.5" y1="15.5" x2="16.5" y2="15.5" stroke="currentColor" strokeWidth="2" />
+    </svg>
+  ),
   Agent: () => (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275Z" />

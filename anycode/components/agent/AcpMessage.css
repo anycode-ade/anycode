@@ -48,6 +48,11 @@
     word-break: normal;
 }
 
+.acp-message-assistant .acp-message-markdown {
+    padding-top: 6px;
+    padding-bottom: 6px;
+}
+
 
 .acp-message-markdown > :first-child {
     margin-top: 0;
@@ -371,7 +376,7 @@
 
 .acp-message-thought .acp-message-content {
     /* background-color: var(--assistant-message-bg, #2a2a2a); */
-    color: var(--text-color-secondary, #888);
+    color: var(--text-color, #ccc);
     /* border: 1px solid var(--border-color, #333); */
     font-size: 1em;
     font-style: normal;
@@ -393,6 +398,8 @@
 
 .acp-tool-call-content-collapsed {
     background-color: transparent;
+    width: fit-content;
+    max-width: min(400px, 100%);
 }
 
 .acp-tool-call-content-expanded {
@@ -550,20 +557,44 @@
 }
 
 .acp-tool-call-name {
-    font-size: 0.79em;
-    font-weight: inherit;
+    font-family: var(--editor-font-family, "JetBrains Mono", monospace);
+    font-size: inherit;
+    font-weight: 600;
     color: var(--text-color, #ccc);
+    opacity: 0.5;
     min-width: 0;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    letter-spacing: 0.1px;
+    transition: opacity 120ms ease;
+}
+
+.acp-tool-call-toggle:hover .acp-tool-call-name {
+    opacity: 0.85;
 }
 
 .acp-toggle-icon {
-    display: inline-block;
-    width: 12px;
-    font-size: 0.71em;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    height: 14px;
     color: var(--text-color-secondary, #888);
+    opacity: 0.6;
+    flex: 0 0 auto;
+    transition: opacity 120ms ease, color 120ms ease;
+}
+
+.acp-toggle-icon svg {
+    width: 14px;
+    height: 14px;
+    display: block;
+}
+
+.acp-tool-call-toggle:hover .acp-toggle-icon {
+    opacity: 0.95;
+    color: var(--text-color, #ccc);
 }
 
 .acp-tool-call-section {
@@ -641,9 +672,11 @@
     align-items: flex-start;
     gap: 6px;
     font-size: 0.79em;
-    color: var(--text-color-secondary, #888);
+    color: var(--text-color, #ccc);
+    opacity: 0.5;
     line-height: 1.4;
     white-space: pre-wrap;
+    transition: opacity 120ms ease;
 }
 
 .acp-thought-markdown,
@@ -668,9 +701,9 @@
     text-overflow: ellipsis;
 }
 
-.acp-thought-toggle-inline {
-    flex: 0 0 auto;
-    margin-top: 0.15em;
+.acp-thought-text:hover {
+    opacity: 0.85;
+    color: var(--text-color, #ccc);
 }
 
 .acp-thought-preview {

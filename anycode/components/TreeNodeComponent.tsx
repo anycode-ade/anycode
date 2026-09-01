@@ -1,6 +1,7 @@
 import React, { memo } from 'react';
 import { TreeNode } from '../types';
 import { FileIcon } from './FileIcon';
+import { normalizePath } from '../utils';
 import './TreeNodeComponent.css';
 
 interface TreeNodeComponentProps {
@@ -8,6 +9,7 @@ interface TreeNodeComponentProps {
     level?: number;
     activeNodeId: string | null;
     fileIconsStyle?: 'colored' | 'monochrome' | 'disabled';
+    gitStatusMap?: Map<string, string>;
     onNodeRef: (nodeId: string, element: HTMLDivElement | null) => void;
     onActivate: (nodeId: string) => void;
     onToggle: (nodeId: string) => void;
@@ -37,6 +39,7 @@ const TreeNodeComponentImpl: React.FC<TreeNodeComponentProps> = ({
     level = 0,
     activeNodeId,
     fileIconsStyle = 'colored',
+    gitStatusMap,
     onNodeRef,
     onActivate,
     onToggle,
@@ -156,6 +159,10 @@ const TreeNodeComponentImpl: React.FC<TreeNodeComponentProps> = ({
         onActivate(node.id);
     };
 
+    const nodeNormPath = normalizePath(node.path).replace(/^\/+/, '');
+    const gitStatus = gitStatusMap?.get(nodeNormPath);
+    const gitStatusClass = gitStatus ? `git-status-${gitStatus}` : '';
+
     return (
         <div className="tree-item">
             <div
@@ -190,7 +197,7 @@ const TreeNodeComponentImpl: React.FC<TreeNodeComponentProps> = ({
                         onClick={(e) => e.stopPropagation()}
                     />
                 ) : (
-                    <span className="tree-name" title={title} onMouseDown={(e) => e.stopPropagation()}>
+                    <span className={`tree-name ${gitStatusClass}`} title={title} onMouseDown={(e) => e.stopPropagation()}>
                         {node.name}
                     </span>
                 )}
@@ -205,6 +212,7 @@ const TreeNodeComponentImpl: React.FC<TreeNodeComponentProps> = ({
                             level={level + 1}
                             activeNodeId={activeNodeId}
                             fileIconsStyle={fileIconsStyle}
+                            gitStatusMap={gitStatusMap}
                             onNodeRef={onNodeRef}
                             onActivate={onActivate}
                             onToggle={onToggle}
@@ -233,6 +241,12 @@ const areEqual = (prev: TreeNodeComponentProps, next: TreeNodeComponentProps): b
     }
 
     if (prev.level !== next.level) {
+        return false;
+    }
+
+    const prevNorm = normalizePath(prev.node.path).replace(/^\/+/, '');
+    const nextNorm = normalizePath(next.node.path).replace(/^\/+/, '');
+    if (prev.gitStatusMap?.get(prevNorm) !== next.gitStatusMap?.get(nextNorm)) {
         return false;
     }
 

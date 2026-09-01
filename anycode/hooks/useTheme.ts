@@ -97,6 +97,40 @@ export const useTheme = ({ wsRef, isConnected }: UseThemeParams) => {
             }
         }
 
+        const isLight = theme.mode === 'light';
+        root.setAttribute('data-theme-mode', isLight ? 'light' : 'dark');
+
+        const getThemeColorSafe = (key: string, fallback: string) => (theme.colors && theme.colors[key]) || fallback;
+        const getHighlightColorSafe = (key: string, fallback: string) => (theme.highlight && theme.highlight[key]) || fallback;
+
+        const gitModified = getHighlightColorSafe('modified', getThemeColorSafe('base.yellow', isLight ? '#b08800' : '#e5c07b'));
+        const gitAdded = getHighlightColorSafe('created', getThemeColorSafe('base.green', isLight ? '#1a8c3d' : '#34a853'));
+        const gitDeleted = getHighlightColorSafe('deleted', getThemeColorSafe('base.red', isLight ? '#c72933' : '#ea4335'));
+        const gitRenamed = getHighlightColorSafe('renamed', getThemeColorSafe('base.blue', isLight ? '#0969da' : '#8ab4f8'));
+        const gitConflict = getHighlightColorSafe('conflict', getThemeColorSafe('base.yellow', isLight ? '#d97706' : '#ff9800'));
+
+        root.style.setProperty('--theme-git-modified', gitModified);
+        root.style.setProperty('--theme-git-added-strong', gitAdded);
+        root.style.setProperty('--theme-git-removed-strong', gitDeleted);
+        root.style.setProperty('--theme-git-renamed', gitRenamed);
+        root.style.setProperty('--theme-git-conflict', gitConflict);
+
+        if (isLight) {
+            root.style.setProperty('--diff-added-bg', 'rgba(184, 240, 194, 0.62)');
+            root.style.setProperty('--diff-added-gutter', '#1a8c3d');
+            root.style.setProperty('--diff-added-word-highlight', 'rgba(92, 199, 112, 0.52)');
+            root.style.setProperty('--diff-deleted-bg', 'rgba(250, 199, 204, 0.62)');
+            root.style.setProperty('--diff-deleted-gutter', '#c72933');
+            root.style.setProperty('--diff-deleted-word-highlight', 'rgba(235, 97, 107, 0.50)');
+        } else {
+            root.style.setProperty('--diff-added-bg', 'rgba(51, 115, 64, 0.28)');
+            root.style.setProperty('--diff-added-gutter', '#47c770');
+            root.style.setProperty('--diff-added-word-highlight', 'rgba(64, 166, 89, 0.48)');
+            root.style.setProperty('--diff-deleted-bg', 'rgba(122, 46, 56, 0.28)');
+            root.style.setProperty('--diff-deleted-gutter', '#eb5261');
+            root.style.setProperty('--diff-deleted-word-highlight', 'rgba(199, 51, 66, 0.48)');
+        }
+
         root.style.setProperty('--background-color', uiBackground);
         root.style.setProperty('--foreground-color', uiForeground);
     }, [applyBrowserChromeColor]);
