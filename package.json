@@ -8,6 +8,7 @@
   "license": "Apache-2.0",
   "packageManager": "pnpm@10.13.1",
   "scripts": {
+    "test": "vitest run",
     "dev:demo": "pnpm --filter anycode dev:demo",
     "build:demo": "pnpm --filter anycode build:demo",
     "test:demo": "pnpm --filter anycode test:demo"

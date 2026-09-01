@@ -11,7 +11,7 @@ import {
     type WatcherEdits,
 } from '../types';
 import { BATCH_DELAY_MS } from '../constants';
-import { getFileName, getLanguageFromFileName } from '../utils';
+import { getFileName, getLanguageFromFileName, uriToFilePath } from '../utils';
 import { loadItem, loadOpenFiles, saveItem, saveOpenFiles } from '../storage';
 import type { DiffMode } from '../types/diffMode';
 import { DEFAULT_DIFF_VIEW_MODE, getNextDiffMode } from '../types/diffMode';
@@ -115,20 +115,6 @@ const normalizeHoverResponse = (response: any): string | null => {
     }
 
     return null;
-};
-
-const uriToFilePath = (uriOrPath: string): string => {
-    if (!uriOrPath) return '';
-    if (!uriOrPath.startsWith('file://')) {
-        return uriOrPath;
-    }
-
-    const rawPath = uriOrPath.slice('file://'.length);
-    try {
-        return decodeURIComponent(rawPath);
-    } catch {
-        return rawPath;
-    }
 };
 
 
@@ -1056,19 +1042,8 @@ export const useEditors = ({ wsRef, isConnected, onFileClosed }: UseEditorsParam
                     const range = definition.range;
                     const line = range.start.line;
                     const column = range.start.character;
-                    const filePath = uri.replace('file://', '');
-                    const fileName = getFileName(filePath);
-
-                    const existingFile = filesRef.current.find((f) => f.id === filePath || f.name === fileName);
-                    if (existingFile) {
-                        setActiveFileId(existingFile.id);
-                        const editor = editorRefs.current.get(existingFile.id);
-                        if (editor) {
-                            editor.requestFocus(line, column);
-                        }
-                    } else {
-                        openFile(filePath, line, column);
-                    }
+                    const filePath = uriToFilePath(uri);
+                    openFile(filePath, line, column);
 
                     resolve(definition);
                 } else {
@@ -1285,7 +1260,7 @@ export const useEditors = ({ wsRef, isConnected, onFileClosed }: UseEditorsParam
         }
 
         if (!targetFileId) {
-            targetFileId = uri.replace('file://', '');
+            targetFileId = uriToFilePath(uri);
         }
 
         diagnosticsRef.current.set(targetFileId, diags);

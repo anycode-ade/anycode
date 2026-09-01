@@ -406,7 +406,10 @@ impl Lsp {
     }
 
     pub fn did_open(&mut self, lang: &str, path: &str, text: &str) -> Result<()> {
-        self.opened.insert(path.to_string());
+        if !self.opened.insert(path.to_string()) {
+            return Ok(());
+        }
+
         let uri = path_to_uri(path)?;
         let params = DidOpenTextDocumentParams {
             text_document: TextDocumentItem {
@@ -594,8 +597,30 @@ impl Lsp {
 
 #[cfg(test)]
 mod tests {
-
     use super::*;
+
+    #[test]
+    fn test_did_open_deduplication_and_close() {
+        let mut lsp = Lsp::new();
+        let path = "test_file.rs";
+        let lang = "rust";
+        let text = "fn main() {}";
+
+        assert!(!lsp.opened.contains(path));
+        assert!(lsp.did_open(lang, path, text).is_ok());
+        assert!(lsp.opened.contains(path));
+
+        // Repeated open is deduplicated
+        assert!(lsp.did_open(lang, path, text).is_ok());
+        assert!(lsp.opened.contains(path));
+
+        // Close removes it
+        assert!(lsp.did_close(path).is_ok());
+        assert!(!lsp.opened.contains(path));
+
+        // Repeated close is a safe no-op
+        assert!(lsp.did_close(path).is_ok());
+    }
 
     #[tokio::test]
     #[ignore]

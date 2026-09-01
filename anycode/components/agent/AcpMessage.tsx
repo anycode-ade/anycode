@@ -17,7 +17,7 @@ import {
   AcpThoughtMessage,
   AcpErrorMessage,
 } from '../../types';
-import { LANGUAGE_EXTENSIONS, EDITOR_SUPPORTED_LANGUAGES, getFileName, copyTextToClipboard } from '../../utils';
+import { LANGUAGE_EXTENSIONS, EDITOR_SUPPORTED_LANGUAGES, getFileName, copyTextToClipboard, uriToFilePath } from '../../utils';
 import './AcpMessage.css';
 
 let codeBlockIdCounter = 0;
@@ -524,7 +524,7 @@ const parseMarkdownFileHref = (href: string): ParsedFileLink | null => {
   }
 
   if (workingHref.startsWith('file://')) {
-    workingHref = decodeURIComponent(workingHref.slice('file://'.length));
+    workingHref = uriToFilePath(workingHref);
   } else if (/^[a-z][a-z0-9+.-]*:/i.test(workingHref)) {
     return null;
   }

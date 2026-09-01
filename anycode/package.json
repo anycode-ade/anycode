@@ -11,6 +11,7 @@
     "build": "rimraf ../anycode-backend/dist && vite build && cpy dist ../anycode-backend --parents",
     "build:demo": "vite build --mode demo",
     "preview": "vite preview",
+    "test": "vitest run",
     "test:demo": "playwright test"
   },
   "keywords": [],
