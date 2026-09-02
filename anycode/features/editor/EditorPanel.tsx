@@ -3,6 +3,7 @@ import { AnycodeEditor, AnycodeEditorReact } from 'anycode-react';
 import { LayoutVersionContext } from '../../components/layout/Layout';
 import type { DefinitionRequest, DefinitionResponse, HoverRequest } from 'anycode-base';
 import type { FileState, ReferencesPeekState } from '../../types';
+import type { DiffMode } from '../../types/diffMode';
 import { ReferencesPeek } from './ReferencesPeek';
 import MultibufferPanel, { type MultibufferFile } from './MultibufferPanel';
 
@@ -23,6 +24,7 @@ type EditorPanelProps = {
         openReferenceFromPeek: (paneId: string, itemIndex?: number) => void;
         handleHover?: (request: HoverRequest) => Promise<string | null>;
         handleGoToDefinition?: (request: DefinitionRequest) => Promise<DefinitionResponse>;
+        getEditorDiffMode?: (paneId: string) => DiffMode;
     };
     multibufferOpen?: boolean;
     multibufferFiles?: MultibufferFile[];
@@ -56,6 +58,7 @@ export const EditorPanel = ({
         ? (editors.referencesPeekByPane[panelKey] ?? null)
         : editors.getReferencesPeekForPane(panelKey);
     const [lastReadyEditor, setLastReadyEditor] = useState<{ id: string; state: AnycodeEditor } | null>(null);
+    const diffMode = editors.getEditorDiffMode ? editors.getEditorDiffMode(panelKey) : undefined;
 
     useEffect(() => {
         if (!paneFileId) {
@@ -99,6 +102,7 @@ export const EditorPanel = ({
                 <MultibufferPanel
                     panelKey={panelKey}
                     active={editors.activeEditorPaneId === panelKey}
+                    diffMode={diffMode}
                     files={multibufferFiles}
                     openFiles={editors.files}
                     editorStates={editors.editorStates}

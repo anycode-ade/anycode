@@ -643,6 +643,11 @@ export const useEditors = ({ wsRef, isConnected, onFileClosed }: UseEditorsParam
         const fileId = paneActiveFileIdsRef.current[paneId];
         if (!fileId) return false;
 
+        const existingRequest = editorOpenRequestsRef.current.get(fileId);
+        if (existingRequest) {
+            existingRequest.mode = mode;
+        }
+
         const editor = editorRefs.current.get(fileId);
         if (!editor) return false;
 
@@ -1043,7 +1048,9 @@ export const useEditors = ({ wsRef, isConnected, onFileClosed }: UseEditorsParam
                     const line = range.start.line;
                     const column = range.start.character;
                     const filePath = uriToFilePath(uri);
-                    openFile(filePath, line, column);
+                    const targetPaneId = activeEditorPaneIdRef.current;
+                    const currentMode = targetPaneId ? getEditorDiffMode(targetPaneId) : undefined;
+                    openFile(filePath, line, column, targetPaneId, currentMode);
 
                     resolve(definition);
                 } else {
@@ -1051,7 +1058,7 @@ export const useEditors = ({ wsRef, isConnected, onFileClosed }: UseEditorsParam
                 }
             });
         });
-    }, [wsRef, openFile]);
+    }, [wsRef, openFile, getEditorDiffMode]);
 
     const createEditor = useCallback(async (
         content: string,
@@ -1148,6 +1155,25 @@ export const useEditors = ({ wsRef, isConnected, onFileClosed }: UseEditorsParam
             initializeEditors();
         }
     }, [files, initializeEditors]);
+
+    const wasConnectedRef = useRef(false);
+
+    useEffect(() => {
+        if (isConnected && !wasConnectedRef.current && wsRef.current) {
+            const openFiles = filesRef.current.filter((file) => !isHistoricalFileId(file.id));
+            for (const file of openFiles) {
+                wsRef.current.emit('file:open', { path: file.id }, (response: any) => {
+                    if (response?.success && typeof response.original?.content === 'string') {
+                        const request = editorOpenRequestsRef.current.get(file.id);
+                        if (request) {
+                            request.originalContent = response.original.content;
+                        }
+                    }
+                });
+            }
+        }
+        wasConnectedRef.current = isConnected;
+    }, [isConnected, isHistoricalFileId, wsRef]);
 
     useEffect(() => {
         if (!wsRef.current || !isConnected || filesRef.current.length === 0) {

@@ -4,6 +4,7 @@ import { AnycodeEditor, Code, MultiBufferCode, type MultiBufferEntry, type Defin
 import type { DockviewPanelApi } from 'dockview';
 import { LayoutPanelApiContext, LayoutVersionContext } from '../../components/layout/Layout';
 import type { FileState } from '../../types';
+import type { DiffMode } from '../../types/diffMode';
 import './MultibufferPanel.css';
 
 export type MultibufferFile = {
@@ -17,6 +18,7 @@ export type MultibufferFile = {
 type MultibufferPanelProps = {
     panelKey: string;
     active: boolean;
+    diffMode?: DiffMode;
     files: MultibufferFile[];
     openFiles: FileState[];
     editorStates: ReadonlyMap<string, AnycodeEditor>;
@@ -48,6 +50,7 @@ type DeletedEntry = {
 const MultibufferPanel: React.FC<MultibufferPanelProps> = ({
     panelKey,
     active,
+    diffMode,
     files,
     openFiles,
     editorStates,
@@ -213,6 +216,11 @@ const MultibufferPanel: React.FC<MultibufferPanelProps> = ({
     }, [onCompletion, onGoToDefinition, onHover, onReferencesPeek, sharedEditor]);
 
     useEffect(() => {
+        if (!sharedEditor || !diffMode) return;
+        sharedEditor.setDiffMode(diffMode);
+    }, [diffMode, sharedEditor]);
+
+    useEffect(() => {
         generationRef.current += 1;
         return () => {
             generationRef.current += 1;
@@ -337,10 +345,11 @@ const MultibufferPanel: React.FC<MultibufferPanelProps> = ({
                         code: entry.originalCode,
                         originalCode: entry.originalCode,
                     })));
+                    const initialMode = diffMode ?? 'diff';
                     editor = new AnycodeEditor('', 'multibuffer', '', {
                         code: currentCode,
                         originalCode,
-                        focusedDiffEnabled: true,
+                        focusedDiffEnabled: initialMode === 'diff',
                         ignoreEdits,
                         codeFoldingEnabled: true,
                         scrollbarMarkersEnabled: true,
@@ -366,7 +375,7 @@ const MultibufferPanel: React.FC<MultibufferPanelProps> = ({
                     if (onGoToDefinition) {
                         editor.setGoToDefinitionProvider(onGoToDefinition);
                     }
-                    editor.setDiffMode('diff');
+                    editor.setDiffMode(initialMode);
                     setSharedEditor(editor);
                     initialFiles.forEach(({ file }) => loadedFileIdsRef.current.add(file.id));
                     updateMultibufferErrors();

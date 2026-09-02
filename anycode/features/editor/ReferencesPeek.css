@@ -106,10 +106,18 @@
 }
 
 .references-peek-preview-editor .anyeditor .buttons,
-.references-peek-preview-editor .anyeditor .gutter {
+.references-peek-preview-editor .anyeditor .gutter,
+.references-peek-preview-editor .anyeditor .folds {
+    background: transparent !important;
     opacity: 0.72;
     position: relative;
     left: auto;
+}
+
+.references-peek-preview-editor .anyeditor .gutter .ln,
+.references-peek-preview-editor .anyeditor .buttons .bt,
+.references-peek-preview-editor .anyeditor .folds .fd {
+    background: transparent !important;
 }
 
 .references-peek-preview-editor .anyeditor.readonly .buttons {
@@ -117,6 +125,10 @@
 }
 
 .references-peek-preview-editor .anyeditor.readonly .gutter {
+    display: block;
+}
+
+.references-peek-preview-editor .anyeditor.readonly .folds {
     display: block;
 }
 

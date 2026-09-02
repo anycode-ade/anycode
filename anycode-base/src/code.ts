@@ -414,38 +414,38 @@ export class Code {
             endIndex: number;
             name: string;
         }> = [];
-    
+
         for (const capture of captures) {
             if (!capture.name.startsWith("injection.content.")) continue;
-    
+
             const injectionLanguage = capture.name.slice("injection.content.".length);
-            if (!this.injection_parsers.has(injectionLanguage) || 
+            if (!this.injection_parsers.has(injectionLanguage) ||
                 !this.injection_queries.has(injectionLanguage)) continue;
-    
+
             // ---- cache key ----
             const key = `${injectionLanguage}:${capture.node.startIndex}-${capture.node.endIndex}`;
             if (this.injectionCache.has(key)) {
                 injectionCaptures.push(...this.injectionCache.get(key)!);
                 continue;
             }
-    
+
             const injectionParser = this.injection_parsers.get(injectionLanguage)!;
             const injectionQuery = this.injection_queries.get(injectionLanguage)!;
             const injectionContent = this.getIntervalContent2(
-                capture.node.startIndex, 
+                capture.node.startIndex,
                 capture.node.endIndex
             );
-    
+
             const injectionTree = injectionParser.parse(injectionContent);
             if (!injectionTree) continue;
             const injectionTreeCaptures = injectionQuery.captures(injectionTree.rootNode);
-    
+
             const results = injectionTreeCaptures.map(ic => ({
                 startIndex: capture.node.startIndex + ic.node.startIndex,
                 endIndex: capture.node.startIndex + ic.node.endIndex,
                 name: ic.name
             }));
-    
+
             // save to cache
             this.injectionCache.set(key, results);
             injectionCaptures.push(...results);
@@ -754,7 +754,7 @@ export class Code {
         this.tree = newTree || undefined;
         this.foldRangesInvalidated = true;
     }
-    
+
     tx() {
         this.changeActive = true;
         this.changeEdits = [];
@@ -770,8 +770,8 @@ export class Code {
 
     commit() {
         if (this.changeActive) {
-            let change = { 
-                edits: this.changeEdits, 
+            let change = {
+                edits: this.changeEdits,
                 stateBefore:  this.changeStateBefore,
                 stateAfter:  this.changeStateAfter,
             } as Change;
@@ -996,7 +996,7 @@ export class Code {
             this.linesCache.set(line, binary);
             return binary;
         }
-    
+
         const captures = this.query.captures(
             this.tree.rootNode,
             {
@@ -1004,16 +1004,16 @@ export class Code {
                 endPosition: { row: line + 1, column: 0 }
             }
         );
-    
+
         const injectionCapturesArray = this.hasInjections
             ? this.buildInjectionCaptures(captures)
             : [];
-    
+
         const lineNodes: HighlighedNode[] = [];
         let lastCapture: HighlighedNode | null = null;
-    
+
         let bytesCounter = this.buffer.getOffsetAt(line + 1, 1);
-    
+
         const appendNode = (name: string | null, text: string) => {
             if (lastCapture && lastCapture.name === name && (!name || !name.includes('bracket'))) {
                 lastCapture.text += text;
@@ -1028,7 +1028,7 @@ export class Code {
             column += len;
             bytesCounter += len;
         };
-        
+
         for (; column < lineText.length;) {
             // Pick the narrowest capture range that contains current byte position.
             // This preserves nested/specific highlight precedence without sorting in the hot path.
@@ -1048,7 +1048,7 @@ export class Code {
                 const injectionData = injectionCapturesArray.find(
                     inj => bytesCounter >= inj.startIndex && bytesCounter < inj.endIndex
                 );
-    
+
                 if (injectionData) {
                     const textLength = injectionData.endIndex - injectionData.startIndex;
                     const text = lineText.substring(column, column + textLength);
@@ -1067,7 +1067,7 @@ export class Code {
                 const captureEnd = capture.node.endPosition.row !== line
                     ? lineText.length
                     : capture.node.endPosition.column;
-    
+
                 const text = lineText.substring(column, captureEnd);
                 appendNode(capture.name, text);
                 advance(text.length);
@@ -1077,11 +1077,11 @@ export class Code {
                 advance(1);
             }
         }
-    
+
         if (lineNodes.length === 0) {
             lineNodes.push({ name: null, text: lineText || "\u200B" });
         }
-    
+
         const binary = BinaryTokens.encode(lineNodes);
         this.linesCache.set(line, binary);
         return binary;
@@ -1222,7 +1222,7 @@ export class Code {
         }
 
         // Multiline search: find matches line by line
-        // Strategy: 
+        // Strategy:
         // 1. Find first line pattern anywhere in document lines
         // 2. Verify subsequent lines match exactly (for intermediate lines)
         // 3. Last line must start with pattern or match exactly
@@ -1238,10 +1238,10 @@ export class Code {
             while ((columnIndex = firstLineText.indexOf(firstLinePattern, columnIndex)) !== -1) {
                 // Verify that all remaining pattern lines match sequentially
                 let allLinesMatch = true;
-                
+
                 for (let i = 0; i < remainingLines.length; i++) {
                     const checkLineIndex = startLineIndex + i + 1;
-                    
+
                     // Ensure we have enough lines remaining in document
                     if (checkLineIndex >= this.linesLength()) {
                         allLinesMatch = false;
@@ -1250,13 +1250,13 @@ export class Code {
 
                     const checkLineText = this.line(checkLineIndex);
                     const patternLine = remainingLines[i];
-                    
+
                     // Matching rules:
                     // - Intermediate lines: must match exactly
                     // - Last line: must start with pattern or match exactly
                     if (i === remainingLines.length - 1) {
                         // Last line: flexible matching (starts with or exact match)
-                        if (!checkLineText.startsWith(patternLine) && 
+                        if (!checkLineText.startsWith(patternLine) &&
                             checkLineText !== patternLine) {
                             allLinesMatch = false;
                             break;
@@ -1402,10 +1402,10 @@ export class Code {
             : this.findMatchingOpen(bracketOffset, line, column, openChar, closeChar);
     }
 
-    private findBracketAtPosition(pos: Point | number): { 
-        line: number; 
-        column: number; 
-        char: string; 
+    private findBracketAtPosition(pos: Point | number): {
+        line: number;
+        column: number;
+        char: string;
         offset: number;
     } | null {
         const point: Point = typeof pos === 'number' ? this.getPoint(pos) : pos;
@@ -1450,7 +1450,7 @@ export class Code {
                 current = current.parent;
             }
         } catch (e) {
-            
+
         }
         return false;
     }
