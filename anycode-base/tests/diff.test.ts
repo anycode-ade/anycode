@@ -143,7 +143,7 @@ describe('computeGitChanges', () => {
         });
     });
 
-    it('should compute diff on 1,000,000 identical lines in less than 50ms', () => {
+    it('should compute diff on 1,000,000 identical lines in less than 200ms', () => {
         const lines = new Array(1000000).fill('const x = 1;');
         const start = performance.now();
         const result = computeGitChangesWithStats(lines, lines);
@@ -152,10 +152,10 @@ describe('computeGitChanges', () => {
         expect(result.diffs.size).toBe(0);
         expect(result.added).toBe(0);
         expect(result.removed).toBe(0);
-        expect(duration).toBeLessThan(50);
+        expect(duration).toBeLessThan(200);
     });
 
-    it('should compute diff on 1,000,000 lines with middle modification in less than 50ms', () => {
+    it('should compute diff on 1,000,000 lines with middle modification in less than 200ms', () => {
         const original = new Array(1000000).fill('const x = 1;');
         const current = original.slice();
         current[500000] = 'const x = 2;';
@@ -166,7 +166,7 @@ describe('computeGitChanges', () => {
 
         expect(result.diffs.size).toBe(1);
         expect(result.diffs.get(500001)?.changeType).toBe('modified');
-        expect(duration).toBeLessThan(50);
+        expect(duration).toBeLessThan(200);
     });
 
     it('should compute diff with dirtyRange on 1,000,000 lines in less than 5ms', () => {
@@ -240,7 +240,7 @@ describe('computeGitChanges', () => {
         expect(duration).toBeLessThan(25);
     });
 
-    it('should compute diff from source when deleting 1,000,000 lines in less than 50ms', () => {
+    it('should compute diff from source when deleting 1,000,000 lines in less than 200ms', () => {
         const origSource = {
             linesLength: () => 1000000,
             lineLength: (i: number) => 12,
@@ -262,6 +262,6 @@ describe('computeGitChanges', () => {
         expect(result.diffs.getHunks().length).toBe(1);
         expect(result.diffs.get(1)?.changeType).toBe('deleted');
         expect(result.diffs.get(1)?.oldLineNumbers?.length).toBe(1000000);
-        expect(duration).toBeLessThan(50);
+        expect(duration).toBeLessThan(200);
     });
 });

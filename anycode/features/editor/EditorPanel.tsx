@@ -25,6 +25,7 @@ type EditorPanelProps = {
         handleHover?: (request: HoverRequest) => Promise<string | null>;
         handleGoToDefinition?: (request: DefinitionRequest) => Promise<DefinitionResponse>;
         getEditorDiffMode?: (paneId: string) => DiffMode;
+        editorDiffModeByPane?: Readonly<Record<string, DiffMode>>;
     };
     multibufferOpen?: boolean;
     multibufferFiles?: MultibufferFile[];
@@ -58,7 +59,8 @@ export const EditorPanel = ({
         ? (editors.referencesPeekByPane[panelKey] ?? null)
         : editors.getReferencesPeekForPane(panelKey);
     const [lastReadyEditor, setLastReadyEditor] = useState<{ id: string; state: AnycodeEditor } | null>(null);
-    const diffMode = editors.getEditorDiffMode ? editors.getEditorDiffMode(panelKey) : undefined;
+    const explicitDiffMode = editors.editorDiffModeByPane?.[panelKey];
+    const diffMode = explicitDiffMode ?? (multibufferOpen ? 'diff' : (editors.getEditorDiffMode ? editors.getEditorDiffMode(panelKey) : undefined));
 
     useEffect(() => {
         if (!paneFileId) {

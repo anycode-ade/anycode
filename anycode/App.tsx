@@ -294,6 +294,7 @@ const App: React.FC = () => {
             delete next[paneId];
             return next;
         });
+        editors.setEditorDiffMode(paneId, 'plain');
     });
 
     const handleOpenMultibuffer = useEvent(() => {
@@ -304,6 +305,7 @@ const App: React.FC = () => {
 
         closeReview(paneId);
         editors.setActiveEditorPaneId(paneId);
+        editors.setEditorDiffMode(paneId, 'diff');
         const files = toMultibufferFiles(git.changedFiles);
         setMultibufferReviews((previous) => ({
             ...previous,

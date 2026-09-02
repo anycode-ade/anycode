@@ -1520,6 +1520,7 @@ export const useEditors = ({ wsRef, isConnected, onFileClosed }: UseEditorsParam
         getEditorDiffMode,
         setEditorDiffMode,
         cycleEditorDiffMode,
+        editorDiffModeByPane,
         editorStates,
         keepPreviousEditorByPane,
         closeFile,
