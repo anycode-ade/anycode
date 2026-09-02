@@ -2,6 +2,25 @@
 
 All notable changes are documented here by release tag.
 
+## v0.0.28 - 2026-09-03
+
+### Highlights
+- Major rendering performance optimizations: binary token encoding, elimination of forced reflows, and sparse ghost index.
+- Sticky file headers, point-based coordinates, transaction support, and diff mode controls for multibuffer review.
+- Fixed multibuffer cursor desync, focus sync, and scroll retention across panel switches.
+- Fixed LSP document navigation, Windows URI parsing, and preserved diff mode on definition navigation.
+- Added copy buttons to ACP markdown code blocks, collapsible long chat messages, and refined auto-scroll.
+- Added virtual scrolling to the git changes panel and fixed scrollbar thumb geometry on resize/zoom.
+
+### Commits
+- `27042ba` feat(editor): propagate diff mode to multibuffer and restore original content on reconnect
+- `9689bf3` fix(lsp): document navigation and Windows URI parsing
+- `5840da8` feat(editor): implement sticky file headers for multibuffer review and integration tests
+- `3a4eaba` feat(editor): point-based coordinate migration, multibuffer transactions, and test suite
+- `6873538` perf: eliminate forced reflows, implement binary tokens, and optimize virtual scrolling
+- `1917403` feat(changes-panel): implement virtual scrolling and fix header stats layout
+- `da11ffb` Add copy button for markdown code blocks in ACP messages
+
 ## v0.0.27 - 2026-08-12
 
 ### Highlights
