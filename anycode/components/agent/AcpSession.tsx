@@ -1,16 +1,21 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   AcpMessage,
+  type AcpAvailableCommand,
   type AcpContextUsageMessage,
   type AcpModelSelectorMessage,
   type AcpPromptAttachment,
   type AcpReasoningSelectorMessage,
   type AcpSelectOption,
+  type FileSearchResult,
+  type OpenFileInfo,
+  type WorkspaceFileInfo,
 } from '../../types';
 import './AcpSession.css';
 import { AcpInput } from './AcpInput';
 import { AcpMessages } from './AcpMessages';
 import { AcpIcons } from './AcpIcons';
+import { AgentIcon } from './AgentIcon';
 import { loadItem, saveItem } from '../../storage';
 import { usePersistedScroll } from '../../hooks/usePersistedScroll';
 
@@ -307,10 +312,22 @@ interface AcpSessionProps {
   title: string;
   isConnected: boolean;
   isProcessing?: boolean;
+  isStarting?: boolean;
+  startError?: string;
   messages: AcpMessage[];
   modelSelector?: Omit<AcpModelSelectorMessage, 'role'>;
   reasoningSelector?: Omit<AcpReasoningSelectorMessage, 'role'>;
   contextUsage?: Omit<AcpContextUsageMessage, 'role'>;
+  availableCommands?: AcpAvailableCommand[];
+  getOpenFiles?: () => OpenFileInfo[];
+  getRootFiles?: () => WorkspaceFileInfo[];
+  onSearchFiles?: (query: string) => Promise<FileSearchResult[]>;
+  authRequired?: {
+    methods: Array<{ id: string; name: string; description?: string }>;
+  };
+  isAuthenticating?: boolean;
+  pendingAuthMethod?: string;
+  onAuthenticate?: (agentId: string, methodId: string) => void;
   onFocusPane: () => void;
   onSendPrompt: (agentId: string, prompt: string, attachments?: AcpPromptAttachment[]) => void;
   onCancelPrompt: (agentId: string) => void;
@@ -327,10 +344,20 @@ const AcpSessionComponent: React.FC<AcpSessionProps> = ({
   title,
   isConnected,
   isProcessing = false,
+  isStarting = false,
+  startError,
   messages,
   modelSelector,
   reasoningSelector,
   contextUsage,
+  availableCommands,
+  getOpenFiles,
+  getRootFiles,
+  onSearchFiles,
+  authRequired,
+  isAuthenticating = false,
+  pendingAuthMethod: _pendingAuthMethod,
+  onAuthenticate,
   onFocusPane,
   onSendPrompt,
   onCancelPrompt,
@@ -590,7 +617,7 @@ const AcpSessionComponent: React.FC<AcpSessionProps> = ({
   }, [agentId]);
 
   const handleSend = useCallback((attachments: AcpPromptAttachment[] = []) => {
-    if ((inputValue.trim() || attachments.length > 0) && isConnected) {
+    if ((inputValue.trim() || attachments.length > 0) && isConnected && !isStarting) {
       enableAutoScroll();
       onSendPrompt(agentId, inputValue.trim(), attachments);
       setInputValues((prev) => {
@@ -604,7 +631,7 @@ const AcpSessionComponent: React.FC<AcpSessionProps> = ({
         };
       });
     }
-  }, [agentId, enableAutoScroll, inputValue, isConnected, onSendPrompt]);
+  }, [agentId, enableAutoScroll, inputValue, isConnected, isStarting, onSendPrompt]);
 
   const handleCancel = useCallback(() => {
     onCancelPrompt(agentId);
@@ -630,6 +657,47 @@ const AcpSessionComponent: React.FC<AcpSessionProps> = ({
       onMouseEnter={() => { pointerInsideRef.current = true; }}
       onMouseLeave={() => { pointerInsideRef.current = false; }}
     >
+      {authRequired && !isStarting && (
+        <div className="acp-auth-banner" role="region" aria-label="Authentication required">
+          <div className="acp-auth-header">
+            <div className="acp-auth-icon">
+              {isAuthenticating ? (
+                <div className="acp-auth-spinner" />
+              ) : (
+                <AcpIcons.Lock />
+              )}
+            </div>
+            <div className="acp-auth-info">
+              <div className="acp-auth-title">
+                {isAuthenticating
+                  ? `Authenticating to ${title}…`
+                  : `Authenticate to ${title}`}
+              </div>
+              <div className="acp-auth-description">
+                {isAuthenticating
+                  ? 'Please complete sign-in in your browser, or wait for authentication to finish.'
+                  : 'Authentication is required to use this agent. Choose an authentication method below:'}
+              </div>
+            </div>
+          </div>
+          {!isAuthenticating && (
+            <div className="acp-auth-actions">
+              {authRequired.methods.map((method, index) => (
+                <button
+                  key={method.id}
+                  className={`acp-auth-btn${index === 0 ? ' primary' : ''}`}
+                  onClick={() => onAuthenticate?.(agentId, method.id)}
+                  title={method.description}
+                  disabled={isAuthenticating}
+                >
+                  {method.name}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="acp-session-content">
         {searchOpen ? (
           <div className="acp-search-bar" role="search">
@@ -693,22 +761,59 @@ const AcpSessionComponent: React.FC<AcpSessionProps> = ({
         ) : null}
         <div className="acp-messages" ref={contentRef}>
           <div className="acp-messages-inner" ref={innerRef}>
-            <AcpMessages
-              messages={messages}
-              toolCalls={EMPTY_ARRAY}
-              expandedToolCalls={expandedToolCalls}
-              expandedToolResults={expandedToolResults}
-              expandedThoughts={searchExpandedThoughts}
-              activeSearchMessageIndex={activeSearchMessageIndex}
-              onWorkGroupExpansionChange={handleWorkGroupExpansionChange}
-              onUserMessageToggle={disableAutoScroll}
-              onToggleToolCall={handleToggleToolCall}
-              onToggleToolResult={handleToggleToolResult}
-              onToggleThought={handleToggleThought}
-              onUndoMessage={handleUndoMessage}
-              onOpenFile={onOpenFile}
-              onOpenFileDiff={onOpenFileDiff}
-            />
+            {isStarting && (
+              <div className="acp-session-starting" role="status" aria-live="polite">
+                <div className="acp-session-starting-content">
+                  <div className="acp-session-starting-icon-container">
+                    <AgentIcon name={title} id={agentId} size={44} className="acp-session-starting-icon" />
+                  </div>
+                  <div className="acp-session-starting-title">Starting {title}…</div>
+                  <div className="acp-session-starting-status">Connecting to ACP server and preparing session</div>
+                  <div className="acp-session-starting-dots" aria-hidden="true">
+                    <span />
+                    <span />
+                    <span />
+                  </div>
+                </div>
+              </div>
+            )}
+            {startError && (
+              <div className="acp-session-starting acp-session-error" role="alert">
+                <div className="acp-session-starting-content">
+                  <div className="acp-session-starting-icon-container error">
+                    <AgentIcon name={title} id={agentId} size={42} className="acp-session-starting-icon" />
+                  </div>
+                  <div className="acp-session-starting-title">Failed to start {title}</div>
+                  <div className="acp-session-starting-status error-message">{startError}</div>
+                  <button
+                    type="button"
+                    className="acp-auth-btn primary"
+                    style={{ marginTop: 12 }}
+                    onClick={() => onCloseAgent(agentId)}
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+            )}
+            {!isStarting && !startError && (
+              <AcpMessages
+                messages={messages}
+                toolCalls={EMPTY_ARRAY}
+                expandedToolCalls={expandedToolCalls}
+                expandedToolResults={expandedToolResults}
+                expandedThoughts={searchExpandedThoughts}
+                activeSearchMessageIndex={activeSearchMessageIndex}
+                onWorkGroupExpansionChange={handleWorkGroupExpansionChange}
+                onUserMessageToggle={disableAutoScroll}
+                onToggleToolCall={handleToggleToolCall}
+                onToggleToolResult={handleToggleToolResult}
+                onToggleThought={handleToggleThought}
+                onUndoMessage={handleUndoMessage}
+                onOpenFile={onOpenFile}
+                onOpenFileDiff={onOpenFileDiff}
+              />
+            )}
             {showWorkingIndicator && (
               <div
                 className={`acp-chat-working${isWorkingIndicatorExiting ? ' acp-chat-working-exiting' : ''}`}
@@ -744,12 +849,17 @@ const AcpSessionComponent: React.FC<AcpSessionProps> = ({
         onCancel={handleCancel}
         agentLabel={title}
         onCloseAgent={handleCloseAgent}
-        isConnected={isConnected}
+        isConnected={isConnected && !authRequired}
+        isStarting={isStarting}
         isProcessing={isProcessing}
         showProcessingDots={!autoScrollEnabled}
         modelSelector={modelSelector}
         reasoningSelector={reasoningSelector}
         contextUsage={contextUsage}
+        availableCommands={availableCommands}
+        getOpenFiles={getOpenFiles}
+        getRootFiles={getRootFiles}
+        onSearchFiles={onSearchFiles}
         onSelectModel={handleSelectModel}
         onSelectReasoning={handleSelectReasoning}
       />

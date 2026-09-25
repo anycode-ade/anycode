@@ -5,6 +5,7 @@ import type { Change, Position } from '../../anycode-base/src/code';
 import {
     type CursorHistory,
     type FileState,
+    type OpenFileInfo,
     type PendingBatch,
     type ReferencesPeekItem,
     type ReferencesPeekState,
@@ -1502,8 +1503,19 @@ export const useEditors = ({ wsRef, isConnected, onFileClosed }: UseEditorsParam
         }
     }, [flushChanges]);
 
+    const getOpenFiles = useCallback((): OpenFileInfo[] => {
+        return filesRef.current
+            .filter((f) => f.source?.type !== 'git')
+            .map((f) => ({
+                id: f.id,
+                name: f.name,
+                path: f.source?.path ?? f.id,
+            }));
+    }, []);
+
     return {
         files,
+        getOpenFiles,
         closeFilesUnderPath,
         renameFilesUnderPath,
         activeFile,

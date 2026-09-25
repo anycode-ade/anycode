@@ -24,9 +24,9 @@
     display: flex;
     flex-wrap: wrap;
     justify-content: center;
-    align-items: center;
-    gap: 10px;
-    width: min(640px, 100%);
+    align-items: stretch;
+    gap: 12px;
+    width: min(720px, 100%);
     margin: 10px auto 20px;
 }
 
@@ -41,14 +41,14 @@
         var(--theme-foreground, #ffffff) 6%
     );
     color: var(--theme-tab-foreground, #a0a0a0);
-    padding: 16px 12px;
-    border-radius: 8px;
+    padding: 14px 10px;
+    border-radius: 10px;
     cursor: pointer;
     font-size: 0.86em;
     font-weight: inherit;
-    flex: 1 1 105px;
-    max-width: 115px;
-    aspect-ratio: 1.15;
+    flex: 0 1 126px;
+    width: 126px;
+    min-height: 108px;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -59,20 +59,50 @@
 }
 
 .acp-agent-btn-icon {
-    width: 18px;
-    height: 18px;
+    width: 22px;
+    height: 22px;
     flex-shrink: 0;
     display: block;
     transition: transform 0.22s cubic-bezier(0.4, 0, 0.2, 1), color 0.22s ease;
 }
 
-.acp-pane-empty-action span {
+.acp-pane-action-info {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    width: 100%;
+    min-width: 0;
+}
+
+.acp-pane-action-title {
     font-size: 0.82em;
+    line-height: 1.25;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    word-break: break-word;
+    max-width: 100%;
+    color: var(--theme-foreground, #ececec);
     transition: color 0.22s ease;
+}
+
+.acp-pane-action-account-badge {
+    font-size: 0.72em;
+    font-weight: 600;
+    padding: 2px 7px;
+    border-radius: 4px;
+    background: color-mix(in srgb, var(--theme-accent-background, #3186ff) 20%, transparent);
+    color: var(--theme-accent-background, #64afff);
+    border: 1px solid color-mix(in srgb, var(--theme-accent-background, #3186ff) 40%, transparent);
+    max-width: 100%;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    max-width: 100%;
+    line-height: 1.2;
+    letter-spacing: 0.02em;
 }
 
 .acp-pane-empty-action:hover {
@@ -153,20 +183,25 @@
     align-items: center;
     justify-content: flex-start;
     gap: 8px;
-    flex: 1 1 130px;
-    max-width: 150px;
+    flex: 0 1 auto;
+    max-width: 340px;
     white-space: nowrap;
     transition: all 0.22s cubic-bezier(0.4, 0, 0.2, 1);
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
 }
 
-.acp-pane-opened-agent span {
+.acp-pane-opened-name {
     font-size: 0.82em;
-    transition: color 0.22s ease;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    max-width: 100%;
+    max-width: 180px;
+}
+
+.acp-pane-opened-badge {
+    margin-left: 2px;
+    max-width: 120px;
+    flex-shrink: 0;
 }
 
 .acp-pane-opened-agent:hover {
@@ -298,11 +333,17 @@
 }
 
 .acp-pane-settings-wrap {
-    margin-top: 15px;
-    padding-top: 5px;
+    margin-top: 16px;
+    padding-top: 4px;
     display: flex;
-    justify-content: center;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
     width: 100%;
+}
+
+.acp-pane-settings-wrap .acp-pane-settings-btn {
+    min-width: 144px;
 }
 
 @media (max-width: 768px) {

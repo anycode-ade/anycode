@@ -5,7 +5,7 @@ use tracing::{error, info};
 
 use crate::app_state::{AppState, is_language_opened};
 use crate::handlers::{
-    acp_handler::*, git_handler::*, io_handler::*, lsp_handler::*, search_handler::*,
+    acp_handler::*, acp_registry_handler::*, git_handler::*, io_handler::*, lsp_handler::*, search_handler::*,
     terminal_handler::*, theme_handler::*,
 };
 
@@ -38,6 +38,7 @@ pub async fn handle_connect(socket: SocketRef, _state: State<AppState>) {
     socket.on("terminal:reconnect", handle_terminal_reconnect);
 
     socket.on("acp:start", handle_acp_start);
+    socket.on("acp:authenticate", handle_acp_authenticate);
     socket.on("acp:prompt", handle_acp_prompt);
     socket.on("acp:stop", handle_acp_stop);
     socket.on("acp:cancel", handle_acp_cancel);
@@ -47,6 +48,14 @@ pub async fn handle_connect(socket: SocketRef, _state: State<AppState>) {
     socket.on("acp:sessions_list", handle_acp_sessions_list);
     socket.on("acp:reconnect", handle_acp_reconnect);
     socket.on("acp:undo", handle_acp_undo);
+
+    socket.on("acp:registry:list", handle_acp_registry_list);
+    socket.on("acp:registry:install", handle_acp_registry_install);
+    socket.on("acp:registry:cancel", handle_acp_registry_cancel);
+    socket.on("acp:registry:uninstall", handle_acp_registry_uninstall);
+
+    socket.on("acp:agents:get", handle_acp_agents_get);
+    socket.on("acp:agents:save", handle_acp_agents_save);
 
     socket.on("git:status", handle_git_status);
     socket.on("git:file-original", handle_git_file_original);

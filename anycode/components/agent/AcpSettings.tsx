@@ -1,5 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { AcpAgent, type AcpSessionSummary } from '../../types';
+import {
+  getProfileEnvForAgent,
+  getRootAgentId,
+  KNOWN_PROFILE_TEMPLATES,
+  GENERIC_PROFILE_TEMPLATE,
+} from '../../agents';
 import './AcpSettings.css';
 import { AcpIcons } from './AcpIcons';
 
@@ -10,6 +16,7 @@ interface AcpSettingsProps {
   onClose: () => void;
   onLoadSessions: (agent: AcpAgent) => Promise<AcpSessionSummary[]>;
   onResumeSession: (agent: AcpAgent, sessionId: string) => void;
+  onOpenRegistry?: () => void;
 }
 
 export const AcpSettings: React.FC<AcpSettingsProps> = ({
@@ -19,6 +26,7 @@ export const AcpSettings: React.FC<AcpSettingsProps> = ({
   onClose,
   onLoadSessions,
   onResumeSession,
+  onOpenRegistry,
 }) => {
   const [agents, setAgents] = useState<AcpAgent[]>(initialAgents);
   const [defaultAgentId, setDefaultAgentId] = useState<string | null>(initialDefaultAgentId);
@@ -40,11 +48,15 @@ export const AcpSettings: React.FC<AcpSettingsProps> = ({
       return (
         agent.id !== initialAgent.id ||
         agent.name !== initialAgent.name ||
+        agent.profile !== initialAgent.profile ||
         agent.command !== initialAgent.command ||
-        JSON.stringify(agent.args) !== JSON.stringify(initialAgent.args)
+        JSON.stringify(agent.args) !== JSON.stringify(initialAgent.args) ||
+        JSON.stringify(agent.env) !== JSON.stringify(initialAgent.env)
       );
     });
   }, [agents, defaultAgentId, initialAgents, initialDefaultAgentId]);
+
+  const [envInputs, setEnvInputs] = useState<Record<string, string>>({});
 
   // Update state when props change (e.g., when ensureDefaultAgents is called)
   useEffect(() => {
@@ -53,6 +65,7 @@ export const AcpSettings: React.FC<AcpSettingsProps> = ({
     setExpandedSessions({});
     setSessionsByAgent({});
     setLoadingSessions({});
+    setEnvInputs({});
   }, [initialAgents, initialDefaultAgentId]);
 
   // Generate ID from name: lowercase, replace spaces with hyphens, remove special chars
@@ -83,7 +96,16 @@ export const AcpSettings: React.FC<AcpSettingsProps> = ({
 
   const handleAgentChange = (index: number, field: keyof AcpAgent, value: string | string[]) => {
     const newAgents = [...agents];
-    newAgents[index] = { ...newAgents[index], [field]: value };
+    const current = newAgents[index];
+    let updated = { ...current, [field]: value };
+    if (field === 'name' && typeof value === 'string' && current.id.startsWith('new-agent')) {
+      const existingIds = newAgents.filter((_, i) => i !== index).map(a => a.id);
+      const generatedId = generateIdFromName(value, existingIds);
+      if (generatedId) {
+        updated.id = generatedId;
+      }
+    }
+    newAgents[index] = updated;
     setAgents(newAgents);
   };
 
@@ -98,6 +120,37 @@ export const AcpSettings: React.FC<AcpSettingsProps> = ({
     setAgents(newAgents);
   };
 
+  const getEnvString = (agent: AcpAgent) => {
+    if (envInputs[agent.id] !== undefined) {
+      return envInputs[agent.id];
+    }
+    if (!agent.env) return '';
+    return Object.entries(agent.env).map(([k, v]) => `${k}=${v}`).join(' ');
+  };
+
+  const handleEnvChange = (index: number, agentId: string, value: string) => {
+    setEnvInputs(prev => ({ ...prev, [agentId]: value }));
+
+    const newEnv: Record<string, string> = {};
+    const pairs = value.trim().split(/\s+/).filter(Boolean);
+    for (const pair of pairs) {
+      const eqIdx = pair.indexOf('=');
+      if (eqIdx > 0) {
+        const key = pair.slice(0, eqIdx).trim();
+        const val = pair.slice(eqIdx + 1).trim();
+        if (key) {
+          newEnv[key] = val;
+        }
+      }
+    }
+    const newAgents = [...agents];
+    newAgents[index] = {
+      ...newAgents[index],
+      env: Object.keys(newEnv).length > 0 ? newEnv : undefined,
+    };
+    setAgents(newAgents);
+  };
+
   const handleAddAgent = () => {
     const existingIds = agents.map(a => a.id);
     const name = 'New Agent';
@@ -107,6 +160,92 @@ export const AcpSettings: React.FC<AcpSettingsProps> = ({
       command: '',
       args: [],
     };
+    setAgents([...agents, newAgent]);
+  };
+
+  const handleProfileChange = (index: number, value: string) => {
+    const trimmed = value.trim();
+    const newAgents = [...agents];
+    const base = newAgents[index];
+    const rootId = getRootAgentId(base.id, base.profile);
+
+    const template = base.profileEnv
+      ?? KNOWN_PROFILE_TEMPLATES[base.id]
+      ?? KNOWN_PROFILE_TEMPLATES[rootId]
+      ?? GENERIC_PROFILE_TEMPLATE;
+    const templateKeys = Object.keys(template);
+
+    let updatedEnv: Record<string, string> | undefined;
+    if (trimmed) {
+      const slug = trimmed.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-');
+      const profileId = `${rootId}-${slug}`;
+      const envVar = getProfileEnvForAgent(base, profileId);
+      updatedEnv = {
+        ...(base.env || {}),
+        ...envVar,
+      };
+    } else {
+      // Profile cleared: remove template profile env vars, keep other custom env vars
+      const remaining: Record<string, string> = {};
+      for (const [k, v] of Object.entries(base.env || {})) {
+        if (!templateKeys.includes(k)) {
+          remaining[k] = v;
+        }
+      }
+      updatedEnv = Object.keys(remaining).length > 0 ? remaining : undefined;
+    }
+
+    const cleanDescription = (base.description || base.name).replace(/\s*\[Profile: [^\]]+\]/g, '').trim();
+    const updatedDescription = trimmed ? `${cleanDescription} [Profile: ${trimmed}]` : cleanDescription;
+
+    const updatedAgent: AcpAgent = {
+      ...base,
+      profile: value,
+      description: updatedDescription,
+      env: updatedEnv,
+    };
+
+    const envStr = updatedEnv
+      ? Object.entries(updatedEnv).map(([k, v]) => `${k}=${v}`).join(' ')
+      : '';
+    setEnvInputs(prev => ({ ...prev, [base.id]: envStr }));
+
+    newAgents[index] = updatedAgent;
+    setAgents(newAgents);
+  };
+
+  const handleAddProfile = (baseAgent: AcpAgent) => {
+    const profileName = prompt(`Enter profile / account name for duplicate "${baseAgent.name}" (e.g. Work, Personal, djvipmax):`);
+    if (profileName === null) return;
+
+    const trimmedName = profileName.trim();
+    const slug = trimmedName
+      ? trimmedName.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-')
+      : 'copy';
+    const existingIds = agents.map((a) => a.id);
+    const rootId = getRootAgentId(baseAgent.id, baseAgent.profile);
+    const newId = generateIdFromName(`${rootId}-${slug}`, existingIds);
+
+    const envVar = getProfileEnvForAgent(baseAgent, newId);
+    const cleanDescription = (baseAgent.description || baseAgent.name).replace(/\s*\[Profile: [^\]]+\]/g, '').trim();
+
+    const newAgent: AcpAgent = {
+      ...baseAgent,
+      id: newId,
+      name: baseAgent.name,
+      profile: trimmedName || undefined,
+      description: trimmedName
+        ? `${cleanDescription} [Profile: ${trimmedName}]`
+        : cleanDescription,
+      env: {
+        ...(baseAgent.env || {}),
+        ...envVar,
+      },
+    };
+
+    const envStr = Object.entries(newAgent.env || {}).map(([k, v]) => `${k}=${v}`).join(' ');
+    setEnvInputs(prev => ({ ...prev, [newId]: envStr }));
+
     setAgents([...agents, newAgent]);
   };
 
@@ -124,22 +263,23 @@ export const AcpSettings: React.FC<AcpSettingsProps> = ({
   const handleSave = () => {
     // Validate agents
     const validAgents = agents.filter(agent => 
-      agent.id.trim() !== '' && 
       agent.name.trim() !== '' && 
       agent.command.trim() !== ''
-    );
-    
-    if (validAgents.length === 0) {
-      alert('At least one valid agent is required');
-      return;
-    }
+    ).map(agent => ({
+      ...agent,
+      id: agent.id.trim() || generateIdFromName(agent.name, []),
+      name: agent.name.trim(),
+      command: agent.command.trim(),
+    }));
 
     // Validate default agent
     let finalDefaultId = defaultAgentId;
     if (finalDefaultId && !validAgents.find(a => a.id === finalDefaultId)) {
-      finalDefaultId = validAgents[0].id;
+      finalDefaultId = validAgents.length > 0 ? validAgents[0].id : null;
     } else if (!finalDefaultId && validAgents.length > 0) {
       finalDefaultId = validAgents[0].id;
+    } else if (validAgents.length === 0) {
+      finalDefaultId = null;
     }
 
     onSave(validAgents, finalDefaultId);
@@ -203,29 +343,32 @@ export const AcpSettings: React.FC<AcpSettingsProps> = ({
       </div>
 
       <div className="agent-settings-content">
-        {agents.map((agent, index) => (
-          <div key={index} className="agent-settings-item">
-            <div className="agent-settings-item-header">
-              <h4>Agent {index + 1}</h4>
-              <div className="agent-settings-item-actions">
-                <button
-                  className="agent-settings-sessions-btn"
-                  onClick={() => handleToggleSessions(agent)}
-                  title="Show ACP sessions"
-                >
-                  <AcpIcons.Sessions />
-                  Sessions
-                </button>
-                <label className="agent-settings-default-checkbox">
-                  <input
-                    type="radio"
-                    name="defaultAgent"
-                    checked={agent.id === defaultAgentId}
-                    onChange={() => setDefaultAgentId(agent.id)}
-                  />
-                  <span>Default</span>
-                </label>
-                {agents.length > 1 && (
+        {agents.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '32px 16px', color: 'var(--theme-muted-foreground, #888)', fontSize: '0.9em' }}>
+            No agents configured. Click &quot;Add agent&quot; below to create a custom agent.
+          </div>
+        ) : (
+          agents.map((agent, index) => (
+            <div key={index} className="agent-settings-item">
+              <div className="agent-settings-item-header">
+                <h4>Agent {index + 1}</h4>
+                <div className="agent-settings-item-actions">
+                  <button
+                    className="agent-settings-sessions-btn"
+                    onClick={() => handleAddProfile(agent)}
+                    title="Duplicate this agent configuration"
+                  >
+                    <AcpIcons.Duplicate />
+                    Duplicate
+                  </button>
+                  <button
+                    className="agent-settings-sessions-btn"
+                    onClick={() => handleToggleSessions(agent)}
+                    title="Show ACP sessions"
+                  >
+                    <AcpIcons.Sessions />
+                    Sessions
+                  </button>
                   <button
                     className="agent-settings-remove-btn"
                     onClick={() => handleRemoveAgent(index)}
@@ -233,9 +376,8 @@ export const AcpSettings: React.FC<AcpSettingsProps> = ({
                   >
                     <AcpIcons.CloseSmall />
                   </button>
-                )}
+                </div>
               </div>
-            </div>
 
             <div className="agent-settings-fields">
               <div className="agent-settings-field">
@@ -245,6 +387,16 @@ export const AcpSettings: React.FC<AcpSettingsProps> = ({
                   value={agent.name}
                   onChange={(e) => handleAgentChange(index, 'name', e.target.value)}
                   placeholder="Agent Name"
+                />
+              </div>
+
+              <div className="agent-settings-field">
+                <label>Profile:</label>
+                <input
+                  type="text"
+                  value={agent.profile || ''}
+                  onChange={(e) => handleProfileChange(index, e.target.value)}
+                  placeholder="e.g. Work, Personal, djvipmax (optional)"
                 />
               </div>
 
@@ -267,6 +419,19 @@ export const AcpSettings: React.FC<AcpSettingsProps> = ({
                   placeholder="--arg1 --arg2"
                 />
               </div>
+
+              <details className="agent-settings-advanced-details">
+                <summary className="agent-settings-advanced-summary">Advanced: Environment Variables</summary>
+                <div className="agent-settings-field agent-settings-field-nested">
+                  <label>Env:</label>
+                  <input
+                    type="text"
+                    value={getEnvString(agent)}
+                    onChange={(e) => handleEnvChange(index, agent.id, e.target.value)}
+                    placeholder="KEY=VALUE ..."
+                  />
+                </div>
+              </details>
 
               {expandedSessions[agent.id] && (
                 <div className="agent-settings-sessions-panel">
@@ -312,12 +477,14 @@ export const AcpSettings: React.FC<AcpSettingsProps> = ({
               )}
             </div>
           </div>
-        ))}
+        )))}
 
-        <button className="agent-settings-add-btn" onClick={handleAddAgent}>
-          <AcpIcons.Add />
-          Add agent
-        </button>
+        <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
+          <button className="agent-settings-add-btn" onClick={handleAddAgent}>
+            <AcpIcons.Add />
+            Add agent
+          </button>
+        </div>
       </div>
     </div>
   );

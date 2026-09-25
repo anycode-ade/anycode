@@ -42,6 +42,19 @@ export interface FileSearchResult {
     type: 'file' | 'directory';
 }
 
+export interface OpenFileInfo {
+    id: string;
+    name: string;
+    path: string;
+}
+
+export interface WorkspaceFileInfo {
+    id: string;
+    name: string;
+    path: string;
+    isDirectory?: boolean;
+}
+
 export interface DirectoryResponse {
     files: string[];
     dirs: string[];
@@ -117,6 +130,65 @@ export interface AcpAgent {
     command: string;
     args: string[];
     description?: string;
+    icon?: string;
+    version?: string;
+    profile?: string;
+    env?: Record<string, string>;
+    profileEnv?: Record<string, string>;
+}
+
+export interface AcpRegistryNpxDistribution {
+    package: string;
+    args?: string[];
+    env?: Record<string, string>;
+}
+
+export interface AcpRegistryBinaryTarget {
+    archive: string;
+    cmd: string;
+    args?: string[];
+    sha256?: string;
+    env?: Record<string, string>;
+}
+
+export interface AcpRegistryAgentSummary {
+    id: string;
+    name: string;
+    version: string;
+    description: string;
+    repository?: string;
+    website?: string;
+    authors?: string[];
+    license?: string;
+    license_url?: string;
+    icon?: string;
+    distribution_type: 'npx' | 'binary' | 'both' | 'unsupported';
+    is_supported: boolean;
+    is_installed: boolean;
+    installed_version?: string;
+    installed_path?: string;
+    has_update: boolean;
+    npx?: AcpRegistryNpxDistribution;
+    binary_target?: AcpRegistryBinaryTarget;
+}
+
+export interface AcpRegistryProgressEvent {
+    agent_id: string;
+    progress: number;
+    status: 'downloading' | 'completed' | 'failed';
+    error?: string;
+}
+
+export interface ResolvedAgentPreset {
+    id: string;
+    name: string;
+    command: string;
+    args: string[];
+    description?: string;
+    env?: Record<string, string>;
+    icon?: string;
+    version: string;
+    distribution_type: string;
 }
 
 export interface AcpPromptStateMessage {
@@ -156,6 +228,19 @@ export interface AcpContextUsageMessage {
     size: number;
 }
 
+export interface AcpAvailableCommand {
+    name: string;
+    description: string;
+    input?: {
+        hint?: string;
+    };
+}
+
+export interface AcpAvailableCommandsMessage {
+    role: 'available_commands';
+    commands: AcpAvailableCommand[];
+}
+
 export interface AcpErrorMessage {
     role: 'error';
     message: string;
@@ -186,6 +271,7 @@ export type AcpMessage =
     | AcpModelSelectorMessage
     | AcpReasoningSelectorMessage
     | AcpContextUsageMessage
+    | AcpAvailableCommandsMessage
     | AcpErrorMessage
     | AcpOpenFileMessage
     | AcpRawUpdateMessage;
@@ -308,17 +394,32 @@ export interface AcpToolUpdate {
     update: any;
 }
 
+export interface AcpAuthMethod {
+    id: string;
+    name: string;
+    description?: string;
+}
+
 export interface AcpSession {
     agentId: string;
     agentName: string;
+    profile?: string;
     sessionId?: string;
     agentConfigId?: string;
     messages: AcpMessage[];
     isActive: boolean;
+    isStarting?: boolean;
+    startError?: string;
     isProcessing?: boolean;
     modelSelector?: Omit<AcpModelSelectorMessage, 'role'>;
     reasoningSelector?: Omit<AcpReasoningSelectorMessage, 'role'>;
     contextUsage?: Omit<AcpContextUsageMessage, 'role'>;
+    availableCommands?: AcpAvailableCommand[];
+    authRequired?: {
+        methods: AcpAuthMethod[];
+    };
+    isAuthenticating?: boolean;
+    pendingAuthMethod?: string;
 }
 
 export interface AcpSessionSummary {

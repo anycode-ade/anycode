@@ -45,6 +45,20 @@
     justify-content: center;
 }
 
+.tab-loading-spinner {
+    width: 12px;
+    height: 12px;
+    border: 1.5px solid rgba(255, 255, 255, 0.25);
+    border-radius: 50%;
+    border-top-color: var(--theme-tab-active-foreground, #3b82f6);
+    animation: tab-spin 0.7s linear infinite;
+    flex-shrink: 0;
+}
+
+@keyframes tab-spin {
+    to { transform: rotate(360deg); }
+}
+
 .tab-filename {
     flex: 1;
     overflow: hidden;
@@ -52,6 +66,23 @@
     padding-right: 4px;
     user-select: none;
     -webkit-user-select: none;
+}
+
+.tab-agent-badge {
+    font-size: 0.72em;
+    font-weight: 600;
+    padding: 1px 5px;
+    border-radius: 4px;
+    background: color-mix(in srgb, var(--theme-accent-background, #3186ff) 18%, transparent);
+    color: var(--theme-accent-background, #64afff);
+    border: 1px solid color-mix(in srgb, var(--theme-accent-background, #3186ff) 35%, transparent);
+    margin-right: 4px;
+    max-width: 80px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 1.2;
+    flex-shrink: 0;
 }
 
 .tab-close-button {

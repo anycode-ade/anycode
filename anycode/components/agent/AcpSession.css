@@ -182,3 +182,199 @@
         bottom: max(calc(var(--acp-input-height) + 23px), 60px);
     }
 }
+
+.acp-auth-banner {
+    margin: 12px 16px 8px 16px;
+    padding: 14px 18px;
+    background: color-mix(in srgb, var(--background-color, #1e1e1e) 85%, #2563eb 15%);
+    border: 1px solid color-mix(in srgb, var(--border-color, #3c3c3c) 70%, #3b82f6 30%);
+    border-radius: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+    z-index: 15;
+    flex-shrink: 0;
+}
+
+.acp-auth-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+}
+
+.acp-auth-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #60a5fa;
+    margin-top: 2px;
+    flex-shrink: 0;
+}
+
+.acp-auth-info {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+}
+
+.acp-auth-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-color, #fff);
+}
+
+.acp-auth-description {
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.85);
+    line-height: 1.4;
+}
+
+.acp-auth-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    padding-left: 30px;
+}
+
+.acp-auth-btn {
+    padding: 7px 16px;
+    font-size: 13px;
+    font-weight: 500;
+    border-radius: 6px;
+    cursor: pointer;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    background: rgba(255, 255, 255, 0.08);
+    color: #fff;
+    transition: all 0.15s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-family: inherit;
+}
+
+.acp-auth-btn:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.16);
+    border-color: rgba(255, 255, 255, 0.35);
+}
+
+.acp-auth-btn.primary {
+    background: #2563eb;
+    border-color: #3b82f6;
+    color: #fff;
+}
+
+.acp-auth-btn.primary:hover:not(:disabled) {
+    background: #1d4ed8;
+}
+
+.acp-auth-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.acp-auth-spinner {
+    width: 16px;
+    height: 16px;
+    border: 2px solid rgba(255, 255, 255, 0.25);
+    border-radius: 50%;
+    border-top-color: #60a5fa;
+    animation: acp-spin 0.8s linear infinite;
+}
+
+@keyframes acp-spin {
+    to { transform: rotate(360deg); }
+}
+
+.acp-session-starting {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 0;
+    padding: 32px 24px;
+    user-select: none;
+}
+
+.acp-session-starting-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    max-width: 420px;
+    gap: 12px;
+}
+
+.acp-session-starting-icon-container {
+    position: relative;
+    width: 48px;
+    height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 2px;
+}
+
+.acp-session-starting-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 10px;
+}
+
+.acp-session-starting-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-color, #fff);
+    letter-spacing: -0.01em;
+}
+
+.acp-session-starting-status {
+    font-size: 13px;
+    color: var(--text-color-secondary, rgba(255, 255, 255, 0.65));
+    line-height: 1.4;
+}
+
+.acp-session-starting-status.error-message {
+    color: #ef4444;
+    word-break: break-word;
+    background: rgba(239, 68, 68, 0.1);
+    padding: 8px 12px;
+    border-radius: 6px;
+    border: 1px solid rgba(239, 68, 68, 0.2);
+}
+
+.acp-session-starting-dots {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    margin-top: 4px;
+}
+
+.acp-session-starting-dots span {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #60a5fa;
+    animation: acp-dot-pulse 1.4s ease-in-out infinite;
+}
+
+.acp-session-starting-dots span:nth-child(2) {
+    animation-delay: 0.2s;
+}
+
+.acp-session-starting-dots span:nth-child(3) {
+    animation-delay: 0.4s;
+}
+
+@keyframes acp-dot-pulse {
+    0%, 100% {
+        opacity: 0.2;
+        transform: scale(0.8);
+    }
+    50% {
+        opacity: 1;
+        transform: scale(1.2);
+    }
+}

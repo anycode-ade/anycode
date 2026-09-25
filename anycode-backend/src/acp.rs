@@ -62,6 +62,27 @@ pub struct AcpSelectOption {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AcpAuthMethodInfo {
+    pub id: String,
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "status")]
+pub enum AcpStartOutcome {
+    #[serde(rename = "ready")]
+    Ready {
+        session_id: String,
+    },
+    #[serde(rename = "auth_required")]
+    AuthRequired {
+        auth_methods: Vec<AcpAuthMethodInfo>,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AcpModelSelector {
     pub current_value: String,
     pub options: Vec<AcpSelectOption>,
@@ -447,11 +468,21 @@ enum RestoreSessionOutcome {
 }
 
 #[derive(Debug, Clone)]
-struct SessionBootstrap {
-    session_id: acp::SessionId,
-    model_selector: Option<AcpModelSelector>,
-    reasoning_selector: Option<AcpReasoningSelector>,
-    prompt_capabilities: acp::PromptCapabilities,
+pub struct SessionBootstrap {
+    pub session_id: acp::SessionId,
+    pub model_selector: Option<AcpModelSelector>,
+    pub reasoning_selector: Option<AcpReasoningSelector>,
+    pub prompt_capabilities: acp::PromptCapabilities,
+}
+
+#[derive(Debug, Clone)]
+enum SessionBootstrapOutcome {
+    Ready(SessionBootstrap),
+    AuthRequired {
+        auth_methods: Vec<AcpAuthMethodInfo>,
+        prompt_capabilities: acp::PromptCapabilities,
+        cwd: PathBuf,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -477,6 +508,7 @@ pub struct AcpAgent {
     prompt_sender: Option<mpsc::Sender<AcpPromptPayload>>,
     config_sender: Option<mpsc::Sender<PendingConfigUpdate>>,
     cancel_sender: Arc<tokio::sync::Mutex<Option<mpsc::Sender<()>>>>,
+    auth_sender: Arc<tokio::sync::Mutex<Option<mpsc::Sender<(String, oneshot::Sender<Result<SessionBootstrap>>)>>>>,
     shutdown_sender: Option<mpsc::Sender<()>>,
     process_handle: Option<tokio::task::JoinHandle<()>>,
     io_handle: Option<tokio::task::JoinHandle<()>>,
@@ -511,6 +543,7 @@ impl AcpAgent {
             prompt_sender: None,
             config_sender: None,
             cancel_sender: Arc::new(tokio::sync::Mutex::new(None)),
+            auth_sender: Arc::new(tokio::sync::Mutex::new(None)),
             shutdown_sender: None,
             process_handle: None,
             io_handle: None,
@@ -520,12 +553,22 @@ impl AcpAgent {
         }
     }
 
+    pub async fn get_auth_sender(&self) -> Option<mpsc::Sender<(String, oneshot::Sender<Result<SessionBootstrap>>)>> {
+        let guard = self.auth_sender.lock().await;
+        guard.clone()
+    }
+
+    pub fn set_session_id(&mut self, session_id: acp::SessionId) {
+        self.session_id = Some(session_id);
+    }
+
     pub async fn start(
         &mut self,
         cmd: &str,
         args: &[String],
+        env: Option<HashMap<String, String>>,
         resume_session_id: Option<String>,
-    ) -> Result<String> {
+    ) -> Result<AcpStartOutcome> {
         // Setup channels
         let (history_tx, _) = broadcast::channel::<AcpMessage>(1000);
         self.message_sender = Some(history_tx.clone());
@@ -540,13 +583,20 @@ impl AcpAgent {
             let mut cancel_sender_guard = self.cancel_sender.lock().await;
             *cancel_sender_guard = Some(cancel_tx.clone());
         }
+
+        let (auth_tx, auth_rx) = mpsc::channel::<(String, oneshot::Sender<Result<SessionBootstrap>>)>(1);
+        {
+            let mut auth_sender_guard = self.auth_sender.lock().await;
+            *auth_sender_guard = Some(auth_tx);
+        }
+
         let (shutdown_tx, mut shutdown_rx) = mpsc::channel::<()>(1);
         self.shutdown_sender = Some(shutdown_tx);
 
-        let (bootstrap_tx, bootstrap_rx) = oneshot::channel::<Result<SessionBootstrap>>();
+        let (bootstrap_tx, bootstrap_rx) = oneshot::channel::<Result<SessionBootstrapOutcome>>();
 
         // Spawn agent process
-        let (mut child, stdin, stdout, stderr) = Self::spawn_agent_process(cmd, args)?;
+        let (mut child, stdin, stdout, stderr) = Self::spawn_agent_process(cmd, args, env.as_ref())?;
 
         // Setup connection and run in LocalSet
         let ready_clone = self.ready.clone();
@@ -574,6 +624,7 @@ impl AcpAgent {
                             prompt_rx,
                             config_rx,
                             cancel_rx,
+                            auth_rx,
                             bootstrap_tx,
                             resume_session_id,
                         )
@@ -605,10 +656,15 @@ impl AcpAgent {
         });
         self.process_handle = Some(process_handle);
 
-        match tokio::time::timeout(tokio::time::Duration::from_secs(15), bootstrap_rx).await {
-            Ok(Ok(Ok(bootstrap))) => {
+        match tokio::time::timeout(tokio::time::Duration::from_secs(30), bootstrap_rx).await {
+            Ok(Ok(Ok(SessionBootstrapOutcome::Ready(bootstrap)))) => {
                 self.session_id = Some(bootstrap.session_id.clone());
-                Ok(bootstrap.session_id.to_string())
+                Ok(AcpStartOutcome::Ready {
+                    session_id: bootstrap.session_id.to_string(),
+                })
+            }
+            Ok(Ok(Ok(SessionBootstrapOutcome::AuthRequired { auth_methods, .. }))) => {
+                Ok(AcpStartOutcome::AuthRequired { auth_methods })
             }
             Ok(Ok(Err(e))) => {
                 self.stop().await;
@@ -632,6 +688,7 @@ impl AcpAgent {
     fn spawn_agent_process(
         cmd: &str,
         args: &[String],
+        env: Option<&HashMap<String, String>>,
     ) -> io::Result<(
         tokio::process::Child,
         tokio::process::ChildStdin,
@@ -639,8 +696,27 @@ impl AcpAgent {
         tokio::process::ChildStderr,
     )> {
         let mut command = Self::agent_command(cmd);
+        command.args(args);
+        if let Some(env_map) = env {
+            for (key, val) in env_map {
+                let resolved_val = if val.starts_with("~/") {
+                    if let Some(home) = dirs::home_dir() {
+                        home.join(&val[2..]).to_string_lossy().to_string()
+                    } else {
+                        val.clone()
+                    }
+                } else {
+                    val.clone()
+                };
+
+                if key.ends_with("_HOME") || key.ends_with("_DIR") {
+                    let _ = std::fs::create_dir_all(&resolved_val);
+                }
+
+                command.env(key, resolved_val);
+            }
+        }
         let mut child = command
-            .args(args)
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
@@ -684,11 +760,11 @@ impl AcpAgent {
         mut prompt_rx: mpsc::Receiver<AcpPromptPayload>,
         mut config_rx: mpsc::Receiver<PendingConfigUpdate>,
         mut cancel_rx: mpsc::Receiver<()>,
-        bootstrap_tx: oneshot::Sender<Result<SessionBootstrap>>,
+        mut auth_rx: mpsc::Receiver<(String, oneshot::Sender<Result<SessionBootstrap>>)>,
+        bootstrap_tx: oneshot::Sender<Result<SessionBootstrapOutcome>>,
         resume_session_id: Option<String>,
     ) {
         // Clone history before moving client_impl
-        let history_for_stderr = history.clone();
         let history_for_prompt = history.clone();
 
         // Create client implementation
@@ -700,7 +776,12 @@ impl AcpAgent {
         });
 
         // Read stderr for debugging
-        Self::spawn_stderr_reader(stderr, message_sender.clone(), history_for_stderr);
+        let stderr_tail = Arc::new(tokio::sync::Mutex::new(std::collections::VecDeque::<String>::new()));
+        Self::spawn_stderr_reader(
+            agent_id.clone(),
+            stderr,
+            stderr_tail.clone(),
+        );
 
         let transport = ByteStreams::new(stdin.compat_write(), stdout.compat());
         let client_impl_for_permission = client_impl.clone();
@@ -788,24 +869,91 @@ impl AcpAgent {
                 agent_client_protocol::on_receive_notification!(),
             )
             .connect_with(transport, async move |conn| {
-                let bootstrap =
-                    match Self::initialize_connection(&conn, &agent_id_for_conn, resume_session_id)
-                        .await
-                    {
-                        Ok(value) => value,
-                        Err(e) => {
-                            let err = anyhow!(
-                                "Failed to initialize ACP agent {}: {}",
-                                agent_id_for_conn,
-                                e
-                            );
-                            let _ = bootstrap_tx.send(Err(err));
-                            return Err(acp::Error::internal_error().data(format!("{e:#}")));
+                let outcome = match Self::initialize_connection(&conn, &agent_id_for_conn, resume_session_id).await {
+                    Ok(value) => value,
+                    Err(e) => {
+                        let recent_stderr = {
+                            let tail = stderr_tail.lock().await;
+                            tail.iter().cloned().collect::<Vec<_>>().join("\n")
+                        };
+                        let err_msg = if recent_stderr.is_empty() {
+                            format!("Failed to initialize ACP agent {}: {}", agent_id_for_conn, e)
+                        } else {
+                            format!(
+                                "Failed to initialize ACP agent {}: {}\nAgent stderr:\n{}",
+                                agent_id_for_conn, e, recent_stderr
+                            )
+                        };
+                        let err = anyhow!(err_msg);
+                        let _ = bootstrap_tx.send(Err(err));
+                        return Err(acp::Error::internal_error().data(format!("{e:#}")));
+                    }
+                };
+
+                let bootstrap = match outcome {
+                    SessionBootstrapOutcome::Ready(bootstrap) => {
+                        let _ = bootstrap_tx.send(Ok(SessionBootstrapOutcome::Ready(bootstrap.clone())));
+                        bootstrap
+                    }
+                    SessionBootstrapOutcome::AuthRequired { auth_methods, prompt_capabilities, cwd } => {
+                        let _ = bootstrap_tx.send(Ok(SessionBootstrapOutcome::AuthRequired {
+                            auth_methods,
+                            prompt_capabilities: prompt_capabilities.clone(),
+                            cwd: cwd.clone(),
+                        }));
+
+                        let mut authenticated_bootstrap = None;
+                        while let Some((method_id, reply_tx)) = auth_rx.recv().await {
+                            info!("ACP agent {} authenticating with method '{}'", agent_id_for_conn, method_id);
+                            let auth_result = conn
+                                .send_request(acp::AuthenticateRequest::new(acp::AuthMethodId::new(method_id.clone())))
+                                .block_task()
+                                .await;
+
+                            match auth_result {
+                                Ok(_) => {
+                                    info!("Authentication succeeded for agent {}, creating new session...", agent_id_for_conn);
+                                    let new_session_res = conn
+                                        .send_request(acp::NewSessionRequest::new(cwd.clone()).mcp_servers(vec![]))
+                                        .block_task()
+                                        .await;
+
+                                    match new_session_res {
+                                        Ok(response) => {
+                                            match Self::build_session_bootstrap(response.session_id, response.config_options.as_deref()) {
+                                                Ok(mut b) => {
+                                                    b.prompt_capabilities = prompt_capabilities.clone();
+                                                    let _ = reply_tx.send(Ok(b.clone()));
+                                                    authenticated_bootstrap = Some(b);
+                                                    break;
+                                                }
+                                                Err(e) => {
+                                                    let _ = reply_tx.send(Err(e));
+                                                }
+                                            }
+                                        }
+                                        Err(err) => {
+                                            let _ = reply_tx.send(Err(anyhow!("Failed to create session after authentication: {}", err)));
+                                        }
+                                    }
+                                }
+                                Err(err) => {
+                                    let _ = reply_tx.send(Err(anyhow!("Authentication failed: {}", err)));
+                                }
+                            }
                         }
-                    };
+
+                        match authenticated_bootstrap {
+                            Some(b) => b,
+                            None => {
+                                info!("ACP agent {} auth channel closed without successful authentication", agent_id_for_conn);
+                                return Ok(());
+                            }
+                        }
+                    }
+                };
 
                 ready.store(true, Ordering::SeqCst);
-                let _ = bootstrap_tx.send(Ok(bootstrap.clone()));
 
                 Self::emit_session_config_messages(
                     &message_sender,
@@ -842,26 +990,23 @@ impl AcpAgent {
     }
 
     fn spawn_stderr_reader(
+        agent_id: String,
         stderr: tokio::process::ChildStderr,
-        message_sender: broadcast::Sender<AcpMessage>,
-        history: Arc<tokio::sync::Mutex<Vec<AcpMessage>>>,
+        stderr_tail: Arc<tokio::sync::Mutex<std::collections::VecDeque<String>>>,
     ) {
         tokio::task::spawn_local(async move {
             use tokio::io::{AsyncBufReadExt, BufReader};
             let mut reader = BufReader::new(stderr);
             let mut buf = String::new();
             while reader.read_line(&mut buf).await.is_ok() && !buf.is_empty() {
-                let error_msg = buf.trim().to_string();
-                error!("ACP stderr: {}", error_msg);
+                let log_msg = buf.trim().to_string();
+                warn!("ACP [{}] stderr: {}", agent_id, log_msg);
 
-                // Save to history
-                let message_for_ui = {
-                    let mut history = history.lock().await;
-                    AcpClientImpl::append_or_push_error_message(&mut history, &error_msg)
-                };
-
-                // Send error message to UI
-                let _ = message_sender.send(message_for_ui);
+                let mut tail = stderr_tail.lock().await;
+                if tail.len() >= 50 {
+                    tail.pop_front();
+                }
+                tail.push_back(log_msg);
 
                 buf.clear();
             }
@@ -871,7 +1016,7 @@ impl AcpAgent {
     async fn initialize_agent_connection(
         conn: &ConnectionTo<agent_client_protocol::Agent>,
         agent_id: &str,
-    ) -> Result<acp::PromptCapabilities> {
+    ) -> Result<(acp::PromptCapabilities, Vec<acp::AuthMethod>)> {
         let client_info = acp::Implementation::new("anycode", "1.0.0").title("Anycode Editor");
 
         // Define client capabilities
@@ -897,57 +1042,70 @@ impl AcpAgent {
             .map_err(|e| anyhow!("Failed to initialize: {}", e))?;
 
         info!(
-            "ACP agent {} initialized successfully. Agent capabilities: {:?}",
-            agent_id, init_response.agent_capabilities
+            "ACP agent {} initialized successfully. Agent capabilities: {:?}, auth methods: {:?}",
+            agent_id, init_response.agent_capabilities, init_response.auth_methods
         );
-        Ok(init_response.agent_capabilities.prompt_capabilities)
+        Ok((
+            init_response.agent_capabilities.prompt_capabilities,
+            init_response.auth_methods,
+        ))
     }
 
     async fn initialize_connection(
         conn: &ConnectionTo<agent_client_protocol::Agent>,
         agent_id: &str,
         resume_session_id: Option<String>,
-    ) -> Result<SessionBootstrap> {
-        let prompt_capabilities = Self::initialize_agent_connection(conn, agent_id).await?;
+    ) -> Result<SessionBootstrapOutcome> {
+        let (prompt_capabilities, auth_methods) = Self::initialize_agent_connection(conn, agent_id).await?;
 
         let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
-        let mut bootstrap = Self::create_or_resume_session(conn, resume_session_id, cwd).await?;
-        bootstrap.prompt_capabilities = prompt_capabilities;
 
-        info!(
-            "Session ready for agent {}: {}",
-            agent_id, bootstrap.session_id
-        );
-        Ok(bootstrap)
-    }
-
-    async fn create_or_resume_session(
-        conn: &ConnectionTo<agent_client_protocol::Agent>,
-        resume_session_id: Option<String>,
-        cwd: PathBuf,
-    ) -> Result<SessionBootstrap> {
         if let Some(resume_session_id) = resume_session_id.as_deref() {
             match Self::restore_session(conn, resume_session_id, &cwd).await? {
-                RestoreSessionOutcome::Restored(bootstrap) => return Ok(bootstrap),
-                RestoreSessionOutcome::Failed {
-                    load_err,
-                    resume_err,
-                } => {
-                    error!(
-                        "Failed to restore ACP session {}. load_session error: {}. resume_session error: {}. Falling back to creating a new session.",
-                        resume_session_id, load_err, resume_err
+                RestoreSessionOutcome::Restored(mut bootstrap) => {
+                    bootstrap.prompt_capabilities = prompt_capabilities;
+                    info!("Session restored for agent {}: {}", agent_id, bootstrap.session_id);
+                    return Ok(SessionBootstrapOutcome::Ready(bootstrap));
+                }
+                RestoreSessionOutcome::Failed { load_err, resume_err } => {
+                    info!(
+                        "Session restoration failed for agent {} (load: {}, resume: {}), falling back to new session",
+                        agent_id, load_err, resume_err
                     );
                 }
             }
         }
 
-        let response = conn
-            .send_request(acp::NewSessionRequest::new(cwd))
+        let session_result = conn
+            .send_request(acp::NewSessionRequest::new(cwd.clone()).mcp_servers(vec![]))
             .block_task()
-            .await
-            .map_err(|e| anyhow!("Failed to create session: {}", e))?;
+            .await;
 
-        Self::build_session_bootstrap(response.session_id, response.config_options.as_deref())
+        match session_result {
+            Ok(response) => {
+                let mut bootstrap = Self::build_session_bootstrap(response.session_id, response.config_options.as_deref())?;
+                bootstrap.prompt_capabilities = prompt_capabilities;
+                info!("Session ready for agent {}: {}", agent_id, bootstrap.session_id);
+                Ok(SessionBootstrapOutcome::Ready(bootstrap))
+            }
+            Err(err) if err.code == acp::ErrorCode::AuthRequired => {
+                info!("ACP agent {} requires authentication. Advertised auth methods: {:?}", agent_id, auth_methods);
+                let auth_methods_info = auth_methods
+                    .into_iter()
+                    .map(|m| AcpAuthMethodInfo {
+                        id: m.id().0.to_string(),
+                        name: m.name().to_string(),
+                        description: m.description().map(|d| d.to_string()),
+                    })
+                    .collect();
+                Ok(SessionBootstrapOutcome::AuthRequired {
+                    auth_methods: auth_methods_info,
+                    prompt_capabilities,
+                    cwd,
+                })
+            }
+            Err(err) => Err(anyhow!("Failed to create session: {}", err)),
+        }
     }
 
     async fn restore_session(
@@ -957,10 +1115,13 @@ impl AcpAgent {
     ) -> Result<RestoreSessionOutcome> {
         let requested_session_id = SessionId::new(resume_session_id.to_string());
         let load_result = conn
-            .send_request(acp::LoadSessionRequest::new(
-                requested_session_id.clone(),
-                cwd.clone(),
-            ))
+            .send_request(
+                acp::LoadSessionRequest::new(
+                    requested_session_id.clone(),
+                    cwd.clone(),
+                )
+                .mcp_servers(vec![]),
+            )
             .block_task()
             .await;
 
@@ -979,10 +1140,13 @@ impl AcpAgent {
         };
 
         let resume_result = conn
-            .send_request(acp::ResumeSessionRequest::new(
-                requested_session_id.clone(),
-                cwd.clone(),
-            ))
+            .send_request(
+                acp::ResumeSessionRequest::new(
+                    requested_session_id.clone(),
+                    cwd.clone(),
+                )
+                .mcp_servers(vec![]),
+            )
             .block_task()
             .await;
 
@@ -1508,7 +1672,7 @@ impl AcpAgent {
                 local_set
                     .run_until(async move {
                         let (mut child, stdin, stdout, stderr) =
-                            Self::spawn_agent_process(&cmd, &args).map_err(|e| {
+                            Self::spawn_agent_process(&cmd, &args, None).map_err(|e| {
                                 anyhow!("Failed to spawn ACP agent for session listing: {}", e)
                             })?;
 
@@ -1752,8 +1916,9 @@ impl AcpManager {
         agent_name: String,
         cmd: &str,
         args: &[String],
+        env: Option<HashMap<String, String>>,
         resume_session_id: Option<String>,
-    ) -> Result<String> {
+    ) -> Result<AcpStartOutcome> {
         if self.agents.contains_key(&agent_id) {
             return Err(anyhow::anyhow!("Agent {} already running", agent_id));
         }
@@ -1761,14 +1926,44 @@ impl AcpManager {
         let mut agent = AcpAgent::new(agent_id.clone(), agent_name.clone(), self.fs_sender.clone());
 
         info!(
-            "Starting ACP agent {} with command: {} {:?}",
-            agent_id, cmd, args
+            "Starting ACP agent {} with command: {} {:?}, env: {:?}",
+            agent_id, cmd, args, env
         );
-        let session_id = agent.start(cmd, args, resume_session_id).await?;
+        let outcome = agent.start(cmd, args, env, resume_session_id).await?;
 
         self.agents.insert(agent_id, agent);
 
-        Ok(session_id)
+        Ok(outcome)
+    }
+
+    pub async fn authenticate(
+        &self,
+        agent_id: &str,
+        method_id: &str,
+    ) -> Result<oneshot::Receiver<Result<SessionBootstrap>>> {
+        let agent = self
+            .agents
+            .get(agent_id)
+            .ok_or_else(|| anyhow::anyhow!("Agent {} not found", agent_id))?;
+
+        let sender = agent
+            .get_auth_sender()
+            .await
+            .ok_or_else(|| anyhow::anyhow!("Agent {} is not waiting for authentication", agent_id))?;
+
+        let (reply_tx, reply_rx) = oneshot::channel();
+        sender
+            .send((method_id.to_string(), reply_tx))
+            .await
+            .map_err(|_| anyhow::anyhow!("Failed to send auth request to agent {}", agent_id))?;
+
+        Ok(reply_rx)
+    }
+
+    pub fn set_session_id(&mut self, agent_id: &str, session_id: acp::SessionId) {
+        if let Some(agent) = self.agents.get_mut(agent_id) {
+            agent.set_session_id(session_id);
+        }
     }
 
     /// Stop agent by agent_id.

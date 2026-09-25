@@ -138,6 +138,64 @@ const GrokIcon = ({ size, className }: { size: number; className?: string }) => 
     );
 };
 
+// Official Google Antigravity logo in Google brand blue
+const AntigravityIcon = ({ size, className }: { size: number; className?: string }) => (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" className={className}>
+        <path
+            d="M14.1452 14.6818C14.9937 15.3182 16.2664 14.894 15.0997 13.7273C11.5998 10.3333 12.3421 1 7.99366 1C3.64518 1 4.3876 10.3333 0.887603 13.7273C-0.385123 15 0.993664 15.3182 1.84215 14.6818C5.13002 12.4545 4.9179 8.5303 7.99366 8.5303C11.0694 8.5303 10.8573 12.4545 14.1452 14.6818Z"
+            fill="#3186FF"
+        />
+    </svg>
+);
+
+// Official Amp logo in vivid purple
+const AmpIcon = ({ size, className }: { size: number; className?: string }) => (
+    <svg width={size} height={size} viewBox="0 0 28 28" fill="none" className={className}>
+        <path d="M13.9197 13.61L17.3816 26.566L14.242 27.4049L11.2645 16.2643L0.119926 13.2906L0.957817 10.15L13.9197 13.61Z" fill="#A855F7" />
+        <path d="M13.7391 16.0892L4.88169 24.9056L2.58872 22.6019L11.4461 13.7865L13.7391 16.0892Z" fill="#C084FC" />
+        <path d="M18.9386 8.58315L22.4005 21.5392L19.2609 22.3781L16.2833 11.2374L5.13879 8.26381L5.97668 5.12318L18.9386 8.58315Z" fill="#A855F7" />
+        <path d="M23.9803 3.55632L27.4422 16.5124L24.3025 17.3512L21.325 6.21062L10.1805 3.23698L11.0183 0.0963593L23.9803 3.55632Z" fill="#9333EA" />
+    </svg>
+);
+
+// Official Cline robot logo in electric cyan
+const ClineIcon = ({ size, className }: { size: number; className?: string }) => (
+    <svg width={size} height={size} viewBox="0 0 92 96" fill="#06B6D4" className={className}>
+        <path d="M65.45 16.3c10.89 0 19.71 8.86 19.71 19.8v6.6l5.74 11.46a4.48 4.48 0 0 1-.01 3.6L85.16 69.1v6.6c0 10.94-8.83 19.8-19.71 19.8H26.02c-10.89 0-19.71-8.86-19.71-19.8v-6.6L.45 57.8a4.48 4.48 0 0 1-.01-3.67L6.31 42.7v-6.6c0-10.94 8.83-19.8 19.71-19.8h39.43zm-2.52 5.7H29.19c-9.32 0-16.87 7.56-16.87 16.88v5.62l-4.88 9.46a4.48 4.48 0 0 0 .01 3.68l4.87 9.36v5.62c0 9.32 7.55 16.88 16.87 16.88h33.74c9.32 0 16.87-7.55 16.87-16.88V67l4.77-9.39a4.48 4.48 0 0 0 0-3.61L79.8 44.5v-5.62C79.8 29.56 72.25 22 62.93 22z" fillRule="nonzero" />
+        <circle cx="45.73" cy="11" r="11" />
+        <rect stroke="#06B6D4" strokeWidth="8" x="31" y="44.5" width="5" height="22" rx="2.5" />
+        <rect stroke="#06B6D4" strokeWidth="8" x="55" y="44.5" width="5" height="22" rx="2.5" />
+    </svg>
+);
+
+// Official Auggie / Augment icon in violet purple
+const AuggieIcon = ({ size, className }: { size: number; className?: string }) => (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="#8B5CF6" className={className}>
+        <path d="M9.972 13.193h2.577q.187 0 .277-.09t.091-.294V10.47q0-.324.133-.59.135-.27.36-.424a1 1 0 0 1 .099-.06 1 1 0 0 1-.1-.058 1.1 1.1 0 0 1-.359-.424 1.3 1.3 0 0 1-.133-.59v-2.33q0-.202-.091-.293t-.277-.089H9.972a.38.38 0 0 1-.294-.124.4.4 0 0 1-.108-.281q.002-.176.131-.293a.46.46 0 0 1 .313-.111h2.775c.36 0 .642.097.836.288q.293.29.294.832V8.24q0 .39.152.562.148.168.555.178a.4.4 0 0 1 .27.128.41.41 0 0 1 .104.287.44.44 0 0 1-.1.282.34.34 0 0 1-.277.132c-.266.006-.452.066-.55.177q-.151.174-.152.573v2.318c0 .235-.043.44-.128.607a.85.85 0 0 1-.389.387 1.3 1.3 0 0 1-.534.124V14h-2.854a.45.45 0 0 1-.315-.118.38.38 0 0 1-.129-.286q0-.164.109-.282a.38.38 0 0 1 .293-.123zM1.103 9.108a.4.4 0 0 1 .276-.128q.4-.008.55-.177.15-.173.151-.562V5.923q.002-.543.294-.832c.195-.191.477-.288.836-.288h2.775q.188 0 .313.111a.37.37 0 0 1 .131.293.4.4 0 0 1-.108.281.38.38 0 0 1-.293.123H3.45q-.186 0-.277.09t-.092.292v2.33c0 .213-.044.413-.133.59a1.1 1.1 0 0 1-.359.424 1 1 0 0 1-.1.059 1 1 0 0 1 .1.059q.225.156.359.423t.133.59v2.34q0 .203.092.293.088.09.277.089h2.577a.38.38 0 0 1 .294.123q.108.12.108.281a.38.38 0 0 1-.13.286.45.45 0 0 1-.314.118l-2.775-.003a1.4 1.4 0 0 1-.613-.126.87.87 0 0 1-.388-.387 1.34 1.34 0 0 1-.129-.608v-2.318q0-.4-.151-.572-.151-.168-.55-.177a.35.35 0 0 1-.278-.132.42.42 0 0 1-.102-.28q0-.173.103-.287"/>
+        <path d="M5.437 10.36a.986.986 0 0 1-.994-.975c0-.538.446-.976.994-.976s.994.438.994.976a.986.986 0 0 1-.994.976M10.562 8.41c.548 0 .994.437.994.975a.986.986 0 0 1-.994.976.986.986 0 0 1-.994-.976c0-.538.446-.976.994-.976M8.74 2c.37 0 .446.15.446.275v.034q0 .034-.009.201-.01.162-.017.549-.018.378-.044 1.06c0 .106-.065.233-.375.233-.311 0-.376-.126-.376-.23l-.07-1.835v-.003c0-.13.078-.284.446-.284M7.256 2c.369 0 .446.15.446.275v.034q0 .034-.01.201-.007.162-.017.549-.017.378-.043 1.06c0 .106-.065.233-.376.233-.31 0-.375-.126-.375-.23l-.07-1.835v-.003C6.81 2.154 6.887 2 7.256 2"/>
+    </svg>
+);
+
+export const hasBuiltinAgentIcon = (id: string = '', name: string = ''): boolean => {
+    const s = `${name} ${id}`.toLowerCase();
+    return (
+        s.includes('antigravity') ||
+        s.includes('gemini') ||
+        s.includes('claude') ||
+        s.includes('qwen') ||
+        s.includes('codex') ||
+        s.includes('openai') ||
+        s.includes('chatgpt') ||
+        s.includes('deepseek') ||
+        s.includes('amp') ||
+        s.includes('cline') ||
+        s.includes('auggie') ||
+        s.includes('augment') ||
+        s.includes('opencode') ||
+        s.includes('grok')
+    );
+};
+
 interface AgentIconProps {
     name?: string;
     id?: string;
@@ -153,11 +211,23 @@ export const AgentIcon: React.FC<AgentIconProps> = ({
 }) => {
     const checkStr = `${name} ${id}`.toLowerCase();
 
+    if (checkStr.includes('antigravity')) {
+        return <AntigravityIcon size={size} className={className} />;
+    }
     if (checkStr.includes('gemini')) {
         return <GeminiIcon size={size} className={className} />;
     }
     if (checkStr.includes('claude')) {
         return <ClaudeIcon size={size} className={className} />;
+    }
+    if (checkStr.includes('amp')) {
+        return <AmpIcon size={size} className={className} />;
+    }
+    if (checkStr.includes('cline')) {
+        return <ClineIcon size={size} className={className} />;
+    }
+    if (checkStr.includes('auggie') || checkStr.includes('augment')) {
+        return <AuggieIcon size={size} className={className} />;
     }
     if (checkStr.includes('qwen')) {
         return <QwenIcon size={size} className={className} />;
@@ -186,3 +256,4 @@ export const AgentIcon: React.FC<AgentIconProps> = ({
 
     return <DefaultSparkleIcon size={size} className={className} />;
 };
+

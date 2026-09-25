@@ -2,13 +2,73 @@ import React from 'react';
 import './AcpInput.css';
 import { AcpIcons } from './AcpIcons';
 import { AgentIcon } from './AgentIcon';
+import { FileIcon } from '../FileIcon';
+import { getFileName, getParentPath, normalizePath } from '../../utils';
 import type {
+  AcpAvailableCommand,
   AcpContextUsageMessage,
   AcpModelSelectorMessage,
   AcpPromptAttachment,
   AcpReasoningSelectorMessage,
   AcpSelectOption,
+  FileSearchResult,
+  OpenFileInfo,
+  WorkspaceFileInfo,
 } from '../../types';
+
+interface FileMentionItem {
+  id: string;
+  name: string;
+  displayDir: string;
+  relativePath: string;
+  fullPath: string;
+  category: 'recent' | 'file';
+  isDirectory: boolean;
+  isFirstInCategory: boolean;
+  hasDividerAbove: boolean;
+}
+
+function renderHighlighted(text: string, query: string) {
+  if (!query) return text;
+  const lowerText = text.toLowerCase();
+  const lowerQuery = query.toLowerCase();
+
+  const subIdx = lowerText.indexOf(lowerQuery);
+  if (subIdx !== -1) {
+    return (
+      <>
+        {text.slice(0, subIdx)}
+        <span className="acp-at-highlight">{text.slice(subIdx, subIdx + query.length)}</span>
+        {text.slice(subIdx + query.length)}
+      </>
+    );
+  }
+
+  const chars: React.ReactNode[] = [];
+  let qIdx = 0;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (qIdx < lowerQuery.length && ch.toLowerCase() === lowerQuery[qIdx]) {
+      chars.push(
+        <span key={i} className="acp-at-highlight">
+          {ch}
+        </span>
+      );
+      qIdx++;
+    } else {
+      chars.push(ch);
+    }
+  }
+  return chars;
+}
+
+function fuzzyMatch(str: string, query: string): boolean {
+  let qIdx = 0;
+  for (let i = 0; i < str.length && qIdx < query.length; i++) {
+    if (str[i] === query[qIdx]) qIdx++;
+  }
+  return qIdx === query.length;
+}
 
 interface AcpInputProps {
   value: string;
@@ -18,11 +78,16 @@ interface AcpInputProps {
   agentLabel?: string;
   onCloseAgent?: () => void;
   isConnected: boolean;
+  isStarting?: boolean;
   isProcessing?: boolean;
   showProcessingDots?: boolean;
   modelSelector?: Omit<AcpModelSelectorMessage, 'role'>;
   reasoningSelector?: Omit<AcpReasoningSelectorMessage, 'role'>;
   contextUsage?: Omit<AcpContextUsageMessage, 'role'>;
+  availableCommands?: AcpAvailableCommand[];
+  getOpenFiles?: () => OpenFileInfo[];
+  getRootFiles?: () => WorkspaceFileInfo[];
+  onSearchFiles?: (query: string) => Promise<FileSearchResult[]>;
   onSelectModel?: (option: AcpSelectOption) => void;
   onSelectReasoning?: (option: AcpSelectOption) => void;
 }
@@ -34,11 +99,16 @@ const AcpInputComponent: React.FC<AcpInputProps> = ({
   onCancel,
   agentLabel,
   isConnected,
+  isStarting = false,
   isProcessing = false,
   showProcessingDots = false,
   modelSelector,
   reasoningSelector,
   contextUsage,
+  availableCommands,
+  getOpenFiles,
+  getRootFiles,
+  onSearchFiles,
   onSelectModel,
   onSelectReasoning,
 }) => {
@@ -48,8 +118,322 @@ const AcpInputComponent: React.FC<AcpInputProps> = ({
   const [isMinimized, setIsMinimized] = React.useState(false);
   const [isDragOver, setIsDragOver] = React.useState(false);
   const [attachments, setAttachments] = React.useState<AcpPromptAttachment[]>([]);
+  const [isRecording, setIsRecording] = React.useState(false);
+  const [recordingSeconds, setRecordingSeconds] = React.useState(0);
+  const mediaRecorderRef = React.useRef<MediaRecorder | null>(null);
+  const audioChunksRef = React.useRef<Blob[]>([]);
+  const timerRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
+  const [isSlashDismissed, setIsSlashDismissed] = React.useState(false);
+  const [selectedSlashIndex, setSelectedSlashIndex] = React.useState(0);
+  const slashMenuRef = React.useRef<HTMLDivElement>(null);
   const MIN_ROWS = 1;
   const MAX_ROWS = 10;
+
+  const [cursorPos, setCursorPos] = React.useState<number | null>(null);
+  const [isAtDismissed, setIsAtDismissed] = React.useState(false);
+  const [selectedAtIndex, setSelectedAtIndex] = React.useState(0);
+  const [fileSearchResults, setFileSearchResults] = React.useState<FileSearchResult[]>([]);
+  const [isSearchingFiles, setIsSearchingFiles] = React.useState(false);
+  const atMenuRef = React.useRef<HTMLDivElement>(null);
+  const searchTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const atContext = React.useMemo(() => {
+    if (isMinimized || isRecording || isAtDismissed) return null;
+    const currentPos = cursorPos !== null ? cursorPos : value.length;
+    const beforeCursor = value.slice(0, currentPos);
+    const match = beforeCursor.match(/(?:^|\s)@([^\s]*)$/);
+    if (!match) return null;
+    const query = match[1];
+    const atIndex = currentPos - query.length - 1;
+    return {
+      query,
+      startIndex: atIndex,
+      endIndex: currentPos,
+    };
+  }, [value, cursorPos, isMinimized, isRecording, isAtDismissed]);
+
+  const isAtActive = Boolean(atContext);
+  const atQuery = atContext?.query.trim().toLowerCase() || '';
+
+  React.useEffect(() => {
+    setSelectedAtIndex(0);
+  }, [atQuery, isAtActive]);
+
+  React.useEffect(() => {
+    if (!value.includes('@')) {
+      setIsAtDismissed(false);
+    }
+  }, [value]);
+
+  React.useEffect(() => {
+    if (!isAtActive || !onSearchFiles) {
+      setFileSearchResults([]);
+      setIsSearchingFiles(false);
+      if (searchTimerRef.current) {
+        clearTimeout(searchTimerRef.current);
+        searchTimerRef.current = null;
+      }
+      return;
+    }
+
+    if (searchTimerRef.current) {
+      clearTimeout(searchTimerRef.current);
+    }
+
+    if (!atQuery) {
+      setFileSearchResults([]);
+      setIsSearchingFiles(false);
+      return;
+    }
+
+    setIsSearchingFiles(true);
+    searchTimerRef.current = setTimeout(async () => {
+      try {
+        const results = await onSearchFiles(atQuery);
+        setFileSearchResults(results || []);
+      } catch {
+        setFileSearchResults([]);
+      } finally {
+        setIsSearchingFiles(false);
+      }
+    }, 120);
+
+    return () => {
+      if (searchTimerRef.current) {
+        clearTimeout(searchTimerRef.current);
+      }
+    };
+  }, [isAtActive, atQuery, onSearchFiles]);
+
+  const openFilesList = React.useMemo(() => {
+    if (!isAtActive || !getOpenFiles) return [];
+    return getOpenFiles();
+  }, [isAtActive, getOpenFiles]);
+
+  const rootFilesList = React.useMemo(() => {
+    if (!isAtActive || !getRootFiles) return [];
+    return getRootFiles();
+  }, [isAtActive, getRootFiles]);
+
+  const recentItems = React.useMemo(() => {
+    if (openFilesList.length === 0) return [];
+    const list: {
+      id: string;
+      name: string;
+      displayDir: string;
+      relativePath: string;
+      fullPath: string;
+    }[] = [];
+    const seen = new Set<string>();
+
+    for (const file of openFilesList) {
+      const rel = normalizePath(file.path);
+      if (!rel || seen.has(rel)) continue;
+      seen.add(rel);
+
+      list.push({
+        id: `recent:${rel}`,
+        name: file.name || getFileName(rel),
+        displayDir: getParentPath(rel),
+        relativePath: rel,
+        fullPath: rel,
+      });
+    }
+    return list;
+  }, [openFilesList]);
+
+  const rootItems = React.useMemo(() => {
+    if (rootFilesList.length === 0) return [];
+    return rootFilesList.map((node) => {
+      const rel = normalizePath(node.path);
+      return {
+        id: `tree:${rel}`,
+        name: node.name || getFileName(rel),
+        displayDir: getParentPath(rel),
+        relativePath: rel,
+        fullPath: rel,
+        isDirectory: Boolean(node.isDirectory),
+      };
+    });
+  }, [rootFilesList]);
+
+  const filteredRecent = React.useMemo(() => {
+    if (!isAtActive) return [];
+    if (!atQuery) return recentItems.slice(0, 8);
+
+    return recentItems.filter((item) => {
+      const n = item.name.toLowerCase();
+      const p = item.relativePath.toLowerCase();
+      return n.includes(atQuery) || p.includes(atQuery) || fuzzyMatch(n, atQuery) || fuzzyMatch(p, atQuery);
+    }).slice(0, 8);
+  }, [isAtActive, atQuery, recentItems]);
+
+  const filteredSearchResults = React.useMemo(() => {
+    if (!isAtActive) return [];
+    const recentPaths = new Set(filteredRecent.map((r) => r.relativePath.toLowerCase()));
+
+    // When query is empty and open files exist, show open files only
+    if (!atQuery && filteredRecent.length > 0) {
+      return [];
+    }
+
+    // 1. If backend search returned results for active query
+    if (fileSearchResults.length > 0) {
+      return fileSearchResults
+        .filter((res) => {
+          const rel = normalizePath(res.display_path || res.path);
+          return !recentPaths.has(rel.toLowerCase());
+        })
+        .slice(0, 25);
+    }
+
+    // 2. Fallback to root items from fileTree (children of workspace root)
+    if (rootItems.length > 0) {
+      const filtered = atQuery
+        ? rootItems.filter((item) => {
+            const n = item.name.toLowerCase();
+            const p = item.relativePath.toLowerCase();
+            return !recentPaths.has(p) && (n.includes(atQuery) || p.includes(atQuery) || fuzzyMatch(n, atQuery) || fuzzyMatch(p, atQuery));
+          })
+        : rootItems.filter((item) => !recentPaths.has(item.relativePath.toLowerCase()));
+      return filtered.slice(0, 25).map((item) => ({
+        name: item.name,
+        path: item.fullPath,
+        display_path: item.relativePath,
+        type: item.isDirectory ? ('directory' as const) : ('file' as const),
+      }));
+    }
+
+    return [];
+  }, [isAtActive, atQuery, filteredRecent, fileSearchResults, rootItems]);
+
+  const allMentionItems = React.useMemo<FileMentionItem[]>(() => {
+    if (!isAtActive) return [];
+    const items: FileMentionItem[] = [];
+
+    filteredRecent.forEach((r, idx) => {
+      items.push({
+        id: r.id,
+        name: r.name,
+        displayDir: r.displayDir,
+        relativePath: r.relativePath,
+        fullPath: r.fullPath,
+        category: 'recent',
+        isDirectory: false,
+        isFirstInCategory: idx === 0,
+        hasDividerAbove: false,
+      });
+    });
+
+    filteredSearchResults.forEach((res, idx) => {
+      const rel = normalizePath(res.display_path || res.path);
+      const name = res.name || getFileName(rel);
+      const displayDir = getParentPath(rel);
+
+      items.push({
+        id: `file:${res.path}`,
+        name,
+        displayDir,
+        relativePath: rel,
+        fullPath: res.path,
+        category: 'file',
+        isDirectory: res.type === 'directory',
+        isFirstInCategory: idx === 0,
+        hasDividerAbove: idx === 0 && filteredRecent.length > 0,
+      });
+    });
+
+    return items;
+  }, [isAtActive, filteredRecent, filteredSearchResults]);
+
+  const handleSelectFileMention = React.useCallback(
+    (item: FileMentionItem) => {
+      if (!atContext) return;
+      const { startIndex, endIndex } = atContext;
+      const replacement = `@${item.relativePath} `;
+      const nextValue = value.slice(0, startIndex) + replacement + value.slice(endIndex);
+      onChange(nextValue);
+      setIsAtDismissed(true);
+
+      const nextCursor = startIndex + replacement.length;
+      setCursorPos(nextCursor);
+      requestAnimationFrame(() => {
+        if (inputRef.current) {
+          inputRef.current.focus();
+          inputRef.current.setSelectionRange(nextCursor, nextCursor);
+        }
+      });
+    },
+    [atContext, onChange, value],
+  );
+
+  React.useEffect(() => {
+    if (!isAtActive || !atMenuRef.current) return;
+    const activeEl = atMenuRef.current.querySelector<HTMLElement>('.acp-at-item.selected');
+    activeEl?.scrollIntoView({ block: 'nearest' });
+  }, [selectedAtIndex, isAtActive]);
+
+  const allCommands = React.useMemo<AcpAvailableCommand[]>(() => {
+    if (!availableCommands || availableCommands.length === 0) return [];
+    const list: AcpAvailableCommand[] = [];
+    const seen = new Set<string>();
+
+    for (const cmd of availableCommands) {
+      if (!seen.has(cmd.name.toLowerCase())) {
+        seen.add(cmd.name.toLowerCase());
+        list.push(cmd);
+      }
+    }
+
+    return list;
+  }, [availableCommands]);
+
+  const slashMatch = value.match(/^\/([a-zA-Z0-9_-]*)$/);
+  const isSlashActive = Boolean(slashMatch) && !isMinimized && !isRecording && !isSlashDismissed;
+  const slashQuery = slashMatch ? slashMatch[1].toLowerCase() : '';
+
+  const filteredCommands = React.useMemo(() => {
+    if (!isSlashActive) return [];
+    if (!slashQuery) return allCommands;
+    return allCommands.filter(
+      (cmd) =>
+        cmd.name.toLowerCase().includes(slashQuery) ||
+        cmd.description.toLowerCase().includes(slashQuery),
+    );
+  }, [isSlashActive, slashQuery, allCommands]);
+
+  React.useEffect(() => {
+    setSelectedSlashIndex(0);
+  }, [slashQuery, isSlashActive]);
+
+  React.useEffect(() => {
+    if (!value.startsWith('/')) {
+      setIsSlashDismissed(false);
+    }
+  }, [value]);
+
+  const handleSelectCommand = React.useCallback(
+    (cmd: AcpAvailableCommand) => {
+      const hasInput = Boolean(cmd.input?.hint);
+      const text = `/${cmd.name}${hasInput ? ' ' : ''}`;
+      onChange(text);
+      setIsSlashDismissed(true);
+      inputRef.current?.focus();
+    },
+    [onChange],
+  );
+
+  React.useEffect(() => {
+    if (!isSlashActive || !slashMenuRef.current) return;
+    const activeEl = slashMenuRef.current.querySelector<HTMLElement>('.acp-slash-item.selected');
+    activeEl?.scrollIntoView({ block: 'nearest' });
+  }, [selectedSlashIndex, isSlashActive]);
+
+  React.useEffect(() => {
+    if (isStarting) {
+      inputRef.current?.focus();
+    }
+  }, [isStarting]);
 
   React.useLayoutEffect(() => {
     const inputContainer = inputContainerRef.current;
@@ -70,12 +454,6 @@ const AcpInputComponent: React.FC<AcpInputProps> = ({
       session.style.removeProperty('--acp-input-height');
     };
   }, [isMinimized]);
-
-  const [isRecording, setIsRecording] = React.useState(false);
-  const [recordingSeconds, setRecordingSeconds] = React.useState(0);
-  const mediaRecorderRef = React.useRef<MediaRecorder | null>(null);
-  const audioChunksRef = React.useRef<Blob[]>([]);
-  const timerRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
 
   React.useEffect(() => {
     return () => {
@@ -223,10 +601,66 @@ const AcpInputComponent: React.FC<AcpInputProps> = ({
     resizeInput();
   }, [value, resizeInput]);
 
+  const canSubmit = (value.trim().length > 0 || attachments.length > 0) && isConnected && !isProcessing && !isStarting;
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (isAtActive) {
+      if (allMentionItems.length > 0) {
+        if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          setSelectedAtIndex((prev) => (prev + 1) % allMentionItems.length);
+          return;
+        }
+        if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          setSelectedAtIndex((prev) => (prev - 1 + allMentionItems.length) % allMentionItems.length);
+          return;
+        }
+        if (e.key === 'Enter' || e.key === 'Tab') {
+          e.preventDefault();
+          const selected = allMentionItems[selectedAtIndex];
+          if (selected) {
+            handleSelectFileMention(selected);
+          }
+          return;
+        }
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setIsAtDismissed(true);
+        return;
+      }
+    }
+
+    if (isSlashActive && filteredCommands.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setSelectedSlashIndex((prev) => (prev + 1) % filteredCommands.length);
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setSelectedSlashIndex((prev) => (prev - 1 + filteredCommands.length) % filteredCommands.length);
+        return;
+      }
+      if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault();
+        const selected = filteredCommands[selectedSlashIndex];
+        if (selected) {
+          handleSelectCommand(selected);
+        }
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setIsSlashDismissed(true);
+        return;
+      }
+    }
+
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      if ((value.trim() || attachments.length > 0) && isConnected && !isProcessing) {
+      if (canSubmit) {
         onSend(attachments);
         setAttachments([]);
       }
@@ -234,7 +668,7 @@ const AcpInputComponent: React.FC<AcpInputProps> = ({
   };
 
   const handleSend = () => {
-    if ((value.trim() || attachments.length > 0) && isConnected) {
+    if (canSubmit) {
       onSend(attachments);
       setAttachments([]);
     }
@@ -326,6 +760,73 @@ const AcpInputComponent: React.FC<AcpInputProps> = ({
       onDrop={handleDrop}
     >
       <div className="acp-input-full-container">
+        {isSlashActive && filteredCommands.length > 0 && (
+          <div ref={slashMenuRef} className="acp-slash-menu" role="listbox" aria-label="Available commands">
+            <div className="acp-slash-menu-header">
+              <span>Commands</span>
+              <span className="acp-slash-menu-hint">↑↓ navigate • Enter/Tab select • Esc close</span>
+            </div>
+            {filteredCommands.map((cmd, idx) => (
+              <div
+                key={cmd.name}
+                className={`acp-slash-item ${idx === selectedSlashIndex ? 'selected' : ''}`}
+                onClick={() => handleSelectCommand(cmd)}
+                onMouseEnter={() => setSelectedSlashIndex(idx)}
+                role="option"
+                aria-selected={idx === selectedSlashIndex}
+              >
+                <span className="acp-slash-item-name">/{cmd.name}</span>
+                {cmd.input?.hint && (
+                  <span className="acp-slash-item-hint">&lt;{cmd.input.hint}&gt;</span>
+                )}
+                {cmd.description && (
+                  <span className="acp-slash-item-desc">{cmd.description}</span>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+        {isAtActive && (
+          <div ref={atMenuRef} className="acp-at-menu" role="listbox" aria-label="Mention files">
+            {allMentionItems.map((item, idx) => (
+              <div
+                key={item.id}
+                className={`acp-at-item ${idx === selectedAtIndex ? 'selected' : ''} ${item.hasDividerAbove ? 'acp-at-item-divider-above' : ''}`}
+                onClick={() => handleSelectFileMention(item)}
+                onMouseEnter={() => setSelectedAtIndex(idx)}
+                role="option"
+                aria-selected={idx === selectedAtIndex}
+              >
+                <div className="acp-at-icon">
+                  <FileIcon path={item.fullPath} isDirectory={item.isDirectory} styleType="colored" />
+                </div>
+                <span className="acp-at-name">
+                  {renderHighlighted(item.name, atQuery)}
+                </span>
+                <span className="acp-at-path" title={item.displayDir}>
+                  {renderHighlighted(item.displayDir, atQuery)}
+                </span>
+                {item.isFirstInCategory && (
+                  <span className="acp-at-badge">
+                    {item.category === 'recent' ? 'RECENTLY OPENED' : 'FILE RESULTS'}
+                  </span>
+                )}
+              </div>
+            ))}
+            {allMentionItems.length === 0 && (
+              <div className="acp-at-empty">
+                {isSearchingFiles ? (
+                  <>
+                    <span className="acp-input-spinner" />
+                    <span>Searching files…</span>
+                  </>
+                ) : (
+                  <span>No files found</span>
+                )}
+              </div>
+            )}
+          </div>
+        )}
         <div className="acp-input-full-content">
           {attachments.length > 0 && (
             <div className="acp-input-attachments">
@@ -387,12 +888,27 @@ const AcpInputComponent: React.FC<AcpInputProps> = ({
                   id="acp-prompt-input"
                   name="prompt"
                   value={value}
-                  onChange={(e) => onChange(e.target.value)}
+                  onChange={(e) => {
+                    setCursorPos(e.target.selectionStart);
+                    setIsAtDismissed(false);
+                    onChange(e.target.value);
+                  }}
+                  onSelect={(e) => {
+                    setCursorPos(e.currentTarget.selectionStart);
+                  }}
+                  onClick={(e) => {
+                    setCursorPos(e.currentTarget.selectionStart);
+                  }}
+                  onKeyUp={(e) => {
+                    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'Home' || e.key === 'End') {
+                      setCursorPos(e.currentTarget.selectionStart);
+                    }
+                  }}
                   onKeyDown={handleKeyDown}
                   onPaste={handlePaste}
                   placeholder="Ask anything..."
                   rows={MIN_ROWS}
-                  disabled={!isConnected}
+                  disabled={!isConnected && !isStarting}
                 />
                 <div className="acp-prompt-action-switch">
                   <button
@@ -422,10 +938,15 @@ const AcpInputComponent: React.FC<AcpInputProps> = ({
                     type="button"
                     className={`acp-send-btn ${isProcessing ? 'acp-prompt-action-inactive' : 'acp-prompt-action-active'}`}
                     onClick={handleSend}
-                    disabled={isProcessing || (!value.trim() && attachments.length === 0) || !isConnected}
+                    disabled={!canSubmit}
                     aria-hidden={isProcessing}
+                    title={isStarting ? `Starting ${agentLabel || 'agent'}…` : undefined}
                   >
-                    <AcpIcons.Send />
+                    {isStarting ? (
+                      <span className="acp-input-spinner" />
+                    ) : (
+                      <AcpIcons.Send />
+                    )}
                   </button>
                 </div>
               </>
@@ -453,7 +974,7 @@ const AcpInputComponent: React.FC<AcpInputProps> = ({
             <button
               className="acp-input-toggle-btn"
               onClick={() => fileInputRef.current?.click()}
-              disabled={!isConnected || isProcessing || isRecording}
+              disabled={(!isConnected && !isStarting) || isProcessing || isRecording}
               title="Attach files"
             >
               <AcpIcons.Add />

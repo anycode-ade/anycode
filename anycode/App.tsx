@@ -785,12 +785,16 @@ const App: React.FC = () => {
                         panelKey={panelKey}
                         focusRequestToken={layout.getFocusRequestToken('agent', panelKey)}
                         isConnected={isConnected}
+                        wsRef={wsRef}
                         agentPanes={agentPanes}
                         agents={agents}
                         sessions={sessionsArray}
                         availableAgents={availableAgents}
                         settingsAgents={settingsAgents}
                         settingsDefaultAgentId={settingsDefaultAgentId}
+                        getOpenFiles={editors.getOpenFiles}
+                        getRootFiles={fileTree.getRootFiles}
+                        onSearchFiles={search.searchFiles}
                         onSaveAgents={handleSaveAgents}
                         onCloseSettings={handleCloseAgentSettings}
                         onResumeSettingsSession={handleResumeSettingsSession}
@@ -811,6 +815,7 @@ const App: React.FC = () => {
                         activeTerminalId={activeTerminalId}
                         agentSessions={sessionsArray}
                         activeAgentId={activeToolbarAgentId}
+                        availableAgents={availableAgents}
                         onSelectFile={handleSelectFile}
                         onCloseFile={editors.closeFile}
                         onSelectTerminal={handleTerminalTabSelect}

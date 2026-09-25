@@ -3,6 +3,8 @@ import type { Socket } from 'socket.io-client';
 import {
     type AcpAgent,
     type AcpAssistantMessage,
+    type AcpAvailableCommand,
+    type AcpAvailableCommandsMessage,
     type AcpContextUsageMessage,
     type AcpMediaMessage,
     type AcpMessage,
@@ -20,6 +22,12 @@ import {
     type AcpToolUpdateMessage,
     type AcpUserMessage,
 } from '../types';
+import {
+    onAgentsUpdated,
+    setRemoteAgents,
+    getAllAgents,
+    getDefaultAgentId,
+} from '../agents';
 
 const MESSAGE_FLUSH_MS = 100;
 
@@ -245,6 +253,21 @@ const projectRawUpdate = (rawMessage: AcpRawUpdateMessage): AcpMessage[] => {
         return [usage];
     }
 
+    if ((kind === 'available_commands_update') && payload) {
+        const rawCommands = payload.available_commands ?? payload.availableCommands;
+        if (Array.isArray(rawCommands)) {
+            const commands: AcpAvailableCommand[] = rawCommands.map((cmd: any) => ({
+                name: asString(cmd.name) ?? '',
+                description: asString(cmd.description) ?? '',
+                input: cmd.input ? { hint: asString(cmd.input.hint) } : undefined,
+            })).filter((cmd) => Boolean(cmd.name));
+            return [{
+                role: 'available_commands',
+                commands,
+            } satisfies AcpAvailableCommandsMessage];
+        }
+    }
+
     return [];
 };
 
@@ -256,6 +279,7 @@ export const useAgents = ({
     const [acpSessions, setAcpSessions] = useState<Map<string, AcpSession>>(new Map());
     const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
     const [isAgentSettingsOpen, setIsAgentSettingsOpen] = useState<boolean>(false);
+    const [isRegistryOpen, setIsRegistryOpen] = useState<boolean>(false);
     const [agentsVersion, setAgentsVersion] = useState<number>(0);
 
     const agentCounterRef = useRef<Map<string, number>>(new Map());
@@ -264,6 +288,59 @@ export const useAgents = ({
     const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     useEffect(() => { acpSessionsRef.current = acpSessions; }, [acpSessions]);
+
+    // Synchronize agents with backend on connect and listen for remote updates
+    useEffect(() => {
+        const socket = wsRef.current;
+        if (!socket || !isConnected) return;
+
+        socket.emit('acp:agents:get', {}, (response: any) => {
+            if (response && response.success) {
+                if (response.exists) {
+                    setRemoteAgents(response.agents || [], response.default_agent_id ?? null);
+                    setAgentsVersion((v) => v + 1);
+                } else {
+                    const localAgents = getAllAgents();
+                    if (localAgents.length > 0) {
+                        socket.emit('acp:agents:save', {
+                            agents: localAgents,
+                            default_agent_id: getDefaultAgentId(),
+                        });
+                    }
+                }
+            }
+        });
+
+        const handleRemoteAgentsChanged = (data: { agents: AcpAgent[]; default_agent_id: string | null }) => {
+            if (data && Array.isArray(data.agents)) {
+                setRemoteAgents(data.agents, data.default_agent_id ?? null);
+                setAgentsVersion((v) => v + 1);
+            }
+        };
+
+        socket.on('acp:agents:changed', handleRemoteAgentsChanged);
+        return () => {
+            socket.off('acp:agents:changed', handleRemoteAgentsChanged);
+        };
+    }, [wsRef, isConnected]);
+
+    // Send local agent changes to backend
+    useEffect(() => {
+        const handleSync = (agents: AcpAgent[], defaultAgentId: string | null) => {
+            const socket = wsRef.current;
+            if (socket && isConnected) {
+                socket.emit('acp:agents:save', {
+                    agents,
+                    default_agent_id: defaultAgentId,
+                });
+            }
+        };
+
+        onAgentsUpdated(handleSync);
+        return () => {
+            onAgentsUpdated(null);
+        };
+    }, [wsRef, isConnected]);
 
     const updateSession = useCallback((agentId: string, updater: (session: AcpSession | undefined) => AcpSession) => {
         setAcpSessions((prev) => {
@@ -382,6 +459,7 @@ export const useAgents = ({
                 modelSelector: existing?.modelSelector,
                 reasoningSelector: existing?.reasoningSelector,
                 contextUsage: existing?.contextUsage,
+                availableCommands: existing?.availableCommands,
             }));
             return;
         }
@@ -402,6 +480,7 @@ export const useAgents = ({
                 },
                 reasoningSelector: existing?.reasoningSelector,
                 contextUsage: existing?.contextUsage,
+                availableCommands: existing?.availableCommands,
             }));
             return;
         }
@@ -422,6 +501,7 @@ export const useAgents = ({
                     options: selector.options,
                 },
                 contextUsage: existing?.contextUsage,
+                availableCommands: existing?.availableCommands,
             }));
             return;
         }
@@ -442,6 +522,25 @@ export const useAgents = ({
                     used: usage.used,
                     size: usage.size,
                 },
+                availableCommands: existing?.availableCommands,
+            }));
+            return;
+        }
+
+        if (data.item.role === 'available_commands') {
+            const cmds = data.item as AcpAvailableCommandsMessage;
+            updateSession(data.agent_id, (existing) => ({
+                agentId: data.agent_id,
+                agentName: existing?.agentName ?? '',
+                messages: existing?.messages ?? [],
+                isActive: true,
+                isProcessing: existing?.isProcessing,
+                sessionId: existing?.sessionId,
+                agentConfigId: existing?.agentConfigId,
+                modelSelector: existing?.modelSelector,
+                reasoningSelector: existing?.reasoningSelector,
+                contextUsage: existing?.contextUsage,
+                availableCommands: cmds.commands,
             }));
             return;
         }
@@ -458,6 +557,7 @@ export const useAgents = ({
                 modelSelector: existing?.modelSelector,
                 reasoningSelector: existing?.reasoningSelector,
                 contextUsage: existing?.contextUsage,
+                availableCommands: existing?.availableCommands,
             }));
             return;
         }
@@ -471,8 +571,14 @@ export const useAgents = ({
             updateSession(data.agent_id, (existing) => {
                 let messages = [...(existing?.messages ?? [])];
                 let contextUsage = existing?.contextUsage;
+                let availableCommands = existing?.availableCommands;
 
                 for (const projectedItem of projected) {
+                    if (projectedItem.role === 'available_commands') {
+                        availableCommands = projectedItem.commands;
+                        continue;
+                    }
+
                     if (projectedItem.role === 'context_usage') {
                         contextUsage = {
                             used: projectedItem.used,
@@ -517,6 +623,7 @@ export const useAgents = ({
                     modelSelector: existing?.modelSelector,
                     reasoningSelector: existing?.reasoningSelector,
                     contextUsage,
+                    availableCommands,
                 };
             });
             return;
@@ -539,6 +646,7 @@ export const useAgents = ({
                 modelSelector: existing?.modelSelector,
                 reasoningSelector: existing?.reasoningSelector,
                 contextUsage: existing?.contextUsage,
+                availableCommands: existing?.availableCommands,
             }));
             return;
         }
@@ -642,10 +750,12 @@ export const useAgents = ({
         const modelSelector = reversedHistory.find((item): item is AcpModelSelectorMessage => item.role === 'session_model_selector');
         const reasoningSelector = reversedHistory.find((item): item is AcpReasoningSelectorMessage => item.role === 'session_reasoning_selector');
         const contextUsage = reversedHistory.find((item): item is AcpContextUsageMessage => item.role === 'context_usage');
+        const availableCommandsMsg = reversedHistory.find((item): item is AcpAvailableCommandsMessage => item.role === 'available_commands');
         const visibleMessages = normalizedHistory.filter((item) =>
             item.role !== 'session_model_selector'
             && item.role !== 'session_reasoning_selector'
             && item.role !== 'context_usage'
+            && item.role !== 'available_commands'
             && item.role !== 'raw_update',
         );
         const mergedVisibleMessages = mergeConsecutiveErrors(visibleMessages);
@@ -670,6 +780,7 @@ export const useAgents = ({
                 used: contextUsage.used,
                 size: contextUsage.size,
             } : existing?.contextUsage,
+            availableCommands: availableCommandsMsg ? availableCommandsMsg.commands : existing?.availableCommands,
         }));
     }, [flushPendingAcpMessages, updateSession]);
 
@@ -757,14 +868,35 @@ export const useAgents = ({
     const startAgent = useCallback((agent: AcpAgent | undefined, options?: { resumeSessionId?: string }) => {
         if (!agent || !wsRef.current || !isConnected) return null;
 
-        const { id, name, command, args } = agent;
+        const { id, name, command, args, env, profile } = agent;
         const aid = generateAgentId(id);
+
+        // Optimistically create session with isStarting: true
+        setAcpSessions((prev) => {
+            const newSessions = new Map(prev);
+            const existing = newSessions.get(aid);
+            newSessions.set(aid, {
+                ...existing,
+                agentId: aid,
+                agentName: name,
+                agentConfigId: id,
+                profile,
+                messages: existing?.messages ?? [],
+                isActive: false,
+                isStarting: true,
+                isProcessing: false,
+            });
+            return newSessions;
+        });
+        setSelectedAgentId(aid);
+        onAgentStarted?.();
 
         wsRef.current.emit('acp:start', {
             agent_id: aid,
             agent_name: name,
             command,
             args,
+            env: env ?? {},
             resume_session_id: options?.resumeSessionId ?? null,
         }, (response: any) => {
             if (response.success) {
@@ -776,10 +908,16 @@ export const useAgents = ({
                         agentId: aid,
                         agentName: name,
                         agentConfigId: id,
+                        profile,
                         sessionId: response.session_id,
                         messages: existing?.messages ?? [],
                         isActive: true,
+                        isStarting: false,
+                        startError: undefined,
                         isProcessing: existing?.isProcessing ?? false,
+                        authRequired: response.auth_required ? {
+                            methods: response.auth_methods ?? [],
+                        } : undefined,
                     });
                     return newSessions;
                 });
@@ -787,11 +925,68 @@ export const useAgents = ({
                 onAgentStarted?.();
             } else {
                 const errorMessage = response.error || `Failed to start agent ${aid}`;
-                alert(errorMessage);
+                setAcpSessions((prev) => {
+                    const newSessions = new Map(prev);
+                    const existing = newSessions.get(aid);
+                    if (existing) {
+                        newSessions.set(aid, {
+                            ...existing,
+                            isStarting: false,
+                            startError: errorMessage,
+                        });
+                    }
+                    return newSessions;
+                });
             }
         });
         return aid;
     }, [wsRef, isConnected, generateAgentId, onAgentStarted]);
+
+    const authenticateAgent = useCallback((agentId: string, methodId: string) => {
+        if (!wsRef.current || !isConnected) return;
+
+        setAcpSessions((prev) => {
+            const newSessions = new Map(prev);
+            const existing = newSessions.get(agentId);
+            if (!existing) return prev;
+            newSessions.set(agentId, {
+                ...existing,
+                isAuthenticating: true,
+                pendingAuthMethod: methodId,
+            });
+            return newSessions;
+        });
+
+        wsRef.current.emit('acp:authenticate', {
+            agent_id: agentId,
+            method_id: methodId,
+        }, (response: any) => {
+            setAcpSessions((prev) => {
+                const newSessions = new Map(prev);
+                const existing = newSessions.get(agentId);
+                if (!existing) return prev;
+
+                if (response.success) {
+                    newSessions.set(agentId, {
+                        ...existing,
+                        sessionId: response.session_id,
+                        authRequired: undefined,
+                        isAuthenticating: false,
+                        pendingAuthMethod: undefined,
+                    });
+                } else {
+                    newSessions.set(agentId, {
+                        ...existing,
+                        isAuthenticating: false,
+                        pendingAuthMethod: undefined,
+                    });
+                    const errorMessage = response.error || 'Authentication failed';
+                    alert(errorMessage);
+                }
+                return newSessions;
+            });
+        });
+    }, [wsRef, isConnected]);
 
     const fetchAvailableSessions = useCallback((agent: AcpAgent | undefined): Promise<AcpSessionSummary[]> => {
         return new Promise((resolve, reject) => {
@@ -847,6 +1042,7 @@ export const useAgents = ({
             modelSelector: existing?.modelSelector,
             reasoningSelector: existing?.reasoningSelector,
             contextUsage: existing?.contextUsage,
+            availableCommands: existing?.availableCommands,
         }));
 
         wsRef.current.emit('acp:prompt', { agent_id: agentId, prompt, attachments }, (response: any) => {
@@ -953,12 +1149,15 @@ export const useAgents = ({
         setSelectedAgentId,
         isAgentSettingsOpen,
         setIsAgentSettingsOpen,
+        isRegistryOpen,
+        setIsRegistryOpen,
         agentsVersion,
         setAgentsVersion,
         handleAcpMessage,
         handleAcpHistory,
         reconnectToAcpAgents,
         startAgent,
+        authenticateAgent,
         fetchAvailableSessions,
         resumeSession,
         sendPrompt,

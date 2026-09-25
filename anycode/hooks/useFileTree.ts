@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
 import type { Socket } from 'socket.io-client';
-import type { TreeNode, WatcherCreate, WatcherRemove } from '../types';
+import type { TreeNode, WatcherCreate, WatcherRemove, WorkspaceFileInfo } from '../types';
 import { getFileName, getParentPath, joinPath, normalizePath } from '../utils';
 
 type UseFileTreeParams = {
@@ -527,8 +527,27 @@ export const useFileTree = ({ wsRef, isConnected }: UseFileTreeParams) => {
         });
     }, []);
 
+    const getRootFiles = useCallback((): WorkspaceFileInfo[] => {
+        const root = fileTree[0];
+        const rootBasePath = root?.type === 'directory' ? normalizePath(root.path) : '';
+        const children = root?.type === 'directory' && root.children?.length ? root.children : fileTree;
+        return children.map((node) => {
+            const normalized = normalizePath(node.path);
+            const relativePath = rootBasePath && normalized.startsWith(rootBasePath + '/')
+                ? normalized.slice(rootBasePath.length + 1)
+                : node.name;
+            return {
+                id: node.id,
+                name: node.name,
+                path: relativePath,
+                isDirectory: node.type === 'directory',
+            };
+        });
+    }, [fileTree]);
+
     return {
         fileTree,
+        getRootFiles,
         deleteNode,
         renameNodeOnDisk,
         createNodeOnDisk,

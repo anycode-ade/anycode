@@ -78,6 +78,8 @@
 }
 
 .acp-messages-inner {
+    min-height: 100%;
+    box-sizing: border-box;
     padding: 16px 16px calc(var(--acp-input-height, 0px) + 24px) 16px;
     display: flex;
     flex-direction: column;

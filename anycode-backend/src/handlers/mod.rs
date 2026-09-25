@@ -1,4 +1,5 @@
 pub mod acp_handler;
+pub mod acp_registry_handler;
 pub mod connection_handler;
 pub mod git_handler;
 pub mod io_handler;

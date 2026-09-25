@@ -6,6 +6,7 @@ import { AgentIcon } from '../agent/AgentIcon';
 type ToolbarTabProps = {
     active: boolean;
     label: string;
+    badge?: string;
     title?: string;
     variant?: 'terminal' | 'agent';
     filePath?: string;
@@ -17,6 +18,7 @@ type ToolbarTabProps = {
     onContextMenu: (event: ReactMouseEvent) => void;
     draggable?: boolean;
     dragging?: boolean;
+    isLoading?: boolean;
     onDragStart?: (event: React.DragEvent) => void;
     onDragEnd?: (event: React.DragEvent) => void;
     onDragOver?: (event: React.DragEvent) => void;
@@ -26,11 +28,13 @@ type ToolbarTabProps = {
 export const ToolbarTab = ({
     active,
     label,
+    badge,
     title,
     variant,
     filePath,
     fileIconsStyle = 'colored',
     pinned,
+    isLoading,
     onUnpin,
     onSelect,
     onClose,
@@ -86,7 +90,11 @@ export const ToolbarTab = ({
                         <FileIcon path={filePath} styleType={fileIconsStyle} className="tab-file-icon" />
                     )}
                     {variant === 'agent' && (
-                        <AgentIcon name={label} size={16} className="tab-agent-icon" />
+                        isLoading ? (
+                            <span className="tab-loading-spinner" title="Starting..." />
+                        ) : (
+                            <AgentIcon name={label} size={16} className="tab-agent-icon" />
+                        )
                     )}
                     {variant === 'terminal' && (
                         <span className="tab-terminal-icon">
@@ -96,6 +104,11 @@ export const ToolbarTab = ({
                 </div>
             )}
             <span className="tab-filename" title={title}>{label}</span>
+            {badge && (
+                <span className="tab-agent-badge" title={badge}>
+                    {badge}
+                </span>
+            )}
             {pinned && (
                 <button
                     type="button"

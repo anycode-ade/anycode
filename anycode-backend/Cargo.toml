@@ -39,10 +39,17 @@ dirs = "6"
 lsp-types = "0.97"
 url = "2.5"
 similar = "2"
-agent-client-protocol = { version = "1.2.0" }
-agent-client-protocol-schema = { version = "1.4.0" }
+agent-client-protocol = { version = "2.2.0" }
+agent-client-protocol-schema = { version = "1.9.1" }
 async-trait = "0.1"
 tokio-util = { version = "0.7", features = ["compat"] }
 unicode-segmentation = "1"
 git2 = "0.20"
 base64 = "0.22"
+reqwest = { version = "0.12", default-features = false, features = ["default-tls", "json", "stream"] }
+sha2 = "0.10"
+flate2 = "1.0"
+tar = "0.4"
+zip = { version = "2", default-features = false, features = ["deflate"] }
+futures-util = "0.3"
+

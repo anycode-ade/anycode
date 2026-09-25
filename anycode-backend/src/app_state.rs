@@ -22,6 +22,7 @@ pub struct AppState {
     pub lsp_manager: Arc<Mutex<LspManager>>,
     pub acp_manager: Arc<Mutex<AcpManager>>,
     pub git_manager: Arc<Mutex<GitManager>>,
+    pub acp_registry: Arc<crate::acp_registry::AcpRegistryManager>,
     pub socket2data: Arc<Mutex<HashMap<String, SocketData>>>,
     pub terminals: Arc<Mutex<HashMap<String, TerminalData>>>,
 }
@@ -55,6 +56,7 @@ impl AppState {
         lsp_manager.set_diagnostics_sender(diagnostic_tx);
 
         let acp_manager = AcpManager::new(acp_fs_tx);
+        let acp_registry = crate::acp_registry::AcpRegistryManager::new();
         let mut git_manager = GitManager::new(crate::utils::current_dir());
         let _ = git_manager.refresh_status_cache();
 
@@ -64,6 +66,7 @@ impl AppState {
             lsp_manager: Arc::new(Mutex::new(lsp_manager)),
             acp_manager: Arc::new(Mutex::new(acp_manager)),
             git_manager: Arc::new(Mutex::new(git_manager)),
+            acp_registry: Arc::new(acp_registry),
             socket2data: Arc::new(Mutex::new(HashMap::new())),
             terminals: Arc::new(Mutex::new(HashMap::new())),
         }

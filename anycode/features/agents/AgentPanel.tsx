@@ -1,17 +1,27 @@
 import React, { useEffect, useRef } from 'react';
+import type { Socket } from 'socket.io-client';
 import { AcpSettings } from '../../components/agent/AcpSettings';
 import { AcpSession } from '../../components/agent/AcpSession';
 import { AcpEmptyPane } from '../../components/agent/AcpEmptyPane';
+import { AcpRegistryModal } from '../../components/agent/AcpRegistryModal';
+import { resolveAgentDisplay } from '../../agents';
 import type {
     AcpAgent,
     AcpSession as AcpSessionState,
     AcpSessionSummary,
+    FileSearchResult,
+    OpenFileInfo,
+    WorkspaceFileInfo,
 } from '../../types';
 
 type AgentPanelProps = {
     panelKey: string;
     focusRequestToken: number | null;
     isConnected: boolean;
+    wsRef: React.RefObject<Socket | null>;
+    getOpenFiles?: () => OpenFileInfo[];
+    getRootFiles?: () => WorkspaceFileInfo[];
+    onSearchFiles?: (query: string) => Promise<FileSearchResult[]>;
     agentPanes: {
         activePaneId: string;
         getSelectedId: (paneKey: string) => string | null;
@@ -20,6 +30,10 @@ type AgentPanelProps = {
     agents: {
         acpSessions: Map<string, AcpSessionState>;
         isAgentSettingsOpen: boolean;
+        isRegistryOpen: boolean;
+        setIsRegistryOpen: (open: boolean) => void;
+        agentsVersion: number;
+        setAgentsVersion: React.Dispatch<React.SetStateAction<number>>;
         closeAgent: (agentId: string) => void;
         fetchAvailableSessions: (agent: AcpAgent) => Promise<AcpSessionSummary[]>;
         sendPrompt: (...args: any[]) => void;
@@ -45,6 +59,10 @@ const AgentPanelComponent = ({
     panelKey,
     focusRequestToken,
     isConnected,
+    wsRef,
+    getOpenFiles,
+    getRootFiles,
+    onSearchFiles,
     agentPanes,
     agents,
     sessions,
@@ -85,6 +103,28 @@ const AgentPanelComponent = ({
         root.focus();
     }, [focusRequestToken]);
 
+    if (agents.isRegistryOpen && panelKey === agentPanes.activePaneId) {
+        return (
+            <div ref={panelRef} tabIndex={-1} style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+                <AcpRegistryModal
+                    wsRef={wsRef}
+                    isConnected={isConnected}
+                    onClose={() => agents.setIsRegistryOpen(false)}
+                    onStartAgent={(agent) => {
+                        agents.setIsRegistryOpen(false);
+                        const startedAgentId = onStartSpecificAgent(agent);
+                        if (startedAgentId) {
+                            handleSelectAgentForPane(startedAgentId);
+                        }
+                    }}
+                    onAgentsChanged={() => {
+                        agents.setAgentsVersion((v: number) => v + 1);
+                    }}
+                />
+            </div>
+        );
+    }
+
     if (agents.isAgentSettingsOpen && panelKey === agentPanes.activePaneId) {
         return (
             <div ref={panelRef} tabIndex={-1} style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -95,6 +135,7 @@ const AgentPanelComponent = ({
                     onClose={onCloseSettings}
                     onLoadSessions={agents.fetchAvailableSessions}
                     onResumeSession={(agent, sessionId) => onResumeSettingsSession(agent, sessionId)}
+                    onOpenRegistry={() => agents.setIsRegistryOpen(true)}
                 />
             </div>
         );
@@ -111,6 +152,7 @@ const AgentPanelComponent = ({
                         onCloseAgent={agents.closeAgent}
                         onStartAgent={onStartSpecificAgent}
                         onOpenSettings={onOpenSettings}
+                        onOpenRegistry={() => agents.setIsRegistryOpen(true)}
                     />
                 </div>
             </div>
@@ -122,13 +164,23 @@ const AgentPanelComponent = ({
             <div style={{ position: 'relative', flex: 1, minHeight: 0, overflow: 'hidden' }}>
                 <AcpSession
                     agentId={selectedSession.agentId}
-                    title={selectedSession.agentName || selectedSession.agentId}
+                    title={resolveAgentDisplay(selectedSession, availableAgents).fullName}
                     isConnected={selectedSession.isActive && isConnected}
                     isProcessing={selectedSession.isProcessing || false}
+                    isStarting={selectedSession.isStarting}
+                    startError={selectedSession.startError}
                     messages={selectedSession.messages}
                     modelSelector={selectedSession.modelSelector}
                     reasoningSelector={selectedSession.reasoningSelector}
                     contextUsage={selectedSession.contextUsage}
+                    availableCommands={selectedSession.availableCommands}
+                    getOpenFiles={getOpenFiles}
+                    getRootFiles={getRootFiles}
+                    onSearchFiles={onSearchFiles}
+                    authRequired={selectedSession.authRequired}
+                    isAuthenticating={selectedSession.isAuthenticating}
+                    pendingAuthMethod={selectedSession.pendingAuthMethod}
+                    onAuthenticate={agents.authenticateAgent}
                     onFocusPane={() => {}}
                     onSendPrompt={agents.sendPrompt}
                     onCancelPrompt={agents.cancelPrompt}

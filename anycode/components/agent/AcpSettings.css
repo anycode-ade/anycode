@@ -54,8 +54,7 @@
 
 .agent-settings-item {
   background: var(--item-bg, #252525);
-  border: 1px solid var(--border-color, #333);
-  border-radius: 6px;
+  border-bottom: 1px solid var(--border-color, #333);
   padding: 16px;
   margin-bottom: 16px;
 }
@@ -76,6 +75,27 @@
   font-size: 1.14em;
   font-weight: inherit;
   color: var(--text-color, #ccc);
+}
+
+.agent-settings-advanced-details {
+  margin-top: 10px;
+  padding-top: 6px;
+}
+
+.agent-settings-advanced-summary {
+  font-size: 0.78em;
+  color: var(--theme-tab-foreground, #888);
+  cursor: pointer;
+  user-select: none;
+  transition: color 0.15s ease;
+}
+
+.agent-settings-advanced-summary:hover {
+  color: var(--theme-foreground, #ccc);
+}
+
+.agent-settings-field-nested {
+  margin-top: 8px;
 }
 
 .agent-settings-item-actions {
@@ -104,23 +124,6 @@
 .agent-settings-sessions-btn svg {
   width: 14px;
   height: 14px;
-}
-
-.agent-settings-default-checkbox {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  cursor: pointer;
-  font-size: 0.93em;
-  color: var(--text-color, #ccc);
-}
-
-.agent-settings-default-checkbox input[type="radio"] {
-  cursor: pointer;
-}
-
-.agent-settings-default-checkbox span {
-  font-size: 0.79em;
 }
 
 .agent-settings-remove-btn {
@@ -372,6 +375,28 @@
 
 .agent-settings-save-btn:hover {
   background-color: var(--hover-bg, #2a2a2a);
+}
+
+.agent-settings-env-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 4px 0;
+}
+
+.agent-settings-env-tag {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-color, #333);
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 0.85em;
+  color: var(--text-color, #ccc);
+  font-family: var(--interface-font-family);
+}
+
+.agent-settings-env-tag code {
+  color: var(--accent-color, #58a6ff);
+  font-family: inherit;
 }
 
 @media (max-width: 768px) {

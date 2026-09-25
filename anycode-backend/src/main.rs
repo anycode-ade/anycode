@@ -10,6 +10,7 @@ use tracing::info;
 mod acp;
 mod acp_fs;
 mod acp_history;
+pub mod acp_registry;
 mod app_state;
 mod background_tasks;
 mod code;

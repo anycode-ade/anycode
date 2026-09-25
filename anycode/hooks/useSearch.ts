@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Socket } from 'socket.io-client';
-import type { SearchEnd, SearchResult, SearchResultsBatch } from '../types';
+import type { FileSearchResult, SearchEnd, SearchResult, SearchResultsBatch } from '../types';
 import { normalizePath } from '../utils';
 
 type UseSearchParams = {
@@ -125,6 +125,54 @@ export const useSearch = ({ wsRef, isConnected }: UseSearchParams) => {
         };
     }, []);
 
+    const searchFiles = useCallback((query: string): Promise<FileSearchResult[]> => {
+        return new Promise((resolve) => {
+            const socket = wsRef.current;
+            if (!socket || !isConnected) {
+                resolve([]);
+                return;
+            }
+
+            const requestId = `files-search-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+            let results: FileSearchResult[] = [];
+
+            const handleResults = (data: { query?: string; request_id?: string; results?: FileSearchResult[] }) => {
+                if (data.request_id === requestId && Array.isArray(data.results)) {
+                    results = results.concat(data.results);
+                }
+            };
+
+            const handleEnd = (data: { query?: string; request_id?: string }) => {
+                if (data.request_id === requestId) {
+                    cleanup();
+                    resolve(results);
+                }
+            };
+
+            const handleError = () => {
+                cleanup();
+                resolve(results);
+            };
+
+            const cleanup = () => {
+                socket.off('search:files:results', handleResults);
+                socket.off('search:files:end', handleEnd);
+                socket.off('search:files:error', handleError);
+                clearTimeout(timer);
+            };
+
+            const timer = setTimeout(() => {
+                cleanup();
+                resolve(results);
+            }, 3000);
+
+            socket.on('search:files:results', handleResults);
+            socket.on('search:files:end', handleEnd);
+            socket.on('search:files:error', handleError);
+            socket.emit('search:files:start', { query, request_id: requestId });
+        });
+    }, [wsRef, isConnected]);
+
     return {
         searchInput,
         setSearchInput,
@@ -132,6 +180,7 @@ export const useSearch = ({ wsRef, isConnected }: UseSearchParams) => {
         searchEnded,
         startSearch,
         cancelSearch,
+        searchFiles,
         clearResults,
         handleSearchResults,
         handleSearchEnd,

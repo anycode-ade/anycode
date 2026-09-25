@@ -1,6 +1,7 @@
-import type { FileState, Terminal, AcpSession } from '../../types';
+import type { FileState, Terminal, AcpSession, AcpAgent } from '../../types';
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { loadItem, saveItem } from '../../storage';
+import { resolveAgentDisplay } from '../../agents';
 import { TabContextMenu } from './TabContextMenu';
 import type { TabMenuAction } from './TabContextMenu';
 import { ToolbarTab } from './ToolbarTab';
@@ -23,6 +24,7 @@ interface ToolbarProps {
     activeTerminalId: string | null;
     agentSessions: AcpSession[];
     activeAgentId: string | null;
+    availableAgents?: AcpAgent[];
     fileIconsStyle?: 'colored' | 'monochrome' | 'disabled';
     onSelectFile: (fileId: string) => void;
     onCloseFile: (fileId: string) => void;
@@ -46,6 +48,7 @@ export const Toolbar = ({
     activeTerminalId,
     agentSessions,
     activeAgentId,
+    availableAgents = [],
     fileIconsStyle = 'colored',
     onSelectFile,
     onCloseFile,
@@ -563,25 +566,31 @@ export const Toolbar = ({
                     {sortedAgentSessions.length > 0 && (sortedFiles.length > 0 || sortedTerminals.length > 0) && (
                         <div className="tab-group-separator" />
                     )}
-                    {sortedAgentSessions.map((session) => (
-                        <ToolbarTab
-                            key={`toolbar-agent-${session.agentId}`}
-                            active={activeAgentId === session.agentId}
-                            label={session.agentName || session.agentId}
-                            variant="agent"
-                            pinned={pinnedAgentIds.includes(session.agentId)}
-                            onUnpin={() => togglePinAgent(session.agentId)}
-                            onSelect={() => onSelectAgent(session.agentId)}
-                            onClose={() => onCloseAgent(session.agentId)}
-                            onContextMenu={(event) => openMenu(event, 'agent', session.agentId)}
-                            draggable={true}
-                            dragging={draggedItem?.type === 'agent' && draggedItem?.id === session.agentId}
-                            onDragStart={(event) => handleDragStart(event, 'agent', session.agentId)}
-                            onDragEnd={handleDragEnd}
-                            onDragOver={(event) => handleDragOver(event, 'agent', session.agentId)}
-                            onDrop={handleDrop}
-                        />
-                    ))}
+                    {sortedAgentSessions.map((session) => {
+                        const { baseName, accountName, fullName } = resolveAgentDisplay(session, availableAgents);
+                        return (
+                            <ToolbarTab
+                                key={`toolbar-agent-${session.agentId}`}
+                                active={activeAgentId === session.agentId}
+                                label={baseName}
+                                badge={accountName}
+                                title={fullName}
+                                variant="agent"
+                                isLoading={session.isStarting}
+                                pinned={pinnedAgentIds.includes(session.agentId)}
+                                onUnpin={() => togglePinAgent(session.agentId)}
+                                onSelect={() => onSelectAgent(session.agentId)}
+                                onClose={() => onCloseAgent(session.agentId)}
+                                onContextMenu={(event) => openMenu(event, 'agent', session.agentId)}
+                                draggable={true}
+                                dragging={draggedItem?.type === 'agent' && draggedItem?.id === session.agentId}
+                                onDragStart={(event) => handleDragStart(event, 'agent', session.agentId)}
+                                onDragEnd={handleDragEnd}
+                                onDragOver={(event) => handleDragOver(event, 'agent', session.agentId)}
+                                onDrop={handleDrop}
+                            />
+                        );
+                    })}
                 </div>
             )}
 

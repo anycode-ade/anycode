@@ -15,6 +15,8 @@ pub struct AcpStartRequest {
     pub agent_name: String,
     pub command: String,
     pub args: Vec<String>,
+    #[serde(default)]
+    pub env: std::collections::HashMap<String, String>,
     pub resume_session_id: Option<String>,
 }
 
@@ -30,6 +32,7 @@ pub async fn handle_acp_start(
         agent_name,
         command,
         args,
+        env,
         resume_session_id,
     } = request;
     let (start_result, msg_rx) = {
@@ -46,6 +49,7 @@ pub async fn handle_acp_start(
                 agent_name,
                 &command,
                 &args,
+                Some(env),
                 resume_session_id,
             )
             .await;
@@ -60,7 +64,7 @@ pub async fn handle_acp_start(
     };
 
     match start_result {
-        Ok(session_id) => {
+        Ok(crate::acp::AcpStartOutcome::Ready { session_id }) => {
             info!("ACP agent {} started successfully", agent_id);
 
             send_agent_history(&socket, &state, &agent_id).await;
@@ -74,8 +78,35 @@ pub async fn handle_acp_start(
                 });
             }
 
-            ack.send(&json!({ "success": true, "agent_id": agent_id, "session_id": session_id }))
-                .ok();
+            ack.send(&json!({
+                "success": true,
+                "agent_id": agent_id,
+                "session_id": session_id,
+                "auth_required": false
+            }))
+            .ok();
+        }
+        Ok(crate::acp::AcpStartOutcome::AuthRequired { auth_methods }) => {
+            info!("ACP agent {} requires authentication: {:?}", agent_id, auth_methods);
+
+            send_agent_history(&socket, &state, &agent_id).await;
+
+            // Set up message forwarding so notifications/updates flow
+            if let Some(msg_rx) = msg_rx {
+                let agent_id = agent_id.clone();
+                let state = state.0.clone();
+                tokio::spawn(async move {
+                    forward_agent_messages(socket, state, agent_id, msg_rx).await;
+                });
+            }
+
+            ack.send(&json!({
+                "success": true,
+                "agent_id": agent_id,
+                "auth_required": true,
+                "auth_methods": auth_methods
+            }))
+            .ok();
         }
         Err(e) => {
             error!("Failed to start ACP agent {}: {}", agent_id, e);
@@ -90,6 +121,60 @@ pub async fn handle_acp_start(
                 }),
             );
             error_ack!(ack, &agent_id, "Failed to start agent: {}", e);
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct AcpAuthenticateRequest {
+    pub agent_id: String,
+    pub method_id: String,
+}
+
+pub async fn handle_acp_authenticate(
+    _socket: SocketRef,
+    Data(request): Data<AcpAuthenticateRequest>,
+    ack: AckSender,
+    state: State<AppState>,
+) {
+    info!("handle_acp_authenticate {:?}", request);
+    let AcpAuthenticateRequest { agent_id, method_id } = request;
+
+    let rx_res = {
+        let acp_manager = state.acp_manager.lock().await;
+        acp_manager.authenticate(&agent_id, &method_id).await
+    };
+
+    let reply_rx = match rx_res {
+        Ok(rx) => rx,
+        Err(e) => {
+            error!("Failed to initiate authentication for {}: {}", agent_id, e);
+            error_ack!(ack, &agent_id, "{}", e);
+        }
+    };
+
+    // Await authentication result without holding acp_manager lock
+    match reply_rx.await {
+        Ok(Ok(bootstrap)) => {
+            info!("Authentication succeeded for {}. Session id: {}", agent_id, bootstrap.session_id);
+            {
+                let mut acp_manager = state.acp_manager.lock().await;
+                acp_manager.set_session_id(&agent_id, bootstrap.session_id.clone());
+            }
+
+            ack.send(&json!({
+                "success": true,
+                "agent_id": agent_id,
+                "session_id": bootstrap.session_id.to_string()
+            })).ok();
+        }
+        Ok(Err(e)) => {
+            error!("Authentication failed for {}: {}", agent_id, e);
+            error_ack!(ack, &agent_id, "{}", e);
+        }
+        Err(_) => {
+            error!("Authentication channel dropped for {}", agent_id);
+            error_ack!(ack, &agent_id, "Authentication channel dropped");
         }
     }
 }
@@ -210,6 +295,7 @@ fn find_local_paths(text: &str) -> Vec<PathBuf> {
                     if text.is_char_boundary(start) {
                         if let Some(candidate) = text.get(start..end_idx) {
                             let candidate_clean = candidate.strip_prefix("file://").unwrap_or(candidate);
+                            let candidate_clean = candidate_clean.strip_prefix('@').unwrap_or(candidate_clean);
                             let candidate_bytes = candidate_clean.as_bytes();
                             let is_absolute = candidate_clean.starts_with('/')
                                 || (candidate_bytes.len() >= 3
@@ -221,6 +307,11 @@ fn find_local_paths(text: &str) -> Vec<PathBuf> {
                                 let path = Path::new(candidate_clean);
                                 if path.is_file() {
                                     best_path = Some(path.to_path_buf());
+                                }
+                            } else {
+                                let rel = crate::utils::current_dir().join(candidate_clean);
+                                if rel.is_file() {
+                                    best_path = Some(rel);
                                 }
                             }
                         }
@@ -525,6 +616,122 @@ pub async fn handle_acp_undo(
         Err(e) => {
             error!("Undo failed for agent {}: {}", agent_id, e);
             error_ack!(ack, &agent_id, "Undo failed: {}", e);
+        }
+    }
+}
+
+pub fn agents_config_path() -> std::path::PathBuf {
+    dirs::data_dir()
+        .or_else(dirs::home_dir)
+        .map(|h| h.join(".anycode").join("agents.json"))
+        .unwrap_or_else(|| std::path::PathBuf::from(".anycode/agents.json"))
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct AcpAgentsConfigFile {
+    #[serde(default)]
+    pub agents: Vec<serde_json::Value>,
+    #[serde(default)]
+    pub default_agent_id: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct AcpAgentsSaveRequest {
+    #[serde(default)]
+    pub agents: Vec<serde_json::Value>,
+    #[serde(default)]
+    pub default_agent_id: Option<String>,
+}
+
+pub async fn handle_acp_agents_get(_socket: SocketRef, ack: AckSender) {
+    let path = agents_config_path();
+    if !path.exists() {
+        let _ = ack.send(&json!({
+            "success": true,
+            "exists": false,
+            "agents": [],
+            "default_agent_id": null
+        }));
+        return;
+    }
+
+    match std::fs::read_to_string(&path) {
+        Ok(content) => {
+            match serde_json::from_str::<AcpAgentsConfigFile>(&content) {
+                Ok(config) => {
+                    let _ = ack.send(&json!({
+                        "success": true,
+                        "exists": true,
+                        "agents": config.agents,
+                        "default_agent_id": config.default_agent_id
+                    }));
+                }
+                Err(e) => {
+                    error!("Failed to parse agents.json: {}", e);
+                    let _ = ack.send(&json!({
+                        "success": false,
+                        "error": format!("Failed to parse agents config: {}", e)
+                    }));
+                }
+            }
+        }
+        Err(e) => {
+            error!("Failed to read agents.json: {}", e);
+            let _ = ack.send(&json!({
+                "success": false,
+                "error": format!("Failed to read agents config: {}", e)
+            }));
+        }
+    }
+}
+
+pub async fn handle_acp_agents_save(
+    socket: SocketRef,
+    Data(request): Data<AcpAgentsSaveRequest>,
+    ack: AckSender,
+) {
+    let path = agents_config_path();
+    if let Some(parent) = path.parent() {
+        if let Err(e) = std::fs::create_dir_all(parent) {
+            error!("Failed to create directory for agents.json: {}", e);
+            let _ = ack.send(&json!({
+                "success": false,
+                "error": format!("Failed to create directory: {}", e)
+            }));
+            return;
+        }
+    }
+
+    let config = AcpAgentsConfigFile {
+        agents: request.agents.clone(),
+        default_agent_id: request.default_agent_id.clone(),
+    };
+
+    match serde_json::to_string_pretty(&config) {
+        Ok(json_str) => {
+            if let Err(e) = std::fs::write(&path, json_str) {
+                error!("Failed to write agents.json: {}", e);
+                let _ = ack.send(&json!({
+                    "success": false,
+                    "error": format!("Failed to save agents config: {}", e)
+                }));
+                return;
+            }
+
+            info!("Saved {} agents to {:?}", config.agents.len(), path);
+            let _ = ack.send(&json!({ "success": true }));
+
+            let _ = socket.broadcast().emit("acp:agents:changed", &json!({
+                "agents": config.agents,
+                "default_agent_id": config.default_agent_id
+            }));
+        }
+        Err(e) => {
+            error!("Failed to serialize agents config: {}", e);
+            let _ = ack.send(&json!({
+                "success": false,
+                "error": format!("Failed to serialize agents config: {}", e)
+            }));
         }
     }
 }
