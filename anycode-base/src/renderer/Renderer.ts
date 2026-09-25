@@ -810,29 +810,18 @@ export class Renderer {
         let currentStartIndex = renderedRange?.startIndex ?? -1;
         let currentEndIndex = renderedRange?.endIndex ?? -1;
 
-        // Buffer thresholding: if viewport is still comfortably within rendered slice, skip DOM mutations
-        if (currentStartIndex !== -1 && currentEndIndex !== -1 && viewHeight > 0) {
-            const firstVisible = Math.floor(currentScrollTop / lineHeight);
-            const visibleCount = Math.ceil(viewHeight / lineHeight);
-            const lastVisible = firstVisible + visibleCount;
-            const threshold = Math.max(3, Math.floor(buffer / 4));
-
-            if (
-                firstVisible >= currentStartIndex + threshold &&
-                lastVisible <= currentEndIndex - threshold
-            ) {
-                // Viewport is completely covered by already rendered elements.
-                if (!readOnly && (!search.isActive() || !search.isFocused())) {
-                    this.renderCursorOrSelection(state);
-                }
-                if (search.isActive()) {
-                    this.searchRenderer.updateSearchHighlights(search);
-                }
-                return;
-            }
-        }
-
         const { startIndex, endIndex } = this.getVisibleRange(totalVisualRows, settings, undefined, currentScrollTop, viewHeight);
+
+        // If visible row range has not changed (e.g. sub-line scroll), skip DOM mutations
+        if (currentStartIndex !== -1 && currentEndIndex !== -1 && startIndex === currentStartIndex && endIndex === currentEndIndex) {
+            if (!readOnly && (!search.isActive() || !search.isFocused())) {
+                this.renderCursorOrSelection(state);
+            }
+            if (search.isActive()) {
+                this.searchRenderer.updateSearchHighlights(search);
+            }
+            return;
+        }
 
         this.ensureSpacers(this.codeContent);
         this.gutter.firstChild || this.ensureSpacers(this.gutter);

@@ -7,15 +7,59 @@ type UseThemeParams = {
     isConnected: boolean;
 };
 
+const parseRgb = (color: string): [number, number, number] | null => {
+    const trimmed = color.trim().toLowerCase();
+    if (trimmed.startsWith('#')) {
+        const hex = trimmed.slice(1);
+        if (hex.length === 3) {
+            return [
+                parseInt(hex[0] + hex[0], 16),
+                parseInt(hex[1] + hex[1], 16),
+                parseInt(hex[2] + hex[2], 16),
+            ];
+        }
+        if (hex.length >= 6) {
+            return [
+                parseInt(hex.slice(0, 2), 16),
+                parseInt(hex.slice(2, 4), 16),
+                parseInt(hex.slice(4, 6), 16),
+            ];
+        }
+    }
+    const match = trimmed.match(/^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/);
+    if (match) {
+        return [parseInt(match[1], 10), parseInt(match[2], 10), parseInt(match[3], 10)];
+    }
+    return null;
+};
+
+const getRelativeLuminance = ([r, g, b]: [number, number, number]): number => {
+    const [rs, gs, bs] = [r / 255, g / 255, b / 255].map((v) =>
+        v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4)
+    );
+    return 0.2126 * rs + 0.7152 * gs + 0.0722 * bs;
+};
+
+/**
+ * Determines if a dark color is near-black or deep dark neutral.
+ * For Safari to render deep black toolbar chrome (8, 8, 8) like x.com / GitHub without
+ * translucent milky-gray blur artifacts, near-black backgrounds are mapped to #000000.
+ */
+const isNearBlack = (color: string): boolean => {
+    const rgb = parseRgb(color);
+    if (!rgb) return false;
+    return getRelativeLuminance(rgb) <= 0.03 || Math.max(...rgb) <= 45;
+};
+
 export const useTheme = ({ wsRef, isConnected }: UseThemeParams) => {
     const [currentThemeId, setCurrentThemeId] = useState<string | null>(() => {
         if (typeof window === 'undefined') return null;
         return localStorage.getItem('themeId') || 'anycode.json:anycode';
     });
 
-    const applyBrowserChromeColor = useCallback((color: string) => {
-        const safeColor = color?.trim() || '#242424';
-        const ensureMeta = (selector: string, attrs: Record<string, string>) => {
+    const applyBrowserChromeColor = useCallback((color: string, isLight: boolean = false) => {
+        const safeColor = color?.trim() || (isLight ? '#ffffff' : '#000000');
+        const ensureMeta = (selector: string, attrs: Record<string, string>, contentVal: string) => {
             let meta = document.head.querySelector(selector) as HTMLMetaElement | null;
             if (!meta) {
                 meta = document.createElement('meta');
@@ -24,11 +68,30 @@ export const useTheme = ({ wsRef, isConnected }: UseThemeParams) => {
                 }
                 document.head.appendChild(meta);
             }
-            meta.setAttribute('content', safeColor);
+            meta.setAttribute('content', contentVal);
         };
 
-        ensureMeta('meta[name="theme-color"]', { name: 'theme-color' });
-        ensureMeta('meta[name="apple-mobile-web-app-status-bar-style"]', { name: 'apple-mobile-web-app-status-bar-style' });
+        // For dark themes, pure black (#000000) instructs Safari to render the true dark black chrome (8, 8, 8) like x.com
+        const darkChromeColor = !isLight ? (isNearBlack(safeColor) ? '#000000' : safeColor) : '#000000';
+
+        ensureMeta('meta[name="theme-color"][media="(prefers-color-scheme: dark)"]', { name: 'theme-color', media: '(prefers-color-scheme: dark)' }, darkChromeColor);
+        ensureMeta('meta[name="theme-color"][media="(prefers-color-scheme: light)"]', { name: 'theme-color', media: '(prefers-color-scheme: light)' }, isLight ? safeColor : '#ffffff');
+        ensureMeta('meta[name="theme-color"]:not([media])', { name: 'theme-color' }, isLight ? safeColor : darkChromeColor);
+        ensureMeta('meta[name="color-scheme"]', { name: 'color-scheme' }, isLight ? 'light' : 'dark');
+        ensureMeta('meta[name="apple-mobile-web-app-status-bar-style"]', { name: 'apple-mobile-web-app-status-bar-style' }, 'default');
+
+        const targetColor = !isLight ? darkChromeColor : safeColor;
+
+        if (typeof document !== 'undefined') {
+            document.documentElement.style.backgroundColor = targetColor;
+            if (document.body) {
+                document.body.style.backgroundColor = targetColor;
+            }
+            const shim = document.getElementById('safari-theme-shim');
+            if (shim) {
+                shim.style.backgroundColor = targetColor;
+            }
+        }
     }, []);
 
     const applyTheme = useCallback((theme: any) => {
@@ -55,7 +118,6 @@ export const useTheme = ({ wsRef, isConnected }: UseThemeParams) => {
             root.style.setProperty('--theme-accent-background', getThemeColor('primary.background', '#458588'));
             root.style.setProperty('--theme-accent-foreground', getThemeColor('primary.foreground', '#ffffff'));
             root.style.setProperty('--theme-muted-foreground', getThemeColor('muted.foreground', '#888888'));
-            applyBrowserChromeColor(baseBackground);
 
             root.style.setProperty('--item-bg', baseBackground);
             root.style.setProperty('--assistant-message-bg', baseBackground);
@@ -99,6 +161,7 @@ export const useTheme = ({ wsRef, isConnected }: UseThemeParams) => {
 
         const isLight = theme.mode === 'light';
         root.setAttribute('data-theme-mode', isLight ? 'light' : 'dark');
+        root.style.colorScheme = isLight ? 'light' : 'dark';
 
         const getThemeColorSafe = (key: string, fallback: string) => (theme.colors && theme.colors[key]) || fallback;
         const getHighlightColorSafe = (key: string, fallback: string) => (theme.highlight && theme.highlight[key]) || fallback;
@@ -133,6 +196,14 @@ export const useTheme = ({ wsRef, isConnected }: UseThemeParams) => {
 
         root.style.setProperty('--background-color', uiBackground);
         root.style.setProperty('--foreground-color', uiForeground);
+        applyBrowserChromeColor(uiBackground, isLight);
+
+        try {
+            localStorage.setItem('themeMode', isLight ? 'light' : 'dark');
+            localStorage.setItem('themeBackground', uiBackground);
+        } catch {
+            // Ignore localStorage quota or private browsing errors
+        }
     }, [applyBrowserChromeColor]);
 
     const handleThemeChange = useCallback((themeId: string, fileName: string, themeName: string) => {
@@ -147,6 +218,20 @@ export const useTheme = ({ wsRef, isConnected }: UseThemeParams) => {
             }
         });
     }, [wsRef, isConnected, applyTheme]);
+
+    useEffect(() => {
+        let storedMode: string | null = null;
+        let storedBg: string | null = null;
+        try {
+            storedMode = localStorage.getItem('themeMode');
+            storedBg = localStorage.getItem('themeBackground');
+        } catch {
+            // Ignore localStorage access errors
+        }
+        const isLight = storedMode === 'light';
+        const fallbackBg = isLight ? '#ffffff' : '#0a0a0a';
+        applyBrowserChromeColor(storedBg || fallbackBg, isLight);
+    }, [applyBrowserChromeColor]);
 
     useEffect(() => {
         if (!isConnected || !wsRef.current) {
