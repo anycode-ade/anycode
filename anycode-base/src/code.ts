@@ -140,10 +140,23 @@ function getCachedQuery(
 }
 
 
+let treeSitterInitPromise: Promise<void> | null = null;
+function ensureTreeSitterInit(): Promise<void> {
+    if (!treeSitterInitPromise) {
+        treeSitterInitPromise = TreeSitterParser.init().catch((err) => {
+            treeSitterInitPromise = null;
+            throw err;
+        });
+    }
+    return treeSitterInitPromise;
+}
+
 async function loadLanguage(language: string): Promise<Language> {
     if (langsCache.has(language)) {
         return langsCache.get(language)!;
     }
+
+    await ensureTreeSitterInit();
 
     let loadPromise = pendingLangsCache.get(language);
     if (!loadPromise) {
@@ -159,6 +172,9 @@ async function loadLanguage(language: string): Promise<Language> {
         }
         langsCache.set(language, lang);
         return lang;
+    } catch (err) {
+        langsCache.delete(language);
+        throw err;
     } finally {
         pendingLangsCache.delete(language);
     }
@@ -325,34 +341,33 @@ export class Code {
             return;
         }
 
-        let lang: Language;
         try {
-            await TreeSitterParser.init();
-            lang = await loadLanguage(this.language);
+            await ensureTreeSitterInit();
+            const lang = await loadLanguage(this.language);
+
+            this.parser = new TreeSitterParser();
+            this.parser.setLanguage(lang);
+
+            this.tree = this.parser.parse(this.input) || undefined;
+
+            if (this.language) {
+                let q = this.getQuery();
+                if (q) this.query = getCachedQuery(lang, this.language, 'highlight', q);
+                const foldsQ = this.getFoldsQuery();
+                if (foldsQ) this.foldsQuery = getCachedQuery(lang, this.language, 'folds', foldsQ);
+                const runnablesQ = this.getRunnablesQuery();
+                if (runnablesQ) this.runnablesQuery = getCachedQuery(lang, this.language, 'runnables', runnablesQ);
+                this.foldRangesInvalidated = true;
+                if (this.query) await this.initInjections();
+            }
         } catch (error) {
             console.error(`Failed to initialize tree-sitter language "${this.language}"`, error);
+            if (this.language) {
+                langsCache.delete(this.language);
+            }
             this.useFastSyntax = true;
             this.clearSyntaxState();
             return;
-        }
-
-        this.parser = new TreeSitterParser();
-        this.parser.setLanguage(lang);
-
-        this.tree = this.parser.parse(this.input) || undefined;
-
-        if (this.language) {
-            let q = this.getQuery();
-            if (q) this.query = getCachedQuery(lang, this.language, 'highlight', q);
-            const foldsQ = this.getFoldsQuery();
-            if (foldsQ) this.foldsQuery = getCachedQuery(lang, this.language, 'folds', foldsQ);
-            const runnablesQ = this.getRunnablesQuery();
-            if (runnablesQ) this.runnablesQuery = getCachedQuery(lang, this.language, 'runnables', runnablesQ);
-            this.foldRangesInvalidated = true;
-            if (this.query) await this.initInjections();
-            // let tq = this.getRunnablesQuery();
-            // if (tq) this.runnablesQuery = lang.query(tq);
-            // if (this.runnablesQuery || this.isExecutable()) this.updateRunnables();
         }
     }
 

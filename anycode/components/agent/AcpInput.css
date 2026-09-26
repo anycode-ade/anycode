@@ -99,6 +99,196 @@
     padding: 0;
 }
 
+/* Selection quote star button in controls row */
+.acp-input-quote-star-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    color: #fabd2f;
+    cursor: pointer;
+    flex-shrink: 0;
+    animation: acpStarPopIn 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+}
+
+.acp-input-quote-star-btn.acp-input-quote-star-exiting {
+    animation: acpStarPopOut 0.18s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+    pointer-events: none;
+}
+
+.acp-input-quote-star-btn:active {
+    transform: scale(0.95);
+}
+
+@keyframes acpStarPopIn {
+    0% {
+        opacity: 0;
+        transform: scale(0.6);
+    }
+    100% {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+@keyframes acpStarPopOut {
+    0% {
+        opacity: 1;
+        transform: scale(1);
+    }
+    100% {
+        opacity: 0;
+        transform: scale(0.6);
+    }
+}
+
+/* Interleaved text and quote blocks flow */
+.acp-input-blocks-flow {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.acp-input-block-text-row {
+    display: flex;
+    align-items: flex-end;
+    gap: 6px;
+    width: 100%;
+}
+
+.acp-input-block-textarea {
+    flex: 1;
+    width: 100%;
+    min-height: 24px;
+    max-height: 160px;
+    background: transparent;
+    border: none;
+    outline: none;
+    padding: 4px 6px;
+    color: var(--text-color, #fff);
+    -webkit-text-fill-color: var(--text-color, #fff);
+    font-family: var(--interface-font-family);
+    font-size: var(--interface-font-size, 14px);
+    font-weight: 400;
+    line-height: 1.45;
+    resize: none;
+    box-sizing: border-box;
+}
+
+.acp-input-block-textarea:focus {
+    outline: none;
+}
+
+.acp-input-block-textarea::placeholder {
+    color: var(--text-color-secondary, rgba(255, 255, 255, 0.45));
+    -webkit-text-fill-color: var(--text-color-secondary, rgba(255, 255, 255, 0.45));
+    font-size: 0.93em;
+    font-weight: 400;
+}
+
+.acp-input-block-quote {
+    animation: acpQuoteFadeIn 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.acp-input-quote-badge {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 6px 10px;
+    border-radius: 6px;
+    border-left: 3px solid var(--theme-accent-background, #458588);
+    background: var(--background-secondary, rgba(255, 255, 255, 0.05));
+    border-top: 1px solid var(--border-color, rgba(255, 255, 255, 0.1));
+    border-right: 1px solid var(--border-color, rgba(255, 255, 255, 0.1));
+    border-bottom: 1px solid var(--border-color, rgba(255, 255, 255, 0.1));
+    transition: background-color 0.15s ease;
+    animation: acpQuoteFadeIn 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.acp-input-quote-badge:hover {
+    background: rgba(255, 255, 255, 0.075);
+}
+
+.acp-input-quote-badge-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    flex: 1;
+}
+
+.acp-input-quote-badge-icon {
+    display: inline-flex;
+    align-items: center;
+    color: var(--theme-accent-background, #458588);
+    flex-shrink: 0;
+}
+
+.acp-input-quote-badge-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+    flex: 1;
+}
+
+.acp-input-quote-badge-label {
+    font-size: 0.78em;
+    font-weight: 600;
+    color: var(--theme-accent-background, #83a598);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.acp-input-quote-badge-text {
+    font-size: 0.8em;
+    font-family: var(--font-family, monospace);
+    color: var(--text-color-secondary, rgba(255, 255, 255, 0.8));
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.acp-input-quote-badge-remove {
+    background: transparent;
+    border: none;
+    color: var(--text-color-secondary, rgba(255, 255, 255, 0.6));
+    cursor: pointer;
+    padding: 3px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    transition: color 0.15s, background-color 0.15s;
+    flex-shrink: 0;
+}
+
+.acp-input-quote-badge-remove:hover {
+    color: var(--foreground-color, #ffffff);
+    background: rgba(255, 255, 255, 0.1);
+}
+
+@keyframes acpQuoteFadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(-4px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
 .acp-input-preview-text {
     flex: 1;
     font-size: 0.86em;

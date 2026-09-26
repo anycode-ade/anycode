@@ -114,4 +114,20 @@ export const AcpIcons = {
       <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
     </svg>
   ),
+  Sparkles: ({ size = 14 }: { size?: number }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/>
+    </svg>
+  ),
+  Quote: ({ size = 14 }: { size?: number }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor">
+      <path d="M9.5 8.5C9.5 13 7.5 16.8 4 19C6.8 16.5 7.2 13.5 7 11.8A3.8 3.8 0 1 1 9.5 8.5Zm10 0C19.5 13 17.5 16.8 14 19C16.8 16.5 17.2 13.5 17 11.8A3.8 3.8 0 1 1 19.5 8.5Z" />
+    </svg>
+  ),
+  File: ({ size = 14 }: { size?: number }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+      <polyline points="14 2 14 8 20 8"/>
+    </svg>
+  ),
 };

@@ -109,9 +109,36 @@
 }
 
 .acp-message-markdown blockquote {
-    padding-left: 0.85em;
-    border-left: 3px solid var(--border-color, #333);
-    color: var(--text-color-secondary, #888);
+    padding: 6px 12px;
+    border-left: 3px solid var(--theme-accent-background, #458588);
+    background: rgba(255, 255, 255, 0.04);
+    border-radius: 0 6px 6px 0;
+    color: var(--text-color-secondary, rgba(255, 255, 255, 0.8));
+    margin: 0 0 0.75em 0;
+}
+
+.acp-message-user .acp-message-markdown blockquote {
+    border-left: 3px solid rgba(255, 255, 255, 0.6);
+    background: rgba(0, 0, 0, 0.22);
+    color: rgba(255, 255, 255, 0.9);
+}
+
+.acp-message-user .acp-code {
+    background: rgba(0, 0, 0, 0.22);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 6px;
+    margin: 6px 0 8px 0;
+}
+
+.acp-message-user .acp-code-toolbar {
+    color: rgba(255, 255, 255, 0.7);
+}
+
+.acp-message-user .acp-code-copy-button:hover,
+.acp-message-user .acp-code-copy-button:focus-visible {
+    border-color: rgba(255, 255, 255, 0.35);
+    background: rgba(255, 255, 255, 0.12);
+    color: #fff;
 }
 
 .acp-message-markdown code {
@@ -159,10 +186,57 @@
     word-break: break-word;
 }
 
+.acp-message-markdown a.acp-file-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 1px 4px;
+    border-radius: 4px;
+    border: none;
+    background-color: transparent;
+    color: var(--accent-color, #7ab7ff) !important;
+    text-decoration: none !important;
+    font-family: var(--editor-font-family, "JetBrains Mono", monospace);
+    font-size: 0.9em;
+    line-height: 1.4;
+    vertical-align: middle;
+    cursor: pointer;
+    white-space: nowrap;
+    max-width: 100%;
+    word-break: normal;
+    transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.acp-message-markdown a.acp-file-link:hover {
+    background-color: rgba(122, 183, 255, 0.12);
+    text-decoration: underline !important;
+}
+
+.acp-file-link .acp-file-link-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.acp-file-link .acp-file-link-icon-svg {
+    width: 14px;
+    height: 14px;
+    display: inline-block;
+    vertical-align: middle;
+}
+
+.acp-file-link .acp-file-link-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .acp-code {
-    padding-left: 0.5em;
-    margin: 0 0 0.75em 0;
-    border-radius: 8px;
+    position: relative;
+    padding: 5px 28px 5px 8px;
+    margin: 4px 0 6px 0;
+    border-radius: 6px;
     max-height: 33vh;
     overflow: auto;
     /*border: 1px solid var(--border-color, #333);*/
@@ -170,31 +244,26 @@
 }
 
 .acp-code-toolbar {
-    position: sticky;
-    top: 0;
+    position: absolute;
+    top: 4px;
+    right: 4px;
     z-index: 2;
     display: flex;
     justify-content: flex-end;
-    height: 0;
-    margin-left: -0.5em;
-    padding: 0;
     pointer-events: none;
 }
 
 .acp-code-copy-button {
-    position: absolute;
-    top: 0.4em;
-    right: 0.5em;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 26px;
-    height: 26px;
+    width: 20px;
+    height: 20px;
     border: 1px solid transparent;
-    border-radius: 5px;
+    border-radius: 4px;
     background: transparent;
     color: var(--text-color-secondary, #aaa);
-    padding: 4px;
+    padding: 2px;
     cursor: pointer;
     opacity: 0;
     pointer-events: none;
@@ -208,14 +277,14 @@
 }
 
 .acp-code-copy-button svg {
-    width: 16px;
-    height: 16px;
+    width: 13px;
+    height: 13px;
 }
 
 .acp-code-copy-button:hover,
 .acp-code-copy-button:focus-visible {
     border-color: var(--accent-color, #7ab7ff);
-    background: var(--hover-bg, rgba(127, 127, 127, 0.2));
+    background: var(--hover-bg, rgba(127, 127, 127, 0.25));
     color: var(--text-color, #eee);
 }
 
@@ -238,13 +307,35 @@
 
 .acp-code > div {
     height: auto !important;
+    min-height: 0 !important;
+}
+
+.acp-code .anyeditor-wrapper {
+    height: auto !important;
+    min-height: 0 !important;
+    contain: none !important;
+    overflow: visible !important;
+    will-change: auto !important;
 }
 
 .acp-code .anyeditor {
     height: auto !important;
-    min-height: 0;
-    overflow-y: hidden !important;
+    min-height: 0 !important;
+    contain: none !important;
+    overflow: visible !important;
+    overflow-y: visible !important;
     background: transparent;
+}
+
+.acp-code .anyeditor .code {
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    contain: none !important;
+}
+
+.acp-code .anyeditor-wrapper .smr {
+    display: none !important;
 }
 
 .acp-diff-code {
@@ -736,12 +827,13 @@
 
 @media (max-width: 768px) and (pointer: coarse) {
     .acp-code {
-        padding: 0.35em;
+        padding: 5px 28px 5px 6px;
         max-height: 26vh;
     }
 
     .acp-code-toolbar {
-        margin-left: -0.35em;
+        margin-right: -22px;
+        margin-top: -1px;
     }
 
     .acp-code .anyeditor {

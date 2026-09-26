@@ -18,6 +18,7 @@ import { AcpIcons } from './AcpIcons';
 import { AgentIcon } from './AgentIcon';
 import { loadItem, saveItem } from '../../storage';
 import { usePersistedScroll } from '../../hooks/usePersistedScroll';
+import { selectionQuoteStore } from '../../features/agents/selectionQuoteStore';
 
 const ACP_INPUT_DRAFTS_STORAGE_KEY = 'acpInputDrafts';
 const EMPTY_ARRAY: any[] = [];
@@ -616,10 +617,11 @@ const AcpSessionComponent: React.FC<AcpSessionProps> = ({
     });
   }, [agentId]);
 
-  const handleSend = useCallback((attachments: AcpPromptAttachment[] = []) => {
-    if ((inputValue.trim() || attachments.length > 0) && isConnected && !isStarting) {
+  const handleSend = useCallback((attachments: AcpPromptAttachment[] = [], promptOverride?: string) => {
+    const finalPrompt = promptOverride !== undefined ? promptOverride : inputValue.trim();
+    if ((finalPrompt || attachments.length > 0) && isConnected && !isStarting) {
       enableAutoScroll();
-      onSendPrompt(agentId, inputValue.trim(), attachments);
+      onSendPrompt(agentId, finalPrompt, attachments);
       setInputValues((prev) => {
         if ((prev[agentId] ?? '') === '') {
           return prev;
@@ -632,6 +634,51 @@ const AcpSessionComponent: React.FC<AcpSessionProps> = ({
       });
     }
   }, [agentId, enableAutoScroll, inputValue, isConnected, isStarting, onSendPrompt]);
+
+  const handleCheckMessagesSelection = useCallback(() => {
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed) {
+      if (selectionQuoteStore.get()?.source === 'agent') {
+        selectionQuoteStore.clear();
+      }
+      return;
+    }
+
+    const container = contentRef.current;
+    if (!container || !sel.anchorNode || !container.contains(sel.anchorNode)) {
+      const current = selectionQuoteStore.get();
+      if (current?.id?.startsWith(`agent:${agentId}:`)) {
+        selectionQuoteStore.clear();
+      }
+      return;
+    }
+
+    const text = sel.toString().trim();
+    if (text.length >= 2) {
+      const anchorEl = sel.anchorNode.nodeType === Node.ELEMENT_NODE
+        ? (sel.anchorNode as HTMLElement)
+        : sel.anchorNode.parentElement;
+      const isUser = Boolean(anchorEl?.closest('.acp-message-user'));
+
+      selectionQuoteStore.set({
+        id: `agent:${agentId}:${isUser ? 'user' : 'assistant'}`,
+        text,
+        source: 'agent',
+        label: isUser ? 'Quote from You' : `Quote from ${title}`,
+      });
+    } else {
+      if (selectionQuoteStore.get()?.source === 'agent') {
+        selectionQuoteStore.clear();
+      }
+    }
+  }, [agentId, title]);
+
+  useEffect(() => {
+    document.addEventListener('selectionchange', handleCheckMessagesSelection);
+    return () => {
+      document.removeEventListener('selectionchange', handleCheckMessagesSelection);
+    };
+  }, [handleCheckMessagesSelection]);
 
   const handleCancel = useCallback(() => {
     onCancelPrompt(agentId);
@@ -759,7 +806,12 @@ const AcpSessionComponent: React.FC<AcpSessionProps> = ({
             </button>
           </div>
         ) : null}
-        <div className="acp-messages" ref={contentRef}>
+        <div
+          className="acp-messages"
+          ref={contentRef}
+          onMouseUp={handleCheckMessagesSelection}
+          onKeyUp={handleCheckMessagesSelection}
+        >
           <div className="acp-messages-inner" ref={innerRef}>
             {isStarting && (
               <div className="acp-session-starting" role="status" aria-live="polite">

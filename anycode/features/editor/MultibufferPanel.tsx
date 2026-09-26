@@ -5,6 +5,8 @@ import type { DockviewPanelApi } from 'dockview';
 import { LayoutPanelApiContext, LayoutVersionContext } from '../../components/layout/Layout';
 import type { FileState } from '../../types';
 import type { DiffMode } from '../../types/diffMode';
+import { getFileName, getLanguageFromFileName, toRelativeDisplayPath } from '../../utils';
+import { selectionQuoteStore } from '../agents/selectionQuoteStore';
 import './MultibufferPanel.css';
 
 export type MultibufferFile = {
@@ -94,6 +96,102 @@ const MultibufferPanel: React.FC<MultibufferPanelProps> = ({
                 ? [{ file, code: deletedEntry.code, originalCode: deletedEntry.originalCode }]
                 : [];
         }), [deletedEntriesVersion, editorStates, fileById, files]);
+
+    const handleCheckSelectionRef = useRef<() => void>(() => undefined);
+
+    const handleCheckSelection = () => {
+        requestAnimationFrame(() => {
+            const editor = sharedEditorRef.current;
+            const currentCode = currentCodeRef.current;
+            if (!editor || !currentCode) return;
+
+            const selectedText = editor.getSelectedText();
+            if (selectedText && selectedText.trim().length >= 2) {
+                const sorted = editor.selection?.sorted();
+                let startRow = sorted ? sorted[0].row : editor.cursor.row;
+                let endRow = sorted ? sorted[1].row : editor.cursor.row;
+
+                if (sorted && sorted[1].row > sorted[0].row && sorted[1].column === 0) {
+                    endRow = sorted[1].row - 1;
+                }
+
+                const startFileId = currentCode.getFileIdAtLine(startRow);
+                const endFileId = currentCode.getFileIdAtLine(endRow);
+
+                let startLocalLine = currentCode.getMultibufferLineNumber(startRow);
+                let endLocalLine = currentCode.getMultibufferLineNumber(endRow);
+
+                if (startLocalLine === null && startFileId) {
+                    for (let r = startRow + 1; r <= endRow; r++) {
+                        if (currentCode.getFileIdAtLine(r) === startFileId) {
+                            const local = currentCode.getMultibufferLineNumber(r);
+                            if (local !== null) {
+                                startLocalLine = local;
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                if (endLocalLine === null && endFileId) {
+                    for (let r = endRow - 1; r >= startRow; r--) {
+                        if (currentCode.getFileIdAtLine(r) === endFileId) {
+                            const local = currentCode.getMultibufferLineNumber(r);
+                            if (local !== null) {
+                                endLocalLine = local;
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                const isSingleFile = Boolean(startFileId && endFileId && startFileId === endFileId);
+                const targetFile = isSingleFile
+                    ? reviewFiles.find((f) => f.id === startFileId || f.path === startFileId)
+                    : undefined;
+                const fileState = isSingleFile && startFileId ? fileById.get(startFileId) : undefined;
+
+                const resolvedFilePath = targetFile?.path || (isSingleFile ? startFileId : undefined);
+                const resolvedLanguage =
+                    fileState?.language ||
+                    (resolvedFilePath ? getLanguageFromFileName(resolvedFilePath) : undefined);
+                const fileName = resolvedFilePath ? getFileName(resolvedFilePath) : 'multibuffer';
+                const displayPath = resolvedFilePath ? toRelativeDisplayPath(resolvedFilePath) : undefined;
+
+                let lineRange: [number, number] | undefined = undefined;
+                if (isSingleFile && startLocalLine !== null && endLocalLine !== null) {
+                    const minLine = Math.min(startLocalLine, endLocalLine) + 1;
+                    const maxLine = Math.max(startLocalLine, endLocalLine) + 1;
+                    lineRange = [minLine, maxLine];
+                }
+
+                const linesLabel = lineRange
+                    ? lineRange[0] === lineRange[1]
+                        ? `L${lineRange[0]}`
+                        : `L${lineRange[0]}-${lineRange[1]}`
+                    : '';
+
+                selectionQuoteStore.set({
+                    id: `editor:${resolvedFilePath || 'multibuffer'}`,
+                    text: selectedText,
+                    source: 'editor',
+                    label: `${fileName}${linesLabel ? ` (${linesLabel})` : ''}`,
+                    filePath: resolvedFilePath,
+                    displayPath,
+                    lineRange,
+                    language: resolvedLanguage,
+                });
+            } else {
+                if (selectionQuoteStore.get()?.id === `editor:${resolvedFilePath || 'multibuffer'}`) {
+                    selectionQuoteStore.clear();
+                }
+            }
+        });
+    };
+
+    useEffect(() => {
+        handleCheckSelectionRef.current = handleCheckSelection;
+    });
 
     useEffect(() => {
         if (!panel || !sharedEditor) return;
@@ -361,6 +459,7 @@ const MultibufferPanel: React.FC<MultibufferPanelProps> = ({
                     editor.setOnCursorChange((position) => {
                         const fileId = currentCodeRef.current?.getFileIdAtLine(position.line);
                         if (fileId) onActiveFileChangeRef.current?.(fileId);
+                        handleCheckSelectionRef.current();
                     });
                     editor.setOnMultibufferToggle(() => {
                         updateMultibufferErrors();
@@ -425,7 +524,11 @@ const MultibufferPanel: React.FC<MultibufferPanelProps> = ({
     }, [ignoreEdits, panelKey, readyFiles, reviewFiles]);
 
     return (
-        <div className="multibuffer-panel">
+        <div
+            className="multibuffer-panel"
+            onMouseUp={handleCheckSelection}
+            onKeyUp={handleCheckSelection}
+        >
             <div className="multibuffer-toolbar">
                 <div className="multibuffer-toolbar-title">
                     <span>{title}</span>

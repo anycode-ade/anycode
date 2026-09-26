@@ -58,6 +58,7 @@ export interface EditorOptions {
     scrollbarWidth?: number;
     code?: Code;
     originalCode?: Code;
+    buffer?: number;
 }
 
 export interface EditorState {
@@ -177,7 +178,7 @@ export class AnycodeEditor {
 
         this.settings = {
             lineHeight: 20,
-            buffer: 25,
+            buffer: options.buffer ?? 25,
             scrollbar: {
                 style: options.scrollbarStyle,
                 minSize: options.scrollbarMinSize,

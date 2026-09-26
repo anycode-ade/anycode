@@ -20,6 +20,53 @@ export const uriToFilePath = (uriOrPath: string): string => {
     }
 };
 
+let currentWorkspaceRoot: string | null = null;
+
+export const setWorkspaceRoot = (root: string | null): void => {
+    currentWorkspaceRoot = root ? normalizePath(root) : null;
+};
+
+export const getWorkspaceRoot = (): string | null => {
+    return currentWorkspaceRoot;
+};
+
+export const toRelativeDisplayPath = (filePath: string, workspaceRoot?: string | null): string => {
+    if (!filePath) return '';
+    const cleanPath = uriToFilePath(filePath);
+    const normalized = normalizePath(cleanPath);
+    const root = (workspaceRoot ? normalizePath(workspaceRoot) : null) ?? currentWorkspaceRoot;
+    if (root) {
+        if (normalized === root) return '.';
+        if (normalized.startsWith(root + '/')) {
+            return normalized.slice(root.length + 1);
+        }
+    }
+    const repoMatch = normalized.match(/(?:^|\/)(?:anycode|workspace|project)\/(.+)$/);
+    if (repoMatch) {
+        return repoMatch[1];
+    }
+    return normalized;
+};
+
+export const toFileUri = (filePath: string, lineRange?: [number, number]): string => {
+    if (!filePath) return '';
+    const cleanPath = uriToFilePath(filePath);
+    const normalized = normalizePath(cleanPath);
+    const hash = lineRange
+        ? `#L${lineRange[0]}${lineRange[1] !== lineRange[0] ? `-L${lineRange[1]}` : ''}`
+        : '';
+
+    if (/^[A-Za-z]:\//.test(normalized)) {
+        return `file:///${normalized}${hash}`;
+    }
+
+    if (normalized.startsWith('/')) {
+        return `file://${normalized}${hash}`;
+    }
+
+    return `file://${normalized}${hash}`;
+};
+
 export const getFileName = (path: string): string => {
     const normalized = normalizePath(path);
     const parts = normalized.split('/');
@@ -30,7 +77,9 @@ export const getParentPath = (path: string): string => {
     const normalized = normalizePath(path);
     const parts = normalized.split('/');
     if (parts.length <= 1) return '.';
-    return parts.slice(0, -1).join('/') || '.';
+    const parent = parts.slice(0, -1).join('/');
+    if (!parent && normalized.startsWith('/')) return '/';
+    return parent || '.';
 };
 
 export const joinPath = (...parts: string[]): string => {

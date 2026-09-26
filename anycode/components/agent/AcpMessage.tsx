@@ -5,6 +5,8 @@ import remarkGfm from 'remark-gfm';
 import { diffLines } from 'diff';
 import { AnycodeEditorReact, AnycodeEditor } from 'anycode-react';
 import { Icons } from '../Icons';
+import { FileIcon } from '../FileIcon';
+import { AcpIcons } from './AcpIcons';
 import {
   AcpMessage as AcpMessageType,
   AcpDiffContent,
@@ -507,10 +509,10 @@ const parseMarkdownFileHref = (href: string): ParsedFileLink | null => {
   if (hashIndex >= 0) {
     const fragment = workingHref.slice(hashIndex + 1);
     workingHref = workingHref.slice(0, hashIndex);
-    const lineMatch = fragment.match(/^L(\d+)(?:C(\d+))?$/i);
+    const lineMatch = fragment.match(/^L(\d+)(?:-L?(\d+))?(?:C(\d+))?$/i);
     if (lineMatch) {
       line = parseLineNumber(lineMatch[1]);
-      column = parseLineNumber(lineMatch[2] ?? null);
+      column = parseLineNumber(lineMatch[3] ?? null);
     }
   }
 
@@ -525,7 +527,7 @@ const parseMarkdownFileHref = (href: string): ParsedFileLink | null => {
 
   if (workingHref.startsWith('file://')) {
     workingHref = uriToFilePath(workingHref);
-  } else if (/^[a-z][a-z0-9+.-]*:/i.test(workingHref)) {
+  } else if (/^[a-z][a-z0-9+.-]*:\/\//i.test(workingHref) || (/^[a-z][a-z0-9+.-]*:/i.test(workingHref) && !/^[a-z]:[\\/]/i.test(workingHref))) {
     return null;
   }
 
@@ -536,7 +538,12 @@ const parseMarkdownFileHref = (href: string): ParsedFileLink | null => {
     column ??= parseLineNumber(suffixMatch[3] ?? null);
   }
 
-  const path = decodeURIComponent(workingHref).trim();
+  let path = workingHref.trim();
+  try {
+    path = decodeURIComponent(workingHref).trim();
+  } catch {
+    path = workingHref.trim();
+  }
   if (!path) {
     return null;
   }
@@ -557,6 +564,7 @@ const MarkdownLink: React.FC<React.ComponentProps<'a'> & {
   onClick,
   onOpenFile,
   onOpenFileDiff,
+  className,
   ...props
 }) => {
   const parsedFileLink = href ? parseMarkdownFileHref(href) : null;
@@ -580,15 +588,36 @@ const MarkdownLink: React.FC<React.ComponentProps<'a'> & {
     }
   };
 
+  const isFile = Boolean(parsedFileLink);
+  const linkClassName = [
+    className,
+    isFile ? 'acp-file-link' : undefined,
+  ].filter(Boolean).join(' ');
+
+  const tooltip = parsedFileLink
+    ? `${parsedFileLink.path}${parsedFileLink.line !== undefined ? `:${parsedFileLink.line + 1}` : ''}`
+    : props.title;
+
   return (
     <a
       {...props}
       href={href}
+      className={linkClassName || undefined}
       onClick={handleClick}
       target={parsedFileLink ? undefined : '_blank'}
       rel={parsedFileLink ? undefined : 'noreferrer noopener'}
+      title={tooltip}
     >
-      {children}
+      {isFile ? (
+        <>
+          <span className="acp-file-link-icon" aria-hidden="true">
+            <FileIcon path={parsedFileLink?.path} styleType="colored" className="acp-file-link-icon-svg" />
+          </span>
+          <span className="acp-file-link-text">{children}</span>
+        </>
+      ) : (
+        children
+      )}
     </a>
   );
 };
@@ -653,7 +682,8 @@ const normalizeFenceLanguage = (rawLanguage: string): string => {
 };
 
 const parseMarkdownParts = (content: string): MarkdownPart[] => {
-  const lines = content.split('\n');
+  const normalized = content.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const lines = normalized.split('\n');
   const parts: MarkdownPart[] = [];
   let textBuffer: string[] = [];
   let codeBuffer: string[] = [];
@@ -677,8 +707,8 @@ const parseMarkdownParts = (content: string): MarkdownPart[] => {
   };
 
   for (const line of lines) {
-    const trimmed = line.trimStart();
-    const fenceMatch = trimmed.match(/^```([a-zA-Z0-9_+-]*)\s*$/);
+    const trimmed = line.trim();
+    const fenceMatch = trimmed.match(/^```([a-zA-Z0-9_+-]*)$/);
 
     if (!inCodeFence && fenceMatch) {
       flushText();
@@ -830,6 +860,7 @@ const MarkdownCodeBlock: React.FC<{
           codeFoldingEnabled: false,
           wordHighlightEnabled: false,
           scrollbarMarkersEnabled: false,
+          buffer: 1000,
         });
         await editor.init();
 
@@ -914,6 +945,7 @@ const DiffCodeBlock: React.FC<{
           codeFoldingEnabled: false,
           wordHighlightEnabled: false,
           scrollbarMarkersEnabled: false,
+          buffer: 1000,
         });
         await nextEditor.init();
         nextEditor.setOriginalCode(diff.oldText ?? '');
@@ -1039,6 +1071,58 @@ const TextMessage: React.FC<{
             onOpenFileDiff={onOpenFileDiff}
           />
         </div>
+        {message.role === 'user' && Array.isArray(message.attachments) && message.attachments.length > 0 && (() => {
+          const visibleAttachments = message.attachments.filter((attachment) => {
+            if (attachment.mime_type.startsWith('image/') || attachment.mime_type.startsWith('audio/')) {
+              return true;
+            }
+            if (message.content && (message.content.includes(attachment.name) || message.content.includes(attachment.name.replace(/\.[^.]+$/, '')))) {
+              return false;
+            }
+            return true;
+          });
+
+          if (visibleAttachments.length === 0) return null;
+
+          return (
+            <div className="acp-message-attachments">
+              {visibleAttachments.map((attachment, index) => {
+                const src = `data:${attachment.mime_type};base64,${attachment.data_base64}`;
+                const isImage = attachment.mime_type.startsWith('image/');
+                const isAudio = attachment.mime_type.startsWith('audio/');
+                if (isImage) {
+                  return (
+                    <img
+                      key={`${attachment.name}-${index}`}
+                      src={src}
+                      alt={attachment.name}
+                      className="acp-message-attachment-image"
+                    />
+                  );
+                }
+                if (isAudio) {
+                  return (
+                    <audio
+                      key={`${attachment.name}-${index}`}
+                      controls
+                      src={src}
+                      className="acp-message-attachment-audio"
+                    />
+                  );
+                }
+                return (
+                  <div
+                    key={`${attachment.name}-${index}`}
+                    className="acp-message-attachment-file"
+                    title={attachment.mime_type}
+                  >
+                    {attachment.name}
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })()}
         {message.role === 'user' && isCollapsible && (
           <button
             type="button"
@@ -1052,44 +1136,6 @@ const TextMessage: React.FC<{
             <span aria-hidden="true">{isExpanded ? '▲' : '▼'}</span>
             {isExpanded ? 'Show less' : 'Show more'}
           </button>
-        )}
-        {message.role === 'user' && Array.isArray(message.attachments) && message.attachments.length > 0 && (
-          <div className="acp-message-attachments">
-            {message.attachments.map((attachment, index) => {
-              const src = `data:${attachment.mime_type};base64,${attachment.data_base64}`;
-              const isImage = attachment.mime_type.startsWith('image/');
-              const isAudio = attachment.mime_type.startsWith('audio/');
-              if (isImage) {
-                return (
-                  <img
-                    key={`${attachment.name}-${index}`}
-                    src={src}
-                    alt={attachment.name}
-                    className="acp-message-attachment-image"
-                  />
-                );
-              }
-              if (isAudio) {
-                return (
-                  <audio
-                    key={`${attachment.name}-${index}`}
-                    controls
-                    src={src}
-                    className="acp-message-attachment-audio"
-                  />
-                );
-              }
-              return (
-                <div
-                  key={`${attachment.name}-${index}`}
-                  className="acp-message-attachment-file"
-                  title={attachment.mime_type}
-                >
-                  {attachment.name}
-                </div>
-              );
-            })}
-          </div>
         )}
         {message.role === 'user' && onUndo && (
           <div className="acp-message-actions">

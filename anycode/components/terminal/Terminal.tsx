@@ -5,6 +5,7 @@ import { SerializeAddon } from "@xterm/addon-serialize";
 import "./Terminal.css";
 import "@xterm/xterm/css/xterm.css";
 import { resolveFontFamily, type FontConfig } from "../../hooks/useSettings";
+import { selectionQuoteStore } from "../../features/agents/selectionQuoteStore";
 
 function debounce<T extends (...args: any[]) => any>(
   func: T,
@@ -81,6 +82,7 @@ const Terminal: React.FC<XTerminalProps> = ({
   const fitDebounceTimerRef = useRef<number | null>(null);
   const saveSnapshotTimerRef = useRef<number | null>(null);
   const themeObserverRef = useRef<MutationObserver | null>(null);
+  const selectionDisposableRef = useRef<{ dispose(): void } | null>(null);
   const didAutoFocusRef = useRef<boolean>(false);
   const wasContainerVisibleRef = useRef(false);
   const onDataRef = useRef(onData);
@@ -216,6 +218,26 @@ const Terminal: React.FC<XTerminalProps> = ({
     }
   };
 
+  const handleCheckTerminalSelection = () => {
+    requestAnimationFrame(() => {
+      const terminal = xtermRef.current;
+      if (!terminal) return;
+      const selectedText = terminal.getSelection();
+      if (selectedText && selectedText.trim().length >= 2) {
+        selectionQuoteStore.set({
+          id: `terminal:${name}`,
+          text: selectedText.trim(),
+          source: 'terminal',
+          label: `Terminal: ${name}`,
+        });
+      } else {
+        if (selectionQuoteStore.get()?.id === `terminal:${name}`) {
+          selectionQuoteStore.clear();
+        }
+      }
+    });
+  };
+
   useEffect(() => {
     let cleanupMessage: (() => void) | undefined;
 
@@ -243,6 +265,10 @@ const Terminal: React.FC<XTerminalProps> = ({
       if (themeObserverRef.current) {
         themeObserverRef.current.disconnect();
         themeObserverRef.current = null;
+      }
+      if (selectionDisposableRef.current) {
+        selectionDisposableRef.current.dispose();
+        selectionDisposableRef.current = null;
       }
       if (xtermRef.current) {
         xtermRef.current.dispose();
@@ -279,6 +305,10 @@ const Terminal: React.FC<XTerminalProps> = ({
         terminal.open(terminalRef.current);
       }
       xtermRef.current = terminal;
+
+      selectionDisposableRef.current = terminal.onSelectionChange(() => {
+        handleCheckTerminalSelection();
+      });
 
       applyTerminalTheme(terminal);
 
@@ -397,6 +427,10 @@ const Terminal: React.FC<XTerminalProps> = ({
         themeObserverRef.current.disconnect();
         themeObserverRef.current = null;
       }
+      if (selectionDisposableRef.current) {
+        selectionDisposableRef.current.dispose();
+        selectionDisposableRef.current = null;
+      }
       if (xtermRef.current) {
         xtermRef.current.dispose();
         xtermRef.current = null;
@@ -433,6 +467,8 @@ const Terminal: React.FC<XTerminalProps> = ({
       onPasteCapture={handlePaste}
       onDragOverCapture={handleDragOver}
       onDropCapture={handleDrop}
+      onMouseUpCapture={handleCheckTerminalSelection}
+      onKeyUpCapture={handleCheckTerminalSelection}
       style={{
         width: "100%",
         height: "100%",

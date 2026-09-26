@@ -4,6 +4,13 @@ import { AcpIcons } from './AcpIcons';
 import { AgentIcon } from './AgentIcon';
 import { FileIcon } from '../FileIcon';
 import { getFileName, getParentPath, normalizePath } from '../../utils';
+import {
+  useSelectionQuote,
+  selectionQuoteStore,
+  formatPromptBlocks,
+  type SelectionQuote,
+  type InputBlock,
+} from '../../features/agents/selectionQuoteStore';
 import type {
   AcpAvailableCommand,
   AcpContextUsageMessage,
@@ -73,7 +80,7 @@ function fuzzyMatch(str: string, query: string): boolean {
 interface AcpInputProps {
   value: string;
   onChange: (value: string) => void;
-  onSend: (attachments?: AcpPromptAttachment[]) => void;
+  onSend: (attachments?: AcpPromptAttachment[], promptOverride?: string) => void;
   onCancel: () => void;
   agentLabel?: string;
   onCloseAgent?: () => void;
@@ -112,7 +119,219 @@ const AcpInputComponent: React.FC<AcpInputProps> = ({
   onSelectModel,
   onSelectReasoning,
 }) => {
-  const inputRef = React.useRef<HTMLTextAreaElement>(null);
+  const globalQuote = useSelectionQuote();
+  const lastQuoteRef = React.useRef<SelectionQuote | null>(null);
+
+  if (globalQuote) {
+    lastQuoteRef.current = globalQuote;
+  }
+
+  const [blocks, setBlocks] = React.useState<InputBlock[]>(() => [
+    { id: 'text-initial', type: 'text', text: value },
+  ]);
+  const [focusedBlockId, setFocusedBlockId] = React.useState<string>('text-initial');
+  const textareaRefs = React.useRef<Map<string, HTMLTextAreaElement>>(new Map());
+
+  // Sync external value when no quotes exist
+  React.useEffect(() => {
+    setBlocks((prev) => {
+      const hasQuotes = prev.some((b) => b.type === 'quote');
+      if (hasQuotes) return prev;
+      if (prev.length === 1 && prev[0].type === 'text' && prev[0].text === value) {
+        return prev;
+      }
+      return [{ id: prev[0]?.id || 'text-initial', type: 'text', text: value }];
+    });
+  }, [value]);
+
+  const isAlreadyQuoted = React.useMemo(() => {
+    if (!globalQuote) return false;
+    return blocks.some(
+      (b) =>
+        b.type === 'quote' &&
+        b.quote.text === globalQuote.text &&
+        b.quote.label === globalQuote.label,
+    );
+  }, [globalQuote, blocks]);
+
+  const shouldShowStar = Boolean(globalQuote && !isAlreadyQuoted);
+  const [showStarButton, setShowStarButton] = React.useState(false);
+  const [isStarExiting, setIsStarExiting] = React.useState(false);
+
+  React.useEffect(() => {
+    if (shouldShowStar) {
+      setShowStarButton(true);
+      setIsStarExiting(false);
+      return;
+    }
+
+    if (!showStarButton) return;
+
+    setIsStarExiting(true);
+    const timer = window.setTimeout(() => {
+      setShowStarButton(false);
+      setIsStarExiting(false);
+      lastQuoteRef.current = null;
+    }, 180);
+
+    return () => window.clearTimeout(timer);
+  }, [shouldShowStar, showStarButton]);
+
+  const autoResizeTextarea = React.useCallback((el: HTMLTextAreaElement | null) => {
+    if (!el) return;
+    el.style.height = 'auto';
+    const nextHeight = Math.min(Math.max(el.scrollHeight, 24), 160);
+    el.style.height = `${nextHeight}px`;
+    el.style.overflowY = el.scrollHeight > 160 ? 'auto' : 'hidden';
+  }, []);
+
+  React.useLayoutEffect(() => {
+    blocks.forEach((block) => {
+      if (block.type === 'text') {
+        const el = textareaRefs.current.get(block.id);
+        if (el) {
+          autoResizeTextarea(el);
+        }
+      }
+    });
+  }, [blocks, autoResizeTextarea]);
+
+  const handleTextBlockChange = React.useCallback(
+    (blockId: string, newText: string) => {
+      setBlocks((prev) => {
+        const next = prev.map((b) =>
+          b.id === blockId && b.type === 'text' ? { ...b, text: newText } : b,
+        );
+        const hasQuotes = next.some((b) => b.type === 'quote');
+        if (!hasQuotes) {
+          onChange(newText);
+        }
+        return next;
+      });
+    },
+    [onChange],
+  );
+
+  const handleAddQuote = React.useCallback(() => {
+    const quoteToUse = globalQuote || lastQuoteRef.current;
+    if (!quoteToUse) return;
+
+    const newQuoteId = `${quoteToUse.id}-${Date.now()}`;
+    const quoteBlockId = `quote-${Date.now()}`;
+    const nextTextBlockId = `text-${Date.now() + 1}`;
+
+    const quoteBlock: InputBlock = {
+      id: quoteBlockId,
+      type: 'quote',
+      quote: {
+        ...quoteToUse,
+        id: newQuoteId,
+      },
+    };
+    const nextTextBlock: InputBlock = {
+      id: nextTextBlockId,
+      type: 'text',
+      text: '',
+    };
+
+    setBlocks((prev) => {
+      if (
+        prev.some(
+          (b) =>
+            b.type === 'quote' &&
+            b.quote.text === quoteToUse.text &&
+            b.quote.label === quoteToUse.label,
+        )
+      ) {
+        return prev;
+      }
+
+      const focusIdx = prev.findIndex((b) => b.id === focusedBlockId);
+      const insertAt = focusIdx >= 0 ? focusIdx + 1 : prev.length;
+
+      const next = [...prev];
+      next.splice(insertAt, 0, quoteBlock, nextTextBlock);
+      return next;
+    });
+
+    setFocusedBlockId(nextTextBlockId);
+    selectionQuoteStore.clear();
+    lastQuoteRef.current = null;
+    setShowStarButton(false);
+    setIsStarExiting(false);
+
+    requestAnimationFrame(() => {
+      const el = textareaRefs.current.get(nextTextBlockId);
+      if (el) {
+        el.focus();
+        autoResizeTextarea(el);
+      }
+    });
+  }, [globalQuote, focusedBlockId, autoResizeTextarea]);
+
+  const handleRemoveQuote = React.useCallback(
+    (quoteBlockId: string) => {
+      setBlocks((prev) => {
+        const quoteIdx = prev.findIndex((b) => b.id === quoteBlockId);
+        if (quoteIdx === -1) return prev;
+
+        const next = [...prev];
+        next.splice(quoteIdx, 1);
+
+        const prevBlock = next[quoteIdx - 1];
+        const nextBlock = next[quoteIdx];
+
+        if (prevBlock && prevBlock.type === 'text' && nextBlock && nextBlock.type === 'text') {
+          let mergedText = '';
+          if (prevBlock.text.trim() && nextBlock.text.trim()) {
+            mergedText = `${prevBlock.text.trim()}\n\n${nextBlock.text.trim()}`;
+          } else {
+            mergedText = prevBlock.text.trim() || nextBlock.text.trim();
+          }
+          prevBlock.text = mergedText;
+          next.splice(quoteIdx, 1);
+          setFocusedBlockId(prevBlock.id);
+          requestAnimationFrame(() => {
+            const el = textareaRefs.current.get(prevBlock.id);
+            if (el) {
+              el.focus();
+              autoResizeTextarea(el);
+            }
+          });
+        } else if (prevBlock && prevBlock.type === 'text') {
+          setFocusedBlockId(prevBlock.id);
+          requestAnimationFrame(() => {
+            const el = textareaRefs.current.get(prevBlock.id);
+            if (el) el.focus();
+          });
+        }
+
+        if (next.length === 0) {
+          const fallbackTextId = `text-${Date.now()}`;
+          setFocusedBlockId(fallbackTextId);
+          onChange('');
+          return [{ id: fallbackTextId, type: 'text', text: '' }];
+        }
+
+        const remainingQuotes = next.some((b) => b.type === 'quote');
+        if (!remainingQuotes) {
+          const singleText = next
+            .filter((b): b is { id: string; type: 'text'; text: string } => b.type === 'text')
+            .map((b) => b.text.trim())
+            .filter(Boolean)
+            .join('\n\n');
+          onChange(singleText);
+          const singleId = next[0].id;
+          setFocusedBlockId(singleId);
+          return [{ id: singleId, type: 'text', text: singleText }];
+        }
+
+        return next;
+      });
+    },
+    [autoResizeTextarea, onChange],
+  );
+
   const inputContainerRef = React.useRef<HTMLDivElement>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const [isMinimized, setIsMinimized] = React.useState(false);
@@ -127,7 +346,6 @@ const AcpInputComponent: React.FC<AcpInputProps> = ({
   const [selectedSlashIndex, setSelectedSlashIndex] = React.useState(0);
   const slashMenuRef = React.useRef<HTMLDivElement>(null);
   const MIN_ROWS = 1;
-  const MAX_ROWS = 10;
 
   const [cursorPos, setCursorPos] = React.useState<number | null>(null);
   const [isAtDismissed, setIsAtDismissed] = React.useState(false);
@@ -137,10 +355,13 @@ const AcpInputComponent: React.FC<AcpInputProps> = ({
   const atMenuRef = React.useRef<HTMLDivElement>(null);
   const searchTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const activeBlock = blocks.find((b) => b.id === focusedBlockId);
+  const currentText = activeBlock && activeBlock.type === 'text' ? activeBlock.text : value;
+
   const atContext = React.useMemo(() => {
     if (isMinimized || isRecording || isAtDismissed) return null;
-    const currentPos = cursorPos !== null ? cursorPos : value.length;
-    const beforeCursor = value.slice(0, currentPos);
+    const currentPos = cursorPos !== null ? cursorPos : currentText.length;
+    const beforeCursor = currentText.slice(0, currentPos);
     const match = beforeCursor.match(/(?:^|\s)@([^\s]*)$/);
     if (!match) return null;
     const query = match[1];
@@ -150,7 +371,7 @@ const AcpInputComponent: React.FC<AcpInputProps> = ({
       startIndex: atIndex,
       endIndex: currentPos,
     };
-  }, [value, cursorPos, isMinimized, isRecording, isAtDismissed]);
+  }, [currentText, cursorPos, isMinimized, isRecording, isAtDismissed]);
 
   const isAtActive = Boolean(atContext);
   const atQuery = atContext?.query.trim().toLowerCase() || '';
@@ -160,10 +381,10 @@ const AcpInputComponent: React.FC<AcpInputProps> = ({
   }, [atQuery, isAtActive]);
 
   React.useEffect(() => {
-    if (!value.includes('@')) {
+    if (!currentText.includes('@')) {
       setIsAtDismissed(false);
     }
-  }, [value]);
+  }, [currentText]);
 
   React.useEffect(() => {
     if (!isAtActive || !onSearchFiles) {
@@ -351,20 +572,22 @@ const AcpInputComponent: React.FC<AcpInputProps> = ({
       if (!atContext) return;
       const { startIndex, endIndex } = atContext;
       const replacement = `@${item.relativePath} `;
-      const nextValue = value.slice(0, startIndex) + replacement + value.slice(endIndex);
-      onChange(nextValue);
-      setIsAtDismissed(true);
-
+      const nextValue = currentText.slice(0, startIndex) + replacement + currentText.slice(endIndex);
       const nextCursor = startIndex + replacement.length;
+
+      handleTextBlockChange(focusedBlockId, nextValue);
       setCursorPos(nextCursor);
       requestAnimationFrame(() => {
-        if (inputRef.current) {
-          inputRef.current.focus();
-          inputRef.current.setSelectionRange(nextCursor, nextCursor);
+        const el = textareaRefs.current.get(focusedBlockId);
+        if (el) {
+          el.focus();
+          el.setSelectionRange(nextCursor, nextCursor);
+          autoResizeTextarea(el);
         }
       });
+      setIsAtDismissed(true);
     },
-    [atContext, onChange, value],
+    [atContext, currentText, focusedBlockId, handleTextBlockChange, autoResizeTextarea],
   );
 
   React.useEffect(() => {
@@ -388,7 +611,7 @@ const AcpInputComponent: React.FC<AcpInputProps> = ({
     return list;
   }, [availableCommands]);
 
-  const slashMatch = value.match(/^\/([a-zA-Z0-9_-]*)$/);
+  const slashMatch = currentText.match(/^\/([a-zA-Z0-9_-]*)$/);
   const isSlashActive = Boolean(slashMatch) && !isMinimized && !isRecording && !isSlashDismissed;
   const slashQuery = slashMatch ? slashMatch[1].toLowerCase() : '';
 
@@ -407,20 +630,20 @@ const AcpInputComponent: React.FC<AcpInputProps> = ({
   }, [slashQuery, isSlashActive]);
 
   React.useEffect(() => {
-    if (!value.startsWith('/')) {
+    if (!currentText.startsWith('/')) {
       setIsSlashDismissed(false);
     }
-  }, [value]);
+  }, [currentText]);
 
   const handleSelectCommand = React.useCallback(
     (cmd: AcpAvailableCommand) => {
       const hasInput = Boolean(cmd.input?.hint);
       const text = `/${cmd.name}${hasInput ? ' ' : ''}`;
-      onChange(text);
+      handleTextBlockChange(focusedBlockId, text);
+      textareaRefs.current.get(focusedBlockId)?.focus();
       setIsSlashDismissed(true);
-      inputRef.current?.focus();
     },
-    [onChange],
+    [focusedBlockId, handleTextBlockChange],
   );
 
   React.useEffect(() => {
@@ -431,9 +654,9 @@ const AcpInputComponent: React.FC<AcpInputProps> = ({
 
   React.useEffect(() => {
     if (isStarting) {
-      inputRef.current?.focus();
+      textareaRefs.current.get(focusedBlockId)?.focus();
     }
-  }, [isStarting]);
+  }, [isStarting, focusedBlockId]);
 
   React.useLayoutEffect(() => {
     const inputContainer = inputContainerRef.current;
@@ -575,35 +798,31 @@ const AcpInputComponent: React.FC<AcpInputProps> = ({
     });
   }, [toAttachment]);
 
-  const resizeInput = React.useCallback(() => {
-    const input = inputRef.current;
-    if (!input) {
-      return;
+  const hasText = blocks.some((b) => b.type === 'text' && b.text.trim().length > 0);
+  const hasQuotes = blocks.some((b) => b.type === 'quote');
+  const canSubmit =
+    (hasText || hasQuotes || attachments.length > 0) &&
+    isConnected &&
+    !isProcessing &&
+    !isStarting;
+
+  const handleSend = React.useCallback(() => {
+    if (canSubmit) {
+      const finalPrompt = formatPromptBlocks(blocks);
+      onSend(attachments, finalPrompt);
+      setAttachments([]);
+      const newInitialId = `text-${Date.now()}`;
+      setBlocks([{ id: newInitialId, type: 'text', text: '' }]);
+      setFocusedBlockId(newInitialId);
+      onChange('');
     }
+  }, [canSubmit, blocks, onSend, attachments, onChange]);
 
-    const style = window.getComputedStyle(input);
-    const lineHeight = Number.parseFloat(style.lineHeight) || 20;
-    const paddingTop = Number.parseFloat(style.paddingTop) || 0;
-    const paddingBottom = Number.parseFloat(style.paddingBottom) || 0;
-    const borderTop = Number.parseFloat(style.borderTopWidth) || 0;
-    const borderBottom = Number.parseFloat(style.borderBottomWidth) || 0;
-    const verticalBox = paddingTop + paddingBottom + borderTop + borderBottom;
-    const minHeight = lineHeight * MIN_ROWS + verticalBox;
-    const maxHeight = lineHeight * MAX_ROWS + verticalBox;
-
-    input.style.height = 'auto';
-    const nextHeight = Math.min(Math.max(input.scrollHeight, minHeight), maxHeight);
-    input.style.height = `${nextHeight}px`;
-    input.style.overflowY = input.scrollHeight > maxHeight ? 'auto' : 'hidden';
-  }, []);
-
-  React.useLayoutEffect(() => {
-    resizeInput();
-  }, [value, resizeInput]);
-
-  const canSubmit = (value.trim().length > 0 || attachments.length > 0) && isConnected && !isProcessing && !isStarting;
-
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+  const handleBlockKeyDown = (
+    e: React.KeyboardEvent<HTMLTextAreaElement>,
+    blockId: string,
+    index: number,
+  ) => {
     if (isAtActive) {
       if (allMentionItems.length > 0) {
         if (e.key === 'ArrowDown') {
@@ -660,17 +879,32 @@ const AcpInputComponent: React.FC<AcpInputProps> = ({
 
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      if (canSubmit) {
-        onSend(attachments);
-        setAttachments([]);
+      handleSend();
+      return;
+    }
+
+    if (e.key === 'Backspace') {
+      const currentBlock = blocks.find((b) => b.id === blockId);
+      if (currentBlock && currentBlock.type === 'text' && currentBlock.text === '' && index > 0) {
+        const prevBlock = blocks[index - 1];
+        if (prevBlock && prevBlock.type === 'quote') {
+          e.preventDefault();
+          handleRemoveQuote(prevBlock.id);
+          return;
+        }
       }
     }
-  };
 
-  const handleSend = () => {
-    if (canSubmit) {
-      onSend(attachments);
-      setAttachments([]);
+    if (e.key === 'Escape') {
+      const currentBlock = blocks.find((b) => b.id === blockId);
+      if (currentBlock && currentBlock.type === 'text' && currentBlock.text === '' && index > 0) {
+        const prevBlock = blocks[index - 1];
+        if (prevBlock && prevBlock.type === 'quote') {
+          e.preventDefault();
+          handleRemoveQuote(prevBlock.id);
+          return;
+        }
+      }
     }
   };
 
@@ -746,6 +980,48 @@ const AcpInputComponent: React.FC<AcpInputProps> = ({
       </select>
     );
   };
+
+  const renderActionSwitch = () => (
+    <div className="acp-prompt-action-switch">
+      <button
+        type="button"
+        className={`acp-stop-prompt-btn ${isProcessing ? 'acp-prompt-action-active' : 'acp-prompt-action-inactive'}`}
+        onClick={onCancel}
+        disabled={!isConnected || !isProcessing}
+        aria-hidden={!isProcessing}
+        aria-label="Cancel prompt"
+        title="Cancel prompt"
+      >
+        {showProcessingDots && (
+          <span className="acp-stop-prompt-dots" aria-hidden="true">
+            <span>.</span>
+            <span>.</span>
+            <span>.</span>
+          </span>
+        )}
+        <span
+          className={`acp-stop-prompt-icon${showProcessingDots ? ' acp-stop-prompt-icon-hover' : ' acp-stop-prompt-icon-visible'}`}
+          aria-hidden="true"
+        >
+          <AcpIcons.Cancel />
+        </span>
+      </button>
+      <button
+        type="button"
+        className={`acp-send-btn ${isProcessing ? 'acp-prompt-action-inactive' : 'acp-prompt-action-active'}`}
+        onClick={handleSend}
+        disabled={!canSubmit}
+        aria-hidden={isProcessing}
+        title={isStarting ? `Starting ${agentLabel || 'agent'}…` : undefined}
+      >
+        {isStarting ? (
+          <span className="acp-input-spinner" />
+        ) : (
+          <AcpIcons.Send />
+        )}
+      </button>
+    </div>
+  );
 
   return (
     <>
@@ -828,6 +1104,16 @@ const AcpInputComponent: React.FC<AcpInputProps> = ({
           </div>
         )}
         <div className="acp-input-full-content">
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            style={{ display: 'none' }}
+            onChange={async (event) => {
+              await addFiles(event.target.files);
+              event.currentTarget.value = '';
+            }}
+          />
           {attachments.length > 0 && (
             <div className="acp-input-attachments">
               {attachments.map((item, index) => (
@@ -845,8 +1131,8 @@ const AcpInputComponent: React.FC<AcpInputProps> = ({
               ))}
             </div>
           )}
-          <div className="acp-input-main-row">
-            {isRecording ? (
+          {isRecording ? (
+            <div className="acp-input-block-text-row is-last-row">
               <div className="acp-input-recording-panel">
                 <div className="acp-input-recording-indicator">
                   <span className="acp-recording-dot"></span>
@@ -871,88 +1157,106 @@ const AcpInputComponent: React.FC<AcpInputProps> = ({
                   </button>
                 </div>
               </div>
-            ) : (
-              <>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  multiple
-                  style={{ display: 'none' }}
-                  onChange={async (event) => {
-                    await addFiles(event.target.files);
-                    event.currentTarget.value = '';
-                  }}
-                />
-                <textarea
-                  ref={inputRef}
-                  id="acp-prompt-input"
-                  name="prompt"
-                  value={value}
-                  onChange={(e) => {
-                    setCursorPos(e.target.selectionStart);
-                    setIsAtDismissed(false);
-                    onChange(e.target.value);
-                  }}
-                  onSelect={(e) => {
-                    setCursorPos(e.currentTarget.selectionStart);
-                  }}
-                  onClick={(e) => {
-                    setCursorPos(e.currentTarget.selectionStart);
-                  }}
-                  onKeyUp={(e) => {
-                    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'Home' || e.key === 'End') {
-                      setCursorPos(e.currentTarget.selectionStart);
-                    }
-                  }}
-                  onKeyDown={handleKeyDown}
-                  onPaste={handlePaste}
-                  placeholder="Ask anything..."
-                  rows={MIN_ROWS}
-                  disabled={!isConnected && !isStarting}
-                />
-                <div className="acp-prompt-action-switch">
-                  <button
-                    type="button"
-                    className={`acp-stop-prompt-btn ${isProcessing ? 'acp-prompt-action-active' : 'acp-prompt-action-inactive'}`}
-                    onClick={onCancel}
-                    disabled={!isConnected || !isProcessing}
-                    aria-hidden={!isProcessing}
-                    aria-label="Cancel prompt"
-                    title="Cancel prompt"
+            </div>
+          ) : (
+            <div className="acp-input-blocks-flow">
+              {blocks.map((block, index) => {
+                if (block.type === 'quote') {
+                  return (
+                    <div key={block.id} className="acp-input-block-quote">
+                      <div className="acp-input-quote-badge">
+                        <div className="acp-input-quote-badge-left">
+                          <span className="acp-input-quote-badge-icon">
+                            <AcpIcons.Quote size={13} />
+                          </span>
+                          <div className="acp-input-quote-badge-info">
+                            <span className="acp-input-quote-badge-label">{block.quote.label}</span>
+                            <span className="acp-input-quote-badge-text" title={block.quote.text}>
+                              {block.quote.text.replace(/\s+/g, ' ').slice(0, 90)}
+                            </span>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          className="acp-input-quote-badge-remove"
+                          onClick={() => handleRemoveQuote(block.id)}
+                          title="Remove quote"
+                          aria-label={`Remove quote from ${block.quote.label}`}
+                        >
+                          <AcpIcons.CloseSmall />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                }
+
+                const lastTextBlockIndex = blocks.reduce<number>(
+                  (lastIdx, b, i) => (b.type === 'text' ? i : lastIdx),
+                  -1,
+                );
+                const isLastTextBlock = index === lastTextBlockIndex;
+                const hasQuotes = blocks.some((b) => b.type === 'quote');
+
+                let placeholder = 'Ask anything...';
+                if (hasQuotes) {
+                  if (index === 0) {
+                    placeholder = 'Add context before quote (optional)...';
+                  } else {
+                    placeholder = 'Ask anything, add comment or instructions...';
+                  }
+                }
+
+                return (
+                  <div
+                    key={block.id}
+                    className={`acp-input-block-text-row ${isLastTextBlock ? 'is-last-row' : ''}`}
                   >
-                    {showProcessingDots && (
-                      <span className="acp-stop-prompt-dots" aria-hidden="true">
-                        <span>.</span>
-                        <span>.</span>
-                        <span>.</span>
-                      </span>
-                    )}
-                    <span
-                      className={`acp-stop-prompt-icon${showProcessingDots ? ' acp-stop-prompt-icon-hover' : ' acp-stop-prompt-icon-visible'}`}
-                      aria-hidden="true"
-                    >
-                      <AcpIcons.Cancel />
-                    </span>
-                  </button>
-                  <button
-                    type="button"
-                    className={`acp-send-btn ${isProcessing ? 'acp-prompt-action-inactive' : 'acp-prompt-action-active'}`}
-                    onClick={handleSend}
-                    disabled={!canSubmit}
-                    aria-hidden={isProcessing}
-                    title={isStarting ? `Starting ${agentLabel || 'agent'}…` : undefined}
-                  >
-                    {isStarting ? (
-                      <span className="acp-input-spinner" />
-                    ) : (
-                      <AcpIcons.Send />
-                    )}
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
+                    <textarea
+                      ref={(el) => {
+                        if (el) textareaRefs.current.set(block.id, el);
+                        else textareaRefs.current.delete(block.id);
+                      }}
+                      className="acp-input-block-textarea"
+                      value={block.text}
+                      onChange={(e) => {
+                        handleTextBlockChange(block.id, e.target.value);
+                        setCursorPos(e.target.selectionStart);
+                        setIsAtDismissed(false);
+                        autoResizeTextarea(e.target);
+                      }}
+                      onSelect={(e) => setCursorPos(e.currentTarget.selectionStart)}
+                      onClick={(e) => setCursorPos(e.currentTarget.selectionStart)}
+                      onFocus={() => setFocusedBlockId(block.id)}
+                      onKeyUp={(e) => {
+                        if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) {
+                          setCursorPos(e.currentTarget.selectionStart);
+                        }
+                      }}
+                      onKeyDown={(e) => handleBlockKeyDown(e, block.id, index)}
+                      onPaste={handlePaste}
+                      placeholder={placeholder}
+                      rows={MIN_ROWS}
+                      disabled={!isConnected && !isStarting}
+                    />
+                    {isLastTextBlock && renderActionSwitch()}
+                  </div>
+                );
+              })}
+            </div>
+          )}
           <div className="acp-input-controls-row">
+            {showStarButton && (
+              <button
+                type="button"
+                className={`acp-input-quote-star-btn ${isStarExiting ? 'acp-input-quote-star-exiting' : ''}`}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={handleAddQuote}
+                title={lastQuoteRef.current ? `Quote selection (${lastQuoteRef.current.label}): "${lastQuoteRef.current.text.replace(/\s+/g, ' ').slice(0, 60)}"` : undefined}
+                aria-label="Quote selection"
+              >
+                <AcpIcons.Quote size={16} />
+              </button>
+            )}
             {agentLabel && (
               <div className="acp-input-agent-chip" title={agentLabel}>
                 <AgentIcon name={agentLabel} size={12} className="acp-input-agent-chip-icon" />

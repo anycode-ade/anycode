@@ -6,6 +6,8 @@ import type { FileState, ReferencesPeekState } from '../../types';
 import type { DiffMode } from '../../types/diffMode';
 import { ReferencesPeek } from './ReferencesPeek';
 import MultibufferPanel, { type MultibufferFile } from './MultibufferPanel';
+import { getFileName, getLanguageFromFileName, toRelativeDisplayPath } from '../../utils';
+import { selectionQuoteStore } from '../agents/selectionQuoteStore';
 
 type EditorPanelProps = {
     panelKey: string;
@@ -94,6 +96,57 @@ export const EditorPanel = ({
         return () => editor.deactivateCursor();
     }, [displayedEditor?.id, displayedEditor?.state, editors.activeEditorPaneId, multibufferOpen, panelKey]);
 
+    const handleCheckEditorSelection = () => {
+        requestAnimationFrame(() => {
+            if (!displayedEditor?.state) return;
+            const selectedText = displayedEditor.state.getSelectedText();
+            if (selectedText && selectedText.trim().length >= 2) {
+                const sorted = displayedEditor.state.selection?.sorted();
+                let startRow = sorted ? sorted[0].row : displayedEditor.state.cursor.row;
+                let endRow = sorted ? sorted[1].row : displayedEditor.state.cursor.row;
+
+                if (sorted && sorted[1].row > sorted[0].row && sorted[1].column === 0) {
+                    endRow = sorted[1].row - 1;
+                }
+
+                const lineRange: [number, number] | undefined = sorted
+                    ? [startRow + 1, endRow + 1]
+                    : undefined;
+                const linesLabel = lineRange
+                    ? lineRange[0] === lineRange[1]
+                        ? `L${lineRange[0]}`
+                        : `L${lineRange[0]}-${lineRange[1]}`
+                    : '';
+                const codeModel = displayedEditor.state.getCodeModel();
+                const resolvedFilePath =
+                    (paneFile?.source && 'path' in paneFile.source ? paneFile.source.path : undefined) ||
+                    paneFile?.id ||
+                    codeModel?.filename ||
+                    paneFile?.name;
+                const resolvedLanguage =
+                    paneFile?.language ||
+                    codeModel?.language ||
+                    (resolvedFilePath ? getLanguageFromFileName(resolvedFilePath) : undefined);
+                const fileName = paneFile?.name || (resolvedFilePath ? getFileName(resolvedFilePath) : 'file');
+                const displayPath = resolvedFilePath ? toRelativeDisplayPath(resolvedFilePath) : undefined;
+                selectionQuoteStore.set({
+                    id: `editor:${resolvedFilePath || 'snippet'}`,
+                    text: selectedText,
+                    source: 'editor',
+                    label: `${fileName}${linesLabel ? ` (${linesLabel})` : ''}`,
+                    filePath: resolvedFilePath,
+                    displayPath,
+                    lineRange,
+                    language: resolvedLanguage,
+                });
+            } else {
+                if (selectionQuoteStore.get()?.id === `editor:${resolvedFilePath || 'snippet'}`) {
+                    selectionQuoteStore.clear();
+                }
+            }
+        });
+    };
+
     if (multibufferOpen) {
         return (
             <div
@@ -139,6 +192,8 @@ export const EditorPanel = ({
             className="editor-container"
             onMouseDown={() => editors.setActiveEditorPaneId(panelKey)}
             onWheelCapture={() => editors.setActiveEditorPaneId(panelKey)}
+            onMouseUp={handleCheckEditorSelection}
+            onKeyUp={handleCheckEditorSelection}
         >
             {displayedEditor ? (
                 <AnycodeEditorReact
