@@ -36,6 +36,7 @@ interface ChangesPanelProps {
     onCommit: (message: string) => Promise<boolean>;
     onPush: () => void;
     pushStatus: { state: GitActionState; message?: string };
+    onFetch?: () => void;
     onPull: () => void;
     onRevert: (path: string) => void;
     onStage: (path: string) => void;
@@ -245,6 +246,7 @@ const ChangesPanelImpl: React.FC<ChangesPanelProps> = ({
     onCommit,
     onPush,
     pushStatus,
+    onFetch,
     onPull,
     onRevert,
     onStage,
@@ -651,7 +653,11 @@ const ChangesPanelImpl: React.FC<ChangesPanelProps> = ({
                 </div>
                 <div className="changes-actions-right">
                     {pushStatus.state !== GitActionState.Idle && (
-                        <span className={`changes-push-status changes-push-status-${pushStatus.state}`} role="status">
+                        <span
+                            className={`changes-push-status changes-push-status-${pushStatus.state}`}
+                            role="status"
+                            title={pushStatus.message}
+                        >
                             {pushStatus.state === GitActionState.InProgress && <span className="changes-push-spinner" aria-hidden="true" />}
                             {pushStatus.message}
                         </span>
@@ -665,6 +671,17 @@ const ChangesPanelImpl: React.FC<ChangesPanelProps> = ({
                     >
                         <Icons.GitCommit />
                     </button>
+                    {onFetch && (
+                        <button
+                            className="changes-action-btn changes-action-btn-icon"
+                            onClick={onFetch}
+                            disabled={pushStatus.state === GitActionState.InProgress}
+                            title="Fetch"
+                            aria-label="Fetch"
+                        >
+                            <Icons.GitFetch />
+                        </button>
+                    )}
                     <button
                         className="changes-action-btn changes-action-btn-icon"
                         onClick={onPull}
@@ -692,6 +709,14 @@ const ChangesPanelImpl: React.FC<ChangesPanelProps> = ({
                     </button>
                 </div>
             </div>
+
+            {pushStatus.state === GitActionState.Error && pushStatus.message && (
+                <div className="changes-error-banner" role="alert" title={pushStatus.message}>
+                    <span className="changes-error-banner-text">
+                        {pushStatus.message}
+                    </span>
+                </div>
+            )}
 
             <div className="changes-list-header">
                 <div className="changes-list-title">
@@ -862,6 +887,10 @@ const areEqual = (prev: ChangesPanelProps, next: ChangesPanelProps): boolean => 
     }
 
     if (prev.onOpenMultibuffer !== next.onOpenMultibuffer) {
+        return false;
+    }
+
+    if (prev.onFetch !== next.onFetch) {
         return false;
     }
 

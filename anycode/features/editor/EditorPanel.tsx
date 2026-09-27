@@ -1,4 +1,4 @@
-import { useContext, useEffect, useState } from 'react';
+import { useCallback, useContext, useEffect, useState } from 'react';
 import { AnycodeEditor, AnycodeEditorReact } from 'anycode-react';
 import { LayoutVersionContext } from '../../components/layout/Layout';
 import type { DefinitionRequest, DefinitionResponse, HoverRequest } from 'anycode-base';
@@ -26,6 +26,8 @@ type EditorPanelProps = {
         openReferenceFromPeek: (paneId: string, itemIndex?: number) => void;
         handleHover?: (request: HoverRequest) => Promise<string | null>;
         handleGoToDefinition?: (request: DefinitionRequest) => Promise<DefinitionResponse>;
+        handleCompletion?: any;
+        openReferencesPeek?: any;
         getEditorDiffMode?: (paneId: string) => DiffMode;
         editorDiffModeByPane?: Readonly<Record<string, DiffMode>>;
     };
@@ -96,9 +98,19 @@ export const EditorPanel = ({
         return () => editor.deactivateCursor();
     }, [displayedEditor?.id, displayedEditor?.state, editors.activeEditorPaneId, multibufferOpen, panelKey]);
 
+
     const handleCheckEditorSelection = () => {
         requestAnimationFrame(() => {
             if (!displayedEditor?.state) return;
+
+            const codeModel = displayedEditor.state.getCodeModel();
+            const resolvedFilePath =
+                paneFile?.source?.path ||
+                paneFile?.id ||
+                codeModel?.filename ||
+                paneFile?.name;
+            const quoteId = `editor:${resolvedFilePath || 'snippet'}`;
+
             const selectedText = displayedEditor.state.getSelectedText();
             if (selectedText && selectedText.trim().length >= 2) {
                 const sorted = displayedEditor.state.selection?.sorted();
@@ -117,12 +129,6 @@ export const EditorPanel = ({
                         ? `L${lineRange[0]}`
                         : `L${lineRange[0]}-${lineRange[1]}`
                     : '';
-                const codeModel = displayedEditor.state.getCodeModel();
-                const resolvedFilePath =
-                    (paneFile?.source && 'path' in paneFile.source ? paneFile.source.path : undefined) ||
-                    paneFile?.id ||
-                    codeModel?.filename ||
-                    paneFile?.name;
                 const resolvedLanguage =
                     paneFile?.language ||
                     codeModel?.language ||
@@ -130,7 +136,7 @@ export const EditorPanel = ({
                 const fileName = paneFile?.name || (resolvedFilePath ? getFileName(resolvedFilePath) : 'file');
                 const displayPath = resolvedFilePath ? toRelativeDisplayPath(resolvedFilePath) : undefined;
                 selectionQuoteStore.set({
-                    id: `editor:${resolvedFilePath || 'snippet'}`,
+                    id: quoteId,
                     text: selectedText,
                     source: 'editor',
                     label: `${fileName}${linesLabel ? ` (${linesLabel})` : ''}`,
@@ -140,7 +146,7 @@ export const EditorPanel = ({
                     language: resolvedLanguage,
                 });
             } else {
-                if (selectionQuoteStore.get()?.id === `editor:${resolvedFilePath || 'snippet'}`) {
+                if (selectionQuoteStore.get()?.id === quoteId) {
                     selectionQuoteStore.clear();
                 }
             }
@@ -169,7 +175,7 @@ export const EditorPanel = ({
                     onGoToDefinition={onGoToDefinition}
                     onHover={editors.handleHover}
                     onCompletion={editors.handleCompletion}
-                    onReferencesPeek={(req) => editors.openReferencesPeek(req, panelKey)}
+                    onReferencesPeek={(req) => editors.openReferencesPeek?.(req, panelKey)}
                     onLoadDeletedFile={onLoadDeletedFile}
                 />
                 {referencesPeek ? (
@@ -219,3 +225,5 @@ export const EditorPanel = ({
         </div>
     );
 };
+
+

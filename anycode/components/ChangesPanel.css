@@ -63,6 +63,27 @@
 
 @keyframes changes-push-spin { to { transform: rotate(360deg); } }
 
+.changes-error-banner {
+    display: flex;
+    align-items: flex-start;
+    padding: 6px 10px;
+    margin: 0 10px 8px 10px;
+    background: var(--theme-error-background, rgba(224, 108, 117, 0.12));
+    border: 1px solid var(--theme-error, #e06c75);
+    border-radius: 4px;
+    color: var(--theme-error, #e06c75);
+    font-size: 11px;
+    line-height: 1.4;
+    word-break: break-word;
+    user-select: text;
+}
+
+.changes-error-banner-text {
+    flex: 1;
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+}
+
 .changes-title {
     display: flex;
     align-items: center;

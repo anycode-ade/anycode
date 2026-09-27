@@ -6,6 +6,7 @@ import "./Terminal.css";
 import "@xterm/xterm/css/xterm.css";
 import { resolveFontFamily, type FontConfig } from "../../hooks/useSettings";
 import { selectionQuoteStore } from "../../features/agents/selectionQuoteStore";
+import { copyTextToClipboard } from "../../utils";
 
 function debounce<T extends (...args: any[]) => any>(
   func: T,
@@ -147,7 +148,15 @@ const Terminal: React.FC<XTerminalProps> = ({
       if (file) files.push(file);
     }
 
-    if (files.length === 0) return;
+    if (files.length === 0) {
+      const text = event.clipboardData?.getData('text/plain');
+      if (text) {
+        event.preventDefault();
+        event.stopPropagation();
+        onDataRef.current(name, text);
+      }
+      return;
+    }
 
     const oversized = files.filter(f => f.size > MAX_FILE_SIZE);
     if (oversized.length > 0) {
@@ -305,6 +314,50 @@ const Terminal: React.FC<XTerminalProps> = ({
         terminal.open(terminalRef.current);
       }
       xtermRef.current = terminal;
+
+      terminal.attachCustomKeyEventHandler((event: KeyboardEvent) => {
+        if (
+          event.type === 'keydown' &&
+          (event.ctrlKey || event.metaKey) &&
+          !event.altKey &&
+          !event.shiftKey &&
+          event.key.toLowerCase() === 'c'
+        ) {
+          if (terminal.hasSelection()) {
+            const selection = terminal.getSelection();
+            if (selection) {
+              void copyTextToClipboard(selection);
+              return false;
+            }
+          }
+          return true;
+        }
+
+        if (
+          event.type === 'keydown' &&
+          !event.altKey &&
+          (
+            ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'v') ||
+            (event.shiftKey && event.key === 'Insert')
+          )
+        ) {
+          if (navigator.clipboard?.readText) {
+            navigator.clipboard
+              .readText()
+              .then((text) => {
+                if (text) {
+                  onDataRef.current(name, text);
+                }
+              })
+              .catch((err) => {
+                console.warn('Failed to read clipboard for terminal paste:', err);
+              });
+            return false;
+          }
+        }
+
+        return true;
+      });
 
       selectionDisposableRef.current = terminal.onSelectionChange(() => {
         handleCheckTerminalSelection();

@@ -1229,4 +1229,24 @@ describe('Actions Test Suite', () => {
             expect(file1.getContent()).toBe('first line');
         });
     });
+
+    describe('Keyboard Shortcuts Windows & macOS', () => {
+        it('recognizes Ctrl+Z as UNDO and Ctrl+Y / Ctrl+Shift+Z as REDO on Windows', async () => {
+            const { AnycodeEditor } = await import('../src/editor');
+            expect(AnycodeEditor.getActionFromKey({ key: 'z', ctrlKey: true, metaKey: false } as KeyboardEvent)).toBe(Action.UNDO);
+            expect(AnycodeEditor.getActionFromKey({ key: 'z', ctrlKey: true, shiftKey: true, metaKey: false } as KeyboardEvent)).toBe(Action.REDO);
+            expect(AnycodeEditor.getActionFromKey({ key: 'y', ctrlKey: true, shiftKey: false, metaKey: false } as KeyboardEvent)).toBe(Action.REDO);
+            expect(AnycodeEditor.getActionFromKey({ key: 'a', ctrlKey: true, metaKey: false } as KeyboardEvent)).toBe(Action.SELECT_ALL);
+            expect(AnycodeEditor.getActionFromKey({ key: 'c', ctrlKey: true, metaKey: false } as KeyboardEvent)).toBe(Action.COPY);
+            expect(AnycodeEditor.getActionFromKey({ key: 'v', ctrlKey: true, metaKey: false } as KeyboardEvent)).toBe(Action.PASTE);
+            expect(AnycodeEditor.getActionFromKey({ key: 'x', ctrlKey: true, metaKey: false } as KeyboardEvent)).toBe(Action.CUT);
+            expect(AnycodeEditor.getActionFromKey({ key: 'd', ctrlKey: true, metaKey: false } as KeyboardEvent)).toBe(Action.DUPLICATE);
+            expect(AnycodeEditor.getActionFromKey({ key: '/', ctrlKey: true, metaKey: false } as KeyboardEvent)).toBe(Action.COMMENT);
+
+            // Also test macOS (metaKey)
+            expect(AnycodeEditor.getActionFromKey({ key: 'z', ctrlKey: false, metaKey: true } as KeyboardEvent)).toBe(Action.UNDO);
+            expect(AnycodeEditor.getActionFromKey({ key: 'z', ctrlKey: false, shiftKey: true, metaKey: true } as KeyboardEvent)).toBe(Action.REDO);
+            expect(AnycodeEditor.getActionFromKey({ key: 'a', ctrlKey: false, metaKey: true } as KeyboardEvent)).toBe(Action.SELECT_ALL);
+        });
+    });
 });

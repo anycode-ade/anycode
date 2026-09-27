@@ -337,6 +337,16 @@ pub async fn handle_git_pull(ack: AckSender, state: State<AppState>) {
     send_response(ack, result);
 }
 
+pub async fn handle_git_fetch(ack: AckSender, state: State<AppState>) {
+    info!("Received git:fetch");
+    let result = {
+        let git = state.git_manager.lock().await;
+        git.fetch().map(|_| json!({ "status": "success" }))
+    };
+    send_response(ack, result);
+}
+
+
 pub async fn handle_git_branches(ack: AckSender, state: State<AppState>) {
     info!("Received git:branches");
     let result = {

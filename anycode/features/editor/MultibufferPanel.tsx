@@ -182,7 +182,8 @@ const MultibufferPanel: React.FC<MultibufferPanelProps> = ({
                     language: resolvedLanguage,
                 });
             } else {
-                if (selectionQuoteStore.get()?.id === `editor:${resolvedFilePath || 'multibuffer'}`) {
+                const currentQuote = selectionQuoteStore.get();
+                if (currentQuote && (currentQuote.source === 'editor' || currentQuote.id.startsWith('editor:'))) {
                     selectionQuoteStore.clear();
                 }
             }

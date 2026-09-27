@@ -121,6 +121,7 @@ export class AnycodeEditor {
     private goToDefinitionProvider: ((request: DefinitionRequest) => Promise<DefinitionResponse>) | null = null;
     private referencesPeekProvider: ((request: ReferencesRequest) => Promise<void>) | null = null;
     private onCursorChangeCallback: ((newCursor: Position, oldCursor: Position) => void) | null = null;
+    private cursorChangeListeners: Set<(newCursor: Position, oldCursor: Position) => void> = new Set();
     private onMultibufferToggleCallback: (() => void) | null = null;
     private hoverDebounceTimer: number | null = null;
     private hoverRequestToken = 0;
@@ -335,9 +336,7 @@ export class AnycodeEditor {
                 this.onMultibufferToggleCallback?.();
                 this.renderer.render(this.getEditorState());
             }
-            if (this.onCursorChangeCallback) {
-                this.onCursorChangeCallback({ line, column: 0 }, oldCursor);
-            }
+            this.notifyCursorChange({ line, column: 0 }, oldCursor);
             return true;
         }
         return false;
@@ -705,6 +704,27 @@ export class AnycodeEditor {
         this.onCursorChangeCallback = callback;
     }
 
+    public addCursorChangeListener(callback: (newCursor: Position, oldCursor: Position) => void): () => void {
+        this.cursorChangeListeners.add(callback);
+        return () => {
+            this.cursorChangeListeners.delete(callback);
+        };
+    }
+
+    private notifyCursorChange(newCursor: Position, oldCursor: Position) {
+        if (newCursor.line === oldCursor.line && newCursor.column === oldCursor.column) return;
+        if (this.onCursorChangeCallback) {
+            this.onCursorChangeCallback(newCursor, oldCursor);
+        }
+        for (const listener of this.cursorChangeListeners) {
+            try {
+                listener(newCursor, oldCursor);
+            } catch (err) {
+                console.error('Error in cursor change listener:', err);
+            }
+        }
+    }
+
     public setOnMultibufferToggle(callback: (() => void) | null) {
         this.onMultibufferToggleCallback = callback;
     }
@@ -989,11 +1009,9 @@ export class AnycodeEditor {
         }
         this.renderCursorOrSelection();
 
-        if (this.onCursorChangeCallback) {
-            this.onCursorChangeCallback(
-                { line: this.cursor.row, column: this.cursor.column }, oldCursor
-            );
-        }
+        this.notifyCursorChange(
+            { line: this.cursor.row, column: this.cursor.column }, oldCursor
+        );
 
         if (this.isCompletionOpen) {
             this.renderer.closeCompletion();
@@ -1379,13 +1397,13 @@ export class AnycodeEditor {
             }
         }
 
-        if (event.metaKey && event.key === " ") {
+        if ((event.metaKey || event.ctrlKey) && event.key === " ") {
             event.preventDefault();
             this.toggleCompletion();
             return;
         }
 
-        if ((event.metaKey && !event.shiftKey && event.key.toLowerCase() === "f") || this.search.isFocused()) {
+        if (((event.metaKey || event.ctrlKey) && !event.shiftKey && event.key.toLowerCase() === "f") || this.search.isFocused()) {
             event.preventDefault();
             this.handleSearchKey(event);
             return;
@@ -1396,7 +1414,7 @@ export class AnycodeEditor {
             return;
         }
 
-        const action = this.getActionFromKey(event);
+        const action = AnycodeEditor.getActionFromKey(event);
         if (!action) return;
 
         if (this.ignoreEdits && this.isEditingAction(action)) {
@@ -1515,12 +1533,13 @@ export class AnycodeEditor {
         }
     }
 
-    private getActionFromKey(event: KeyboardEvent): Action | null {
+    public static getActionFromKey(event: KeyboardEvent): Action | null {
         const { key, altKey, ctrlKey, metaKey, shiftKey } = event;
 
         // Shortcuts
-        if (metaKey) {
-            if (shiftKey && key.toLowerCase() === 'z')
+        const isMod = metaKey || ctrlKey;
+        if (isMod) {
+            if ((shiftKey && key.toLowerCase() === 'z') || (!shiftKey && key.toLowerCase() === 'y'))
                 return Action.REDO;
             if (key.toLowerCase() === '/')
                 return Action.COMMENT;
@@ -1604,7 +1623,9 @@ export class AnycodeEditor {
             this.recomputeDiffs();
         }
         if (cursorChanged) {
+            const oldCursor = { line: this.cursor.row, column: this.cursor.column };
             this.cursor = { ...result.ctx.cursor };
+            this.notifyCursorChange({ line: this.cursor.row, column: this.cursor.column }, oldCursor);
         }
         if (selectionChanged) this.selection = result.ctx.selection || null;
 
@@ -1831,7 +1852,7 @@ export class AnycodeEditor {
         const { key, altKey, ctrlKey, metaKey, shiftKey } = event;
         let isSearch = false;
 
-        if (metaKey && !shiftKey && key.toLowerCase() == 'f') {
+        if ((metaKey || ctrlKey) && !shiftKey && key.toLowerCase() == 'f') {
             this.renderer.removeAllHighlights(this.search);
 
             this.search.setActive(true);
@@ -1879,7 +1900,7 @@ export class AnycodeEditor {
         const patternLines = pattern.split(/\r?\n/);
         const isMultiline = patternLines.length > 1;
 
-        if (event.metaKey && !event.shiftKey && event.key.toLowerCase() === 'f') {
+        if ((event.metaKey || event.ctrlKey) && !event.shiftKey && event.key.toLowerCase() === 'f') {
             event.preventDefault();
             event.stopPropagation();
             // ignore search  

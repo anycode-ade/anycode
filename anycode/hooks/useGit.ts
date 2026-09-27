@@ -531,6 +531,23 @@ export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
         });
     }, [wsRef, isConnected, fetchGitStatus, refreshHistory, pushStatus.state, showGitStatus]);
 
+    const fetchRemote = useCallback(() => {
+        if (!wsRef.current || !isConnected) return;
+
+        if (pushStatus.state === GitActionState.InProgress) return;
+        showGitStatus(GitActionState.InProgress, 'Fetching…');
+        wsRef.current.emit('git:fetch', {}, (response: any) => {
+            if (response.success) {
+                showGitStatus(GitActionState.Success, 'Fetched from origin');
+                fetchGitStatus();
+                refreshHistory();
+            } else {
+                showGitStatus(GitActionState.Error, 'Fetch failed: ' + response.error, 6000);
+            }
+        });
+    }, [wsRef, isConnected, fetchGitStatus, refreshHistory, pushStatus.state, showGitStatus]);
+
+
     const revert = useCallback((path: string) => {
         if (!wsRef.current || !isConnected) return;
 
@@ -619,6 +636,7 @@ export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
         commit,
         push,
         pull,
+        fetchRemote,
         revert,
         checkoutBranch,
         stage,

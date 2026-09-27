@@ -166,7 +166,7 @@ export const handleBackspace = (ctx: ActionContext): ActionResult => {
             targetCol = 0;
             startPoint = { row: line, column: 0 };
         }
-    } else if (event?.altKey) {
+    } else if (event?.altKey || event?.ctrlKey) {
         if (column === 0 && line > 0) {
             const prevLine = ctx.code.getPrevLine(line);
             if (prevLine < 0 || !ctx.code.isLineEditable(prevLine) || !ctx.code.isSameFileBody(line, prevLine)) {
@@ -224,7 +224,7 @@ export const handleEnter = (ctx: ActionContext): ActionResult => {
         removeSelection(ctx);
     }
 
-    if (event?.metaKey) {
+    if (event?.metaKey || event?.ctrlKey) {
         const lineLength = ctx.code.lineLength(ctx.cursor.row);
         syncCursor(ctx, ctx.cursor.row, lineLength);
     }

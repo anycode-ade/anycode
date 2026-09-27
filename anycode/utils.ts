@@ -160,3 +160,15 @@ export const copyTextToClipboard = async (text: string): Promise<void> => {
         textArea.remove();
     }
 };
+
+export const formatRelativeTime = (timestamp: number): string => {
+    const seconds = Math.round((timestamp * 1000 - Date.now()) / 1000);
+    const absoluteSeconds = Math.abs(seconds);
+    const unit = absoluteSeconds < 60 ? 'second'
+        : absoluteSeconds < 3600 ? 'minute'
+            : absoluteSeconds < 86400 ? 'hour'
+                : absoluteSeconds < 2592000 ? 'day'
+                    : absoluteSeconds < 31536000 ? 'month' : 'year';
+    const divisor = unit === 'second' ? 1 : unit === 'minute' ? 60 : unit === 'hour' ? 3600 : unit === 'day' ? 86400 : unit === 'month' ? 2592000 : 31536000;
+    return new Intl.RelativeTimeFormat('en', { numeric: 'auto' }).format(Math.round(seconds / divisor), unit);
+};

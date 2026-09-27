@@ -560,7 +560,7 @@ const App: React.FC = () => {
             const target = e.target;
             if (target instanceof Element) {
                 const isFilesTreeFocused = target.closest('.file-tree') !== null;
-                if (isFilesTreeFocused) {
+                if (isFilesTreeFocused && !e.metaKey && !e.ctrlKey) {
                     return;
                 }
             }
@@ -569,6 +569,7 @@ const App: React.FC = () => {
             if (activePaneId && editors.handleReferencesPeekKeyDown(activePaneId, e)) {
                 return;
             }
+
     
             if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'f') {
                 e.preventDefault();
@@ -582,7 +583,7 @@ const App: React.FC = () => {
                 return;
             }
     
-            if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+            if ((e.ctrlKey || e.metaKey) && (e.code === 'KeyS' || e.key.toLowerCase() === 's')) {
                 e.preventDefault();
                 if (editors.activeFileId) {
                     editors.saveFile(editors.activeFileId);
@@ -713,6 +714,7 @@ const App: React.FC = () => {
                         onCommit={git.commit}
                         onPush={git.push}
                         pushStatus={git.pushStatus}
+                        onFetch={git.fetchRemote}
                         onPull={git.pull}
                         onRevert={git.revert}
                         onStage={git.stage}

@@ -32,6 +32,7 @@ pub struct GitFileStatus {
     pub removed: usize,
 }
 
+
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct GitStatus {
     pub files: Vec<GitFileStatus>,
@@ -1389,6 +1390,51 @@ impl GitManager {
         info!("Git pull: merged successfully");
         Ok(PullResult::Merged)
     }
+
+    /// Fetch from remote
+    pub fn fetch(&self) -> Result<()> {
+        let repo = self.repo()?;
+        let mut remote = repo.find_remote("origin")?;
+
+        let mut callbacks = git2::RemoteCallbacks::new();
+        callbacks.credentials(|_url, username_from_url, _allowed_types| {
+            git2::Cred::ssh_key_from_agent(username_from_url.unwrap_or("git"))
+        });
+
+        let mut fetch_opts = git2::FetchOptions::new();
+        fetch_opts.remote_callbacks(callbacks);
+
+        let branch_name = repo
+            .head()
+            .ok()
+            .and_then(|h| h.shorthand().map(|s| s.to_string()));
+
+        let refspecs: Vec<String> = if let Some(ref b) = branch_name {
+            vec![format!("refs/heads/{}:refs/remotes/origin/{}", b, b)]
+        } else {
+            vec![]
+        };
+
+        let fetch_res = remote.fetch(&[] as &[&str], Some(&mut fetch_opts), None);
+        if let Err(e) = fetch_res {
+            if !refspecs.is_empty() {
+                let refspec_strs: Vec<&str> = refspecs.iter().map(|s| s.as_str()).collect();
+                let mut retry_callbacks = git2::RemoteCallbacks::new();
+                retry_callbacks.credentials(|_url, username_from_url, _allowed_types| {
+                    git2::Cred::ssh_key_from_agent(username_from_url.unwrap_or("git"))
+                });
+                let mut retry_opts = git2::FetchOptions::new();
+                retry_opts.remote_callbacks(retry_callbacks);
+                remote.fetch(&refspec_strs, Some(&mut retry_opts), None)?;
+            } else {
+                return Err(e.into());
+            }
+        }
+
+        info!("Git fetch completed successfully");
+        Ok(())
+    }
+
 
     /// Revert file to HEAD or delete if untracked
     pub fn revert(&self, path: &str) -> Result<()> {
