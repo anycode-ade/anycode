@@ -190,6 +190,7 @@ const AgentPanelComponent = ({
                     onSelectReasoning={agents.setSessionReasoning}
                     onOpenFile={onOpenFile}
                     onOpenFileDiff={onOpenFileDiff}
+                    onOpenSettings={onOpenSettings}
                 />
             </div>
         </div>

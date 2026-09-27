@@ -8,6 +8,7 @@ import {
 } from '../../agents';
 import './AcpSettings.css';
 import { AcpIcons } from './AcpIcons';
+import { AgentTemplatesManager } from './AgentTemplatesManager';
 
 interface AcpSettingsProps {
   agents: AcpAgent[];
@@ -485,6 +486,8 @@ export const AcpSettings: React.FC<AcpSettingsProps> = ({
             Add agent
           </button>
         </div>
+
+        <AgentTemplatesManager />
       </div>
     </div>
   );

@@ -1,6 +1,8 @@
 export { TreeNodeComponent } from './TreeNodeComponent';
 export { default as Terminal } from './terminal/Terminal';
 export { AcpSettings } from './agent/AcpSettings';
+export { AcpEmptyTemplates } from './agent/AcpEmptyTemplates';
+export { AgentTemplatesManager } from './agent/AgentTemplatesManager';
 export { default as Search } from './Search';
 export { ChangesPanel } from './ChangesPanel';
 export { HistoryPanel } from './HistoryPanel';

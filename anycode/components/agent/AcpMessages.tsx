@@ -5,9 +5,11 @@ import {
   AcpToolResultMessage,
   AcpToolUpdateMessage,
   AcpUserMessage,
+  type AgentPromptTemplate,
 } from '../../types';
 import { AcpMessage } from './AcpMessage';
 import { AcpWorkGroup } from './AcpWorkGroup';
+import { AcpEmptyTemplates } from './AcpEmptyTemplates';
 import './AcpMessages.css';
 
 interface AcpMessagesProps {
@@ -25,6 +27,9 @@ interface AcpMessagesProps {
   onUndoMessage?: (message: AcpUserMessage) => void;
   onOpenFile?: (path: string, line?: number, column?: number) => void;
   onOpenFileDiff?: (path: string, line?: number, column?: number) => void;
+  onSelectTemplate?: (template: AgentPromptTemplate, sendImmediately?: boolean) => void;
+  onOpenSettings?: () => void;
+  agentTitle?: string;
 }
 
 const AcpMessagesComponent: React.FC<AcpMessagesProps> = ({
@@ -42,11 +47,22 @@ const AcpMessagesComponent: React.FC<AcpMessagesProps> = ({
   onUndoMessage,
   onOpenFile,
   onOpenFileDiff,
+  onSelectTemplate,
+  onOpenSettings,
+  agentTitle,
 }) => {
   if (messages.length === 0) {
     return (
       <div className="acp-empty-state">
-        <p>No messages yet. Start a conversation with the agent.</p>
+        {onSelectTemplate ? (
+          <AcpEmptyTemplates
+            onSelectTemplate={onSelectTemplate}
+            onOpenSettings={onOpenSettings}
+            agentTitle={agentTitle}
+          />
+        ) : (
+          <p>No messages yet. Start a conversation with the agent.</p>
+        )}
       </div>
     );
   }

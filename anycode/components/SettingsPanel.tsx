@@ -11,6 +11,7 @@ import {
     type ScrollbarStyle,
 } from '../hooks/useSettings';
 import './SettingsPanel.css';
+import { AgentTemplatesManager } from './agent/AgentTemplatesManager';
 
 export interface ThemeItem {
     id: string;
@@ -509,6 +510,11 @@ const SettingsPanelComponent: React.FC<SettingsPanelProps> = ({
                     </div>
                 </div>
             )}
+
+            <div className="settings-section">
+                <h3 className="settings-section-title">Agent Prompt Templates</h3>
+                <AgentTemplatesManager embedded />
+            </div>
         </div>
     );
 };

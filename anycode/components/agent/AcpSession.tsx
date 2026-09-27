@@ -10,6 +10,7 @@ import {
   type FileSearchResult,
   type OpenFileInfo,
   type WorkspaceFileInfo,
+  type AgentPromptTemplate,
 } from '../../types';
 import './AcpSession.css';
 import { AcpInput } from './AcpInput';
@@ -338,6 +339,7 @@ interface AcpSessionProps {
   onSelectReasoning?: (agentId: string, option: AcpSelectOption) => void;
   onOpenFile?: (path: string, line?: number, column?: number) => void;
   onOpenFileDiff?: (path: string, line?: number, column?: number) => void;
+  onOpenSettings?: () => void;
 }
 
 const AcpSessionComponent: React.FC<AcpSessionProps> = ({
@@ -368,6 +370,7 @@ const AcpSessionComponent: React.FC<AcpSessionProps> = ({
   onSelectReasoning,
   onOpenFile,
   onOpenFileDiff,
+  onOpenSettings,
 }) => {
   const sessionRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -635,6 +638,16 @@ const AcpSessionComponent: React.FC<AcpSessionProps> = ({
     }
   }, [agentId, enableAutoScroll, inputValue, isConnected, isStarting, onSendPrompt]);
 
+  const handleSelectTemplate = useCallback((template: AgentPromptTemplate, sendImmediately = true) => {
+    const promptText = (template.text || template.prompt || template.label || template.title || '').trim();
+    if (!promptText) return;
+    if (sendImmediately && isConnected && !isStarting && !isProcessing) {
+      handleSend([], promptText);
+    } else {
+      handleInputChange(promptText);
+    }
+  }, [handleInputChange, handleSend, isConnected, isStarting, isProcessing]);
+
   const handleCheckMessagesSelection = useCallback(() => {
     const sel = window.getSelection();
     if (!sel || sel.isCollapsed) {
@@ -864,6 +877,9 @@ const AcpSessionComponent: React.FC<AcpSessionProps> = ({
                 onUndoMessage={handleUndoMessage}
                 onOpenFile={onOpenFile}
                 onOpenFileDiff={onOpenFileDiff}
+                onSelectTemplate={handleSelectTemplate}
+                onOpenSettings={onOpenSettings}
+                agentTitle={title}
               />
             )}
             {showWorkingIndicator && (

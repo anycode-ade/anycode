@@ -422,6 +422,14 @@ export interface AcpSession {
     pendingAuthMethod?: string;
 }
 
+export interface AgentPromptTemplate {
+    id: string;
+    label: string;
+    text: string;
+    title?: string;
+    prompt?: string;
+}
+
 export interface AcpSessionSummary {
     sessionId: string;
     cwd: string;
