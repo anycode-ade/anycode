@@ -40,6 +40,9 @@ pub async fn handle_connect(socket: SocketRef, _state: State<AppState>) {
     socket.on("acp:start", handle_acp_start);
     socket.on("acp:authenticate", handle_acp_authenticate);
     socket.on("acp:prompt", handle_acp_prompt);
+    socket.on("acp:queue:update", handle_acp_queue_update);
+    socket.on("acp:queue:remove", handle_acp_queue_remove);
+    socket.on("acp:queue:move", handle_acp_queue_move);
     socket.on("acp:stop", handle_acp_stop);
     socket.on("acp:cancel", handle_acp_cancel);
     socket.on("acp:set_model", handle_acp_set_model);

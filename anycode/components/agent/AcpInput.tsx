@@ -16,12 +16,14 @@ import type {
   AcpContextUsageMessage,
   AcpModelSelectorMessage,
   AcpPromptAttachment,
+  AcpQueuedMessage,
   AcpReasoningSelectorMessage,
   AcpSelectOption,
   FileSearchResult,
   OpenFileInfo,
   WorkspaceFileInfo,
 } from '../../types';
+import { AcpQueue } from './AcpQueue';
 
 interface FileMentionItem {
   id: string;
@@ -88,6 +90,10 @@ interface AcpInputProps {
   isStarting?: boolean;
   isProcessing?: boolean;
   showProcessingDots?: boolean;
+  queue?: AcpQueuedMessage[];
+  onUpdateQueueItem?: (itemId: string, prompt: string) => void;
+  onRemoveQueueItem?: (itemId: string) => void;
+  onMoveQueueItem?: (itemId: string, direction: 'up' | 'down') => void;
   modelSelector?: Omit<AcpModelSelectorMessage, 'role'>;
   reasoningSelector?: Omit<AcpReasoningSelectorMessage, 'role'>;
   contextUsage?: Omit<AcpContextUsageMessage, 'role'>;
@@ -109,6 +115,10 @@ const AcpInputComponent: React.FC<AcpInputProps> = ({
   isStarting = false,
   isProcessing = false,
   showProcessingDots = false,
+  queue,
+  onUpdateQueueItem,
+  onRemoveQueueItem,
+  onMoveQueueItem,
   modelSelector,
   reasoningSelector,
   contextUsage,
@@ -803,7 +813,6 @@ const AcpInputComponent: React.FC<AcpInputProps> = ({
   const canSubmit =
     (hasText || hasQuotes || attachments.length > 0) &&
     isConnected &&
-    !isProcessing &&
     !isStarting;
 
   const handleSend = React.useCallback(() => {
@@ -981,38 +990,42 @@ const AcpInputComponent: React.FC<AcpInputProps> = ({
     );
   };
 
+  const hasQueue = Boolean(queue && queue.length > 0);
+  const isBusy = isProcessing || hasQueue;
+
   const renderActionSwitch = () => (
-    <div className="acp-prompt-action-switch">
-      <button
-        type="button"
-        className={`acp-stop-prompt-btn ${isProcessing ? 'acp-prompt-action-active' : 'acp-prompt-action-inactive'}`}
-        onClick={onCancel}
-        disabled={!isConnected || !isProcessing}
-        aria-hidden={!isProcessing}
-        aria-label="Cancel prompt"
-        title="Cancel prompt"
-      >
-        {showProcessingDots && (
-          <span className="acp-stop-prompt-dots" aria-hidden="true">
-            <span>.</span>
-            <span>.</span>
-            <span>.</span>
-          </span>
-        )}
-        <span
-          className={`acp-stop-prompt-icon${showProcessingDots ? ' acp-stop-prompt-icon-hover' : ' acp-stop-prompt-icon-visible'}`}
-          aria-hidden="true"
+    <div className={`acp-prompt-action-switch ${isProcessing && canSubmit ? 'has-both' : ''}`}>
+      {isProcessing && (
+        <button
+          type="button"
+          className="acp-stop-prompt-btn acp-prompt-action-active"
+          onClick={onCancel}
+          disabled={!isConnected}
+          aria-label="Cancel prompt"
+          title="Cancel prompt"
         >
-          <AcpIcons.Cancel />
-        </span>
-      </button>
+          {showProcessingDots && !canSubmit && (
+            <span className="acp-stop-prompt-dots" aria-hidden="true">
+              <span>.</span>
+              <span>.</span>
+              <span>.</span>
+            </span>
+          )}
+          <span
+            className={`acp-stop-prompt-icon${showProcessingDots && !canSubmit ? ' acp-stop-prompt-icon-hover' : ' acp-stop-prompt-icon-visible'}`}
+            aria-hidden="true"
+          >
+            <AcpIcons.Cancel />
+          </span>
+        </button>
+      )}
       <button
         type="button"
-        className={`acp-send-btn ${isProcessing ? 'acp-prompt-action-inactive' : 'acp-prompt-action-active'}`}
+        className={`acp-send-btn ${(!isProcessing || canSubmit) ? 'acp-prompt-action-active' : 'acp-prompt-action-inactive'}`}
         onClick={handleSend}
         disabled={!canSubmit}
-        aria-hidden={isProcessing}
-        title={isStarting ? `Starting ${agentLabel || 'agent'}…` : undefined}
+        aria-hidden={isProcessing && !canSubmit}
+        title={isStarting ? `Starting ${agentLabel || 'agent'}…` : isBusy ? 'Queue prompt' : undefined}
       >
         {isStarting ? (
           <span className="acp-input-spinner" />
@@ -1036,6 +1049,14 @@ const AcpInputComponent: React.FC<AcpInputProps> = ({
       onDrop={handleDrop}
     >
       <div className="acp-input-full-container">
+        {queue && queue.length > 0 && onUpdateQueueItem && onRemoveQueueItem && onMoveQueueItem && (
+          <AcpQueue
+            queue={queue}
+            onUpdateItem={onUpdateQueueItem}
+            onRemoveItem={onRemoveQueueItem}
+            onMoveItem={onMoveQueueItem}
+          />
+        )}
         {isSlashActive && filteredCommands.length > 0 && (
           <div ref={slashMenuRef} className="acp-slash-menu" role="listbox" aria-label="Available commands">
             <div className="acp-slash-menu-header">

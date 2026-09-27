@@ -574,6 +574,19 @@
     visibility: visible;
 }
 
+.acp-prompt-action-switch.has-both {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: auto;
+    flex: 0 0 auto;
+}
+
+.acp-prompt-action-switch.has-both > .acp-send-btn,
+.acp-prompt-action-switch.has-both > .acp-stop-prompt-btn {
+    position: static;
+}
+
 .acp-send-btn {
     color: var(--theme-accent-background, #3c3c3c);
 }

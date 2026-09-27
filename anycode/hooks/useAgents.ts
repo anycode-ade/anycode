@@ -11,6 +11,8 @@ import {
     type AcpModelSelectorMessage,
     type AcpPromptStateMessage,
     type AcpPromptAttachment,
+    type AcpQueuedMessage,
+    type AcpQueueUpdateMessage,
     type AcpRawUpdateMessage,
     type AcpReasoningSelectorMessage,
     type AcpSelectOption,
@@ -271,6 +273,30 @@ const projectRawUpdate = (rawMessage: AcpRawUpdateMessage): AcpMessage[] => {
     return [];
 };
 
+export const mergeServerAndOptimisticQueue = (
+    existingQueue: AcpQueuedMessage[] | undefined,
+    incomingQueue: AcpQueuedMessage[],
+): AcpQueuedMessage[] => {
+    if (!existingQueue || existingQueue.length === 0) {
+        return incomingQueue;
+    }
+
+    const pendingOptimistic = existingQueue.filter((item) =>
+        item.id.startsWith('queued-optimistic-')
+    );
+    if (pendingOptimistic.length === 0) {
+        return incomingQueue;
+    }
+
+    const prevServerCount = existingQueue.filter((item) =>
+        !item.id.startsWith('queued-optimistic-')
+    ).length;
+    const addedOnServer = Math.max(0, incomingQueue.length - prevServerCount);
+    const remainingOptimistic = pendingOptimistic.slice(addedOnServer);
+
+    return [...incomingQueue, ...remainingOptimistic];
+};
+
 export const useAgents = ({
     wsRef,
     isConnected,
@@ -342,11 +368,17 @@ export const useAgents = ({
         };
     }, [wsRef, isConnected]);
 
-    const updateSession = useCallback((agentId: string, updater: (session: AcpSession | undefined) => AcpSession) => {
+    const updateSession = useCallback((agentId: string, updater: (session: AcpSession | undefined) => AcpSession | undefined) => {
         setAcpSessions((prev) => {
+            const existing = prev.get(agentId);
+            const updated = updater(existing);
+            if (updated === existing) return prev;
             const newSessions = new Map(prev);
-            const existing = newSessions.get(agentId);
-            newSessions.set(agentId, updater(existing));
+            if (updated === undefined) {
+                newSessions.delete(agentId);
+            } else {
+                newSessions.set(agentId, updated);
+            }
             return newSessions;
         });
     }, []);
@@ -448,117 +480,122 @@ export const useAgents = ({
     const handleAcpMessageImmediate = useCallback((data: { agent_id: string; item: AcpMessage }) => {
         if (data.item.role === 'prompt_state') {
             const promptState = data.item as AcpPromptStateMessage;
-            updateSession(data.agent_id, (existing) => ({
+            updateSession(data.agent_id, (existing) => existing ? {
+                ...existing,
+                isProcessing: promptState.is_processing,
+            } : {
                 agentId: data.agent_id,
-                agentName: existing?.agentName ?? '',
-                messages: existing?.messages ?? [],
+                agentName: '',
+                messages: [],
                 isActive: true,
                 isProcessing: promptState.is_processing,
-                sessionId: existing?.sessionId,
-                agentConfigId: existing?.agentConfigId,
-                modelSelector: existing?.modelSelector,
-                reasoningSelector: existing?.reasoningSelector,
-                contextUsage: existing?.contextUsage,
-                availableCommands: existing?.availableCommands,
-            }));
+            });
+            return;
+        }
+
+        if (data.item.role === 'queue_update') {
+            const queueUpdate = data.item as AcpQueueUpdateMessage;
+            updateSession(data.agent_id, (existing) => existing ? {
+                ...existing,
+                queue: mergeServerAndOptimisticQueue(existing.queue, queueUpdate.queue),
+            } : {
+                agentId: data.agent_id,
+                agentName: '',
+                messages: [],
+                isActive: true,
+                queue: queueUpdate.queue,
+            });
             return;
         }
 
         if (data.item.role === 'session_model_selector') {
             const selector = data.item as AcpModelSelectorMessage;
-            updateSession(data.agent_id, (existing) => ({
-                agentId: data.agent_id,
-                agentName: existing?.agentName ?? '',
-                messages: existing?.messages ?? [],
-                isActive: true,
-                isProcessing: existing?.isProcessing,
-                sessionId: existing?.sessionId,
-                agentConfigId: existing?.agentConfigId,
+            updateSession(data.agent_id, (existing) => existing ? {
+                ...existing,
                 modelSelector: {
                     current_value: selector.current_value,
                     options: selector.options,
                 },
-                reasoningSelector: existing?.reasoningSelector,
-                contextUsage: existing?.contextUsage,
-                availableCommands: existing?.availableCommands,
-            }));
+            } : {
+                agentId: data.agent_id,
+                agentName: '',
+                messages: [],
+                isActive: true,
+                modelSelector: {
+                    current_value: selector.current_value,
+                    options: selector.options,
+                },
+            });
             return;
         }
 
         if (data.item.role === 'session_reasoning_selector') {
             const selector = data.item as AcpReasoningSelectorMessage;
-            updateSession(data.agent_id, (existing) => ({
-                agentId: data.agent_id,
-                agentName: existing?.agentName ?? '',
-                messages: existing?.messages ?? [],
-                isActive: true,
-                isProcessing: existing?.isProcessing,
-                sessionId: existing?.sessionId,
-                agentConfigId: existing?.agentConfigId,
-                modelSelector: existing?.modelSelector,
+            updateSession(data.agent_id, (existing) => existing ? {
+                ...existing,
                 reasoningSelector: {
                     current_value: selector.current_value,
                     options: selector.options,
                 },
-                contextUsage: existing?.contextUsage,
-                availableCommands: existing?.availableCommands,
-            }));
+            } : {
+                agentId: data.agent_id,
+                agentName: '',
+                messages: [],
+                isActive: true,
+                reasoningSelector: {
+                    current_value: selector.current_value,
+                    options: selector.options,
+                },
+            });
             return;
         }
 
         if (data.item.role === 'context_usage') {
             const usage = data.item as AcpContextUsageMessage;
-            updateSession(data.agent_id, (existing) => ({
-                agentId: data.agent_id,
-                agentName: existing?.agentName ?? '',
-                messages: existing?.messages ?? [],
-                isActive: true,
-                isProcessing: existing?.isProcessing,
-                sessionId: existing?.sessionId,
-                agentConfigId: existing?.agentConfigId,
-                modelSelector: existing?.modelSelector,
-                reasoningSelector: existing?.reasoningSelector,
+            updateSession(data.agent_id, (existing) => existing ? {
+                ...existing,
                 contextUsage: {
                     used: usage.used,
                     size: usage.size,
                 },
-                availableCommands: existing?.availableCommands,
-            }));
+            } : {
+                agentId: data.agent_id,
+                agentName: '',
+                messages: [],
+                isActive: true,
+                contextUsage: {
+                    used: usage.used,
+                    size: usage.size,
+                },
+            });
             return;
         }
 
         if (data.item.role === 'available_commands') {
             const cmds = data.item as AcpAvailableCommandsMessage;
-            updateSession(data.agent_id, (existing) => ({
-                agentId: data.agent_id,
-                agentName: existing?.agentName ?? '',
-                messages: existing?.messages ?? [],
-                isActive: true,
-                isProcessing: existing?.isProcessing,
-                sessionId: existing?.sessionId,
-                agentConfigId: existing?.agentConfigId,
-                modelSelector: existing?.modelSelector,
-                reasoningSelector: existing?.reasoningSelector,
-                contextUsage: existing?.contextUsage,
+            updateSession(data.agent_id, (existing) => existing ? {
+                ...existing,
                 availableCommands: cmds.commands,
-            }));
+            } : {
+                agentId: data.agent_id,
+                agentName: '',
+                messages: [],
+                isActive: true,
+                availableCommands: cmds.commands,
+            });
             return;
         }
 
         if (data.item.role === 'error') {
-            updateSession(data.agent_id, (existing) => ({
+            updateSession(data.agent_id, (existing) => existing ? {
+                ...existing,
+                messages: mergeConsecutiveErrors([...existing.messages, data.item]),
+            } : {
                 agentId: data.agent_id,
-                agentName: existing?.agentName ?? '',
-                messages: mergeConsecutiveErrors([...(existing?.messages ?? []), data.item]),
+                agentName: '',
+                messages: [data.item],
                 isActive: true,
-                isProcessing: existing?.isProcessing,
-                sessionId: existing?.sessionId,
-                agentConfigId: existing?.agentConfigId,
-                modelSelector: existing?.modelSelector,
-                reasoningSelector: existing?.reasoningSelector,
-                contextUsage: existing?.contextUsage,
-                availableCommands: existing?.availableCommands,
-            }));
+            });
             return;
         }
 
@@ -613,15 +650,8 @@ export const useAgents = ({
                 messages = mergeChunkMessages(messages);
 
                 return {
-                    agentId: data.agent_id,
-                    agentName: existing?.agentName ?? '',
+                    ...existing,
                     messages,
-                    isActive: true,
-                    isProcessing: existing?.isProcessing,
-                    sessionId: existing?.sessionId,
-                    agentConfigId: existing?.agentConfigId,
-                    modelSelector: existing?.modelSelector,
-                    reasoningSelector: existing?.reasoningSelector,
                     contextUsage,
                     availableCommands,
                 };
@@ -635,19 +665,15 @@ export const useAgents = ({
             || data.item.role === 'tool_update'
             || data.item.role === 'media'
         ) {
-            updateSession(data.agent_id, (existing) => ({
+            updateSession(data.agent_id, (existing) => existing ? {
+                ...existing,
+                messages: [...existing.messages, data.item],
+            } : {
                 agentId: data.agent_id,
-                agentName: existing?.agentName ?? '',
-                messages: [...(existing?.messages ?? []), data.item],
+                agentName: '',
+                messages: [data.item],
                 isActive: true,
-                isProcessing: existing?.isProcessing,
-                sessionId: existing?.sessionId,
-                agentConfigId: existing?.agentConfigId,
-                modelSelector: existing?.modelSelector,
-                reasoningSelector: existing?.reasoningSelector,
-                contextUsage: existing?.contextUsage,
-                availableCommands: existing?.availableCommands,
-            }));
+            });
             return;
         }
 
@@ -756,33 +782,65 @@ export const useAgents = ({
             && item.role !== 'session_reasoning_selector'
             && item.role !== 'context_usage'
             && item.role !== 'available_commands'
-            && item.role !== 'raw_update',
+            && item.role !== 'raw_update'
+            && item.role !== 'queue_update',
         );
         const mergedVisibleMessages = mergeConsecutiveErrors(visibleMessages);
 
-        updateSession(data.agent_id, (existing) => ({
-            agentId: data.agent_id,
-            agentName: existing?.agentName ?? '',
+        updateSession(data.agent_id, (existing) => existing ? {
+            ...existing,
             messages: mergedVisibleMessages,
-            isActive: true,
-            isProcessing: existing?.isProcessing,
-            sessionId: existing?.sessionId,
-            agentConfigId: existing?.agentConfigId,
             modelSelector: modelSelector ? {
                 current_value: modelSelector.current_value,
                 options: modelSelector.options,
-            } : existing?.modelSelector,
+            } : existing.modelSelector,
             reasoningSelector: reasoningSelector ? {
                 current_value: reasoningSelector.current_value,
                 options: reasoningSelector.options,
-            } : existing?.reasoningSelector,
+            } : existing.reasoningSelector,
             contextUsage: contextUsage ? {
                 used: contextUsage.used,
                 size: contextUsage.size,
-            } : existing?.contextUsage,
-            availableCommands: availableCommandsMsg ? availableCommandsMsg.commands : existing?.availableCommands,
-        }));
+            } : existing.contextUsage,
+            availableCommands: availableCommandsMsg ? availableCommandsMsg.commands : existing.availableCommands,
+        } : {
+            agentId: data.agent_id,
+            agentName: '',
+            messages: mergedVisibleMessages,
+            isActive: true,
+            modelSelector: modelSelector ? {
+                current_value: modelSelector.current_value,
+                options: modelSelector.options,
+            } : undefined,
+            reasoningSelector: reasoningSelector ? {
+                current_value: reasoningSelector.current_value,
+                options: reasoningSelector.options,
+            } : undefined,
+            contextUsage: contextUsage ? {
+                used: contextUsage.used,
+                size: contextUsage.size,
+            } : undefined,
+            availableCommands: availableCommandsMsg?.commands,
+        });
     }, [flushPendingAcpMessages, updateSession]);
+
+    const handleAcpQueue = useCallback((data: { agent_id: string; queue: AcpQueuedMessage[] }) => {
+        updateSession(data.agent_id, (existing) => {
+            if (!existing) {
+                return {
+                    agentId: data.agent_id,
+                    agentName: '',
+                    messages: [],
+                    isActive: true,
+                    queue: data.queue,
+                };
+            }
+            return {
+                ...existing,
+                queue: mergeServerAndOptimisticQueue(existing.queue, data.queue),
+            };
+        });
+    }, [updateSession]);
 
     const setSessionModel = useCallback((agentId: string, option: AcpSelectOption) => {
         if (!wsRef.current || !isConnected) return;
@@ -825,6 +883,7 @@ export const useAgents = ({
                             ...existing,
                             isActive: true,
                             isProcessing: Boolean(agent.is_processing),
+                            queue: agent.queue ?? existing.queue,
                         });
                     } else {
                         newSessions.set(agent.id, {
@@ -833,6 +892,7 @@ export const useAgents = ({
                             messages: [],
                             isActive: true,
                             isProcessing: Boolean(agent.is_processing),
+                            queue: agent.queue,
                         });
                     }
 
@@ -1023,6 +1083,52 @@ export const useAgents = ({
     const sendPrompt = useCallback((agentId: string, prompt: string, attachments: AcpPromptAttachment[] = []) => {
         if (!wsRef.current || !isConnected) return;
 
+        const currentSession = acpSessionsRef.current.get(agentId);
+        const isProcessing = currentSession?.isProcessing;
+        const hasQueue = (currentSession?.queue?.length ?? 0) > 0;
+
+        if (isProcessing || hasQueue) {
+            const tempQueuedItem: AcpQueuedMessage = {
+                id: `queued-optimistic-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+                prompt,
+                attachments: attachments.length > 0 ? attachments : undefined,
+                created_at: Date.now(),
+            };
+
+            updateSession(agentId, (existing) => {
+                if (!existing) return existing;
+                return {
+                    ...existing,
+                    queue: [...(existing.queue ?? []), tempQueuedItem],
+                };
+            });
+
+            wsRef.current.emit('acp:prompt', { agent_id: agentId, prompt, attachments }, (response: any) => {
+                if (response.success) {
+                    if (response.id) {
+                        updateSession(agentId, (existing) => {
+                            if (!existing) return existing;
+                            return {
+                                ...existing,
+                                queue: existing.queue?.map((q) => q.id === tempQueuedItem.id ? { ...q, id: response.id } : q),
+                            };
+                        });
+                    }
+                    return;
+                }
+
+                alert('Failed to queue prompt: ' + response.error);
+                updateSession(agentId, (existing) => {
+                    if (!existing) return existing;
+                    return {
+                        ...existing,
+                        queue: existing.queue?.filter((q) => q.id !== tempQueuedItem.id),
+                    };
+                });
+            });
+            return;
+        }
+
         const clientId = `optimistic-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
         const optimisticMessage: AcpUserMessage = {
             role: 'user',
@@ -1031,35 +1137,104 @@ export const useAgents = ({
             client_id: clientId,
         };
 
-        updateSession(agentId, (existing) => ({
-            agentId,
-            agentName: existing?.agentName ?? '',
-            messages: [...(existing?.messages ?? []), optimisticMessage],
-            isActive: true,
-            isProcessing: true,
-            sessionId: existing?.sessionId,
-            agentConfigId: existing?.agentConfigId,
-            modelSelector: existing?.modelSelector,
-            reasoningSelector: existing?.reasoningSelector,
-            contextUsage: existing?.contextUsage,
-            availableCommands: existing?.availableCommands,
-        }));
+        updateSession(agentId, (existing) => {
+            if (!existing) return existing;
+            return {
+                ...existing,
+                messages: [...existing.messages, optimisticMessage],
+                isProcessing: true,
+            };
+        });
 
         wsRef.current.emit('acp:prompt', { agent_id: agentId, prompt, attachments }, (response: any) => {
             if (response.success) return;
 
             alert('Failed to send prompt: ' + response.error);
-            setAcpSessions((prev) => {
-                const newSessions = new Map(prev);
-                const existing = newSessions.get(agentId);
-                if (!existing) return newSessions;
-                newSessions.set(agentId, {
+            updateSession(agentId, (existing) => {
+                if (!existing) return existing;
+                return {
                     ...existing,
                     messages: existing.messages.filter((message) => message.client_id !== clientId),
                     isProcessing: false,
-                });
-                return newSessions;
+                };
             });
+        });
+    }, [wsRef, isConnected, updateSession]);
+
+    const updateQueuedPrompt = useCallback((agentId: string, itemId: string, prompt: string) => {
+        if (!wsRef.current || !isConnected) return;
+
+        updateSession(agentId, (existing) => {
+            if (!existing) return existing;
+            return {
+                ...existing,
+                queue: (existing.queue ?? []).map((item) =>
+                    item.id === itemId ? { ...item, prompt } : item
+                ),
+            };
+        });
+
+        wsRef.current.emit('acp:queue:update', {
+            agent_id: agentId,
+            item_id: itemId,
+            prompt,
+        }, (response: any) => {
+            if (!response.success) {
+                console.error('Failed to update queued prompt:', response.error);
+            }
+        });
+    }, [wsRef, isConnected, updateSession]);
+
+    const removeQueuedPrompt = useCallback((agentId: string, itemId: string) => {
+        if (!wsRef.current || !isConnected) return;
+
+        updateSession(agentId, (existing) => {
+            if (!existing) return existing;
+            return {
+                ...existing,
+                queue: (existing.queue ?? []).filter((item) => item.id !== itemId),
+            };
+        });
+
+        wsRef.current.emit('acp:queue:remove', {
+            agent_id: agentId,
+            item_id: itemId,
+        }, (response: any) => {
+            if (!response.success) {
+                console.error('Failed to remove queued prompt:', response.error);
+            }
+        });
+    }, [wsRef, isConnected, updateSession]);
+
+    const moveQueuedPrompt = useCallback((agentId: string, itemId: string, direction: 'up' | 'down') => {
+        if (!wsRef.current || !isConnected) return;
+
+        updateSession(agentId, (existing) => {
+            if (!existing || !existing.queue) return existing;
+            const index = existing.queue.findIndex((item) => item.id === itemId);
+            if (index === -1) return existing;
+            const targetIndex = direction === 'up' ? index - 1 : index + 1;
+            if (targetIndex < 0 || targetIndex >= existing.queue.length) return existing;
+
+            const newQueue = [...existing.queue];
+            const temp = newQueue[index];
+            newQueue[index] = newQueue[targetIndex];
+            newQueue[targetIndex] = temp;
+
+            return {
+                ...existing,
+                queue: newQueue,
+            };
+        });
+
+        wsRef.current.emit('acp:queue:move', {
+            agent_id: agentId,
+            item_id: itemId,
+            direction,
+        }, (response: any) => {
+            if (!response.success) {
+                console.error('Failed to move queued prompt:', response.error);
+            }
         });
     }, [wsRef, isConnected, updateSession]);
 
@@ -1083,7 +1258,7 @@ export const useAgents = ({
                 const newSessions = new Map(prev);
                 const existing = newSessions.get(agentId);
                 if (!existing) return newSessions;
-                newSessions.set(agentId, { ...existing, isProcessing: false });
+                newSessions.set(agentId, { ...existing, isProcessing: false, queue: [] });
                 return newSessions;
             });
         });
@@ -1155,12 +1330,16 @@ export const useAgents = ({
         setAgentsVersion,
         handleAcpMessage,
         handleAcpHistory,
+        handleAcpQueue,
         reconnectToAcpAgents,
         startAgent,
         authenticateAgent,
         fetchAvailableSessions,
         resumeSession,
         sendPrompt,
+        updateQueuedPrompt,
+        removeQueuedPrompt,
+        moveQueuedPrompt,
         undoPrompt,
         setSessionModel,
         setSessionReasoning,

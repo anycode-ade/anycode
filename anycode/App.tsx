@@ -178,6 +178,7 @@ const App: React.FC = () => {
             ['git:update', editors.handleGitUpdate],
             ['acp:message', agents.handleAcpMessage],
             ['acp:history', agents.handleAcpHistory],
+            ['acp:queue', agents.handleAcpQueue],
             ['search:results', search.handleSearchResults],
             ['search:end', search.handleSearchEnd],
         ] as const;
@@ -199,6 +200,7 @@ const App: React.FC = () => {
         git.handleHistorySearchResults,
         agents.handleAcpMessage,
         agents.handleAcpHistory,
+        agents.handleAcpQueue,
         search.handleSearchResults,
         search.handleSearchEnd,
     ]);

@@ -981,14 +981,22 @@ export class DemoSocket {
                 break;
             }
 
+            case 'acp:queue:update':
+            case 'acp:queue:remove':
+            case 'acp:queue:move': {
+                callback?.({ success: true });
+                break;
+            }
+
             case 'acp:prompt': {
                 const agentId = payload?.agent_id || 'demo-agent-1';
                 const agentName = this.agentNames.get(agentId) || 'AI Agent';
                 const userPrompt = payload?.prompt || '';
                 const lowerPrompt = userPrompt.toLowerCase();
                 const toolCallId = `tool-${Date.now()}`;
+                const promptId = `demo-queue-${Date.now()}`;
 
-                callback?.({ status: 'ok', success: true });
+                callback?.({ status: 'ok', success: true, id: promptId });
 
                 let toolName = 'read_file';
                 let toolCmd = 'read_file demo.py';

@@ -382,9 +382,9 @@ pub async fn handle_acp_prompt(
     };
 
     match agent.send_prompt(prompt, attachments).await {
-        Ok(_) => {
+        Ok(queued_id) => {
             info!("ACP prompt sent for agent {}", agent_id);
-            ack.send(&json!({ "success": true })).ok();
+            ack.send(&json!({ "success": true, "id": queued_id })).ok();
         }
         Err(e) => {
             error!("ACP prompt failed for agent {}: {}", agent_id, e);
@@ -486,16 +486,16 @@ pub async fn handle_acp_list(ack: AckSender, state: State<AppState>) {
     let acp_manager = state.acp_manager.lock().await;
     let agents = acp_manager.list_agents();
 
-    let agents_json: Vec<serde_json::Value> = agents
-        .iter()
-        .map(|(id, name)| {
-            json!({
-                "id": id,
-                "name": name,
-                "is_processing": acp_manager.is_agent_processing(id),
-            })
-        })
-        .collect();
+    let mut agents_json: Vec<serde_json::Value> = Vec::new();
+    for (id, name) in &agents {
+        let queue = acp_manager.get_agent_queue(id).await.unwrap_or_default();
+        agents_json.push(json!({
+            "id": id,
+            "name": name,
+            "is_processing": acp_manager.is_agent_processing(id),
+            "queue": queue,
+        }));
+    }
 
     ack.send(&json!({ "success": true, "agents": agents_json }))
         .ok();
@@ -549,6 +549,14 @@ pub async fn handle_acp_reconnect(socket: SocketRef, ack: AckSender, state: Stat
             }
         }
 
+        // Get queue and send it if not empty
+        if let Some(queue) = acp_manager.get_agent_queue(agent_id).await {
+            if !queue.is_empty() {
+                let data = json!({ "agent_id": agent_id, "queue": queue });
+                let _ = socket.emit("acp:queue", &data);
+            }
+        }
+
         // Subscribe to new messages in a separate task
         if let Some(msg_rx) = acp_manager.subscribe(agent_id) {
             let socket_clone = socket.clone();
@@ -560,16 +568,16 @@ pub async fn handle_acp_reconnect(socket: SocketRef, ack: AckSender, state: Stat
         }
     }
 
-    let agents_json: Vec<serde_json::Value> = agents
-        .iter()
-        .map(|(id, name)| {
-            json!({
-                "id": id,
-                "name": name,
-                "is_processing": acp_manager.is_agent_processing(id),
-            })
-        })
-        .collect();
+    let mut agents_json: Vec<serde_json::Value> = Vec::new();
+    for (id, name) in &agents {
+        let queue = acp_manager.get_agent_queue(id).await.unwrap_or_default();
+        agents_json.push(json!({
+            "id": id,
+            "name": name,
+            "is_processing": acp_manager.is_agent_processing(id),
+            "queue": queue,
+        }));
+    }
 
     ack.send(&json!({ "success": true, "agents": agents_json }))
         .ok();
@@ -618,6 +626,76 @@ pub async fn handle_acp_undo(
             error_ack!(ack, &agent_id, "Undo failed: {}", e);
         }
     }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct AcpQueueUpdateRequest {
+    pub agent_id: String,
+    pub item_id: String,
+    pub prompt: String,
+}
+
+pub async fn handle_acp_queue_update(
+    Data(request): Data<AcpQueueUpdateRequest>,
+    ack: AckSender,
+    state: State<AppState>,
+) {
+    info!("handle_acp_queue_update {:?}", request);
+    let AcpQueueUpdateRequest {
+        agent_id,
+        item_id,
+        prompt,
+    } = request;
+    let acp_manager = state.acp_manager.lock().await;
+    let success = acp_manager
+        .update_agent_queued_prompt(&agent_id, &item_id, prompt)
+        .await;
+    ack.send(&json!({ "success": success })).ok();
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct AcpQueueRemoveRequest {
+    pub agent_id: String,
+    pub item_id: String,
+}
+
+pub async fn handle_acp_queue_remove(
+    Data(request): Data<AcpQueueRemoveRequest>,
+    ack: AckSender,
+    state: State<AppState>,
+) {
+    info!("handle_acp_queue_remove {:?}", request);
+    let AcpQueueRemoveRequest { agent_id, item_id } = request;
+    let acp_manager = state.acp_manager.lock().await;
+    let success = acp_manager
+        .remove_agent_queued_prompt(&agent_id, &item_id)
+        .await;
+    ack.send(&json!({ "success": success })).ok();
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct AcpQueueMoveRequest {
+    pub agent_id: String,
+    pub item_id: String,
+    pub direction: String,
+}
+
+pub async fn handle_acp_queue_move(
+    Data(request): Data<AcpQueueMoveRequest>,
+    ack: AckSender,
+    state: State<AppState>,
+) {
+    info!("handle_acp_queue_move {:?}", request);
+    let AcpQueueMoveRequest {
+        agent_id,
+        item_id,
+        direction,
+    } = request;
+    let acp_manager = state.acp_manager.lock().await;
+    let success = acp_manager
+        .move_agent_queued_prompt(&agent_id, &item_id, &direction)
+        .await;
+    ack.send(&json!({ "success": success })).ok();
 }
 
 pub fn agents_config_path() -> std::path::PathBuf {

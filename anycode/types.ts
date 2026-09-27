@@ -259,6 +259,18 @@ export interface AcpRawUpdateMessage {
     update: unknown;
 }
 
+export interface AcpQueuedMessage {
+    id: string;
+    prompt: string;
+    attachments?: AcpPromptAttachment[];
+    created_at: number;
+}
+
+export interface AcpQueueUpdateMessage {
+    role: 'queue_update';
+    queue: AcpQueuedMessage[];
+}
+
 export type AcpMessage =
     | AcpUserMessage
     | AcpAssistantMessage
@@ -268,6 +280,7 @@ export type AcpMessage =
     | AcpToolResultMessage
     | AcpToolUpdateMessage
     | AcpPromptStateMessage
+    | AcpQueueUpdateMessage
     | AcpModelSelectorMessage
     | AcpReasoningSelectorMessage
     | AcpContextUsageMessage
@@ -407,6 +420,7 @@ export interface AcpSession {
     sessionId?: string;
     agentConfigId?: string;
     messages: AcpMessage[];
+    queue?: AcpQueuedMessage[];
     isActive: boolean;
     isStarting?: boolean;
     startError?: string;

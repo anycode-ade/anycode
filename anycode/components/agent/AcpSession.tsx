@@ -5,6 +5,7 @@ import {
   type AcpContextUsageMessage,
   type AcpModelSelectorMessage,
   type AcpPromptAttachment,
+  type AcpQueuedMessage,
   type AcpReasoningSelectorMessage,
   type AcpSelectOption,
   type FileSearchResult,
@@ -317,6 +318,10 @@ interface AcpSessionProps {
   isStarting?: boolean;
   startError?: string;
   messages: AcpMessage[];
+  queue?: AcpQueuedMessage[];
+  onUpdateQueueItem?: (agentId: string, itemId: string, prompt: string) => void;
+  onRemoveQueueItem?: (agentId: string, itemId: string) => void;
+  onMoveQueueItem?: (agentId: string, itemId: string, direction: 'up' | 'down') => void;
   modelSelector?: Omit<AcpModelSelectorMessage, 'role'>;
   reasoningSelector?: Omit<AcpReasoningSelectorMessage, 'role'>;
   contextUsage?: Omit<AcpContextUsageMessage, 'role'>;
@@ -350,6 +355,10 @@ const AcpSessionComponent: React.FC<AcpSessionProps> = ({
   isStarting = false,
   startError,
   messages,
+  queue,
+  onUpdateQueueItem,
+  onRemoveQueueItem,
+  onMoveQueueItem,
   modelSelector,
   reasoningSelector,
   contextUsage,
@@ -921,6 +930,10 @@ const AcpSessionComponent: React.FC<AcpSessionProps> = ({
         isStarting={isStarting}
         isProcessing={isProcessing}
         showProcessingDots={!autoScrollEnabled}
+        queue={queue}
+        onUpdateQueueItem={onUpdateQueueItem ? (itemId, prompt) => onUpdateQueueItem(agentId, itemId, prompt) : undefined}
+        onRemoveQueueItem={onRemoveQueueItem ? (itemId) => onRemoveQueueItem(agentId, itemId) : undefined}
+        onMoveQueueItem={onMoveQueueItem ? (itemId, dir) => onMoveQueueItem(agentId, itemId, dir) : undefined}
         modelSelector={modelSelector}
         reasoningSelector={reasoningSelector}
         contextUsage={contextUsage}

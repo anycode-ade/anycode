@@ -19,7 +19,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::io::{self, AsyncBufReadExt, BufReader};
 use tokio::process::Command;
-use tokio::sync::{RwLock, broadcast, mpsc, oneshot};
+use tokio::sync::{Notify, RwLock, broadcast, mpsc, oneshot};
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 use tracing::{debug, error, info, warn};
 
@@ -46,11 +46,6 @@ pub struct AcpPromptAttachment {
     pub size: Option<u64>,
 }
 
-#[derive(Debug, Clone)]
-struct AcpPromptPayload {
-    prompt: String,
-    attachments: Vec<AcpPromptAttachment>,
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AcpSelectOption {
@@ -117,6 +112,20 @@ pub struct AcpSessionSummary {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AcpQueuedMessage {
+    pub id: String,
+    pub prompt: String,
+    #[serde(default)]
+    pub attachments: Vec<AcpPromptAttachment>,
+    pub created_at: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AcpQueueUpdate {
+    pub queue: Vec<AcpQueuedMessage>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "role")]
 pub enum AcpMessage {
     #[serde(rename = "user")]
@@ -131,6 +140,8 @@ pub enum AcpMessage {
     Error(AcpError),
     #[serde(rename = "raw_update")]
     RawUpdate(AcpRawUpdate),
+    #[serde(rename = "queue_update")]
+    QueueUpdate(AcpQueueUpdate),
 }
 
 struct AcpClientImpl {
@@ -505,7 +516,6 @@ pub struct AcpAgent {
     ready: Arc<AtomicBool>,
     is_processing: Arc<AtomicBool>,
     message_sender: Option<broadcast::Sender<AcpMessage>>,
-    prompt_sender: Option<mpsc::Sender<AcpPromptPayload>>,
     config_sender: Option<mpsc::Sender<PendingConfigUpdate>>,
     cancel_sender: Arc<tokio::sync::Mutex<Option<mpsc::Sender<()>>>>,
     auth_sender: Arc<tokio::sync::Mutex<Option<mpsc::Sender<(String, oneshot::Sender<Result<SessionBootstrap>>)>>>>,
@@ -517,6 +527,8 @@ pub struct AcpAgent {
     history_manager: Arc<RwLock<AcpHistoryManager>>,
     /// Channel to send file operations to the ACP filesystem background task
     fs_sender: mpsc::Sender<AcpFsCommand>,
+    queue: Arc<tokio::sync::Mutex<Vec<AcpQueuedMessage>>>,
+    queue_notify: Arc<Notify>,
 }
 
 impl AcpAgent {
@@ -525,8 +537,17 @@ impl AcpAgent {
         agent_name: String,
         fs_sender: mpsc::Sender<AcpFsCommand>,
     ) -> Self {
-        // Initialize history manager with current working directory and agent ID
         let project_root = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        Self::new_with_project_root(agent_id, agent_name, project_root, fs_sender)
+    }
+
+    pub fn new_with_project_root(
+        agent_id: String,
+        agent_name: String,
+        project_root: PathBuf,
+        fs_sender: mpsc::Sender<AcpFsCommand>,
+    ) -> Self {
+        // Initialize history manager with given working directory and agent ID
         let mut history_manager = AcpHistoryManager::new(&project_root, &agent_id);
         if let Err(e) = history_manager.init() {
             error!("Failed to initialize history manager: {}", e);
@@ -540,7 +561,6 @@ impl AcpAgent {
             ready: Arc::new(AtomicBool::new(false)),
             is_processing: Arc::new(AtomicBool::new(false)),
             message_sender: None,
-            prompt_sender: None,
             config_sender: None,
             cancel_sender: Arc::new(tokio::sync::Mutex::new(None)),
             auth_sender: Arc::new(tokio::sync::Mutex::new(None)),
@@ -550,6 +570,8 @@ impl AcpAgent {
             history: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             history_manager: Arc::new(RwLock::new(history_manager)),
             fs_sender,
+            queue: Arc::new(tokio::sync::Mutex::new(Vec::new())),
+            queue_notify: Arc::new(Notify::new()),
         }
     }
 
@@ -560,6 +582,13 @@ impl AcpAgent {
 
     pub fn set_session_id(&mut self, session_id: acp::SessionId) {
         self.session_id = Some(session_id);
+    }
+
+    #[cfg(test)]
+    pub fn init_message_sender_for_test(&mut self) -> broadcast::Receiver<AcpMessage> {
+        let (tx, rx) = broadcast::channel(100);
+        self.message_sender = Some(tx);
+        rx
     }
 
     pub async fn start(
@@ -573,8 +602,6 @@ impl AcpAgent {
         let (history_tx, _) = broadcast::channel::<AcpMessage>(1000);
         self.message_sender = Some(history_tx.clone());
 
-        let (prompt_tx, prompt_rx) = mpsc::channel::<AcpPromptPayload>(100);
-        self.prompt_sender = Some(prompt_tx.clone());
         let (config_tx, config_rx) = mpsc::channel::<PendingConfigUpdate>(32);
         self.config_sender = Some(config_tx);
 
@@ -605,6 +632,9 @@ impl AcpAgent {
         let history_clone = self.history.clone();
         let message_sender_clone = history_tx.clone();
         let fs_sender_clone = self.fs_sender.clone();
+        let queue_clone = self.queue.clone();
+        let queue_notify_clone = self.queue_notify.clone();
+        let history_manager_clone = self.history_manager.clone();
 
         let local_set_handle = tokio::task::spawn_blocking(move || {
             tokio::runtime::Handle::current().block_on(async {
@@ -616,12 +646,14 @@ impl AcpAgent {
                             ready_clone,
                             is_processing_clone,
                             history_clone,
+                            history_manager_clone,
+                            queue_clone,
+                            queue_notify_clone,
                             message_sender_clone,
                             fs_sender_clone,
                             stdin,
                             stdout,
                             stderr,
-                            prompt_rx,
                             config_rx,
                             cancel_rx,
                             auth_rx,
@@ -752,12 +784,14 @@ impl AcpAgent {
         ready: Arc<AtomicBool>,
         is_processing: Arc<AtomicBool>,
         history: Arc<tokio::sync::Mutex<Vec<AcpMessage>>>,
+        history_manager: Arc<RwLock<AcpHistoryManager>>,
+        queue: Arc<tokio::sync::Mutex<Vec<AcpQueuedMessage>>>,
+        queue_notify: Arc<Notify>,
         message_sender: broadcast::Sender<AcpMessage>,
         fs_sender: mpsc::Sender<AcpFsCommand>,
         stdin: tokio::process::ChildStdin,
         stdout: tokio::process::ChildStdout,
         stderr: tokio::process::ChildStderr,
-        mut prompt_rx: mpsc::Receiver<AcpPromptPayload>,
         mut config_rx: mpsc::Receiver<PendingConfigUpdate>,
         mut cancel_rx: mpsc::Receiver<()>,
         mut auth_rx: mpsc::Receiver<(String, oneshot::Sender<Result<SessionBootstrap>>)>,
@@ -969,9 +1003,11 @@ impl AcpAgent {
                     &is_processing_for_conn,
                     &message_sender,
                     history_for_prompt,
+                    history_manager,
+                    queue,
+                    queue_notify,
                     bootstrap.session_id,
                     bootstrap.prompt_capabilities,
-                    &mut prompt_rx,
                     &mut config_rx,
                     &mut cancel_rx,
                 )
@@ -1338,9 +1374,11 @@ impl AcpAgent {
         is_processing: &AtomicBool,
         message_sender: &broadcast::Sender<AcpMessage>,
         history: Arc<tokio::sync::Mutex<Vec<AcpMessage>>>,
+        history_manager: Arc<RwLock<AcpHistoryManager>>,
+        queue: Arc<tokio::sync::Mutex<Vec<AcpQueuedMessage>>>,
+        queue_notify: Arc<Notify>,
         session_id: acp::SessionId,
         prompt_capabilities: acp::PromptCapabilities,
-        prompt_rx: &mut mpsc::Receiver<AcpPromptPayload>,
         config_rx: &mut mpsc::Receiver<PendingConfigUpdate>,
         cancel_rx: &mut mpsc::Receiver<()>,
     ) {
@@ -1350,52 +1388,129 @@ impl AcpAgent {
         );
 
         loop {
-            tokio::select! {
-                maybe_prompt = prompt_rx.recv() => match maybe_prompt {
-                Some(prompt) => {
-                    info!(
-                        "Sending prompt to agent {} (text_len={}, attachments={})",
-                        agent_id,
-                        prompt.prompt.len(),
-                        prompt.attachments.len()
-                    );
-
+            // First check if there is an item in the queue to process
+            let next_prompt = {
+                let mut q = queue.lock().await;
+                if !q.is_empty() {
                     is_processing.store(true, Ordering::SeqCst);
+                    Some(q.remove(0))
+                } else {
+                    None
+                }
+            };
 
-                    // Send prompt state: processing started
+            if let Some(queued_item) = next_prompt {
+                info!(
+                    "Processing queued prompt for agent {} (queue_id={}, text_len={}, attachments={})",
+                    agent_id,
+                    queued_item.id,
+                    queued_item.prompt.len(),
+                    queued_item.attachments.len()
+                );
+
+                // Broadcast updated queue since we popped an item
+                let current_queue = {
+                    let q = queue.lock().await;
+                    q.clone()
+                };
+                let _ = message_sender.send(AcpMessage::QueueUpdate(AcpQueueUpdate {
+                    queue: current_queue,
+                }));
+
+                // Immediately mark agent as processing so incoming prompts are queued
+                let was_processing = is_processing.swap(true, Ordering::SeqCst);
+                if !was_processing {
                     let _ = message_sender.send(AcpMessage::PromptState(AcpPromptState {
                         is_processing: true,
                     }));
+                }
 
-                    // Handle prompt with cancellation support
-                    Self::handle_prompt_with_cancellation(
-                        conn,
+                // Create checkpoint before processing the message
+                let mut manager = history_manager.write().await;
+                let checkpoint_id = match manager.create_checkpoint(&queued_item.prompt) {
+                    Ok(id) => Some(id),
+                    Err(e) => {
+                        error!("Failed to create checkpoint: {}", e);
+                        None
+                    }
+                };
+                drop(manager);
+
+                let user_message = AcpMessage::User(AcpUserMessage {
+                    content: queued_item.prompt.clone(),
+                    checkpoint_id,
+                    attachments: if queued_item.attachments.is_empty() {
+                        None
+                    } else {
+                        Some(queued_item.attachments.clone())
+                    },
+                });
+
+                {
+                    let mut hist = history.lock().await;
+                    hist.push(user_message.clone());
+                }
+
+                if let Err(e) = message_sender.send(user_message) {
+                    debug!(
+                        "No active subscribers while sending user message for agent {}: {}",
+                        agent_id, e
+                    );
+                }
+
+                // Drain any stale cancel signals before processing prompt
+                while cancel_rx.try_recv().is_ok() {}
+
+                // Handle prompt with cancellation support
+                let was_cancelled = Self::handle_prompt_with_cancellation(
+                    conn,
+                    agent_id,
+                    message_sender,
+                    &history,
+                    &session_id,
+                    queued_item.prompt,
+                    queued_item.attachments,
+                    &prompt_capabilities,
+                    cancel_rx,
+                )
+                .await;
+
+                if was_cancelled {
+                    // If user cancelled, clear the rest of the queue so subsequent prompts do not execute automatically
+                    let mut q = queue.lock().await;
+                    info!(
+                        "Prompt was cancelled for agent {}, clearing {} remaining queued prompts",
                         agent_id,
-                        message_sender,
-                        &history,
-                        &session_id,
-                        prompt.prompt,
-                        prompt.attachments,
-                        &prompt_capabilities,
-                        cancel_rx,
-                    )
-                    .await;
+                        q.len()
+                    );
+                    q.clear();
+                    let _ = message_sender.send(AcpMessage::QueueUpdate(AcpQueueUpdate {
+                        queue: Vec::new(),
+                    }));
+                }
 
+                // Only emit processing = false when queue is completely drained
+                let has_more = !queue.lock().await.is_empty();
+                if !has_more {
                     is_processing.store(false, Ordering::SeqCst);
 
                     // Send prompt state: processing finished
                     let _ = message_sender.send(AcpMessage::PromptState(AcpPromptState {
                         is_processing: false,
                     }));
+                }
 
-                    // Drain any remaining cancel signals before processing next prompt
-                    while cancel_rx.try_recv().is_ok() {}
+                // Drain any remaining cancel signals before processing next prompt
+                while cancel_rx.try_recv().is_ok() {}
+
+                tokio::task::yield_now().await;
+                continue;
+            }
+
+            tokio::select! {
+                _ = queue_notify.notified() => {
+                    continue;
                 }
-                None => {
-                    info!("Prompt channel closed for agent {}", agent_id);
-                    break; // Channel closed
-                }
-                },
                 maybe_config = config_rx.recv() => match maybe_config {
                     Some(update) => {
                         let result = Self::apply_session_config_option(conn, &session_id, &update.option).await
@@ -1432,7 +1547,10 @@ impl AcpAgent {
         attachments: Vec<AcpPromptAttachment>,
         prompt_capabilities: &acp::PromptCapabilities,
         cancel_rx: &mut mpsc::Receiver<()>,
-    ) {
+    ) -> bool {
+        // Drain any stale cancel signals before sending prompt
+        while cancel_rx.try_recv().is_ok() {}
+
         let blocks = Self::prepare_prompt_blocks(prompt, attachments, prompt_capabilities);
         let prompt_request = acp::PromptRequest::new(session_id.clone(), blocks);
 
@@ -1488,6 +1606,8 @@ impl AcpAgent {
                 }
             }
         }
+
+        cancel_sent
     }
 
     fn prepare_prompt_blocks(
@@ -1755,6 +1875,7 @@ impl AcpAgent {
 
     pub async fn stop(&mut self) {
         self.ready.store(false, Ordering::SeqCst);
+        self.clear_queue().await;
         if let Some(shutdown_tx) = self.shutdown_sender.take() {
             let _ = shutdown_tx.send(()).await;
         }
@@ -1774,54 +1895,150 @@ impl AcpAgent {
         prompt: String,
         attachments: Vec<AcpPromptAttachment>,
     ) -> Result<String> {
-        let prompt_tx = match &self.prompt_sender {
-            Some(tx) => tx,
-            None => return Err(anyhow!("Prompt sender not initialized")),
-        };
+        let queued_id = self.enqueue_prompt(prompt, attachments).await;
+        Ok(queued_id)
+    }
 
-        // Create checkpoint before processing the message
-        let mut manager = self.history_manager.write().await;
-        let checkpoint_id = match manager.create_checkpoint(&prompt) {
-            Ok(id) => Some(id),
-            Err(e) => {
-                error!("Failed to create checkpoint: {}", e);
-                None
-            }
-        };
-        drop(manager);
+    pub async fn enqueue_prompt(
+        &self,
+        prompt: String,
+        attachments: Vec<AcpPromptAttachment>,
+    ) -> String {
+        static QUEUE_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+        let count = QUEUE_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let id = format!("queue-{}-{}", now, count);
 
-        let user_message = AcpMessage::User(AcpUserMessage {
-            content: prompt.clone(),
-            checkpoint_id,
-            attachments: if attachments.is_empty() {
-                None
-            } else {
-                Some(attachments.clone())
-            },
-        });
-
-        {
-            let mut history = self.history.lock().await;
-            history.push(user_message.clone());
-        }
-
-        if let Some(message_sender) = &self.message_sender {
-            if let Err(e) = message_sender.send(user_message) {
-                debug!(
-                    "No active subscribers while sending user message for agent {}: {}",
-                    self.agent_id, e
-                );
-            }
-        }
-
-        // Send prompt to agent
-        let payload = AcpPromptPayload {
+        let item = AcpQueuedMessage {
+            id: id.clone(),
             prompt,
             attachments,
+            created_at: now,
         };
-        prompt_tx.send(payload).await?;
 
-        Ok(String::new())
+        let (current_queue, should_broadcast) = {
+            let mut q = self.queue.lock().await;
+            q.push(item);
+            let is_busy = self.is_processing.load(Ordering::SeqCst);
+            let should_broadcast = is_busy || q.len() > 1;
+            (q.clone(), should_broadcast)
+        };
+
+        info!(
+            "Enqueued prompt {} for agent {} (total queued: {}, broadcast: {})",
+            id,
+            self.agent_id,
+            current_queue.len(),
+            should_broadcast
+        );
+
+        if should_broadcast {
+            if let Some(sender) = &self.message_sender {
+                let _ = sender.send(AcpMessage::QueueUpdate(AcpQueueUpdate {
+                    queue: current_queue,
+                }));
+            }
+        }
+
+        self.queue_notify.notify_one();
+        id
+    }
+
+    pub async fn get_queue(&self) -> Vec<AcpQueuedMessage> {
+        let q = self.queue.lock().await;
+        q.clone()
+    }
+
+    pub async fn update_queued_prompt(&self, item_id: &str, prompt: String) -> bool {
+        let (found, current_queue) = {
+            let mut q = self.queue.lock().await;
+            let mut found = false;
+            for item in q.iter_mut() {
+                if item.id == item_id {
+                    item.prompt = prompt;
+                    found = true;
+                    break;
+                }
+            }
+            (found, q.clone())
+        };
+
+        if found {
+            info!("Updated queued prompt {} for agent {}", item_id, self.agent_id);
+            if let Some(sender) = &self.message_sender {
+                let _ = sender.send(AcpMessage::QueueUpdate(AcpQueueUpdate {
+                    queue: current_queue,
+                }));
+            }
+        }
+        found
+    }
+
+    pub async fn remove_queued_prompt(&self, item_id: &str) -> bool {
+        let (removed, current_queue) = {
+            let mut q = self.queue.lock().await;
+            let initial_len = q.len();
+            q.retain(|item| item.id != item_id);
+            let removed = q.len() < initial_len;
+            (removed, q.clone())
+        };
+
+        if removed {
+            info!("Removed queued prompt {} for agent {}", item_id, self.agent_id);
+            if let Some(sender) = &self.message_sender {
+                let _ = sender.send(AcpMessage::QueueUpdate(AcpQueueUpdate {
+                    queue: current_queue,
+                }));
+            }
+        }
+        removed
+    }
+
+    pub async fn move_queued_prompt(&self, item_id: &str, direction: &str) -> bool {
+        let (moved, current_queue) = {
+            let mut q = self.queue.lock().await;
+            let pos = q.iter().position(|item| item.id == item_id);
+            let mut moved = false;
+            if let Some(idx) = pos {
+                if direction == "up" && idx > 0 {
+                    q.swap(idx, idx - 1);
+                    moved = true;
+                } else if direction == "down" && idx + 1 < q.len() {
+                    q.swap(idx, idx + 1);
+                    moved = true;
+                }
+            }
+            (moved, q.clone())
+        };
+
+        if moved {
+            info!(
+                "Moved queued prompt {} {} for agent {}",
+                item_id, direction, self.agent_id
+            );
+            if let Some(sender) = &self.message_sender {
+                let _ = sender.send(AcpMessage::QueueUpdate(AcpQueueUpdate {
+                    queue: current_queue,
+                }));
+            }
+        }
+        moved
+    }
+
+    pub async fn clear_queue(&self) {
+        let current_queue = {
+            let mut q = self.queue.lock().await;
+            q.clear();
+            q.clone()
+        };
+        if let Some(sender) = &self.message_sender {
+            let _ = sender.send(AcpMessage::QueueUpdate(AcpQueueUpdate {
+                queue: current_queue,
+            }));
+        }
     }
 
     /// Restore project to state before a specific prompt was processed
@@ -2077,5 +2294,57 @@ impl AcpManager {
             .ok_or_else(|| anyhow!("Agent {} not found", agent_id))?;
 
         agent.restore_to_checkpoint_id(checkpoint_id).await
+    }
+
+    pub async fn get_agent_queue(&self, agent_id: &str) -> Option<Vec<AcpQueuedMessage>> {
+        if let Some(agent) = self.agents.get(agent_id) {
+            Some(agent.get_queue().await)
+        } else {
+            None
+        }
+    }
+
+    pub async fn update_agent_queued_prompt(
+        &self,
+        agent_id: &str,
+        item_id: &str,
+        prompt: String,
+    ) -> bool {
+        if let Some(agent) = self.agents.get(agent_id) {
+            agent.update_queued_prompt(item_id, prompt).await
+        } else {
+            false
+        }
+    }
+
+    pub async fn remove_agent_queued_prompt(&self, agent_id: &str, item_id: &str) -> bool {
+        if let Some(agent) = self.agents.get(agent_id) {
+            agent.remove_queued_prompt(item_id).await
+        } else {
+            false
+        }
+    }
+
+    pub async fn move_agent_queued_prompt(
+        &self,
+        agent_id: &str,
+        item_id: &str,
+        direction: &str,
+    ) -> bool {
+        if let Some(agent) = self.agents.get(agent_id) {
+            agent.move_queued_prompt(item_id, direction).await
+        } else {
+            false
+        }
+    }
+
+    #[allow(dead_code)]
+    pub async fn clear_agent_queue(&self, agent_id: &str) -> bool {
+        if let Some(agent) = self.agents.get(agent_id) {
+            agent.clear_queue().await;
+            true
+        } else {
+            false
+        }
     }
 }
