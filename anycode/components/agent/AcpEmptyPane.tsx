@@ -40,7 +40,11 @@ export const AcpEmptyPane: React.FC<AcpEmptyPaneProps> = ({
                 <div key={openedSession.agentId} className="acp-pane-opened-agent-item">
                   <button
                     className="tab-close-button acp-pane-close-button"
+                    onPointerDown={(event) => {
+                      event.stopPropagation();
+                    }}
                     onClick={(event) => {
+                      event.preventDefault();
                       event.stopPropagation();
                       onCloseAgent(openedSession.agentId);
                     }}

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AcpSession } from '../../types';
 import { loadItem, saveItem } from '../../storage';
 
@@ -17,6 +17,7 @@ export const useAgentPanes = ({
         loadItem<Record<string, string | null>>('agentSelectedByPane') ?? { agent: null }
     ));
     const [activePaneId, setActivePaneId] = useState<string>('agent');
+    const hasRestoredInitialSelections = useRef(false);
 
     useEffect(() => {
         saveItem('agentSelectedByPane', selectedByPane);
@@ -28,6 +29,8 @@ export const useAgentPanes = ({
             // Keep pane selections during initial reconnect after page reload.
             return;
         }
+        const shouldRestoreUnassignedPanes = !hasRestoredInitialSelections.current;
+        hasRestoredInitialSelections.current = true;
 
         setSelectedByPane((prev) => {
             if (Object.keys(prev).length === 0) {
@@ -46,14 +49,16 @@ export const useAgentPanes = ({
                 }
             });
 
-            // Second pass: if a pane has no selection but there are free sessions,
-            // bind them so multiple restored agent panes are not left empty.
+            // Restore unassigned panes once after sessions first arrive. After that,
+            // a null selection is intentional (for example, after closing an agent).
             const occupied = new Set(
                 Object.values(next).filter((value): value is string => value !== null),
             );
-            const availableAgentIds = sessions
-                .map((session) => session.agentId)
-                .filter((agentId) => !occupied.has(agentId));
+            const availableAgentIds = shouldRestoreUnassignedPanes
+                ? sessions
+                    .map((session) => session.agentId)
+                    .filter((agentId) => !occupied.has(agentId))
+                : [];
 
             if (availableAgentIds.length > 0) {
                 for (const paneKey of Object.keys(next)) {

@@ -322,6 +322,7 @@ export const useAgents = ({
 
     const agentCounterRef = useRef<Map<string, number>>(new Map());
     const acpSessionsRef = useRef<Map<string, AcpSession>>(new Map());
+    const closedAgentIdsRef = useRef<Set<string>>(new Set());
     const pendingEventsRef = useRef<PendingAcpEvent[]>([]);
     const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -382,6 +383,7 @@ export const useAgents = ({
 
     const updateSession = useCallback((agentId: string, updater: (session: AcpSession | undefined) => AcpSession | undefined) => {
         setAcpSessions((prev) => {
+            if (closedAgentIdsRef.current.has(agentId)) return prev;
             const existing = prev.get(agentId);
             const updated = updater(existing);
             if (updated === existing) return prev;
@@ -428,12 +430,7 @@ export const useAgents = ({
             }
 
             if (wasSelected) {
-                const remainingSessions = Array.from(newSessions.values());
-                if (remainingSessions.length > 0) {
-                    setSelectedAgentId(remainingSessions[0].agentId);
-                } else {
-                    setSelectedAgentId(null);
-                }
+                setSelectedAgentId(null);
             }
 
             return newSessions;
@@ -889,6 +886,7 @@ export const useAgents = ({
                 const newSessions = new Map(prev);
 
                 activeAgents.forEach((agent: any) => {
+                    closedAgentIdsRef.current.delete(agent.id);
                     const existing = newSessions.get(agent.id);
                     if (existing) {
                         newSessions.set(agent.id, {
@@ -942,6 +940,7 @@ export const useAgents = ({
 
         const { id, name, command, args, env, profile } = agent;
         const aid = generateAgentId(id);
+        closedAgentIdsRef.current.delete(aid);
 
         // Optimistically create session with isStarting: true
         setAcpSessions((prev) => {
@@ -1293,6 +1292,7 @@ export const useAgents = ({
     }, [wsRef, isConnected]);
 
     const closeAgent = useCallback((agentId: string) => {
+        closedAgentIdsRef.current.add(agentId);
         const wasSelected = selectedAgentId === agentId;
         const session = acpSessionsRef.current.get(agentId);
 
@@ -1308,15 +1308,7 @@ export const useAgents = ({
 
     useEffect(() => {
         if (selectedAgentId && !acpSessions.has(selectedAgentId)) {
-            const remainingSessions = Array.from(acpSessions.values());
-            if (remainingSessions.length > 0) {
-                setSelectedAgentId(remainingSessions[0].agentId);
-            } else {
-                setSelectedAgentId(null);
-            }
-        } else if (!selectedAgentId && acpSessions.size > 0) {
-            const firstSession = Array.from(acpSessions.values())[0];
-            setSelectedAgentId(firstSession.agentId);
+            setSelectedAgentId(null);
         }
     }, [acpSessions, selectedAgentId]);
 

@@ -223,14 +223,15 @@
     position: relative;
     display: inline-flex;
     align-items: center;
+    isolation: isolate;
 }
 
 .acp-pane-close-button {
     position: absolute;
-    left: 11px;
+    left: 16px;
     top: 50%;
     transform: translateY(-50%);
-    z-index: 10;
+    z-index: 1;
     width: 16px;
     height: 16px;
     border-radius: 4px;
@@ -243,12 +244,19 @@
     color: var(--theme-muted-foreground, var(--text-color-secondary, #8ea0ad));
     padding: 0;
     margin: 0;
+    pointer-events: auto;
     transition: background 0.12s ease, color 0.12s ease;
 }
 
 .acp-pane-opened-agent-item:hover .acp-pane-close-button,
 .acp-pane-opened-agent-item:focus-within .acp-pane-close-button {
     display: flex;
+    z-index: 1;
+}
+
+.acp-pane-opened-agent {
+    position: relative;
+    z-index: 0;
 }
 
 .acp-pane-opened-agent-item:hover .acp-pane-opened-agent .acp-agent-btn-icon,
