@@ -345,6 +345,7 @@ interface AcpSessionProps {
   onOpenFile?: (path: string, line?: number, column?: number) => void;
   onOpenFileDiff?: (path: string, line?: number, column?: number) => void;
   onOpenSettings?: () => void;
+  onGetToolOutput?: (toolId: string, sessionId?: string) => Promise<string | null>;
 }
 
 const AcpSessionComponent: React.FC<AcpSessionProps> = ({
@@ -380,6 +381,7 @@ const AcpSessionComponent: React.FC<AcpSessionProps> = ({
   onOpenFile,
   onOpenFileDiff,
   onOpenSettings,
+  onGetToolOutput,
 }) => {
   const sessionRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -889,6 +891,7 @@ const AcpSessionComponent: React.FC<AcpSessionProps> = ({
                 onSelectTemplate={handleSelectTemplate}
                 onOpenSettings={onOpenSettings}
                 agentTitle={title}
+                onGetToolOutput={onGetToolOutput}
               />
             )}
             {showWorkingIndicator && (

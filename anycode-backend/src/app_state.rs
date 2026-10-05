@@ -25,6 +25,7 @@ pub struct AppState {
     pub acp_registry: Arc<crate::acp_registry::AcpRegistryManager>,
     pub socket2data: Arc<Mutex<HashMap<String, SocketData>>>,
     pub terminals: Arc<Mutex<HashMap<String, TerminalData>>>,
+    pub acp_db: Arc<crate::acp_db::AcpDb>,
 }
 
 #[derive(Clone, Default)]
@@ -52,10 +53,19 @@ impl AppState {
     ) -> Self {
         let config = crate::config::get();
 
+        let db_path = crate::utils::current_dir().join(".anycode").join("agent.db");
+        let acp_db = match crate::acp_db::AcpDb::new(&db_path) {
+            Ok(db) => Arc::new(db),
+            Err(e) => {
+                tracing::error!("Failed to open agent.db: {}, falling back to in-memory", e);
+                Arc::new(crate::acp_db::AcpDb::in_memory().expect("in-memory db fallback"))
+            }
+        };
+
         let mut lsp_manager = LspManager::new(config.clone());
         lsp_manager.set_diagnostics_sender(diagnostic_tx);
 
-        let acp_manager = AcpManager::new(acp_fs_tx);
+        let acp_manager = AcpManager::new(acp_fs_tx, Some(acp_db.clone()));
         let acp_registry = crate::acp_registry::AcpRegistryManager::new();
         let mut git_manager = GitManager::new(crate::utils::current_dir());
         let _ = git_manager.refresh_status_cache();
@@ -69,6 +79,7 @@ impl AppState {
             acp_registry: Arc::new(acp_registry),
             socket2data: Arc::new(Mutex::new(HashMap::new())),
             terminals: Arc::new(Mutex::new(HashMap::new())),
+            acp_db,
         }
     }
 

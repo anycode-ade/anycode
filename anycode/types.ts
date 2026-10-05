@@ -255,9 +255,11 @@ export interface AcpOpenFileMessage {
 export interface AcpRawUpdateMessage {
     role: 'raw_update';
     agent_id: string;
+    session_id?: string;
     ts: string;
     update: unknown;
 }
+
 
 export interface AcpQueuedMessage {
     id: string;
@@ -362,11 +364,16 @@ export interface AcpToolCallProgressPayload {
     raw_input?: Record<string, unknown>;
     raw_output?: unknown;
     meta?: unknown;
+    has_full_output?: boolean;
+    full_output_bytes?: number;
+    is_truncated?: boolean;
+    session_id?: string;
 }
 
 export interface AcpToolCallMessage {
     role: 'tool_call';
     id: string;
+    session_id?: string;
     name: string;
     command?: string;
     title?: string;
@@ -377,7 +384,11 @@ export interface AcpToolCallMessage {
     raw_input?: Record<string, unknown>;
     raw_output?: unknown;
     locations?: AcpLocation[];
+    has_full_output?: boolean;
+    full_output_bytes?: number;
+    is_truncated?: boolean;
 }
+
 
 export interface AcpToolResultMessage {
     role: 'tool_result';

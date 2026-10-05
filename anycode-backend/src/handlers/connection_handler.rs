@@ -51,6 +51,7 @@ pub async fn handle_connect(socket: SocketRef, _state: State<AppState>) {
     socket.on("acp:sessions_list", handle_acp_sessions_list);
     socket.on("acp:reconnect", handle_acp_reconnect);
     socket.on("acp:undo", handle_acp_undo);
+    socket.on("acp:get_tool_output", handle_acp_get_tool_output);
 
     socket.on("acp:registry:list", handle_acp_registry_list);
     socket.on("acp:registry:install", handle_acp_registry_install);

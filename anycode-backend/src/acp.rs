@@ -97,9 +97,12 @@ pub struct AcpError {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AcpRawUpdate {
     pub agent_id: String,
+    #[serde(default)]
+    pub session_id: Option<String>,
     pub ts: String,
     pub update: serde_json::Value,
 }
+
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AcpSessionSummary {
@@ -150,6 +153,7 @@ struct AcpClientImpl {
     history: Arc<tokio::sync::Mutex<Vec<AcpMessage>>>,
     /// Channel to send file operations to the ACP filesystem background task
     fs_sender: Option<mpsc::Sender<AcpFsCommand>>,
+    acp_db: Option<Arc<crate::acp_db::AcpDb>>,
 }
 
 impl AcpClientImpl {
@@ -365,14 +369,19 @@ impl AcpClientImpl {
     }
 
     async fn session_notification(&self, args: acp::SessionNotification) -> acp::Result<()> {
+        let session_id = args.session_id.to_string();
         info!(
-            "session_notification received for agent {}: {:?}",
-            self.agent_id, args.update
+            "session_notification received for agent {} (session {}): {:?}",
+            self.agent_id, session_id, args.update
         );
+        let mut update_value = serde_json::to_value(&args.update)?;
+        self.maybe_offload_tool_output(&session_id, &mut update_value);
+
         let item = AcpMessage::RawUpdate(AcpRawUpdate {
             agent_id: self.agent_id.clone(),
+            session_id: Some(session_id),
             ts: Utc::now().to_rfc3339(),
-            update: serde_json::to_value(&args.update)?,
+            update: update_value,
         });
 
         let mut hist = self.history.lock().await;
@@ -383,6 +392,197 @@ impl AcpClientImpl {
 
         self.send_message(item).await;
         Ok(())
+    }
+
+    fn maybe_offload_tool_output(&self, session_id: &str, update: &mut Value) {
+        const OUTPUT_TRUNCATE_THRESHOLD: usize = 4096;
+
+        let obj = match update.as_object_mut() {
+            Some(map) => map,
+            None => return,
+        };
+
+        let (kind, target_map) = if let Some(kind_val) = obj.get("sessionUpdate").or_else(|| obj.get("session_update")) {
+            (kind_val.as_str().unwrap_or("").to_string(), obj)
+        } else if obj.len() == 1 {
+            let key = obj.keys().next().cloned().unwrap();
+            if let Some(inner) = obj.get_mut(&key).and_then(Value::as_object_mut) {
+                (key, inner)
+            } else {
+                return;
+            }
+        } else {
+            return;
+        };
+
+        let is_tool_event = kind == "tool_call"
+            || kind == "tool_call_update"
+            || kind == "toolCall"
+            || kind == "toolCallUpdate";
+        if !is_tool_event {
+            return;
+        }
+
+        let tool_id = target_map
+            .get("toolCallId")
+            .or_else(|| target_map.get("tool_call_id"))
+            .or_else(|| target_map.get("id"))
+            .or_else(|| {
+                target_map
+                    .get("fields")
+                    .and_then(|f| f.get("toolCallId").or_else(|| f.get("tool_call_id")))
+            })
+            .and_then(Value::as_str)
+            .map(|s| s.to_string());
+
+        let tool_id = match tool_id {
+            Some(id) if !id.is_empty() => id,
+            _ => return,
+        };
+
+        let command = target_map
+            .get("rawInput")
+            .or_else(|| target_map.get("raw_input"))
+            .and_then(|i| i.get("cmd").or_else(|| i.get("command")))
+            .and_then(Value::as_str)
+            .map(|s| s.to_string());
+
+        Self::check_and_truncate_output_field(
+            target_map,
+            &tool_id,
+            session_id,
+            &self.agent_id,
+            command.as_deref(),
+            self.acp_db.as_ref(),
+            OUTPUT_TRUNCATE_THRESHOLD,
+        );
+
+        if let Some(fields) = target_map.get_mut("fields").and_then(Value::as_object_mut) {
+            Self::check_and_truncate_output_field(
+                fields,
+                &tool_id,
+                session_id,
+                &self.agent_id,
+                command.as_deref(),
+                self.acp_db.as_ref(),
+                OUTPUT_TRUNCATE_THRESHOLD,
+            );
+        }
+    }
+
+    fn check_and_truncate_output_field(
+        container: &mut serde_json::Map<String, Value>,
+        tool_id: &str,
+        session_id: &str,
+        agent_id: &str,
+        command: Option<&str>,
+        acp_db: Option<&Arc<crate::acp_db::AcpDb>>,
+        threshold: usize,
+    ) {
+        let output_keys = ["rawOutput", "raw_output", "output", "stdout", "formatted_output", "aggregated_output"];
+        let mut truncated_len: Option<usize> = None;
+
+        for key in output_keys {
+            if let Some(val) = container.get_mut(key) {
+                if let Some(text) = val.as_str() {
+                    if text.len() > threshold {
+                        if let Some(db) = acp_db {
+                            if let Err(e) = db.save_tool_output(tool_id, Some(session_id), agent_id, command, text) {
+                                warn!("Failed to save tool output to SQLite: {}", e);
+                            }
+                        }
+
+                        let original_len = text.len();
+                        let preview = Self::create_truncated_preview(text, original_len);
+
+                        *val = Value::String(preview);
+                        truncated_len = Some(original_len);
+                    }
+                } else if let Some(rec) = val.as_object_mut() {
+                    for subkey in ["stdout", "output", "formatted_output", "stderr"] {
+                        if let Some(subval) = rec.get_mut(subkey) {
+                            if let Some(text) = subval.as_str() {
+                                if text.len() > threshold {
+                                    if let Some(db) = acp_db {
+                                        let _ = db.save_tool_output(tool_id, Some(session_id), agent_id, command, text);
+                                    }
+                                    let original_len = text.len();
+                                    *subval = Value::String(Self::create_truncated_preview(text, original_len));
+                                    rec.insert("has_full_output".to_string(), Value::Bool(true));
+                                    rec.insert("full_output_bytes".to_string(), Value::Number(serde_json::Number::from(original_len)));
+                                    rec.insert("is_truncated".to_string(), Value::Bool(true));
+                                    rec.insert("session_id".to_string(), Value::String(session_id.to_string()));
+                                    truncated_len = Some(original_len);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if let Some(content_val) = container.get_mut("content") {
+            if let Some(arr) = content_val.as_array_mut() {
+                for item in arr.iter_mut() {
+                    if let Some(text_val) = item.get_mut("text") {
+                        if let Some(text) = text_val.as_str() {
+                            if text.len() > threshold {
+                                if let Some(db) = acp_db {
+                                    if let Err(e) = db.save_tool_output(tool_id, Some(session_id), agent_id, command, text) {
+                                        warn!("Failed to save tool output to SQLite: {}", e);
+                                    }
+                                }
+                                let original_len = text.len();
+                                *text_val = Value::String(Self::create_truncated_preview(text, original_len));
+                                truncated_len = Some(original_len);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if let Some(len) = truncated_len {
+            container.insert("has_full_output".to_string(), Value::Bool(true));
+            container.insert("full_output_bytes".to_string(), Value::Number(serde_json::Number::from(len)));
+            container.insert("is_truncated".to_string(), Value::Bool(true));
+            container.insert("tool_id".to_string(), Value::String(tool_id.to_string()));
+            container.insert("session_id".to_string(), Value::String(session_id.to_string()));
+        }
+    }
+
+
+    fn create_truncated_preview(text: &str, byte_size: usize) -> String {
+        let lines: Vec<&str> = text.lines().collect();
+        if lines.len() <= 60 {
+            if text.len() > 4096 {
+                let prefix: String = text.chars().take(2000).collect();
+                let suffix: String = text
+                    .chars()
+                    .rev()
+                    .take(2000)
+                    .collect::<String>()
+                    .chars()
+                    .rev()
+                    .collect();
+                format!(
+                    "{}\n\n... [Output truncated ({} bytes). Click to load full output from disk] ...\n\n{}",
+                    prefix, byte_size, suffix
+                )
+            } else {
+                text.to_string()
+            }
+        } else {
+            let head = lines[..25].join("\n");
+            let tail = lines[lines.len() - 25..].join("\n");
+            format!(
+                "{}\n\n... [Output truncated ({} bytes / {} lines). Click to load full output from disk] ...\n\n{}",
+                head,
+                byte_size,
+                lines.len(),
+                tail
+            )
+        }
     }
 
     fn append_to_previous_raw_chunk(
@@ -529,6 +729,7 @@ pub struct AcpAgent {
     fs_sender: mpsc::Sender<AcpFsCommand>,
     queue: Arc<tokio::sync::Mutex<Vec<AcpQueuedMessage>>>,
     queue_notify: Arc<Notify>,
+    pub acp_db: Option<Arc<crate::acp_db::AcpDb>>,
 }
 
 impl AcpAgent {
@@ -536,9 +737,10 @@ impl AcpAgent {
         agent_id: String,
         agent_name: String,
         fs_sender: mpsc::Sender<AcpFsCommand>,
+        acp_db: Option<Arc<crate::acp_db::AcpDb>>,
     ) -> Self {
         let project_root = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-        Self::new_with_project_root(agent_id, agent_name, project_root, fs_sender)
+        Self::new_with_project_root(agent_id, agent_name, project_root, fs_sender, acp_db)
     }
 
     pub fn new_with_project_root(
@@ -546,6 +748,7 @@ impl AcpAgent {
         agent_name: String,
         project_root: PathBuf,
         fs_sender: mpsc::Sender<AcpFsCommand>,
+        acp_db: Option<Arc<crate::acp_db::AcpDb>>,
     ) -> Self {
         // Initialize history manager with given working directory and agent ID
         let mut history_manager = AcpHistoryManager::new(&project_root, &agent_id);
@@ -572,6 +775,7 @@ impl AcpAgent {
             fs_sender,
             queue: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             queue_notify: Arc::new(Notify::new()),
+            acp_db,
         }
     }
 
@@ -635,6 +839,7 @@ impl AcpAgent {
         let queue_clone = self.queue.clone();
         let queue_notify_clone = self.queue_notify.clone();
         let history_manager_clone = self.history_manager.clone();
+        let acp_db_clone = self.acp_db.clone();
 
         let local_set_handle = tokio::task::spawn_blocking(move || {
             tokio::runtime::Handle::current().block_on(async {
@@ -659,6 +864,7 @@ impl AcpAgent {
                             auth_rx,
                             bootstrap_tx,
                             resume_session_id,
+                            acp_db_clone,
                         )
                         .await;
                     })
@@ -797,6 +1003,7 @@ impl AcpAgent {
         mut auth_rx: mpsc::Receiver<(String, oneshot::Sender<Result<SessionBootstrap>>)>,
         bootstrap_tx: oneshot::Sender<Result<SessionBootstrapOutcome>>,
         resume_session_id: Option<String>,
+        acp_db: Option<Arc<crate::acp_db::AcpDb>>,
     ) {
         // Clone history before moving client_impl
         let history_for_prompt = history.clone();
@@ -807,6 +1014,7 @@ impl AcpAgent {
             message_sender: message_sender.clone(),
             history,
             fs_sender: Some(fs_sender),
+            acp_db,
         });
 
         // Read stderr for debugging
@@ -2116,13 +2324,15 @@ impl AcpAgent {
 pub struct AcpManager {
     agents: HashMap<String, AcpAgent>,
     fs_sender: mpsc::Sender<AcpFsCommand>,
+    acp_db: Option<Arc<crate::acp_db::AcpDb>>,
 }
 
 impl AcpManager {
-    pub fn new(fs_sender: mpsc::Sender<AcpFsCommand>) -> Self {
+    pub fn new(fs_sender: mpsc::Sender<AcpFsCommand>, acp_db: Option<Arc<crate::acp_db::AcpDb>>) -> Self {
         Self {
             agents: HashMap::new(),
             fs_sender,
+            acp_db,
         }
     }
 
@@ -2140,7 +2350,12 @@ impl AcpManager {
             return Err(anyhow::anyhow!("Agent {} already running", agent_id));
         }
 
-        let mut agent = AcpAgent::new(agent_id.clone(), agent_name.clone(), self.fs_sender.clone());
+        let mut agent = AcpAgent::new(
+            agent_id.clone(),
+            agent_name.clone(),
+            self.fs_sender.clone(),
+            self.acp_db.clone(),
+        );
 
         info!(
             "Starting ACP agent {} with command: {} {:?}, env: {:?}",

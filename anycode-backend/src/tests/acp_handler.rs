@@ -27,6 +27,7 @@ async fn test_acp_agent_queue_operations() {
         "Test Agent".to_string(),
         temp_dir.path().to_path_buf(),
         fs_tx,
+        None,
     );
 
     assert_eq!(agent.get_queue().await.len(), 0);
@@ -114,6 +115,7 @@ async fn test_idle_prompt_does_not_broadcast_queue_update_but_busy_does() {
         "Test Agent".to_string(),
         temp_dir.path().to_path_buf(),
         fs_tx,
+        None,
     );
 
     let mut rx = agent.init_message_sender_for_test();

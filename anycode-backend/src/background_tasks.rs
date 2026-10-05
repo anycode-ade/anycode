@@ -27,8 +27,24 @@ pub fn spawn_all(
     spawn_acp_fs(state, io, acp_fs_rx);
     spawn_diagnostics(io, diagnostics_rx);
     spawn_git_status_watcher(state, io);
+    spawn_tool_outputs_cleanup(state.acp_db.clone());
     let watcher = spawn_file_watcher(state, io)?;
     Ok(watcher)
+}
+
+fn spawn_tool_outputs_cleanup(acp_db: Arc<crate::acp_db::AcpDb>) {
+    tokio::spawn(async move {
+        // Initial cleanup at startup (7 days TTL, max 500 records)
+        let _ = acp_db.cleanup_old_outputs(7 * 86400, 500);
+
+        let mut ticker = time::interval(Duration::from_secs(3600));
+        ticker.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
+
+        loop {
+            ticker.tick().await;
+            let _ = acp_db.cleanup_old_outputs(7 * 86400, 500);
+        }
+    });
 }
 
 fn spawn_git_status_watcher(state: &AppState, io: &Arc<SocketIo>) {

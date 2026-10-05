@@ -30,6 +30,7 @@ import {
     getAllAgents,
     getDefaultAgentId,
 } from '../agents';
+import { toolOutputCache } from '../features/agents/toolOutputCache';
 
 const MESSAGE_FLUSH_MS = 100;
 
@@ -182,6 +183,7 @@ const projectRawUpdate = (rawMessage: AcpRawUpdateMessage): AcpMessage[] => {
     const kind = normalizeVariantKind(variant.kind);
 
     const payload = asRecord(variant.payload);
+    const sessionId = asString(getAnyField(payload, 'session_id', 'sessionId')) ?? rawMessage.session_id;
 
     if ((kind === 'agent_message_chunk') && payload) {
         return contentBlockToMessages(payload.content, 'assistant');
@@ -204,9 +206,15 @@ const projectRawUpdate = (rawMessage: AcpRawUpdateMessage): AcpMessage[] => {
         const rawInput = asRecord(getAnyField(payload, 'raw_input', 'rawInput', 'input', 'arguments'));
         const content = getAnyField(payload, 'content');
         const locations = getAnyField(payload, 'locations');
+        const hasFullOutput = Boolean(getAnyField(payload, 'has_full_output', 'hasFullOutput'));
+        const fullOutputBytes = typeof getAnyField(payload, 'full_output_bytes', 'fullOutputBytes') === 'number'
+            ? getAnyField(payload, 'full_output_bytes', 'fullOutputBytes') as number
+            : undefined;
+        const isTruncated = Boolean(getAnyField(payload, 'is_truncated', 'isTruncated'));
         const call: AcpToolCallMessage = {
             role: 'tool_call',
             id,
+            session_id: sessionId,
             name: title,
             title,
             command: asString(rawInput?.cmd) ?? asString(rawInput?.command) ?? title,
@@ -217,6 +225,9 @@ const projectRawUpdate = (rawMessage: AcpRawUpdateMessage): AcpMessage[] => {
             raw_input: rawInput ?? undefined,
             raw_output: getAnyField(payload, 'raw_output', 'rawOutput', 'output'),
             locations: Array.isArray(locations) ? locations as any : undefined,
+            has_full_output: hasFullOutput || undefined,
+            full_output_bytes: fullOutputBytes,
+            is_truncated: isTruncated || undefined,
         };
         return [call];
     }
@@ -227,7 +238,7 @@ const projectRawUpdate = (rawMessage: AcpRawUpdateMessage): AcpMessage[] => {
         const fields = asRecord(getAnyField(payload, 'fields'));
         const status = normalizeToolStatus(getAnyField(fields, 'status') ?? getAnyField(payload, 'status'));
         const basePayload = fields ?? payload;
-        const withId = { tool_call_id: id, ...basePayload };
+        const withId = { tool_call_id: id, session_id: sessionId, ...basePayload };
 
         if (status === 'completed') {
             const result: AcpToolResultMessage = {
@@ -237,6 +248,7 @@ const projectRawUpdate = (rawMessage: AcpRawUpdateMessage): AcpMessage[] => {
             };
             return [result];
         }
+
 
         const update: AcpToolUpdateMessage = {
             role: 'tool_update',
@@ -1318,6 +1330,31 @@ export const useAgents = ({
         };
     }, []);
 
+    const getToolOutput = useCallback(async (toolId: string, sessionId?: string): Promise<string | null> => {
+        const cached = toolOutputCache.get(toolId);
+        if (cached !== undefined) {
+            console.log('[useAgents] Tool output served from cache:', toolId);
+            return cached;
+        }
+        const socket = wsRef.current;
+        if (!socket || !isConnected) return null;
+
+        console.log('[useAgents] Fetching tool output via socket:', { toolId, sessionId });
+        return new Promise((resolve) => {
+            socket.emit('acp:get_tool_output', { tool_id: toolId, session_id: sessionId }, (res: { success: boolean; output?: string; error?: string }) => {
+                if (res?.success && typeof res.output === 'string') {
+                    console.log('[useAgents] Received tool output for', toolId, 'bytes:', res.output.length);
+                    toolOutputCache.set(toolId, res.output);
+                    resolve(res.output);
+                } else {
+                    console.warn('[useAgents] Failed to get tool output for', toolId, res?.error);
+                    resolve(null);
+                }
+            });
+        });
+    }, [wsRef, isConnected]);
+
+
     return {
         acpSessions,
         selectedAgentId,
@@ -1346,5 +1383,6 @@ export const useAgents = ({
         cancelPrompt,
         stopAgent,
         closeAgent,
+        getToolOutput,
     };
 };

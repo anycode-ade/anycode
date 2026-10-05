@@ -52,4 +52,6 @@ flate2 = "1.0"
 tar = "0.4"
 zip = { version = "2", default-features = false, features = ["deflate"] }
 futures-util = "0.3"
+rusqlite = { version = "0.31", features = ["bundled"] }
+zstd = "0.13"
 

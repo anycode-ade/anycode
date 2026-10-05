@@ -44,6 +44,7 @@ type AgentPanelProps = {
         undoPrompt: (...args: any[]) => void;
         setSessionModel: (...args: any[]) => void;
         setSessionReasoning: (...args: any[]) => void;
+        getToolOutput?: (toolId: string, sessionId?: string) => Promise<string | null>;
     };
     sessions: AcpSessionState[];
     availableAgents: AcpAgent[];
@@ -198,6 +199,7 @@ const AgentPanelComponent = ({
                     onOpenFile={onOpenFile}
                     onOpenFileDiff={onOpenFileDiff}
                     onOpenSettings={onOpenSettings}
+                    onGetToolOutput={agents.getToolOutput}
                 />
             </div>
         </div>

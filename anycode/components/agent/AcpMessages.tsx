@@ -30,7 +30,9 @@ interface AcpMessagesProps {
   onSelectTemplate?: (template: AgentPromptTemplate, sendImmediately?: boolean) => void;
   onOpenSettings?: () => void;
   agentTitle?: string;
+  onGetToolOutput?: (toolId: string, sessionId?: string) => Promise<string | null>;
 }
+
 
 const AcpMessagesComponent: React.FC<AcpMessagesProps> = ({
   messages,
@@ -50,6 +52,7 @@ const AcpMessagesComponent: React.FC<AcpMessagesProps> = ({
   onSelectTemplate,
   onOpenSettings,
   agentTitle,
+  onGetToolOutput,
 }) => {
   if (messages.length === 0) {
     return (
@@ -206,6 +209,7 @@ const AcpMessagesComponent: React.FC<AcpMessagesProps> = ({
           onOpenFile={onOpenFile}
           onOpenFileDiff={onOpenFileDiff}
           onUserMessageToggle={onUserMessageToggle}
+          onGetToolOutput={onGetToolOutput}
           onUndo={
             message.role === 'user' && onUndoMessage
               ? () => onUndoMessage(message)

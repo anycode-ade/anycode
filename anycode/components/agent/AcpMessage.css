@@ -872,3 +872,43 @@
         font-size: 0.86em;
     }
 }
+
+.acp-tool-output-truncated-notice,
+.acp-tool-output-loaded-notice {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 6px;
+    font-size: 0.82em;
+    color: var(--text-color-secondary, #888);
+}
+
+.acp-tool-output-load-btn,
+.acp-tool-output-copy-btn {
+    border: 1px solid var(--border-color, #444);
+    background: var(--input-bg, #222);
+    color: var(--text-color, #ccc);
+    border-radius: 4px;
+    padding: 2px 8px;
+    font-size: 0.86em;
+    cursor: pointer;
+    transition: background-color 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.acp-tool-output-load-btn:hover:not(:disabled),
+.acp-tool-output-copy-btn:hover {
+    background: var(--hover-bg, rgba(127, 127, 127, 0.25));
+    border-color: var(--accent-color, #7ab7ff);
+    color: var(--text-color, #fff);
+}
+
+.acp-tool-output-load-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.acp-tool-output-error {
+    color: var(--error-text, #df8f8f);
+    font-size: 0.86em;
+}
+

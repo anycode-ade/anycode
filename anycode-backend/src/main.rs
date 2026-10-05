@@ -8,6 +8,7 @@ use tower_http::cors::CorsLayer;
 use tracing::info;
 
 mod acp;
+pub mod acp_db;
 mod acp_fs;
 mod acp_history;
 pub mod acp_registry;

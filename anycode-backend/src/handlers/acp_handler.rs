@@ -413,6 +413,68 @@ pub async fn handle_acp_stop(
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct AcpGetToolOutputRequest {
+    pub tool_id: String,
+    #[serde(default)]
+    pub session_id: Option<String>,
+}
+
+pub async fn handle_acp_get_tool_output(
+    _socket: SocketRef,
+    Data(request): Data<AcpGetToolOutputRequest>,
+    ack: AckSender,
+    state: State<AppState>,
+) {
+    info!("handle_acp_get_tool_output {:?}", request);
+    let AcpGetToolOutputRequest { tool_id, session_id } = request;
+
+    let acp_db = state.acp_db.clone();
+    let query_tool_id = tool_id.clone();
+    let fetch_result = tokio::task::spawn_blocking(move || {
+        acp_db.get_tool_output(&query_tool_id)
+    })
+    .await;
+
+    match fetch_result {
+        Ok(Ok(Some(output))) => {
+            ack.send(&json!({
+                "success": true,
+                "tool_id": tool_id,
+                "session_id": session_id,
+                "output": output
+            }))
+            .ok();
+        }
+        Ok(Ok(None)) => {
+            ack.send(&json!({
+                "success": false,
+                "error": "Tool output not found in database",
+                "tool_id": tool_id
+            }))
+            .ok();
+        }
+        Ok(Err(e)) => {
+            error!("Failed to fetch tool output: {}", e);
+            ack.send(&json!({
+                "success": false,
+                "error": e.to_string(),
+                "tool_id": tool_id
+            }))
+            .ok();
+        }
+        Err(join_err) => {
+            error!("spawn_blocking failed for get_tool_output: {}", join_err);
+            ack.send(&json!({
+                "success": false,
+                "error": join_err.to_string(),
+                "tool_id": tool_id
+            }))
+            .ok();
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct AcpCancelRequest {
     pub agent_id: String,
 }

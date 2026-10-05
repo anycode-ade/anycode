@@ -19,7 +19,8 @@ import {
   AcpThoughtMessage,
   AcpErrorMessage,
 } from '../../types';
-import { LANGUAGE_EXTENSIONS, EDITOR_SUPPORTED_LANGUAGES, getFileName, copyTextToClipboard, uriToFilePath } from '../../utils';
+import { LANGUAGE_EXTENSIONS, EDITOR_SUPPORTED_LANGUAGES, getFileName, copyTextToClipboard, uriToFilePath, formatBytes } from '../../utils';
+import { toolOutputCache } from '../../features/agents/toolOutputCache';
 import './AcpMessage.css';
 
 let codeBlockIdCounter = 0;
@@ -34,6 +35,7 @@ interface AcpMessageProps {
   onUndo?: () => void;
   onOpenFile?: (path: string, line?: number, column?: number) => void;
   onOpenFileDiff?: (path: string, line?: number, column?: number) => void;
+  onGetToolOutput?: (toolId: string, sessionId?: string) => Promise<string | null>;
 }
 
 const ToolCallMessage: React.FC<{
@@ -43,7 +45,9 @@ const ToolCallMessage: React.FC<{
   isExpanded: boolean;
   onToggle: () => void;
   onOpenFileDiff?: (path: string, line?: number, column?: number) => void;
-}> = ({ message, toolResult, toolUpdates, isExpanded, onToggle, onOpenFileDiff }) => {
+  onGetToolOutput?: (toolId: string, sessionId?: string) => Promise<string | null>;
+}> = ({ message, toolResult, toolUpdates, isExpanded, onToggle, onOpenFileDiff, onGetToolOutput }) => {
+
 
   const displayCommand = message.command?.trim() || message.name;
   const toolCallView = React.useMemo(
@@ -116,12 +120,33 @@ const ToolCallMessage: React.FC<{
                 </div>
               </div>
             )}
-            {toolResult && (
+            {toolResult ? (
               <div className="acp-tool-call-section">
                 <div className="acp-tool-call-label">Result:</div>
-                <ToolResultDetails result={toolResult.result} />
+                <ToolResultDetails
+                  result={toolResult.result}
+                  toolId={message.id || toolResult.id}
+                  sessionId={message.session_id}
+                  hasFullOutput={message.has_full_output}
+                  fullOutputBytes={message.full_output_bytes}
+                  isTruncated={message.is_truncated}
+                  onGetToolOutput={onGetToolOutput}
+                />
               </div>
-            )}
+            ) : message.raw_output ? (
+              <div className="acp-tool-call-section">
+                <div className="acp-tool-call-label">Result:</div>
+                <ToolResultDetails
+                  result={message.raw_output}
+                  toolId={message.id}
+                  sessionId={message.session_id}
+                  hasFullOutput={message.has_full_output}
+                  fullOutputBytes={message.full_output_bytes}
+                  isTruncated={message.is_truncated}
+                  onGetToolOutput={onGetToolOutput}
+                />
+              </div>
+            ) : null}
             <button
               type="button"
               className="acp-tool-call-bottom-toggle"
@@ -142,7 +167,8 @@ const ToolResultMessage: React.FC<{
   message: AcpToolResultMessage;
   isExpanded: boolean;
   onToggle: () => void;
-}> = ({ message, isExpanded, onToggle }) => (
+  onGetToolOutput?: (toolId: string, sessionId?: string) => Promise<string | null>;
+}> = ({ message, isExpanded, onToggle, onGetToolOutput }) => (
   <div className="acp-message acp-message-tool_result">
     <div className="acp-message-content">
       <div className="acp-tool-result-indicator" onClick={onToggle} style={{ cursor: 'pointer' }}>
@@ -150,11 +176,16 @@ const ToolResultMessage: React.FC<{
         Tool result:
       </div>
       {isExpanded && (
-        <ToolResultDetails result={message.result} />
+        <ToolResultDetails
+          result={message.result}
+          toolId={message.id}
+          onGetToolOutput={onGetToolOutput}
+        />
       )}
     </div>
   </div>
 );
+
 
 type ToolResultDetailsView = {
   title?: string;
@@ -164,9 +195,17 @@ type ToolResultDetailsView = {
   contentText?: string;
   output?: string;
   errorOutput?: string;
+  toolId?: string;
+  sessionId?: string;
+  hasFullOutput?: boolean;
+  fullOutputBytes?: number;
+  isTruncated?: boolean;
 };
 
 const extractToolResultDetails = (result: unknown): ToolResultDetailsView | null => {
+  if (typeof result === 'string') {
+    return { output: result };
+  }
   const resultRecord = asRecord(result);
   if (!resultRecord) {
     return null;
@@ -206,6 +245,42 @@ const extractToolResultDetails = (result: unknown): ToolResultDetailsView | null
     getMaybeString(metadata?.stderr);
   const errorOutput = getMaybeString(rawOutputRecord?.stderr) ?? getMaybeString(metadata?.stderr);
 
+  const toolId =
+    getMaybeString(resultRecord.tool_id) ??
+    getMaybeString(resultRecord.tool_call_id) ??
+    getMaybeString(resultRecord.toolCallId) ??
+    getMaybeString(resultRecord.id) ??
+    getMaybeString(fields?.tool_id) ??
+    getMaybeString(fields?.tool_call_id) ??
+    getMaybeString(fields?.toolCallId) ??
+    getMaybeString(rawOutputRecord?.tool_id);
+
+  const sessionId =
+    getMaybeString(resultRecord.session_id) ??
+    getMaybeString(resultRecord.sessionId) ??
+    getMaybeString(fields?.session_id) ??
+    getMaybeString(fields?.sessionId) ??
+    getMaybeString(rawOutputRecord?.session_id);
+
+  const hasFullOutput =
+    Boolean(resultRecord.has_full_output || resultRecord.hasFullOutput ||
+            fields?.has_full_output || fields?.hasFullOutput ||
+            rawOutputRecord?.has_full_output || rawOutputRecord?.hasFullOutput);
+
+  const fullOutputBytes =
+    typeof resultRecord.full_output_bytes === 'number' ? resultRecord.full_output_bytes :
+    typeof resultRecord.fullOutputBytes === 'number' ? resultRecord.fullOutputBytes :
+    typeof fields?.full_output_bytes === 'number' ? fields.full_output_bytes :
+    typeof fields?.fullOutputBytes === 'number' ? fields.fullOutputBytes :
+    typeof rawOutputRecord?.full_output_bytes === 'number' ? rawOutputRecord.full_output_bytes :
+    typeof rawOutputRecord?.fullOutputBytes === 'number' ? rawOutputRecord.fullOutputBytes :
+    undefined;
+
+  const isTruncated =
+    Boolean(resultRecord.is_truncated || resultRecord.isTruncated ||
+            fields?.is_truncated || fields?.isTruncated ||
+            rawOutputRecord?.is_truncated || rawOutputRecord?.isTruncated);
+
   const content = resultRecord.content ?? fields?.content;
   const contentText = Array.isArray(content)
     ? content
@@ -236,12 +311,87 @@ const extractToolResultDetails = (result: unknown): ToolResultDetailsView | null
     contentText,
     output,
     errorOutput,
+    toolId,
+    sessionId,
+    hasFullOutput,
+    fullOutputBytes,
+    isTruncated,
   };
 };
 
-const ToolResultDetails: React.FC<{ result: any }> = ({ result }) => {
+interface ToolResultDetailsProps {
+  result: any;
+  toolId?: string;
+  sessionId?: string;
+  hasFullOutput?: boolean;
+  fullOutputBytes?: number;
+  isTruncated?: boolean;
+  onGetToolOutput?: (toolId: string, sessionId?: string) => Promise<string | null>;
+}
+
+const ToolResultDetails: React.FC<ToolResultDetailsProps> = ({
+  result,
+  toolId: propToolId,
+  sessionId: propSessionId,
+  hasFullOutput: propHasFullOutput,
+  fullOutputBytes: propFullOutputBytes,
+  isTruncated: propIsTruncated,
+  onGetToolOutput,
+}) => {
   const details = extractToolResultDetails(result);
+
+  const effectiveToolId = propToolId ?? details?.toolId;
+  const effectiveSessionId = propSessionId ?? details?.sessionId;
+  const effectiveHasFull = Boolean(propHasFullOutput || details?.hasFullOutput);
+  const effectiveBytes = propFullOutputBytes ?? details?.fullOutputBytes;
+  const effectiveTruncated = Boolean(propIsTruncated || details?.isTruncated);
+
+  const [fullOutput, setFullOutput] = React.useState<string | null>(() => {
+    if (effectiveToolId) {
+      return toolOutputCache.get(effectiveToolId) ?? null;
+    }
+    return null;
+  });
+  const [isLoadingFull, setIsLoadingFull] = React.useState(false);
+  const [loadError, setLoadError] = React.useState<string | null>(null);
+  const [copied, setCopied] = React.useState(false);
+
+  const handleLoadFull = React.useCallback(async () => {
+    if (!effectiveToolId || !onGetToolOutput) return;
+    setIsLoadingFull(true);
+    setLoadError(null);
+    try {
+      const content = await onGetToolOutput(effectiveToolId, effectiveSessionId);
+      if (content) {
+        toolOutputCache.set(effectiveToolId, content);
+        setFullOutput(content);
+      } else {
+        setLoadError('Failed to load full output');
+      }
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : 'Error loading output');
+    } finally {
+      setIsLoadingFull(false);
+    }
+  }, [effectiveToolId, effectiveSessionId, onGetToolOutput]);
+
+  React.useEffect(() => {
+    if (!effectiveToolId) {
+      setFullOutput(null);
+      return;
+    }
+    const cached = toolOutputCache.get(effectiveToolId);
+    setFullOutput(cached ?? null);
+    const unsubscribe = toolOutputCache.subscribe((expiredToolId) => {
+      if (expiredToolId === effectiveToolId) {
+        setFullOutput(null);
+      }
+    });
+    return unsubscribe;
+  }, [effectiveToolId]);
+
   if (!details) {
+
     return (
       <pre className="acp-tool-result-content">
         {JSON.stringify(result, null, 2)}
@@ -249,13 +399,21 @@ const ToolResultDetails: React.FC<{ result: any }> = ({ result }) => {
     );
   }
 
-  const { title, status, command, description, contentText, output, errorOutput } = details;
+  const { title, status, command, description, contentText, errorOutput } = details;
+  const rawOutput = details.output;
+  const activeOutput = fullOutput ?? rawOutput;
   const normalizedContent = typeof contentText === 'string' ? contentText.trim() : undefined;
-  const normalizedOutput = typeof output === 'string' ? output.trim() : undefined;
+  const normalizedOutput = typeof activeOutput === 'string' ? activeOutput.trim() : undefined;
+  const isTruncatedOrHasFull = Boolean(effectiveHasFull || effectiveTruncated);
+  const displayOutput = activeOutput ?? (isTruncatedOrHasFull ? contentText : undefined);
   const shouldShowOutput =
-    typeof output === 'string' &&
-    output.length > 0 &&
-    normalizedOutput !== normalizedContent;
+    (typeof displayOutput === 'string' &&
+      displayOutput.length > 0 &&
+      (fullOutput ? true : normalizedOutput !== normalizedContent)) ||
+    isTruncatedOrHasFull;
+  const shouldShowContent =
+    Boolean(contentText) &&
+    (!shouldShowOutput || (normalizedContent !== normalizedOutput && !fullOutput));
   const shouldShowError =
     typeof errorOutput === 'string' &&
     errorOutput.length > 0 &&
@@ -281,7 +439,7 @@ const ToolResultDetails: React.FC<{ result: any }> = ({ result }) => {
           )}
         </div>
       )}
-      {contentText && (
+      {shouldShowContent && (
         <div className="acp-tool-call-section">
           <pre className="acp-tool-result-content">{contentText}</pre>
         </div>
@@ -289,7 +447,37 @@ const ToolResultDetails: React.FC<{ result: any }> = ({ result }) => {
       {shouldShowOutput && (
         <div className="acp-tool-call-section">
           <div className="acp-tool-call-label">Output:</div>
-          <pre className="acp-tool-result-content">{output}</pre>
+          <pre className="acp-tool-result-content">{displayOutput}</pre>
+          {isTruncatedOrHasFull && !fullOutput && (
+            <div className="acp-tool-output-truncated-notice">
+              <span>Output truncated ({effectiveBytes ? formatBytes(effectiveBytes) : 'large log'}).</span>
+              <button
+                type="button"
+                className="acp-tool-output-load-btn"
+                onClick={handleLoadFull}
+                disabled={isLoadingFull || !onGetToolOutput}
+              >
+                {isLoadingFull ? 'Loading full log...' : 'Load full log'}
+              </button>
+              {loadError && <span className="acp-tool-output-error">{loadError}</span>}
+            </div>
+          )}
+          {fullOutput && (
+            <div className="acp-tool-output-loaded-notice">
+              <span>Full output loaded ({formatBytes(fullOutput.length)}).</span>
+              <button
+                type="button"
+                className="acp-tool-output-copy-btn"
+                onClick={() => {
+                  copyTextToClipboard(fullOutput);
+                  setCopied(true);
+                  setTimeout(() => setCopied(false), 2000);
+                }}
+              >
+                {copied ? 'Copied!' : 'Copy full log'}
+              </button>
+            </div>
+          )}
         </div>
       )}
       {shouldShowError && (
@@ -301,6 +489,7 @@ const ToolResultDetails: React.FC<{ result: any }> = ({ result }) => {
     </div>
   );
 };
+
 
 const ToolUpdateMessage: React.FC<{
   message: AcpToolUpdateMessage;
@@ -1234,6 +1423,7 @@ const AcpMessageComponent: React.FC<AcpMessageProps> = ({
   onUndo,
   onOpenFile,
   onOpenFileDiff,
+  onGetToolOutput,
 }) => {
   switch (message.role) {
     case 'tool_call':
@@ -1246,6 +1436,7 @@ const AcpMessageComponent: React.FC<AcpMessageProps> = ({
             isExpanded={isExpanded}
             onToggle={onToggle}
             onOpenFileDiff={onOpenFileDiff}
+            onGetToolOutput={onGetToolOutput}
           />
       );
     case 'tool_result':
@@ -1255,6 +1446,7 @@ const AcpMessageComponent: React.FC<AcpMessageProps> = ({
           message={message}
           isExpanded={isExpanded}
           onToggle={onToggle}
+          onGetToolOutput={onGetToolOutput}
         />
       );
     case 'tool_update':
@@ -1316,4 +1508,6 @@ export const AcpMessage = React.memo(AcpMessageComponent, (previous, next) => (
   && previous.onUserMessageToggle === next.onUserMessageToggle
   && previous.onOpenFile === next.onOpenFile
   && previous.onOpenFileDiff === next.onOpenFileDiff
+  && previous.onGetToolOutput === next.onGetToolOutput
 ));
+
