@@ -1107,6 +1107,8 @@ test.describe('Anycode Live Demo Mode E2E Tests', () => {
         await expect(reviewLine).toContainText('-file-edit-1-multibuffer-edit-2');
 
         // 5. Close Multibuffer Review panel via the "Close review" button in the toolbar
+        const toolbar = multibuffer.locator('.multibuffer-toolbar');
+        await toolbar.hover();
         const closeReviewBtn = multibuffer.getByRole('button', { name: 'Close review' });
         await expect(closeReviewBtn).toBeVisible({ timeout: 5000 });
         await closeReviewBtn.click();
