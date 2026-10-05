@@ -105,3 +105,15 @@ export function loadDefaultAgentId(): string | null {
 export function saveDefaultAgentId(agentId: string | null): void {
     saveItem('acpDefaultAgentId', agentId);
 }
+export function loadSelectedProfiles(): Record<string, string> {
+    return loadItem<Record<string, string>>('acpSelectedProfiles') ?? {};
+}
+export function saveSelectedProfiles(profiles: Record<string, string>): void {
+    saveItem('acpSelectedProfiles', profiles);
+}
+export function loadReadMessageCounts(): Record<string, number> {
+    return loadItem<Record<string, number>>('acpReadMessageCounts') ?? {};
+}
+export function saveReadMessageCounts(counts: Record<string, number>): void {
+    saveItem('acpReadMessageCounts', counts);
+}

@@ -1,8 +1,11 @@
-import React from 'react';
-import { type AcpAgent, type AcpSession } from '../../types';
+import React, { useState } from 'react';
+import { type AcpAgent, type AcpSession, type AcpSessionSummary } from '../../types';
 import { parseAgentDisplayName, resolveAgentDisplay } from '../../agents';
 import { AgentIcon } from './AgentIcon';
 import { Icons } from '../Icons';
+import { loadSelectedProfiles, saveSelectedProfiles } from '../../storage';
+import { AcpOpenedAgentCard } from './AcpOpenedAgentCard';
+import { AcpSessionsView } from './AcpSessionsView';
 import './AcpEmptyPane.css';
 
 export { parseAgentDisplayName };
@@ -15,6 +18,8 @@ interface AcpEmptyPaneProps {
   onStartAgent: (agent: AcpAgent) => string | null | undefined;
   onOpenSettings?: () => void;
   onOpenRegistry?: () => void;
+  onLoadSessions?: (agent: AcpAgent) => Promise<AcpSessionSummary[]>;
+  onResumeSession?: (agent: AcpAgent, sessionId: string) => void;
 }
 
 export const AcpEmptyPane: React.FC<AcpEmptyPaneProps> = ({
@@ -25,8 +30,32 @@ export const AcpEmptyPane: React.FC<AcpEmptyPaneProps> = ({
   onStartAgent,
   onOpenSettings,
   onOpenRegistry,
+  onLoadSessions,
+  onResumeSession,
 }) => {
-  const openedSessions = agents.filter((item) => item.isActive);
+  const openedSessions = agents.filter((item) => item.isActive || item.isStarting);
+  const [selectedProfiles, setSelectedProfiles] = useState<Record<string, string>>(() => loadSelectedProfiles());
+  const [activeSessionsAgent, setActiveSessionsAgent] = useState<{ agent: AcpAgent; baseName: string } | null>(null);
+
+  const handleSelectProfile = (baseName: string, agentId: string) => {
+    setSelectedProfiles((prev) => {
+      const next = { ...prev, [baseName]: agentId };
+      saveSelectedProfiles(next);
+      return next;
+    });
+  };
+
+  if (activeSessionsAgent && onLoadSessions && onResumeSession) {
+    return (
+      <AcpSessionsView
+        agent={activeSessionsAgent.agent}
+        baseName={activeSessionsAgent.baseName}
+        onClose={() => setActiveSessionsAgent(null)}
+        onLoadSessions={onLoadSessions}
+        onResumeSession={onResumeSession}
+      />
+    );
+  }
 
   return (
     <div className="acp-pane-empty">
@@ -34,45 +63,15 @@ export const AcpEmptyPane: React.FC<AcpEmptyPaneProps> = ({
         <div className="acp-pane-opened-agents">
           <div className="acp-pane-opened-agents-title">Opened agents</div>
           <div className="acp-pane-opened-agents-list">
-            {openedSessions.map((openedSession) => {
-              const { baseName, accountName, fullName } = resolveAgentDisplay(openedSession, availableAgents);
-              return (
-                <div key={openedSession.agentId} className="acp-pane-opened-agent-item">
-                  <button
-                    className="tab-close-button acp-pane-close-button"
-                    onPointerDown={(event) => {
-                      event.stopPropagation();
-                    }}
-                    onClick={(event) => {
-                      event.preventDefault();
-                      event.stopPropagation();
-                      onCloseAgent(openedSession.agentId);
-                    }}
-                    title={`Close ${fullName}`}
-                    type="button"
-                  >
-                    <Icons.Close size={8} />
-                  </button>
-                  <button
-                    className="acp-pane-opened-agent"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      onSelectAgent(openedSession.agentId);
-                    }}
-                    title={fullName}
-                    type="button"
-                  >
-                    <AgentIcon name={baseName} id={openedSession.agentId} size={14} className="acp-agent-btn-icon" />
-                    <span className="acp-pane-opened-name" title={baseName}>{baseName}</span>
-                    {accountName && (
-                      <span className="acp-pane-action-account-badge acp-pane-opened-badge" title={accountName}>
-                        {accountName}
-                      </span>
-                    )}
-                  </button>
-                </div>
-              );
-            })}
+            {openedSessions.map((openedSession) => (
+              <AcpOpenedAgentCard
+                key={openedSession.agentId}
+                session={openedSession}
+                availableAgents={availableAgents}
+                onSelectAgent={onSelectAgent}
+                onCloseAgent={onCloseAgent}
+              />
+            ))}
           </div>
         </div>
       )}
@@ -80,33 +79,179 @@ export const AcpEmptyPane: React.FC<AcpEmptyPaneProps> = ({
         <div className="acp-pane-start-agents">
           <div className="acp-pane-start-agents-title">Start a new agent</div>
           <div className="acp-pane-empty-actions">
-            {availableAgents.map((agent) => {
-              const { baseName, accountName, fullName } = resolveAgentDisplay(agent, availableAgents);
-              return (
-                <button
-                  key={agent.id}
-                  className={`acp-pane-empty-action ${accountName ? 'has-account' : ''}`}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    const startedAgentId = onStartAgent(agent);
-                    if (startedAgentId) {
-                      onSelectAgent(startedAgentId);
-                    }
-                  }}
-                  title={agent.description || fullName}
-                >
-                  <AgentIcon name={baseName} id={agent.id} size={22} className="acp-agent-btn-icon" />
-                  <div className="acp-pane-action-info">
-                    <span className="acp-pane-action-title" title={baseName}>{baseName}</span>
-                    {accountName && (
-                      <span className="acp-pane-action-account-badge" title={accountName}>
-                        {accountName}
-                      </span>
-                    )}
+            {(() => {
+              // Group available agents by baseName
+              interface AgentGroup {
+                baseName: string;
+                defaultAgent: AcpAgent;
+                profiles: { agent: AcpAgent; profileName: string }[];
+              }
+              const groupsMap = new Map<string, AgentGroup>();
+
+              availableAgents.forEach((agent) => {
+                const { baseName, accountName } = resolveAgentDisplay(agent, availableAgents);
+                let group = groupsMap.get(baseName);
+                if (!group) {
+                  group = {
+                    baseName,
+                    defaultAgent: agent,
+                    profiles: [],
+                  };
+                  groupsMap.set(baseName, group);
+                }
+                const profileLabel = accountName || 'Default';
+                group.profiles.push({ agent, profileName: profileLabel });
+              });
+
+              return Array.from(groupsMap.values()).map((group) => {
+                const hasMultipleProfiles = group.profiles.length > 1;
+                const hasSingleProfileWithAccount = group.profiles.length === 1 && group.profiles[0].profileName !== 'Default';
+                const selectedAgent = selectedProfiles[group.baseName]
+                  ? group.profiles.find((p) => p.agent.id === selectedProfiles[group.baseName])?.agent || group.defaultAgent
+                  : group.defaultAgent;
+
+                const authorsLabel = selectedAgent.authors?.filter((author) => author.trim()).join(', ');
+                const baseLower = group.baseName.toLowerCase();
+
+                const rawDescription =
+                  selectedAgent.description ||
+                  (baseLower.includes('antigravity')
+                    ? "Google's AI coding agent"
+                    : baseLower.includes('codex')
+                    ? "OpenAI's coding assistant"
+                    : baseLower.includes('claude')
+                    ? "Anthropic's coding assistant"
+                    : null);
+                const descriptionText = rawDescription
+                  ? rawDescription.replace(/\s*\[Profile:[^\]]*\]/gi, '').trim()
+                  : null;
+
+                return (
+                  <div
+                    key={group.baseName}
+                    className="acp-start-card"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      const startedAgentId = onStartAgent(selectedAgent);
+                      if (startedAgentId) {
+                        onSelectAgent(startedAgentId);
+                      }
+                    }}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => {
+                      if (e.target !== e.currentTarget) return;
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        const startedAgentId = onStartAgent(selectedAgent);
+                        if (startedAgentId) {
+                          onSelectAgent(startedAgentId);
+                        }
+                      }
+                    }}
+                    title={`Start ${group.baseName}`}
+                  >
+                    <div className="acp-start-card-icon-box">
+                      <AgentIcon
+                        name={group.baseName}
+                        id={group.defaultAgent.id}
+                        size={18}
+                        className="acp-start-card-icon"
+                      />
+                    </div>
+
+                    <div className="acp-start-card-content">
+                      <div className="acp-start-card-title-row">
+                        <span className="acp-start-card-title">{group.baseName}</span>
+                        {authorsLabel && (
+                          <span className="acp-start-card-authors" title={`Authors: ${authorsLabel}`}>by {authorsLabel}</span>
+                        )}
+                      </div>
+
+                      {descriptionText && (
+                        <div className="acp-start-card-desc" title={descriptionText}>
+                          {descriptionText}
+                        </div>
+                      )}
+
+                      <div className="acp-start-card-footer">
+                        {hasMultipleProfiles ? (
+                          <div
+                            className="acp-start-card-profile-wrap"
+                            onClick={(e) => e.stopPropagation()}
+                            onPointerDown={(e) => e.stopPropagation()}
+                          >
+                            <svg className="acp-start-card-meta-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <circle cx="12" cy="8" r="4" />
+                              <path d="M20 21a8 8 0 1 0-16 0" />
+                            </svg>
+                            {(() => {
+                              const currentProfileName = group.profiles.find((p) => p.agent.id === selectedAgent.id)?.profileName || selectedAgent.profile || 'Default';
+                              return (
+                                <>
+                                  <span className="acp-start-card-profile-label">{currentProfileName}</span>
+                                  <span className="acp-start-card-profile-arrow">▾</span>
+                                  <select
+                                    className="acp-start-card-profile-select"
+                                    value={selectedAgent.id}
+                                    onChange={(e) => {
+                                      e.stopPropagation();
+                                      handleSelectProfile(group.baseName, e.target.value);
+                                    }}
+                                    title="Select profile"
+                                  >
+                                    {group.profiles.map((p) => (
+                                      <option key={p.agent.id} value={p.agent.id}>
+                                        {p.profileName}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </>
+                              );
+                            })()}
+                          </div>
+                        ) : hasSingleProfileWithAccount ? (
+                          <div className="acp-start-card-profile-static">
+                            <svg className="acp-start-card-meta-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <circle cx="12" cy="8" r="4" />
+                              <path d="M20 21a8 8 0 1 0-16 0" />
+                            </svg>
+                            <span>{group.profiles[0].profileName}</span>
+                          </div>
+                        ) : null}
+
+                        {onLoadSessions && onResumeSession && (
+                          <button
+                            className="acp-start-card-sessions-btn"
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setActiveSessionsAgent({
+                                agent: selectedAgent,
+                                baseName: group.baseName,
+                              });
+                            }}
+                            title={`Browse ${group.baseName} sessions`}
+                          >
+                            <svg className="acp-start-card-meta-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <circle cx="12" cy="12" r="10" />
+                              <polyline points="12 6 12 12 16 14" />
+                            </svg>
+                            <span>Sessions</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="acp-start-card-arrow">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="9 18 15 12 9 6" />
+                      </svg>
+                    </div>
                   </div>
-                </button>
-              );
-            })}
+                );
+              });
+            })()}
           </div>
           {(onOpenSettings || onOpenRegistry) && (
             <div className="acp-pane-settings-wrap">

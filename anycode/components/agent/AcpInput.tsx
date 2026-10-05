@@ -206,18 +206,20 @@ const AcpInputComponent: React.FC<AcpInputProps> = ({
     });
   }, [blocks, autoResizeTextarea]);
 
+  const blocksRef = React.useRef<InputBlock[]>(blocks);
+  blocksRef.current = blocks;
+
   const handleTextBlockChange = React.useCallback(
     (blockId: string, newText: string) => {
-      setBlocks((prev) => {
-        const next = prev.map((b) =>
-          b.id === blockId && b.type === 'text' ? { ...b, text: newText } : b,
-        );
-        const hasQuotes = next.some((b) => b.type === 'quote');
-        if (!hasQuotes) {
-          onChange(newText);
-        }
-        return next;
-      });
+      const prev = blocksRef.current;
+      const next = prev.map((b) =>
+        b.id === blockId && b.type === 'text' ? { ...b, text: newText } : b,
+      );
+      setBlocks(next);
+      const hasQuotes = next.some((b) => b.type === 'quote');
+      if (!hasQuotes) {
+        onChange(newText);
+      }
     },
     [onChange],
   );
@@ -281,48 +283,51 @@ const AcpInputComponent: React.FC<AcpInputProps> = ({
 
   const handleRemoveQuote = React.useCallback(
     (quoteBlockId: string) => {
-      setBlocks((prev) => {
-        const quoteIdx = prev.findIndex((b) => b.id === quoteBlockId);
-        if (quoteIdx === -1) return prev;
+      const prev = blocksRef.current;
+      const quoteIdx = prev.findIndex((b) => b.id === quoteBlockId);
+      if (quoteIdx === -1) return;
 
-        const next = [...prev];
+      const next = [...prev];
+      next.splice(quoteIdx, 1);
+
+      let focusedId: string | null = null;
+      let finalBlocks: InputBlock[] = next;
+      let textToEmit: string | null = null;
+
+      const prevBlock = next[quoteIdx - 1];
+      const nextBlock = next[quoteIdx];
+
+      if (prevBlock && prevBlock.type === 'text' && nextBlock && nextBlock.type === 'text') {
+        let mergedText = '';
+        if (prevBlock.text.trim() && nextBlock.text.trim()) {
+          mergedText = `${prevBlock.text.trim()}\n\n${nextBlock.text.trim()}`;
+        } else {
+          mergedText = prevBlock.text.trim() || nextBlock.text.trim();
+        }
+        prevBlock.text = mergedText;
         next.splice(quoteIdx, 1);
-
-        const prevBlock = next[quoteIdx - 1];
-        const nextBlock = next[quoteIdx];
-
-        if (prevBlock && prevBlock.type === 'text' && nextBlock && nextBlock.type === 'text') {
-          let mergedText = '';
-          if (prevBlock.text.trim() && nextBlock.text.trim()) {
-            mergedText = `${prevBlock.text.trim()}\n\n${nextBlock.text.trim()}`;
-          } else {
-            mergedText = prevBlock.text.trim() || nextBlock.text.trim();
+        focusedId = prevBlock.id;
+        requestAnimationFrame(() => {
+          const el = textareaRefs.current.get(prevBlock.id);
+          if (el) {
+            el.focus();
+            autoResizeTextarea(el);
           }
-          prevBlock.text = mergedText;
-          next.splice(quoteIdx, 1);
-          setFocusedBlockId(prevBlock.id);
-          requestAnimationFrame(() => {
-            const el = textareaRefs.current.get(prevBlock.id);
-            if (el) {
-              el.focus();
-              autoResizeTextarea(el);
-            }
-          });
-        } else if (prevBlock && prevBlock.type === 'text') {
-          setFocusedBlockId(prevBlock.id);
-          requestAnimationFrame(() => {
-            const el = textareaRefs.current.get(prevBlock.id);
-            if (el) el.focus();
-          });
-        }
+        });
+      } else if (prevBlock && prevBlock.type === 'text') {
+        focusedId = prevBlock.id;
+        requestAnimationFrame(() => {
+          const el = textareaRefs.current.get(prevBlock.id);
+          if (el) el.focus();
+        });
+      }
 
-        if (next.length === 0) {
-          const fallbackTextId = `text-${Date.now()}`;
-          setFocusedBlockId(fallbackTextId);
-          onChange('');
-          return [{ id: fallbackTextId, type: 'text', text: '' }];
-        }
-
+      if (next.length === 0) {
+        const fallbackTextId = `text-${Date.now()}`;
+        focusedId = fallbackTextId;
+        textToEmit = '';
+        finalBlocks = [{ id: fallbackTextId, type: 'text', text: '' }];
+      } else {
         const remainingQuotes = next.some((b) => b.type === 'quote');
         if (!remainingQuotes) {
           const singleText = next
@@ -330,14 +335,20 @@ const AcpInputComponent: React.FC<AcpInputProps> = ({
             .map((b) => b.text.trim())
             .filter(Boolean)
             .join('\n\n');
-          onChange(singleText);
+          textToEmit = singleText;
           const singleId = next[0].id;
-          setFocusedBlockId(singleId);
-          return [{ id: singleId, type: 'text', text: singleText }];
+          focusedId = singleId;
+          finalBlocks = [{ id: singleId, type: 'text', text: singleText }];
         }
+      }
 
-        return next;
-      });
+      setBlocks(finalBlocks);
+      if (focusedId) {
+        setFocusedBlockId(focusedId);
+      }
+      if (textToEmit !== null) {
+        onChange(textToEmit);
+      }
     },
     [autoResizeTextarea, onChange],
   );

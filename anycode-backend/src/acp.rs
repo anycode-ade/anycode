@@ -2319,6 +2319,10 @@ impl AcpAgent {
     pub fn get_message_sender(&self) -> Option<broadcast::Sender<AcpMessage>> {
         self.message_sender.clone()
     }
+
+    pub fn session_id(&self) -> Option<String> {
+        self.session_id.as_ref().map(|s| s.to_string())
+    }
 }
 
 pub struct AcpManager {
@@ -2476,6 +2480,10 @@ impl AcpManager {
         self.agents
             .get(agent_id)
             .is_some_and(AcpAgent::is_processing)
+    }
+
+    pub fn get_agent_session_id(&self, agent_id: &str) -> Option<String> {
+        self.agents.get(agent_id).and_then(AcpAgent::session_id)
     }
 
     pub async fn list_sessions(

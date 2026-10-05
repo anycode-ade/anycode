@@ -45,6 +45,7 @@ type AgentPanelProps = {
         setSessionModel: (...args: any[]) => void;
         setSessionReasoning: (...args: any[]) => void;
         getToolOutput?: (toolId: string, sessionId?: string) => Promise<string | null>;
+        markSessionAsRead?: (agentId: string) => void;
     };
     sessions: AcpSessionState[];
     availableAgents: AcpAgent[];
@@ -84,9 +85,18 @@ const AgentPanelComponent = ({
     const panelRef = useRef<HTMLDivElement | null>(null);
     const selectedAgentId = agentPanes.getSelectedId(panelKey);
     const selectedSession = selectedAgentId ? agents.acpSessions.get(selectedAgentId) ?? null : null;
+    const selectedSessionDisplay = selectedSession
+        ? resolveAgentDisplay(selectedSession, availableAgents)
+        : null;
     const handleSelectAgentForPane = (agentId: string) => {
         agentPanes.selectForPane(panelKey, agentId);
     };
+
+    useEffect(() => {
+        if (selectedSession) {
+            agents.markSessionAsRead?.(selectedSession.agentId);
+        }
+    }, [selectedSession?.agentId, selectedSession?.messages.length, agents.markSessionAsRead]);
 
     useEffect(() => {
         if (focusRequestToken === null) {
@@ -157,6 +167,15 @@ const AgentPanelComponent = ({
                         onStartAgent={onStartSpecificAgent}
                         onOpenSettings={onOpenSettings}
                         onOpenRegistry={() => agents.setIsRegistryOpen(true)}
+                        onLoadSessions={agents.fetchAvailableSessions}
+                        onResumeSession={(agent, sessionId) => {
+                            const aid = agents.resumeSession(agent, sessionId);
+                            if (aid) {
+                                handleSelectAgentForPane(aid);
+                            } else {
+                                onResumeSettingsSession(agent, sessionId);
+                            }
+                        }}
                     />
                 </div>
             </div>
@@ -167,8 +186,10 @@ const AgentPanelComponent = ({
         <div ref={panelRef} tabIndex={-1} style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
             <div style={{ position: 'relative', flex: 1, minHeight: 0, overflow: 'hidden' }}>
                 <AcpSession
+                    key={selectedSession.agentId}
                     agentId={selectedSession.agentId}
-                    title={resolveAgentDisplay(selectedSession, availableAgents).fullName}
+                    title={selectedSessionDisplay?.fullName ?? selectedSession.agentId}
+                    agentAuthors={selectedSessionDisplay?.authors}
                     isConnected={selectedSession.isActive && isConnected}
                     isProcessing={selectedSession.isProcessing || false}
                     isStarting={selectedSession.isStarting}

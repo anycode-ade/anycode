@@ -133,6 +133,7 @@ export interface AcpAgent {
     icon?: string;
     version?: string;
     profile?: string;
+    authors?: string[];
     env?: Record<string, string>;
     profileEnv?: Record<string, string>;
 }
@@ -436,6 +437,7 @@ export interface AcpSession {
     isStarting?: boolean;
     startError?: string;
     isProcessing?: boolean;
+    lastReadMessageCount?: number;
     modelSelector?: Omit<AcpModelSelectorMessage, 'role'>;
     reasoningSelector?: Omit<AcpReasoningSelectorMessage, 'role'>;
     contextUsage?: Omit<AcpContextUsageMessage, 'role'>;

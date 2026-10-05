@@ -115,10 +115,15 @@ export function getAllAgents(): AcpAgent[] {
             }
         }
 
+        const cleanDescription = agent.description
+            ? agent.description.replace(/\s*\[Profile:[^\]]*\]/gi, '').trim()
+            : undefined;
+
         agentMap.set(agent.id, {
             ...agent,
             name,
             profile,
+            description: cleanDescription,
             env,
             profileEnv: agent.profileEnv ?? KNOWN_PROFILE_TEMPLATES[agent.id] ?? GENERIC_PROFILE_TEMPLATE,
             args: [...agent.args]
@@ -235,7 +240,7 @@ export function parseAgentDisplayName(fullName: string): { baseName: string; acc
 export function resolveAgentDisplay(
     item: { agentId?: string; agentName?: string; agentConfigId?: string; id?: string; name?: string; profile?: string },
     availableAgents: AcpAgent[] = []
-): { baseName: string; accountName?: string; fullName: string } {
+): { baseName: string; accountName?: string; fullName: string; authors?: string[] } {
     const id = item.agentId || item.id || '';
     const rawName = item.agentName || item.name || id;
     const configId = item.agentConfigId;
@@ -293,6 +298,5 @@ export function resolveAgentDisplay(
     }
 
     const fullName = accountName ? `${baseName} (${accountName})` : baseName;
-    return { baseName, accountName, fullName };
+    return { baseName, accountName, fullName, authors: matched?.authors };
 }
-

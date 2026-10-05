@@ -21,7 +21,8 @@ export const getAgentBrandColor = (id: string = '', name: string = ''): string =
     const s = `${id} ${name}`.toLowerCase();
     if (s.includes('claude') || s.includes('anthropic')) return '#d97757';
     if (s.includes('gemini') || s.includes('google') || s.includes('antigravity')) return '#3186ff';
-    if (s.includes('codex') || s.includes('openai') || s.includes('chatgpt')) return '#10a37f';
+    if (s.includes('codex')) return '#ffffff';
+    if (s.includes('openai') || s.includes('chatgpt')) return '#10a37f';
     if (s.includes('qwen') || s.includes('alibaba')) return '#6f69f7';
     if (s.includes('deepseek')) return '#4d6bfe';
     if (s.includes('amp')) return '#a855f7';
@@ -228,6 +229,7 @@ export const AcpRegistryModal: React.FC<AcpRegistryModalProps> = ({
                 description: summary.description,
                 icon: summary.icon,
                 version: summary.version,
+                authors: summary.authors,
                 env,
                 profileEnv: KNOWN_PROFILE_TEMPLATES[summary.id] ?? GENERIC_PROFILE_TEMPLATE,
             };

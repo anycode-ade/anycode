@@ -6,9 +6,10 @@ import './AgentTemplatesManager.css';
 
 interface AgentTemplatesManagerProps {
   embedded?: boolean;
+  onClose?: () => void;
 }
 
-export const AgentTemplatesManager: React.FC<AgentTemplatesManagerProps> = ({ embedded = false }) => {
+export const AgentTemplatesManager: React.FC<AgentTemplatesManagerProps> = ({ embedded = false, onClose }) => {
   const templates = useAgentTemplates();
   const [isAdding, setIsAdding] = useState(false);
   const [newLabel, setNewLabel] = useState('');
@@ -108,6 +109,16 @@ export const AgentTemplatesManager: React.FC<AgentTemplatesManagerProps> = ({ em
             >
               <AcpIcons.Add />
               Add Template
+            </button>
+          )}
+          {onClose && (
+            <button
+              type="button"
+              className="agent-templates-btn secondary"
+              onClick={onClose}
+              title="Finish customizing templates"
+            >
+              Done
             </button>
           )}
         </div>

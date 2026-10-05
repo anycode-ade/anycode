@@ -30,6 +30,7 @@ interface AcpMessagesProps {
   onSelectTemplate?: (template: AgentPromptTemplate, sendImmediately?: boolean) => void;
   onOpenSettings?: () => void;
   agentTitle?: string;
+  agentAuthors?: string[];
   onGetToolOutput?: (toolId: string, sessionId?: string) => Promise<string | null>;
 }
 
@@ -52,6 +53,7 @@ const AcpMessagesComponent: React.FC<AcpMessagesProps> = ({
   onSelectTemplate,
   onOpenSettings,
   agentTitle,
+  agentAuthors,
   onGetToolOutput,
 }) => {
   if (messages.length === 0) {
@@ -62,6 +64,7 @@ const AcpMessagesComponent: React.FC<AcpMessagesProps> = ({
             onSelectTemplate={onSelectTemplate}
             onOpenSettings={onOpenSettings}
             agentTitle={agentTitle}
+            agentAuthors={agentAuthors}
           />
         ) : (
           <p>No messages yet. Start a conversation with the agent.</p>

@@ -196,13 +196,12 @@ export const AcpSettings: React.FC<AcpSettingsProps> = ({
       updatedEnv = Object.keys(remaining).length > 0 ? remaining : undefined;
     }
 
-    const cleanDescription = (base.description || base.name).replace(/\s*\[Profile: [^\]]+\]/g, '').trim();
-    const updatedDescription = trimmed ? `${cleanDescription} [Profile: ${trimmed}]` : cleanDescription;
+    const cleanDescription = (base.description || base.name).replace(/\s*\[Profile:[^\]]*\]/gi, '').trim();
 
     const updatedAgent: AcpAgent = {
       ...base,
       profile: value,
-      description: updatedDescription,
+      description: cleanDescription,
       env: updatedEnv,
     };
 
@@ -228,16 +227,14 @@ export const AcpSettings: React.FC<AcpSettingsProps> = ({
     const newId = generateIdFromName(`${rootId}-${slug}`, existingIds);
 
     const envVar = getProfileEnvForAgent(baseAgent, newId);
-    const cleanDescription = (baseAgent.description || baseAgent.name).replace(/\s*\[Profile: [^\]]+\]/g, '').trim();
+    const cleanDescription = (baseAgent.description || baseAgent.name).replace(/\s*\[Profile:[^\]]*\]/gi, '').trim();
 
     const newAgent: AcpAgent = {
       ...baseAgent,
       id: newId,
       name: baseAgent.name,
       profile: trimmedName || undefined,
-      description: trimmedName
-        ? `${cleanDescription} [Profile: ${trimmedName}]`
-        : cleanDescription,
+      description: cleanDescription,
       env: {
         ...(baseAgent.env || {}),
         ...envVar,
@@ -443,7 +440,7 @@ export const AcpSettings: React.FC<AcpSettingsProps> = ({
                       onClick={() => handleRefreshSessions(agent)}
                       title="Refresh sessions"
                     >
-                      <AcpIcons.Sessions />
+                      <AcpIcons.Refresh />
                     </button>
                   </div>
 

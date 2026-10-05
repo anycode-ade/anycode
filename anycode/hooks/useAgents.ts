@@ -30,6 +30,7 @@ import {
     getAllAgents,
     getDefaultAgentId,
 } from '../agents';
+import { loadReadMessageCounts, saveReadMessageCounts } from '../storage';
 import { toolOutputCache } from '../features/agents/toolOutputCache';
 
 const MESSAGE_FLUSH_MS = 100;
@@ -396,6 +397,20 @@ export const useAgents = ({
             return newSessions;
         });
     }, []);
+
+    const markSessionAsRead = useCallback((agentId: string) => {
+        updateSession(agentId, (existing) => {
+            if (!existing || existing.lastReadMessageCount === existing.messages.length) return existing;
+            const nextCount = existing.messages.length;
+            const currentCounts = loadReadMessageCounts();
+            currentCounts[agentId] = nextCount;
+            saveReadMessageCounts(currentCounts);
+            return {
+                ...existing,
+                lastReadMessageCount: nextCount,
+            };
+        });
+    }, [updateSession]);
 
     const generateAgentId = useCallback((baseAgentId: string): string => {
         const existingSessions = acpSessionsRef.current;
@@ -796,9 +811,13 @@ export const useAgents = ({
         );
         const mergedVisibleMessages = mergeConsecutiveErrors(visibleMessages);
 
+        const savedCounts = loadReadMessageCounts();
+        const storedReadCount = savedCounts[data.agent_id];
+
         updateSession(data.agent_id, (existing) => existing ? {
             ...existing,
             messages: mergedVisibleMessages,
+            lastReadMessageCount: existing.lastReadMessageCount ?? storedReadCount,
             modelSelector: modelSelector ? {
                 current_value: modelSelector.current_value,
                 options: modelSelector.options,
@@ -816,6 +835,7 @@ export const useAgents = ({
             agentId: data.agent_id,
             agentName: '',
             messages: mergedVisibleMessages,
+            lastReadMessageCount: storedReadCount,
             isActive: true,
             modelSelector: modelSelector ? {
                 current_value: modelSelector.current_value,
@@ -891,6 +911,7 @@ export const useAgents = ({
                     if (existing) {
                         newSessions.set(agent.id, {
                             ...existing,
+                            sessionId: agent.session_id ?? existing.sessionId,
                             isActive: true,
                             isProcessing: Boolean(agent.is_processing),
                             queue: agent.queue ?? existing.queue,
@@ -899,6 +920,7 @@ export const useAgents = ({
                         newSessions.set(agent.id, {
                             agentId: agent.id,
                             agentName: agent.name,
+                            sessionId: agent.session_id,
                             messages: [],
                             isActive: true,
                             isProcessing: Boolean(agent.is_processing),
@@ -1087,8 +1109,8 @@ export const useAgents = ({
         });
     }, [wsRef, isConnected]);
 
-    const resumeSession = useCallback((agent: AcpAgent | undefined, sessionId: string) => {
-        startAgent(agent, { resumeSessionId: sessionId });
+    const resumeSession = useCallback((agent: AcpAgent | undefined, sessionId: string): string | null => {
+        return startAgent(agent, { resumeSessionId: sessionId });
     }, [startAgent]);
 
     const sendPrompt = useCallback((agentId: string, prompt: string, attachments: AcpPromptAttachment[] = []) => {
@@ -1376,5 +1398,6 @@ export const useAgents = ({
         stopAgent,
         closeAgent,
         getToolOutput,
+        markSessionAsRead,
     };
 };

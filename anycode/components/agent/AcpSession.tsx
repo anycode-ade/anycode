@@ -313,6 +313,7 @@ const useExpandableItems = () => {
 interface AcpSessionProps {
   agentId: string;
   title: string;
+  agentAuthors?: string[];
   isConnected: boolean;
   isProcessing?: boolean;
   isStarting?: boolean;
@@ -351,6 +352,7 @@ interface AcpSessionProps {
 const AcpSessionComponent: React.FC<AcpSessionProps> = ({
   agentId,
   title,
+  agentAuthors,
   isConnected,
   isProcessing = false,
   isStarting = false,
@@ -704,13 +706,32 @@ const AcpSessionComponent: React.FC<AcpSessionProps> = ({
     };
   }, [handleCheckMessagesSelection]);
 
+  const [isClosing, setIsClosing] = useState(false);
+  const closeTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    setIsClosing(false);
+    return () => {
+      if (closeTimerRef.current !== null) {
+        window.clearTimeout(closeTimerRef.current);
+      }
+    };
+  }, [agentId]);
+
   const handleCancel = useCallback(() => {
     onCancelPrompt(agentId);
   }, [agentId, onCancelPrompt]);
 
   const handleCloseAgent = useCallback(() => {
-    onCloseAgent(agentId);
-  }, [agentId, onCloseAgent]);
+    if (isClosing) return;
+    setIsClosing(true);
+    if (closeTimerRef.current !== null) {
+      window.clearTimeout(closeTimerRef.current);
+    }
+    closeTimerRef.current = window.setTimeout(() => {
+      onCloseAgent(agentId);
+    }, 180);
+  }, [agentId, onCloseAgent, isClosing]);
 
   const handleSelectModel = useCallback((option: AcpSelectOption) => {
     onSelectModel?.(agentId, option);
@@ -723,7 +744,7 @@ const AcpSessionComponent: React.FC<AcpSessionProps> = ({
   return (
     <div
       ref={sessionRef}
-      className="acp-session"
+      className={`acp-session ${isClosing ? 'is-closing' : ''}`}
       onMouseDown={onFocusPane}
       onMouseEnter={() => { pointerInsideRef.current = true; }}
       onMouseLeave={() => { pointerInsideRef.current = false; }}
@@ -891,6 +912,7 @@ const AcpSessionComponent: React.FC<AcpSessionProps> = ({
                 onSelectTemplate={handleSelectTemplate}
                 onOpenSettings={onOpenSettings}
                 agentTitle={title}
+                agentAuthors={agentAuthors}
                 onGetToolOutput={onGetToolOutput}
               />
             )}

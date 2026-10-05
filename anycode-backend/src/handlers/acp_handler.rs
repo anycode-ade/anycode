@@ -633,9 +633,11 @@ pub async fn handle_acp_reconnect(socket: SocketRef, ack: AckSender, state: Stat
     let mut agents_json: Vec<serde_json::Value> = Vec::new();
     for (id, name) in &agents {
         let queue = acp_manager.get_agent_queue(id).await.unwrap_or_default();
+        let session_id = acp_manager.get_agent_session_id(id);
         agents_json.push(json!({
             "id": id,
             "name": name,
+            "session_id": session_id,
             "is_processing": acp_manager.is_agent_processing(id),
             "queue": queue,
         }));

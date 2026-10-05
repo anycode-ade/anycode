@@ -43,6 +43,22 @@ export const AcpIcons = {
       <path d="M5.5 14.5H11.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
     </svg>
   ),
+  Refresh: ({ size = 14 }: { size?: number }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M20 5V10H15" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M4 19V14H9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M20 10C18.7 6.9 15.7 5 12.4 5C8.8 5 5.6 7.2 4.3 10.6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      <path d="M4 14C5.3 17.1 8.3 19 11.6 19C15.2 19 18.4 16.8 19.7 13.4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  ),
+  Sliders: ({ size = 14 }: { size?: number }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <line x1="3" y1="8" x2="21" y2="8" />
+      <circle cx="8" cy="8" r="2.5" />
+      <line x1="3" y1="16" x2="21" y2="16" />
+      <circle cx="16" cy="16" r="2.5" />
+    </svg>
+  ),
   Settings: () => (
     <svg width="16" height="16" viewBox="0 0 20 20" fill="none">
       <circle cx="10" cy="5" r="1.5" fill="currentColor"/>
