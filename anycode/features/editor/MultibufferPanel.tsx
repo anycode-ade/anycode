@@ -524,6 +524,15 @@ const MultibufferPanel: React.FC<MultibufferPanelProps> = ({
         void sync();
     }, [ignoreEdits, panelKey, readyFiles, reviewFiles]);
 
+    const totalAdded = useMemo(
+        () => files.reduce((acc, file) => acc + (file.added ?? 0), 0),
+        [files],
+    );
+    const totalRemoved = useMemo(
+        () => files.reduce((acc, file) => acc + (file.removed ?? 0), 0),
+        [files],
+    );
+
     return (
         <div
             className="multibuffer-panel"
@@ -535,14 +544,26 @@ const MultibufferPanel: React.FC<MultibufferPanelProps> = ({
                     <span>{title}</span>
                     <span className="multibuffer-toolbar-count">{files.length} files</span>
                 </div>
-                <button
-                    className="search-close-button"
-                    onClick={onClose}
-                    title="Close review"
-                    aria-label="Close review"
-                >
-                    &times;
-                </button>
+                <div className="multibuffer-toolbar-actions">
+                    <button
+                        className="multibuffer-close-button search-close-button"
+                        onClick={onClose}
+                        title="Close review"
+                        aria-label="Close review"
+                    >
+                        &times;
+                    </button>
+                    {(totalAdded > 0 || totalRemoved > 0) && (
+                        <span className="multibuffer-toolbar-stats">
+                            {totalAdded > 0 && (
+                                <span className="multibuffer-added">+{totalAdded}</span>
+                            )}
+                            {totalRemoved > 0 && (
+                                <span className="multibuffer-removed">-{totalRemoved}</span>
+                            )}
+                        </span>
+                    )}
+                </div>
             </div>
 
             <div className="multibuffer-scroll">

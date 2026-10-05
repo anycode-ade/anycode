@@ -13,6 +13,7 @@
     justify-content: space-between;
     flex: 0 0 auto;
     padding: 0 12px;
+    min-height: 32px;
     background: var(--theme-tab-background, rgba(255, 255, 255, 0.025));
     font-family: var(--interface-font-family);
     font-size: var(--interface-font-size, 13px);
@@ -34,6 +35,56 @@
     color: var(--theme-tab-foreground, #8b929c);
     font-size: 0.9em;
     font-weight: 500;
+}
+
+.multibuffer-toolbar-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: auto;
+}
+
+.multibuffer-close-button {
+    cursor: pointer;
+    padding: 2px 6px;
+    border: none;
+    border-radius: 4px;
+    background-color: transparent;
+    color: inherit;
+    font-size: 18px;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 20px;
+    min-height: 20px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.15s ease, background-color 0.2s ease;
+}
+
+.multibuffer-close-button:hover {
+    background-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+.multibuffer-close-button:active {
+    background-color: rgba(255, 255, 255, 0.2) !important;
+}
+
+.multibuffer-toolbar:hover .multibuffer-close-button,
+.multibuffer-toolbar:focus-within .multibuffer-close-button {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.multibuffer-toolbar-stats {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+    font-size: 0.9em;
+    white-space: nowrap;
 }
 
 .multibuffer-scroll {
