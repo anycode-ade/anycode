@@ -57,6 +57,7 @@ const ToolCallMessage: React.FC<{
   const diffFileNames = getToolCallFileNames(toolCallView.diffs);
   const toggleLabel = formatToolCallLabel(diffFileNames, displayCommand);
   const toggleStats = getToolCallStats(toolCallView.diffs);
+  const isEditCall = toolCallView.kind === 'edit' || toolCallView.diffs.length > 0;
 
   return (
     <div className="acp-message acp-message-tool_call">
@@ -90,17 +91,17 @@ const ToolCallMessage: React.FC<{
               </div>
             )}
 
-            {toolUpdates && toolUpdates.length > 0 && (
+            {!isEditCall && toolUpdates && toolUpdates.length > 0 && (
               <div className="acp-tool-call-section">
                 <div className="acp-tool-call-label">Updates:</div>
                 {toolUpdates.map((toolUpdate, index) => (
                   <pre key={`${toolUpdate.id}-${index}`} className="acp-tool-result-content">
-                    {JSON.stringify(toolUpdate.update, null, 2)}
+                    {JSON.stringify(sanitizeToolUpdate(toolUpdate.update), null, 2)}
                   </pre>
                 ))}
               </div>
             )}
-            {toolCallView.kind === 'edit' && toolCallView.diffs.length > 0 && (
+            {toolCallView.diffs.length > 0 && (
               <div className="acp-tool-call-section">
                 <div className="acp-tool-call-label">Diff:</div>
                 <div className="acp-tool-call-diffs">
@@ -504,7 +505,7 @@ const ToolUpdateMessage: React.FC<{
       </div>
       {isExpanded && (
         <pre className="acp-tool-update-content">
-          {JSON.stringify(message.update, null, 2)}
+          {JSON.stringify(sanitizeToolUpdate(message.update), null, 2)}
         </pre>
       )}
     </div>
@@ -600,6 +601,24 @@ const isAcpDiffContent = (value: unknown): value is AcpDiffContent => {
     && typeof record.newText === 'string'
     && (oldText === undefined || oldText === null || typeof oldText === 'string');
 };
+
+const sanitizeToolUpdate = (update: unknown): unknown => {
+  if (typeof update !== 'object' || update === null) return update;
+  const record = { ...(update as Record<string, unknown>) };
+  if (Array.isArray(record.content)) {
+    record.content = record.content.map((item) => {
+      if (isAcpDiffContent(item)) {
+        return {
+          type: 'diff',
+          path: item.path,
+        };
+      }
+      return item;
+    });
+  }
+  return record;
+};
+
 
 const getDiffEntries = (content: unknown): AcpDiffContent[] => {
   return Array.isArray(content) ? content.filter(isAcpDiffContent) : [];
