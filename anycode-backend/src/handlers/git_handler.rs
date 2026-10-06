@@ -371,6 +371,20 @@ pub async fn handle_git_checkout(
     send_response(ack, result);
 }
 
+pub async fn handle_git_create_branch(
+    Data(request): Data<GitCheckoutRequest>,
+    ack: AckSender,
+    state: State<AppState>,
+) {
+    info!("Received git:create_branch: {}", request.branch);
+    let result = {
+        let mut git = state.git_manager.lock().await;
+        git.create_branch(&request.branch)
+            .and_then(|_| git.refresh_status_cache().map(|_| json!({})))
+    };
+    send_response(ack, result);
+}
+
 pub async fn handle_git_revert(
     socket: SocketRef,
     Data(request): Data<GitRevertRequest>,

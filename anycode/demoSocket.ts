@@ -224,6 +224,9 @@ const DEMO_HISTORY_FILES: Record<string, DemoHistoryFile[]> = {
     ],
 };
 
+let demoCurrentBranch = 'main';
+const demoBranches: string[] = ['main'];
+
 const notifyGitChange = (socket: DemoSocket, targetPath: string) => {
     const node = DEMO_VFS[targetPath];
     const original = ORIGINAL_VFS_CONTENTS[targetPath];
@@ -249,7 +252,7 @@ const notifyGitChange = (socket: DemoSocket, targetPath: string) => {
     const changedItem = DEMO_CHANGED_FILES.get(targetPath);
     const gitUpdatePayload = {
         kind: 'patch',
-        branch: 'main',
+        branch: demoCurrentBranch,
         files: changedItem
             ? [{ path: targetPath, status: changedItem.status, staged: changedItem.staged }]
             : [{ path: targetPath, status: 'removed', staged: false }],
@@ -552,7 +555,7 @@ export class DemoSocket {
             case 'git:status': {
                 callback?.({
                     success: true,
-                    branch: 'main',
+                    branch: demoCurrentBranch,
                     files: Array.from(DEMO_CHANGED_FILES.values()),
                 });
                 break;
@@ -561,8 +564,35 @@ export class DemoSocket {
             case 'git:branches': {
                 callback?.({
                     success: true,
-                    branches: [{ name: 'main', is_current: true }],
+                    branches: demoBranches.map((name) => ({ name, is_current: name === demoCurrentBranch })),
                 });
+                break;
+            }
+
+            case 'git:checkout': {
+                const target = payload?.branch;
+                if (target && demoBranches.includes(target)) {
+                    demoCurrentBranch = target;
+                    callback?.({ success: true });
+                    this.emitLocal('git:update', { kind: 'full', branch: demoCurrentBranch, files: Array.from(DEMO_CHANGED_FILES.values()) });
+                } else {
+                    callback?.({ success: false, error: 'Branch not found' });
+                }
+                break;
+            }
+
+            case 'git:create_branch': {
+                const newBranch = payload?.branch?.trim();
+                if (newBranch) {
+                    if (!demoBranches.includes(newBranch)) {
+                        demoBranches.push(newBranch);
+                    }
+                    demoCurrentBranch = newBranch;
+                    callback?.({ success: true });
+                    this.emitLocal('git:update', { kind: 'full', branch: demoCurrentBranch, files: Array.from(DEMO_CHANGED_FILES.values()) });
+                } else {
+                    callback?.({ success: false, error: 'Branch name cannot be empty' });
+                }
                 break;
             }
 

@@ -605,6 +605,30 @@ export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
         });
     }, [fetchGitStatus, isConnected, wsRef]);
 
+    const createBranch = useCallback((branch: string): Promise<boolean> => {
+        return new Promise((resolve) => {
+            const trimmed = branch.trim();
+            if (!wsRef.current || !isConnected || !trimmed) {
+                resolve(false);
+                return;
+            }
+
+            setIsSwitchingBranch(true);
+            wsRef.current.emit('git:create_branch', { branch: trimmed }, (response: any) => {
+                setIsSwitchingBranch(false);
+                if (response.success) {
+                    fetchGitStatus();
+                    fetchBranches();
+                    refreshHistory();
+                    resolve(true);
+                } else {
+                    alert(response.error || 'Failed to create branch');
+                    resolve(false);
+                }
+            });
+        });
+    }, [wsRef, isConnected, fetchGitStatus, fetchBranches, refreshHistory]);
+
     return {
         changedFiles,
         gitBranch,
@@ -639,6 +663,7 @@ export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
         fetchRemote,
         revert,
         checkoutBranch,
+        createBranch,
         stage,
         unstage,
     };

@@ -713,6 +713,7 @@ const App: React.FC = () => {
                         onFileClick={handleOpenFileDiff}
                         onRefresh={git.fetchGitStatus}
                         onBranchChange={git.checkoutBranch}
+                        onCreateBranch={git.createBranch}
                         onCommit={git.commit}
                         onPush={git.push}
                         pushStatus={git.pushStatus}

@@ -1288,6 +1288,31 @@ impl GitManager {
         Ok(())
     }
 
+    pub fn create_branch(&self, branch: &str) -> Result<()> {
+        let branch = branch.trim();
+        if branch.is_empty() {
+            anyhow::bail!("Branch name cannot be empty");
+        }
+        let repo = self.repo()?;
+        let head = repo.head().context("Failed to get HEAD")?;
+        let commit = head
+            .peel_to_commit()
+            .context("Failed to resolve HEAD commit")?;
+        let new_branch = repo
+            .branch(branch, &commit, false)
+            .with_context(|| format!("Failed to create branch '{}'", branch))?;
+        let reference = new_branch.into_reference();
+        let reference_name = reference
+            .name()
+            .context("Invalid branch reference name")?
+            .to_string();
+        repo.set_head(&reference_name)
+            .with_context(|| format!("Failed to set HEAD to '{}'", branch))?;
+
+        info!("Created and checked out branch {}", branch);
+        Ok(())
+    }
+
     /// Pull from remote
     pub fn pull(&self) -> Result<PullResult> {
         let repo = self.repo()?;

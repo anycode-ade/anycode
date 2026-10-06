@@ -33,6 +33,7 @@ interface ChangesPanelProps {
     onFileClick: (path: string) => void;
     onRefresh: () => void;
     onBranchChange: (branch: string) => Promise<boolean>;
+    onCreateBranch?: (branch: string) => Promise<boolean>;
     onCommit: (message: string) => Promise<boolean>;
     onPush: () => void;
     pushStatus: { state: GitActionState; message?: string };
@@ -243,6 +244,7 @@ const ChangesPanelImpl: React.FC<ChangesPanelProps> = ({
     onFileClick,
     onRefresh,
     onBranchChange,
+    onCreateBranch,
     onCommit,
     onPush,
     pushStatus,
@@ -604,13 +606,54 @@ const ChangesPanelImpl: React.FC<ChangesPanelProps> = ({
         }
     };
 
+    const [isCreatingBranch, setIsCreatingBranch] = useState(false);
+    const [newBranchName, setNewBranchName] = useState('');
+    const [isSubmittingBranch, setIsSubmittingBranch] = useState(false);
+    const newBranchInputRef = useRef<HTMLInputElement>(null);
+
     const handleBranchChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
         const nextBranch = e.target.value;
+        if (nextBranch === '__create_new_branch__') {
+            setIsCreatingBranch(true);
+            setNewBranchName('');
+            setTimeout(() => {
+                newBranchInputRef.current?.focus();
+            }, 0);
+            return;
+        }
         if (!nextBranch || nextBranch === branch) {
             return;
         }
         await onBranchChange(nextBranch);
     };
+
+    const handleCancelCreateBranch = () => {
+        setIsCreatingBranch(false);
+        setNewBranchName('');
+    };
+
+    const handleConfirmCreateBranch = async () => {
+        const trimmed = newBranchName.trim();
+        if (!trimmed || isSubmittingBranch || !onCreateBranch) return;
+        setIsSubmittingBranch(true);
+        const success = await onCreateBranch(trimmed);
+        setIsSubmittingBranch(false);
+        if (success) {
+            setIsCreatingBranch(false);
+            setNewBranchName('');
+        }
+    };
+
+    const handleNewBranchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            handleConfirmCreateBranch();
+        } else if (e.key === 'Escape') {
+            e.preventDefault();
+            handleCancelCreateBranch();
+        }
+    };
+
     const isCurrentBranchInList = branches.some((item) => item.name === branch);
 
     return (
@@ -631,83 +674,127 @@ const ChangesPanelImpl: React.FC<ChangesPanelProps> = ({
             <div className="changes-header">
                 <div className="changes-title">
                     <span className="changes-branch-icon"><Icons.Git /></span>
-                    <select
-                        className="changes-branch-select"
-                        value={isCurrentBranchInList ? branch : ''}
-                        onChange={handleBranchChange}
-                        disabled={isSwitchingBranch || branches.length === 0}
-                        title={isSwitchingBranch ? 'Switching branch...' : 'Select branch'}
-                        aria-label="Select branch"
-                    >
-                        {branches.length === 0 || !isCurrentBranchInList ? (
-                            <option value="">{branch || 'HEAD'}</option>
-                        ) : null}
-                        {branches.length > 0 ? (
-                            branches.map((item) => (
-                                <option key={item.name} value={item.name}>
-                                    {item.name}
-                                </option>
-                            ))
-                        ) : null}
-                    </select>
-                </div>
-                <div className="changes-actions-right">
-                    {pushStatus.state !== GitActionState.Idle && (
-                        <span
-                            className={`changes-push-status changes-push-status-${pushStatus.state}`}
-                            role="status"
-                            title={pushStatus.message}
+                    {isCreatingBranch ? (
+                        <div className="changes-new-branch-container">
+                            <input
+                                ref={newBranchInputRef}
+                                type="text"
+                                className="changes-new-branch-input"
+                                placeholder="Branch name..."
+                                value={newBranchName}
+                                onChange={(e) => setNewBranchName(e.target.value)}
+                                onKeyDown={handleNewBranchKeyDown}
+                                disabled={isSubmittingBranch}
+                                autoFocus
+                            />
+                            <button
+                                type="button"
+                                className="changes-new-branch-btn changes-new-branch-confirm"
+                                onClick={handleConfirmCreateBranch}
+                                disabled={isSubmittingBranch || !newBranchName.trim()}
+                                title="Create branch (Enter)"
+                                aria-label="Create branch"
+                            >
+                                <Icons.Check />
+                            </button>
+                            <button
+                                type="button"
+                                className="changes-new-branch-btn changes-new-branch-cancel"
+                                onClick={handleCancelCreateBranch}
+                                disabled={isSubmittingBranch}
+                                title="Cancel (Esc)"
+                                aria-label="Cancel"
+                            >
+                                <Icons.Close />
+                            </button>
+                        </div>
+                    ) : (
+                        <select
+                            className="changes-branch-select"
+                            value={isCurrentBranchInList ? branch : ''}
+                            onChange={handleBranchChange}
+                            disabled={isSwitchingBranch || (branches.length === 0 && !onCreateBranch)}
+                            title={isSwitchingBranch ? 'Switching branch...' : 'Select branch'}
+                            aria-label="Select branch"
                         >
-                            {pushStatus.state === GitActionState.InProgress && <span className="changes-push-spinner" aria-hidden="true" />}
-                            {pushStatus.message}
-                        </span>
+                            {branches.length === 0 || !isCurrentBranchInList ? (
+                                <option value="">{branch || 'HEAD'}</option>
+                            ) : null}
+                            {branches.length > 0 ? (
+                                branches.map((item) => (
+                                    <option key={item.name} value={item.name}>
+                                        {item.name}
+                                    </option>
+                                ))
+                            ) : null}
+                            {onCreateBranch && (
+                                <>
+                                    <option disabled>──────────</option>
+                                    <option value="__create_new_branch__">+ Create new branch...</option>
+                                </>
+                            )}
+                        </select>
                     )}
-                    <button
-                        className="changes-action-btn changes-action-btn-icon"
-                        onClick={handleCommit}
-                        disabled={!message.trim() || stagedFilesCount === 0}
-                        title="Commit"
-                        aria-label="Commit"
-                    >
-                        <Icons.GitCommit />
-                    </button>
-                    {onFetch && (
+                </div>
+                {!isCreatingBranch && (
+                    <div className="changes-actions-right">
+                        {pushStatus.state !== GitActionState.Idle && (
+                            <span
+                                className={`changes-push-status changes-push-status-${pushStatus.state}`}
+                                role="status"
+                                title={pushStatus.message}
+                            >
+                                {pushStatus.state === GitActionState.InProgress && <span className="changes-push-spinner" aria-hidden="true" />}
+                                {pushStatus.message}
+                            </span>
+                        )}
                         <button
                             className="changes-action-btn changes-action-btn-icon"
-                            onClick={onFetch}
-                            disabled={pushStatus.state === GitActionState.InProgress}
-                            title="Fetch"
-                            aria-label="Fetch"
+                            onClick={handleCommit}
+                            disabled={!message.trim() || stagedFilesCount === 0}
+                            title="Commit"
+                            aria-label="Commit"
                         >
-                            <Icons.GitFetch />
+                            <Icons.GitCommit />
                         </button>
-                    )}
-                    <button
-                        className="changes-action-btn changes-action-btn-icon"
-                        onClick={onPull}
-                        title="Pull"
-                        aria-label="Pull"
-                    >
-                        <Icons.GitPull />
-                    </button>
-                    <button
-                        className="changes-action-btn changes-action-btn-icon"
-                        onClick={onPush}
-                        disabled={pushStatus.state === GitActionState.InProgress}
-                        title="Push"
-                        aria-label="Push"
-                    >
-                        <Icons.GitPush />
-                    </button>
-                    <button
-                        className="changes-action-btn changes-action-btn-icon"
-                        onClick={onRefresh}
-                        title="Refresh"
-                        aria-label="Refresh"
-                    >
-                        <Icons.Refresh />
-                    </button>
-                </div>
+                        {onFetch && (
+                            <button
+                                className="changes-action-btn changes-action-btn-icon"
+                                onClick={onFetch}
+                                disabled={pushStatus.state === GitActionState.InProgress}
+                                title="Fetch"
+                                aria-label="Fetch"
+                            >
+                                <Icons.GitFetch />
+                            </button>
+                        )}
+                        <button
+                            className="changes-action-btn changes-action-btn-icon"
+                            onClick={onPull}
+                            title="Pull"
+                            aria-label="Pull"
+                        >
+                            <Icons.GitPull />
+                        </button>
+                        <button
+                            className="changes-action-btn changes-action-btn-icon"
+                            onClick={onPush}
+                            disabled={pushStatus.state === GitActionState.InProgress}
+                            title="Push"
+                            aria-label="Push"
+                        >
+                            <Icons.GitPush />
+                        </button>
+                        <button
+                            className="changes-action-btn changes-action-btn-icon"
+                            onClick={onRefresh}
+                            title="Refresh"
+                            aria-label="Refresh"
+                        >
+                            <Icons.Refresh />
+                        </button>
+                    </div>
+                )}
             </div>
 
             {pushStatus.state === GitActionState.Error && pushStatus.message && (
@@ -891,6 +978,10 @@ const areEqual = (prev: ChangesPanelProps, next: ChangesPanelProps): boolean => 
     }
 
     if (prev.onFetch !== next.onFetch) {
+        return false;
+    }
+
+    if (prev.onCreateBranch !== next.onCreateBranch) {
         return false;
     }
 

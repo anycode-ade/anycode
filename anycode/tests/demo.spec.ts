@@ -134,6 +134,31 @@ test.describe('Anycode Live Demo Mode E2E Tests', () => {
         }
     });
 
+    test('should allow creating a new branch from branch select in Changes panel', async ({ page }) => {
+        const changesTab = page.getByText('CHANGES').or(page.getByText('Changes')).first();
+        if (await changesTab.isVisible({ timeout: 5000 }).catch(() => false)) {
+            await changesTab.click();
+            const branchSelect = page.locator('.changes-branch-select');
+            await expect(branchSelect).toBeVisible({ timeout: 10000 });
+            await branchSelect.selectOption('__create_new_branch__');
+
+            const newBranchInput = page.locator('.changes-new-branch-input');
+            await expect(newBranchInput).toBeVisible({ timeout: 5000 });
+            await newBranchInput.fill('feature-test');
+            await newBranchInput.press('Enter');
+
+            await expect(newBranchInput).not.toBeVisible({ timeout: 5000 });
+            await expect(page.locator('.changes-branch-select')).toHaveValue('feature-test');
+
+            // Also test Escape cancels
+            await page.locator('.changes-branch-select').selectOption('__create_new_branch__');
+            await expect(page.locator('.changes-new-branch-input')).toBeVisible({ timeout: 5000 });
+            await page.locator('.changes-new-branch-input').press('Escape');
+            await expect(page.locator('.changes-new-branch-input')).not.toBeVisible({ timeout: 5000 });
+            await expect(page.locator('.changes-branch-select')).toBeVisible();
+        }
+    });
+
     test('should browse, search, and open a commit from Git history', async ({ page }) => {
         const historyTab = page.getByText(/^History$/i).first();
         await expect(historyTab).toBeVisible({ timeout: 10000 });

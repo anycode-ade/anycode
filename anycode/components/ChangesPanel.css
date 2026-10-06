@@ -90,6 +90,7 @@
     min-width: 0;
     overflow: hidden;
     gap: 6px;
+    flex: 1 1 auto;
 }
 
 .changes-branch-icon {
@@ -142,6 +143,69 @@
 
 .changes-branch-select:hover:not(:disabled) {
     background-color: transparent;
+}
+
+.changes-new-branch-container {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+    flex: 1 1 auto;
+    width: 100%;
+    height: 24px;
+}
+
+.changes-new-branch-input {
+    background: var(--background-color, #2d2d2d);
+    border: 1px solid var(--theme-border, #3f3f3f);
+    color: var(--theme-foreground, var(--foreground-color, #e0e0e0));
+    font-family: var(--interface-font-family);
+    font-size: 0.86em;
+    padding: 2px 6px;
+    border-radius: 4px;
+    outline: none;
+    height: 24px;
+    box-sizing: border-box;
+    flex: 1 1 auto;
+    width: 100%;
+    min-width: 60px;
+}
+
+.changes-new-branch-input:focus {
+    border-color: var(--accent-color, #7ab7ff);
+}
+
+.changes-new-branch-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--theme-foreground, #ccc);
+    cursor: pointer;
+    padding: 2px;
+    border-radius: 3px;
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+}
+
+.changes-new-branch-btn:hover:not(:disabled) {
+    background: var(--hover-bg, rgba(255, 255, 255, 0.12));
+    color: #fff;
+}
+
+.changes-new-branch-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.changes-new-branch-confirm {
+    color: var(--theme-success, #98c379);
+}
+
+.changes-new-branch-cancel {
+    color: var(--theme-tab-foreground, #888);
 }
 
 .changes-action-btn {
