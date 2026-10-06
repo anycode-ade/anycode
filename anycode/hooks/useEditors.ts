@@ -12,7 +12,7 @@ import {
     type WatcherEdits,
 } from '../types';
 import { BATCH_DELAY_MS } from '../constants';
-import { getFileName, getLanguageFromFileName, uriToFilePath } from '../utils';
+import { getFileName, getLanguageFromFileName, normalizePath, uriToFilePath } from '../utils';
 import { loadItem, loadOpenFiles, saveItem, saveOpenFiles } from '../storage';
 import type { DiffMode } from '../types/diffMode';
 import { DEFAULT_DIFF_VIEW_MODE, getNextDiffMode } from '../types/diffMode';
@@ -1164,10 +1164,31 @@ export const useEditors = ({ wsRef, isConnected, onFileClosed }: UseEditorsParam
             const openFiles = filesRef.current.filter((file) => !isHistoricalFileId(file.id));
             for (const file of openFiles) {
                 wsRef.current.emit('file:open', { path: file.id }, (response: any) => {
-                    if (response?.success && typeof response.original?.content === 'string') {
+                    if (response?.success) {
                         const request = editorOpenRequestsRef.current.get(file.id);
-                        if (request) {
+                        if (typeof response.original?.content === 'string' && request) {
                             request.originalContent = response.original.content;
+                        }
+                        if (typeof response.content === 'string') {
+                            const editor = editorRefs.current.get(file.id);
+                            const savedContent = savedFileContentsRef.current.get(file.id);
+                            if (
+                                editor &&
+                                savedContent !== undefined &&
+                                editor.getText() === savedContent &&
+                                response.content !== savedContent
+                            ) {
+                                ignoreChangeFilesRef.current.add(file.id);
+                                try {
+                                    editor.setText(response.content);
+                                    savedFileContentsRef.current.set(file.id, response.content);
+                                    if (request) {
+                                        request.content = response.content;
+                                    }
+                                } finally {
+                                    ignoreChangeFilesRef.current.delete(file.id);
+                                }
+                            }
                         }
                     }
                 });
@@ -1301,15 +1322,32 @@ export const useEditors = ({ wsRef, isConnected, onFileClosed }: UseEditorsParam
 
     const handleWatcherEdits = useCallback((watcherEdits: WatcherEdits) => {
         const { file, edits } = watcherEdits;
-        const editor = editorRefs.current.get(file);
+        let targetKey = file;
+        let editor = editorRefs.current.get(file);
+        if (!editor) {
+            const normFile = normalizePath(file).toLowerCase();
+            for (const key of editorRefs.current.keys()) {
+                if (normalizePath(key).toLowerCase() === normFile) {
+                    targetKey = key;
+                    editor = editorRefs.current.get(key);
+                    break;
+                }
+            }
+        }
         if (!editor) return;
 
-        ignoreChangeFilesRef.current.add(file);
+        ignoreChangeFilesRef.current.add(targetKey);
 
         try {
             editor.applyChange({ edits });
+            const updatedText = editor.getText();
+            savedFileContentsRef.current.set(targetKey, updatedText);
+            const request = editorOpenRequestsRef.current.get(targetKey);
+            if (request) {
+                request.content = updatedText;
+            }
         } finally {
-            ignoreChangeFilesRef.current.delete(file);
+            ignoreChangeFilesRef.current.delete(targetKey);
         }
     }, []);
 

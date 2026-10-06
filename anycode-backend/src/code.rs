@@ -35,6 +35,8 @@ impl Change {
     }
 }
 
+use crate::utils::FileMeta;
+
 pub struct Code {
     pub file_name: String,
     pub abs_path: String,
@@ -45,6 +47,7 @@ pub struct Code {
     pub history: History,
     pub change: Change,
     pub self_updated: bool,
+    pub file_meta: Option<FileMeta>,
 }
 
 impl Code {
@@ -59,6 +62,7 @@ impl Code {
             history: History::new(1000),
             change: Change::new(),
             self_updated: false,
+            file_meta: None,
         }
     }
 
@@ -108,6 +112,8 @@ impl Code {
                     .unwrap_or_else(|| "text".to_string())
             });
 
+        let file_meta = FileMeta::query(std::path::Path::new(&abs_path));
+
         Ok(Self {
             text,
             file_name,
@@ -118,6 +124,7 @@ impl Code {
             history: History::new(1000),
             change: Change::new(),
             self_updated: false,
+            file_meta,
         })
     }
 
@@ -127,10 +134,16 @@ impl Code {
         }
 
         let file = File::create(&self.abs_path)?;
-        let saved = self.text.write_to(BufWriter::new(file));
+        let mut writer = BufWriter::new(file);
+        self.text.write_to(&mut writer)?;
+        use std::io::Write;
+        writer.flush()?;
+        drop(writer);
+
         self.changed = false;
         self.self_updated = true;
-        saved
+        self.file_meta = FileMeta::query(std::path::Path::new(&self.abs_path));
+        Ok(())
     }
 
     #[allow(dead_code)]

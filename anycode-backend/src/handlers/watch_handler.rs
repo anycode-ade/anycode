@@ -15,7 +15,7 @@ use crate::git::GitManager;
 use crate::handlers::io_handler::apply_edits_to_code;
 use crate::lsp::LspManager;
 use crate::search::search_file_result;
-use crate::utils::{format_path, normalize_watch_path};
+use crate::utils::{format_path, normalize_watch_path, FileMeta};
 
 const DEBOUNCE: Duration = Duration::from_millis(100);
 
@@ -59,14 +59,34 @@ async fn is_file_opened(
     socket2data: &Arc<Mutex<HashMap<String, SocketData>>>,
 ) -> bool {
     let sockets_data = socket2data.lock().await;
-    sockets_data
+    if sockets_data
         .values()
         .any(|data| data.opened_files.contains(path_str))
+    {
+        return true;
+    }
+    if let Ok(abs) = crate::utils::abs_file(path_str) {
+        if sockets_data
+            .values()
+            .any(|data| data.opened_files.contains(&abs))
+        {
+            return true;
+        }
+    }
+    false
 }
 
 async fn is_file_cached(path_str: &str, file2code: &Arc<Mutex<HashMap<String, Code>>>) -> bool {
     let f2c = file2code.lock().await;
-    f2c.contains_key(path_str)
+    if f2c.contains_key(path_str) {
+        return true;
+    }
+    if let Ok(abs) = crate::utils::abs_file(path_str) {
+        if f2c.contains_key(&abs) {
+            return true;
+        }
+    }
+    false
 }
 
 fn classify_watch_transition(
@@ -331,32 +351,51 @@ async fn handle_file_modification(
         .to_str()
         .ok_or_else(|| anyhow::anyhow!("Invalid UTF-8 in path"))?;
 
+    let current_file_meta = FileMeta::query(path);
+
     // Read new content from disk first (before locking)
     let new_text = tokio::fs::read_to_string(path)
         .await
         .map_err(|e| anyhow::anyhow!("Failed to read file {:?}: {}", path, e))?;
 
-    // Lock file2code, check self_updated, compute diff, apply edits
+    // Lock file2code, check file_meta, compute diff, apply edits
     let (edits, lsp_changes, lang) = {
         let mut f2c = file2code.lock().await;
         let code = match f2c.get_mut(path_str) {
             Some(c) => c,
-            None => return Ok(()),
+            None => {
+                if let Ok(abs) = crate::utils::abs_file(path_str) {
+                    match f2c.get_mut(&abs) {
+                        Some(c) => c,
+                        None => return Ok(()),
+                    }
+                } else {
+                    return Ok(());
+                }
+            }
         };
 
-        if code.self_updated {
-            code.self_updated = false;
-            return Ok(());
+        // If current mtime and size match our last save, this event was triggered
+        // by Anycode's own save. Ignore it.
+        if let (Some(current), Some(saved)) = (current_file_meta, code.file_meta) {
+            if current == saved {
+                code.self_updated = false;
+                return Ok(());
+            }
         }
 
         let old_text = code.get_content();
 
         if old_text == new_text {
+            code.self_updated = false;
+            code.file_meta = current_file_meta;
             return Ok(());
         }
 
         let edits = compute_text_edits(&old_text, &new_text);
         if edits.is_empty() {
+            code.self_updated = false;
+            code.file_meta = current_file_meta;
             return Ok(());
         }
 
@@ -365,6 +404,8 @@ async fn handle_file_modification(
 
         // Disk already has the correct content, so mark as unchanged
         code.changed = false;
+        code.self_updated = false;
+        code.file_meta = current_file_meta;
 
         let lang = code.lang.clone();
         (edits, lsp_changes, lang)
@@ -432,5 +473,80 @@ mod tests {
 
         let normalized = normalize_watch_path(Path::new(&cwd.join("./test.js")));
         assert_eq!(normalized, cwd.join("test.js"));
+    }
+
+    #[tokio::test]
+    async fn test_external_modification_after_self_save_is_not_dropped() -> Result<()> {
+        let temp_dir = tempfile::tempdir()?;
+        let file_path = temp_dir.path().join("test.txt");
+        std::fs::write(&file_path, "initial text\n")?;
+
+        let (_layer, io) = socketioxide::SocketIo::builder().build_layer();
+        io.ns("/", |_socket: socketioxide::extract::SocketRef| async {});
+        let socket = Arc::new(io);
+        let config = crate::config::Config::default();
+        let mut code = Code::from_file(file_path.to_str().unwrap(), &config)?;
+
+        // Simulate Anycode modifying and saving the file (triggers self_updated = true)
+        code.changed = true;
+        code.save_file()?;
+        assert!(code.self_updated, "code should be marked self_updated after save");
+
+        let path_str = file_path.to_str().unwrap().to_string();
+        let file2code = Arc::new(Mutex::new(HashMap::new()));
+        file2code.lock().await.insert(path_str.clone(), code);
+
+        let lsp_manager = Arc::new(Mutex::new(LspManager::new(config)));
+
+        // External editor (e.g. VS Code) modifies the file on disk
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        std::fs::write(&file_path, "modified by vs code\n")?;
+
+        // Watcher receives the modification event
+        handle_file_modification(&file_path, &socket, &file2code, &lsp_manager, false).await?;
+
+        // The in-memory code MUST have the updated content from VS Code!
+        let f2c = file2code.lock().await;
+        let updated_code = f2c.get(&path_str).unwrap();
+        assert_eq!(
+            updated_code.get_content(),
+            "modified by vs code\n",
+            "External modification must be applied, not dropped by self_updated!"
+        );
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_self_save_is_ignored_when_file_meta_matches() -> Result<()> {
+        let temp_dir = tempfile::tempdir()?;
+        let file_path = temp_dir.path().join("test_self.txt");
+        std::fs::write(&file_path, "initial text\n")?;
+
+        let (_layer, io) = socketioxide::SocketIo::builder().build_layer();
+        io.ns("/", |_socket: socketioxide::extract::SocketRef| async {});
+        let socket = Arc::new(io);
+        let config = crate::config::Config::default();
+        let mut code = Code::from_file(file_path.to_str().unwrap(), &config)?;
+
+        // Simulate Anycode modifying and saving the file
+        code.changed = true;
+        code.save_file()?;
+
+        let path_str = file_path.to_str().unwrap().to_string();
+        let file2code = Arc::new(Mutex::new(HashMap::new()));
+        file2code.lock().await.insert(path_str.clone(), code);
+
+        let lsp_manager = Arc::new(Mutex::new(LspManager::new(config)));
+
+        // Watcher receives the event triggered by Anycode's own save (disk was not modified externally)
+        handle_file_modification(&file_path, &socket, &file2code, &lsp_manager, false).await?;
+
+        // File meta matches, so it returns Ok(()) cleanly without changing history or text
+        let f2c = file2code.lock().await;
+        let unchanged_code = f2c.get(&path_str).unwrap();
+        assert_eq!(unchanged_code.get_content(), "initial text\n");
+
+        Ok(())
     }
 }

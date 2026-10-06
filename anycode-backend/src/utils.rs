@@ -191,7 +191,20 @@ pub fn is_search_ignored_dir(path: &std::path::Path) -> bool {
 pub fn abs_file(input: &str) -> anyhow::Result<String> {
     let srcdir = std::path::PathBuf::from(input);
     match std::fs::canonicalize(&srcdir) {
-        Ok(c) => Ok(c.to_string_lossy().to_string()),
+        Ok(c) => {
+            #[cfg(windows)]
+            {
+                let s = c.to_string_lossy().to_string();
+                if let Some(stripped) = s.strip_prefix(r"\\?\") {
+                    if !stripped.starts_with("UNC") {
+                        return Ok(stripped.to_string());
+                    }
+                }
+                Ok(s)
+            }
+            #[cfg(not(windows))]
+            Ok(c.to_string_lossy().to_string())
+        }
         Err(e) => {
             if e.kind() == std::io::ErrorKind::NotFound {
                 let normalized = normalize_watch_path(&srcdir);
@@ -312,9 +325,45 @@ pub fn path_to_uri(path: &str) -> anyhow::Result<Uri> {
         .map_err(|e| anyhow::anyhow!("Failed to parse URI: {}", e))
 }
 
+/// Lightweight metadata snapshot tracking mtime (with nanosecond precision) and file size
+/// for zero-allocation, sub-microsecond self-save detection without reading file text into memory.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct FileMeta {
+    pub mtime_sec: u64,
+    pub mtime_nsec: u32,
+    pub size: u64,
+}
+
+impl FileMeta {
+    pub fn query(path: &std::path::Path) -> Option<Self> {
+        let meta = std::fs::metadata(path).ok()?;
+        let modified = meta
+            .modified()
+            .ok()?
+            .duration_since(std::time::SystemTime::UNIX_EPOCH)
+            .ok()?;
+        Some(Self {
+            mtime_sec: modified.as_secs(),
+            mtime_nsec: modified.subsec_nanos(),
+            size: meta.len(),
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_file_meta_captures_mtime_and_size() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let file_path = temp_dir.path().join("test_stat.txt");
+        std::fs::write(&file_path, "hello world").unwrap();
+
+        let state = FileMeta::query(&file_path).unwrap();
+        assert_eq!(state.size, 11);
+        assert!(state.mtime_sec > 0);
+    }
 
     #[test]
     fn test_path_to_uri_with_spaces() {
