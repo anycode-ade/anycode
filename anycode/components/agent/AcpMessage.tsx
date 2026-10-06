@@ -948,6 +948,38 @@ const parseMarkdownParts = (content: string): MarkdownPart[] => {
   return parts;
 };
 
+const MarkdownPreBlock: React.FC<React.ComponentProps<'pre'>> = ({ children, ...props }) => {
+  const extractText = (node: React.ReactNode): string => {
+    if (typeof node === 'string') return node;
+    if (typeof node === 'number') return String(node);
+    if (!node) return '';
+    if (Array.isArray(node)) return node.map(extractText).join('');
+    if (React.isValidElement(node) && node.props) {
+      return extractText((node.props as { children?: React.ReactNode }).children);
+    }
+    return '';
+  };
+
+  const textContent = extractText(children);
+
+  if (textContent) {
+    return (
+      <div className="acp-code">
+        <div className="acp-code-toolbar">
+          <CodeCopyButton content={textContent} />
+        </div>
+        <div className="acp-code-content">
+          <pre className="acp-code-block-fallback" {...props}>
+            {children}
+          </pre>
+        </div>
+      </div>
+    );
+  }
+
+  return <pre {...props}>{children}</pre>;
+};
+
 const MarkdownTextBlock: React.FC<{
   content: string;
   onOpenFile?: (path: string, line?: number, column?: number) => void;
@@ -964,6 +996,7 @@ const MarkdownTextBlock: React.FC<{
         />
       ),
       code: MarkdownInlineCode,
+      pre: MarkdownPreBlock,
       img: ({ node: _node, ...props }) => <MarkdownImage {...props} />,
     }}
   >
@@ -1102,22 +1135,23 @@ const MarkdownCodeBlock: React.FC<{
     return (
       <div className="acp-code">
         {codeToolbar}
-        <pre className="acp-code-block-fallback">{code}</pre>
+        <div ref={containerRef} className="acp-code-content">
+          <pre className="acp-code-block-fallback">{code}</pre>
+        </div>
       </div>
     );
   }
 
   return (
-    <div
-      ref={containerRef}
-      className={`acp-code ${isOpen ? 'acp-code-streaming' : ''}`}
-    >
+    <div className={`acp-code ${isOpen ? 'acp-code-streaming' : ''}`}>
       {codeToolbar}
-      {editor ? (
-        <AnycodeEditorReact id={blockIdRef.current!} editorState={editor} />
-      ) : (
-        <pre className="acp-code-block-fallback">{code}</pre>
-      )}
+      <div ref={containerRef} className="acp-code-content">
+        {editor ? (
+          <AnycodeEditorReact id={blockIdRef.current!} editorState={editor} />
+        ) : (
+          <pre className="acp-code-block-fallback">{code}</pre>
+        )}
+      </div>
     </div>
   );
 };
@@ -1192,21 +1226,35 @@ const DiffCodeBlock: React.FC<{
     editor.setDiffEnabled(true);
   }, [diff.newText, diff.oldText, editor]);
 
+  const codeToolbar = (
+    <div className="acp-code-toolbar">
+      <CodeCopyButton content={diff.newText} />
+    </div>
+  );
+
   if (!useEditor) {
     return (
-      <pre className="acp-tool-result-content">
-        {`--- before\n${diff.oldText ?? ''}\n+++ after\n${diff.newText}`}
-      </pre>
+      <div className="acp-code acp-diff-code">
+        {codeToolbar}
+        <div className="acp-code-content">
+          <pre className="acp-tool-result-content">
+            {`--- before\n${diff.oldText ?? ''}\n+++ after\n${diff.newText}`}
+          </pre>
+        </div>
+      </div>
     );
   }
 
   return (
     <div className="acp-code acp-diff-code">
-      {editor ? (
-        <AnycodeEditorReact id={blockIdRef.current!} editorState={editor} />
-      ) : (
-        <pre className="acp-code-block-fallback">{diff.newText}</pre>
-      )}
+      {codeToolbar}
+      <div className="acp-code-content">
+        {editor ? (
+          <AnycodeEditorReact id={blockIdRef.current!} editorState={editor} />
+        ) : (
+          <pre className="acp-code-block-fallback">{diff.newText}</pre>
+        )}
+      </div>
     </div>
   );
 };

@@ -443,7 +443,7 @@ test.describe('Anycode Live Demo Mode E2E Tests', () => {
             await codeBlock.hover();
             await expect(copyCodeButton).toBeVisible({ timeout: 10000 });
             await expect(copyCodeButton.locator('svg')).toBeVisible();
-            await expect(codeBlock.locator('.acp-code-toolbar')).toHaveCSS('position', 'sticky');
+            await expect(codeBlock.locator('.acp-code-toolbar')).toHaveCSS('position', 'absolute');
             await copyCodeButton.click();
             await expect(page.getByRole('button', { name: 'Code copied' }).first()).toBeVisible({ timeout: 5000 });
         }

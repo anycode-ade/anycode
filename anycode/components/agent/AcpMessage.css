@@ -234,13 +234,23 @@
 
 .acp-code {
     position: relative;
-    padding: 5px 28px 5px 8px;
+    padding: 0;
     margin: 4px 0 6px 0;
     border-radius: 6px;
+    background: var(--assistant-message-bg, #2a2a2a);
+    overflow: hidden;
+}
+
+.acp-code-content {
+    padding: 5px 28px 5px 8px;
     max-height: 33vh;
     overflow: auto;
-    /*border: 1px solid var(--border-color, #333);*/
-    background: var(--assistant-message-bg, #2a2a2a);
+}
+
+.acp-code:not(:has(.acp-code-content)) {
+    padding: 5px 28px 5px 8px;
+    max-height: 33vh;
+    overflow: auto;
 }
 
 .acp-code-toolbar {
@@ -338,19 +348,27 @@
     display: none !important;
 }
 
-.acp-diff-code {
+.acp-diff-code .acp-code-content {
+    max-height: 40vh;
+}
+
+.acp-diff-code:not(:has(.acp-code-content)) {
     max-height: 40vh;
 }
 
 .acp-code-block-fallback {
     margin: 0;
-    padding: 0.75em;
+    padding: 0;
     background-color: transparent;
     color: inherit;
-    overflow: auto;
     white-space: pre;
     font-size: 0.86em;
     line-height: 1.5;
+}
+
+.acp-code:not(:has(.acp-code-content)) .acp-code-block-fallback {
+    padding: 0.75em;
+    overflow: auto;
 }
 
 .acp-message-content-with-actions {
@@ -826,14 +844,19 @@
 }
 
 @media (max-width: 768px) and (pointer: coarse) {
-    .acp-code {
+    .acp-code-content {
         padding: 5px 28px 5px 6px;
         max-height: 26vh;
     }
 
-    .acp-code-toolbar {
-        margin-right: -22px;
-        margin-top: -1px;
+    .acp-code:not(:has(.acp-code-content)) {
+        padding: 5px 28px 5px 6px;
+        max-height: 26vh;
+    }
+
+    .acp-code .acp-code-copy-button {
+        opacity: 0.8;
+        pointer-events: auto;
     }
 
     .acp-code .anyeditor {
