@@ -2,6 +2,34 @@
 
 All notable changes are documented here by release tag.
 
+## v0.1.0 - 2026-10-06
+
+### Highlights
+- Major ACP overhaul: prompt queue with reordering and cancellation, agent registry, and session authentication.
+- SQLite persistence layer for ACP to offload and lazy-load large tool outputs.
+- Sessions history view, unread tracking, opened agent cards, and prompt templates manager.
+- Contextual `@` file mentions and quoting from editor and terminal selections into prompts.
+- New Git branch creation directly from changes panel, fetch remote support, and diff stats in review toolbar.
+- Robust file watcher synchronization with FileMeta snapshots and reconnect handling.
+- Optimized scroll rendering pipeline and Safari theme chrome improvements.
+
+### Commits
+- `e3d4bfd` feat(ui): optimize scroll rendering and improve safari theme chrome
+- `24f5a3a` feat(acp): implement agent registry, file mentions, and session auth
+- `aebfc38` feat(agent): support terminal selection quoting and refine quote attachment
+- `f232548` feat(git): add fetch remote support, cross-platform shortcuts, and terminal clipboard handling
+- `00471e8` feat(agent): add prompt templates for empty session and settings management
+- `1fcbd92` feat(acp): implement prompt queue with reordering, editing, and cancellation support
+- `0b065aa` feat(acp): offload large tool outputs to SQLite and lazy load on demand
+- `f0899ad` feat(review): add diff stats to toolbar and show close button on hover
+- `cc21348` fix(acp): suppress verbose raw updates dump for edit tool calls
+- `323f052` fix(agent): ignore late events after close
+- `d579ed9` fix(tests): remove scratch scroll_repro spec and hover toolbar before closing review in demo e2e
+- `cda2101` feat(agent): add sessions history view, unread tracking, and opened agent cards
+- `25a4568` fix(watcher): resolve external modification desync with FileMeta snapshot and reconnect sync
+- `1e6191a` fix(agent): pin code block copy button during horizontal scroll and add to diffs (#32)
+- `297ef14` feat(git): add create new branch from changes panel (#28)
+
 ## v0.0.28 - 2026-09-03
 
 ### Highlights
