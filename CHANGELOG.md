@@ -29,6 +29,7 @@ All notable changes are documented here by release tag.
 - `25a4568` fix(watcher): resolve external modification desync with FileMeta snapshot and reconnect sync
 - `1e6191a` fix(agent): pin code block copy button during horizontal scroll and add to diffs (#32)
 - `297ef14` feat(git): add create new branch from changes panel (#28)
+- `06360e7` feat(agent): add registry agent update support and preserve custom profiles
 
 ## v0.0.28 - 2026-09-03
 
