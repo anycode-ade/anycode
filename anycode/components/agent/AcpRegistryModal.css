@@ -364,6 +364,18 @@
   color: #79b8ff;
 }
 
+.acp-registry-btn-update {
+  background: rgba(227, 179, 65, 0.15);
+  color: #f1e05a;
+  border-color: rgba(227, 179, 65, 0.4);
+}
+
+.acp-registry-btn-update:hover {
+  background: rgba(227, 179, 65, 0.25);
+  color: #fff;
+  border-color: rgba(227, 179, 65, 0.6);
+}
+
 .acp-registry-btn-start {
   background: rgba(56, 139, 253, 0.2);
   color: #58a6ff;

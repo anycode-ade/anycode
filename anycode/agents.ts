@@ -1,9 +1,17 @@
-import { AcpAgent } from './types';
+import { AcpAgent, ResolvedAgentPreset } from './types';
 import { loadAgents, saveAgents, loadDefaultAgentId, saveDefaultAgentId } from './storage';
 
 // Default configuration of agents in code
 // Can be overridden by user settings
 export const KNOWN_PROFILE_TEMPLATES: Record<string, Record<string, string>> = {
+    'google-antigravity': {
+        GEMINI_HOME: '~/.anycode/profiles/${id}',
+        AGY_ACP_FORCE_FILE_STORAGE: '1',
+    },
+    'antigravity': {
+        GEMINI_HOME: '~/.anycode/profiles/${id}',
+        AGY_ACP_FORCE_FILE_STORAGE: '1',
+    },
     'antigravity-acp': {
         GEMINI_HOME: '~/.anycode/profiles/${id}',
         AGY_ACP_FORCE_FILE_STORAGE: '1',
@@ -185,12 +193,83 @@ export function addOrUpdateAgent(agent: AcpAgent): void {
     const existingIndex = agents.findIndex(a => a.id === agent.id);
     let nextAgents: AcpAgent[];
     if (existingIndex >= 0) {
+        const existing = agents[existingIndex];
         nextAgents = [...agents];
-        nextAgents[existingIndex] = agent;
+        nextAgents[existingIndex] = {
+            ...agent,
+            profile: agent.profile ?? existing.profile,
+            env: {
+                ...(agent.env || {}),
+                ...(existing.env || {}),
+            },
+        };
     } else {
         nextAgents = [...agents, agent];
     }
     updateAgents(nextAgents, getDefaultAgentId());
+}
+
+/**
+ * Updates or installs a registry agent preset.
+ * Ensures that existing custom profiles (and their isolated environments, custom args, etc.)
+ * are NOT overwritten or wiped, while updating their executable command/version to the new binary.
+ */
+export function installOrUpdateRegistryAgent(preset: ResolvedAgentPreset): AcpAgent {
+    const agents = getAllAgents();
+    const rootId = preset.id;
+    let baseAgentFound = false;
+
+    const nextAgents = agents.map(existing => {
+        const isBase = existing.id === rootId;
+        const isProfile = !isBase && getRootAgentId(existing.id, existing.profile) === rootId;
+
+        if (isBase) {
+            baseAgentFound = true;
+            return {
+                ...existing,
+                command: preset.command,
+                version: preset.version,
+                icon: preset.icon ?? existing.icon,
+                // Do not overwrite user's custom environment variables; merge defaults only
+                env: {
+                    ...(preset.env || {}),
+                    ...(existing.env || {}),
+                },
+                profileEnv: existing.profileEnv ?? KNOWN_PROFILE_TEMPLATES[preset.id] ?? GENERIC_PROFILE_TEMPLATE,
+                args: existing.args && existing.args.length > 0 ? existing.args : preset.args,
+            };
+        } else if (isProfile) {
+            // Keep all profile configurations (isolated directories, profile name, custom env, args) intact!
+            // Update the executable path and version to match the freshly installed binary.
+            return {
+                ...existing,
+                command: preset.command,
+                version: preset.version,
+            };
+        }
+        return existing;
+    });
+
+    let resultAgent: AcpAgent;
+    if (!baseAgentFound) {
+        resultAgent = {
+            id: preset.id,
+            name: preset.name,
+            command: preset.command,
+            args: preset.args,
+            description: preset.description,
+            icon: preset.icon,
+            version: preset.version,
+            env: preset.env,
+            profileEnv: KNOWN_PROFILE_TEMPLATES[preset.id] ?? GENERIC_PROFILE_TEMPLATE,
+        };
+        nextAgents.push(resultAgent);
+    } else {
+        resultAgent = nextAgents.find(a => a.id === rootId)!;
+    }
+
+    updateAgents(nextAgents, getDefaultAgentId());
+    return resultAgent;
 }
 
 export function removeAgent(id: string): void {

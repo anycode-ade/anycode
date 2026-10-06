@@ -600,6 +600,9 @@ impl AcpRegistryManager {
         let mut file = tokio::fs::File::create(dest).await?;
         let mut downloaded: u64 = 0;
 
+        let mut last_p: f64 = -1.0;
+        let mut last_emit = Instant::now();
+
         while let Some(chunk_res) = stream.next().await {
             if cancel_flag.load(Ordering::SeqCst) {
                 return Err(anyhow!("Download cancelled"));
@@ -610,8 +613,12 @@ impl AcpRegistryManager {
             downloaded += chunk.len() as u64;
 
             if total_size > 0 {
-                let p = downloaded as f64 / total_size as f64;
-                progress_cb(p.min(1.0));
+                let p = (downloaded as f64 / total_size as f64).min(1.0);
+                if (p - last_p) >= 0.01 || last_emit.elapsed() >= Duration::from_millis(100) {
+                    last_p = p;
+                    last_emit = Instant::now();
+                    progress_cb(p);
+                }
             }
         }
 

@@ -10,6 +10,8 @@ import {
     addOrUpdateAgent,
     removeAgent,
     getAllAgents,
+    installOrUpdateRegistryAgent,
+    getRootAgentId,
     KNOWN_PROFILE_TEMPLATES,
     GENERIC_PROFILE_TEMPLATE,
 } from '../../agents';
@@ -67,7 +69,13 @@ export const AcpRegistryModal: React.FC<AcpRegistryModalProps> = ({
 
     const installedAgentIds = useMemo(() => {
         const local = getAllAgents();
-        return new Set(local.map(a => a.id));
+        const ids = new Set<string>();
+        for (const a of local) {
+            ids.add(a.id);
+            const root = getRootAgentId(a.id, a.profile);
+            if (root) ids.add(root);
+        }
+        return ids;
     }, [agents]);
 
     const loadRegistry = useCallback((forceRefresh: boolean = false) => {
@@ -137,18 +145,7 @@ export const AcpRegistryModal: React.FC<AcpRegistryModalProps> = ({
 
             if (response && response.success && response.preset) {
                 const preset: ResolvedAgentPreset = response.preset;
-                const newAgent: AcpAgent = {
-                    id: preset.id,
-                    name: preset.name,
-                    command: preset.command,
-                    args: preset.args,
-                    description: preset.description,
-                    icon: preset.icon,
-                    version: preset.version,
-                    env: preset.env,
-                    profileEnv: KNOWN_PROFILE_TEMPLATES[preset.id] ?? GENERIC_PROFILE_TEMPLATE,
-                };
-                addOrUpdateAgent(newAgent);
+                installOrUpdateRegistryAgent(preset);
                 onAgentsChanged?.();
 
                 setAgents(prev =>
@@ -158,6 +155,7 @@ export const AcpRegistryModal: React.FC<AcpRegistryModalProps> = ({
                                   ...a,
                                   is_installed: true,
                                   installed_version: preset.version,
+                                  installed_path: preset.command,
                                   has_update: false,
                               }
                             : a
@@ -455,7 +453,9 @@ export const AcpRegistryModal: React.FC<AcpRegistryModalProps> = ({
                                                 {agent.name}
                                             </span>
                                             <span className="acp-registry-badge acp-registry-badge-version">
-                                                v{agent.version}
+                                                {agent.has_update && isInstalled && agent.installed_version
+                                                    ? `v${agent.installed_version} → v${agent.version}`
+                                                    : `v${agent.version}`}
                                             </span>
                                             {agent.distribution_type !== 'unsupported' && (
                                                 <span className="acp-registry-badge acp-registry-badge-type">
@@ -523,6 +523,15 @@ export const AcpRegistryModal: React.FC<AcpRegistryModalProps> = ({
                                         </div>
                                     ) : isInstalled ? (
                                         <>
+                                            {agent.has_update && (
+                                                <button
+                                                    className="acp-registry-pill-btn acp-registry-btn-update"
+                                                    onClick={() => handleInstall(agent)}
+                                                    type="button"
+                                                >
+                                                    Update
+                                                </button>
+                                            )}
                                             <button
                                                 className="acp-registry-pill-btn acp-registry-btn-start"
                                                 onClick={() => handleStart(agent)}
