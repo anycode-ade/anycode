@@ -2,6 +2,17 @@
 
 All notable changes are documented here by release tag.
 
+## v0.1.1 - 2026-10-09
+
+### Highlights
+- Migrated integrated terminal to `@wterm/dom` with `@wterm/ghostty` (`libghostty-vt` WASM core) for native line reflow on terminal resize.
+- Preserved terminal scrollback position, bottom-pinning, and output snapshots across panel tab switches and page reloads.
+- Refined terminal padding and bottom grid alignment.
+- Added comprehensive Playwright E2E tests for terminal commands, resize reflow, scroll retention, and selection quoting into ACP prompts.
+
+### Commits
+- `288c658` feat(terminal): migrate to wterm with ghostty core for resize reflow and add E2E tests
+
 ## v0.1.0 - 2026-10-06
 
 ### Highlights
