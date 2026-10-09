@@ -12,7 +12,7 @@ type TerminalPanelProps = {
         getSelectedId: (paneKey: string) => string | null;
         setSelectedForPane: (paneKey: string, terminalId: string | null) => void;
         closeTab: (terminalId: string) => void;
-        createTerminalForActivePane: () => void;
+        createTerminalForActivePane: (paneKey?: string) => void;
     };
     onTerminalData: (name: string, data: string) => void;
     onTerminalMessage: (name: string, callback: (data: string) => void) => () => void;
@@ -43,7 +43,7 @@ export const TerminalPanel = ({
                     terminals={terminals}
                     onSelectTerminal={(terminalId) => terminalPanes.setSelectedForPane(panelKey, terminalId)}
                     onCloseTerminal={terminalPanes.closeTab}
-                    onCreateTerminal={terminalPanes.createTerminalForActivePane}
+                    onCreateTerminal={() => terminalPanes.createTerminalForActivePane(panelKey)}
                 />
             </div>
         );
@@ -57,7 +57,7 @@ export const TerminalPanel = ({
                     terminals={terminals}
                     onSelectTerminal={(terminalId) => terminalPanes.setSelectedForPane(panelKey, terminalId)}
                     onCloseTerminal={terminalPanes.closeTab}
-                    onCreateTerminal={terminalPanes.createTerminalForActivePane}
+                    onCreateTerminal={() => terminalPanes.createTerminalForActivePane(panelKey)}
                 />
             </div>
         );

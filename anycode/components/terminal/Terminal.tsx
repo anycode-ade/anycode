@@ -85,6 +85,7 @@ const Terminal: React.FC<XTerminalProps> = ({
   const themeObserverRef = useRef<MutationObserver | null>(null);
   const selectionDisposableRef = useRef<{ dispose(): void } | null>(null);
   const didAutoFocusRef = useRef<boolean>(false);
+  const pendingFocusRef = useRef<boolean>(false);
   const wasContainerVisibleRef = useRef(false);
   const onDataRef = useRef(onData);
   const onResizeRef = useRef(onResize);
@@ -148,15 +149,7 @@ const Terminal: React.FC<XTerminalProps> = ({
       if (file) files.push(file);
     }
 
-    if (files.length === 0) {
-      const text = event.clipboardData?.getData('text/plain');
-      if (text) {
-        event.preventDefault();
-        event.stopPropagation();
-        onDataRef.current(name, text);
-      }
-      return;
-    }
+    if (files.length === 0) return;
 
     const oversized = files.filter(f => f.size > MAX_FILE_SIZE);
     if (oversized.length > 0) {
@@ -341,19 +334,7 @@ const Terminal: React.FC<XTerminalProps> = ({
             (event.shiftKey && event.key === 'Insert')
           )
         ) {
-          if (navigator.clipboard?.readText) {
-            navigator.clipboard
-              .readText()
-              .then((text) => {
-                if (text) {
-                  onDataRef.current(name, text);
-                }
-              })
-              .catch((err) => {
-                console.warn('Failed to read clipboard for terminal paste:', err);
-              });
-            return false;
-          }
+          return false;
         }
 
         return true;
@@ -376,8 +357,13 @@ const Terminal: React.FC<XTerminalProps> = ({
 
       requestAnimationFrame(() => {
         fitAddon.fit();
-        if (!didAutoFocusRef.current) {
+        const container = terminalRef.current;
+        const isContainerVisible = Boolean(
+          container && container.clientWidth > 0 && container.clientHeight > 0
+        );
+        if (isContainerVisible && (!didAutoFocusRef.current || pendingFocusRef.current)) {
           didAutoFocusRef.current = true;
+          pendingFocusRef.current = false;
           terminal.focus();
         }
       });
@@ -404,6 +390,13 @@ const Terminal: React.FC<XTerminalProps> = ({
             resizeRafRef.current = null;
           }
           fitAddon.fit();
+          if (!didAutoFocusRef.current || pendingFocusRef.current) {
+            didAutoFocusRef.current = true;
+            pendingFocusRef.current = false;
+            requestAnimationFrame(() => {
+              terminal.focus();
+            });
+          }
           return;
         }
 
@@ -507,11 +500,25 @@ const Terminal: React.FC<XTerminalProps> = ({
   }, [isConnected, cols, rows]);
 
   useEffect(() => {
-    if (focusRequestToken === null || !xtermRef.current) {
+    if (focusRequestToken === null) {
       return;
     }
 
+    const container = terminalRef.current;
+    const isContainerVisible = Boolean(
+      container && container.clientWidth > 0 && container.clientHeight > 0
+    );
+    if (!xtermRef.current || !isContainerVisible) {
+      pendingFocusRef.current = true;
+      return;
+    }
+
+    pendingFocusRef.current = false;
     xtermRef.current.focus();
+    const rafId = requestAnimationFrame(() => {
+      xtermRef.current?.focus();
+    });
+    return () => cancelAnimationFrame(rafId);
   }, [focusRequestToken]);
 
   return (

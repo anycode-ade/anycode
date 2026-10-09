@@ -70,9 +70,10 @@ export const useTerminalPanes = ({
         });
     }, [closeTerminal]);
 
-    const createTerminalForActivePane = useCallback(() => {
+    const createTerminalForActivePane = useCallback((targetPaneKey?: string) => {
         const terminalId = addTerminal();
-        const paneKey = activePaneId || 'terminal';
+        const paneKey = targetPaneKey || activePaneId || 'terminal';
+        setActivePaneId(paneKey);
         setSelectedForPane(paneKey, terminalId);
     }, [activePaneId, addTerminal, setSelectedForPane]);
 

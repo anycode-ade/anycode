@@ -295,7 +295,7 @@ type LayoutProps = {
 export type LayoutActions = {
     ensureEditorPanel: (preferredPanelId?: string | null) => string | null;
     isEditorPanelVisible: (preferredPanelId?: string | null) => boolean;
-    ensurePanel: (panelId: PanelId) => string | null;
+    ensurePanel: (panelId: PanelId, preferredPanelId?: string | null) => string | null;
 };
 
 export const LayoutVersionContext = React.createContext<number>(0);
@@ -942,7 +942,7 @@ export const Layout: React.FC<LayoutProps> = ({
         return editorPanel.id;
     }, [findEditorPanel, resolvePanelContent]);
 
-    const ensurePanel = useCallback((panelId: PanelId): string | null => {
+    const ensurePanel = useCallback((panelId: PanelId, preferredPanelId?: string | null): string | null => {
         const api = apiRef.current;
         if (!api) {
             return null;
@@ -950,7 +950,10 @@ export const Layout: React.FC<LayoutProps> = ({
 
         const definition = panelDefinitionById[panelId];
         if (definition.allowMultiple) {
-            const existing = getPanelsByBaseId(api, panelId)[0];
+            const preferredPanel = preferredPanelId ? api.getPanel(preferredPanelId) : undefined;
+            const existing = (preferredPanel && getPanelBaseId(preferredPanel.id) === panelId)
+                ? preferredPanel
+                : getPanelsByBaseId(api, panelId)[0];
             if (existing) {
                 existing.api.setActive();
                 return existing.id;
@@ -1418,7 +1421,9 @@ export const Layout: React.FC<LayoutProps> = ({
                 if (!baseId) return;
                 const panelChanged = lastActivePanelIdRef.current !== panel.id;
                 lastActivePanelIdRef.current = panel.id;
-                onPanelActivated?.(baseId, panel.id);
+                if (!isRestoringLayoutRef.current) {
+                    onPanelActivated?.(baseId, panel.id);
+                }
                 if (baseId === 'editor' && panelChanged) {
                     setLayoutVersion((v) => v + 1);
                 }
@@ -1628,6 +1633,12 @@ export const Layout: React.FC<LayoutProps> = ({
         if (!restoredSavedLayout) {
             api.getPanel('files')?.api.setActive();
             api.getPanel('editor')?.api.setActive();
+        } else if (api.activePanel) {
+            const activeBaseId = getPanelBaseId(api.activePanel.id);
+            if (activeBaseId) {
+                lastActivePanelIdRef.current = api.activePanel.id;
+                onPanelActivated?.(activeBaseId, api.activePanel.id);
+            }
         }
 
         lastLayoutSnapshotRef.current = getLayoutSnapshot(api);

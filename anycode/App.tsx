@@ -648,8 +648,12 @@ const App: React.FC = () => {
     }, [terminalPanes]);
 
     const handleTerminalTabSelect = useCallback((terminalId: string) => {
-        terminalPanes.selectTab(terminalId);
-    }, [terminalPanes]);
+        const paneId = layoutActionsRef.current?.ensurePanel('terminal', terminalPanes.activePaneId)
+            ?? (terminalPanes.activePaneId || 'terminal');
+        terminalPanes.setActivePaneId(paneId);
+        terminalPanes.setSelectedForPane(paneId, terminalId);
+        layout.requestPanelFocus('terminal', paneId);
+    }, [terminalPanes, layout]);
 
     const handleTerminalTabClose = useCallback((terminalId: string) => {
         terminalPanes.closeTab(terminalId);
@@ -923,6 +927,7 @@ const App: React.FC = () => {
         }
         if (panelId === 'terminal') {
             terminalPanes.setActivePaneId(panelKey);
+            layout.requestPanelFocus('terminal', panelKey);
         }
     });
 
