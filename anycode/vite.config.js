@@ -9,7 +9,7 @@ const vendorChunk = (id) => {
   if (id.includes("web-tree-sitter") || id.includes("/anycode-base/")) {
     return "editor";
   }
-  if (id.includes("@xterm/")) {
+  if (id.includes("@wterm/")) {
     return "terminal";
   }
   if (id.includes("react-markdown") || id.includes("remark-") || id.includes("micromark")) {
@@ -39,6 +39,9 @@ export default defineConfig(({ mode }) => {
       },
     },
     assetsInclude: ["**/*.wasm"],
+    optimizeDeps: {
+      exclude: ["@wterm/ghostty"],
+    },
     hot: true,
     server: {
       proxy: {

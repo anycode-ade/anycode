@@ -23,7 +23,7 @@ anycode_refactor/
 - React 19, TypeScript, Vite
 - Tree-Sitter (WASM) for syntax parsing
 - Socket.IO for WebSocket communication
-- xterm.js for terminal emulation
+- wterm (`@wterm/dom`) for terminal emulation
 
 ### Backend
 - Rust with Axum web framework

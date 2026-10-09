@@ -16,6 +16,27 @@ const openSettingsPanel = async (page: Page) => {
     return settingsPanel;
 };
 
+const openTerminalPanel = async (page: Page) => {
+    const existingTab = page.getByRole('tab', { name: /^Terminal$/i }).first();
+    if (await existingTab.count() > 0) {
+        await existingTab.click();
+    } else {
+        const editorRegion = page.getByRole('region', { name: 'Editor' }).first();
+        await editorRegion.locator('.layout-header-actions').hover();
+        await editorRegion.getByRole('button', { name: 'Add Empty Tab' }).click({ force: true });
+        const picker = page.locator('.layout-panel-picker').last();
+        await expect(picker).toBeVisible();
+        await picker.getByRole('button', { name: 'Terminal', exact: true }).click();
+    }
+
+    const newTerminalBtn = page.getByRole('button', { name: 'New Terminal' }).first();
+    if (await newTerminalBtn.isVisible({ timeout: 1000 }).catch(() => false)) {
+        await newTerminalBtn.click();
+    }
+
+    await expect(page.locator('.wterm .term-grid, .wterm .term-row').first()).toBeVisible({ timeout: 10000 });
+};
+
 test.describe('Anycode Live Demo Mode E2E Tests', () => {
     test.beforeEach(async ({ page }) => {
         const errors: string[] = [];
@@ -288,38 +309,168 @@ test.describe('Anycode Live Demo Mode E2E Tests', () => {
     });
 
     test('should render interactive terminal banner and prompt in demo mode', async ({ page }) => {
-        const terminalTab = page.getByText('TERMINAL').or(page.getByText('Terminal')).first();
-        if (await terminalTab.isVisible({ timeout: 5000 }).catch(() => false)) {
-            await terminalTab.click();
-            await expect(page.locator('.xterm-rows, .xterm-screen').first()).toBeVisible({ timeout: 10000 });
-            await expect(page.locator('.xterm').getByText('anycode-demo').first()).toBeVisible({ timeout: 10000 });
-        }
+        await openTerminalPanel(page);
+        await expect(page.locator('.wterm').getByText('anycode-demo').first()).toBeVisible({ timeout: 10000 });
     });
 
     test('should execute terminal VFS commands (ls, cd, pwd, cat) in demo mode', async ({ page }) => {
-        const terminalTab = page.getByText('TERMINAL').or(page.getByText('Terminal')).first();
-        if (await terminalTab.isVisible({ timeout: 5000 }).catch(() => false)) {
-            await terminalTab.click();
-            await expect(page.locator('.xterm-rows, .xterm-screen').first()).toBeVisible({ timeout: 10000 });
+        await openTerminalPanel(page);
+        await expect(page.locator('.wterm').getByText('anycode-demo').first()).toBeVisible({ timeout: 10000 });
 
-            const xtermScreen = page.locator('.xterm-helper-textarea, .xterm-rows, .xterm-screen').first();
-            await xtermScreen.click();
+        const wtermScreen = page.locator('.wterm .term-grid, .wterm').first();
+        await wtermScreen.click();
 
-            // Command 1: cat README.md
+        // Command 1: cat README.md
+        await page.keyboard.type('cat README.md');
+        await page.keyboard.press('Enter');
+        await expect(page.locator('.wterm').getByText('Welcome to Anycode').first()).toBeVisible({ timeout: 10000 });
+
+        // Command 2: cd src
+        await page.keyboard.type('cd src');
+        await page.keyboard.press('Enter');
+        await expect(page.locator('.wterm').getByText('anycode-demo/src').first()).toBeVisible({ timeout: 10000 });
+
+        // Command 3: pwd
+        await page.keyboard.type('pwd');
+        await page.keyboard.press('Enter');
+        await expect(page.locator('.wterm').getByText('/workspace/anycode-demo/src').first()).toBeVisible({ timeout: 10000 });
+    });
+
+    test('should preserve long terminal lines across narrow and wide resize (reflow)', async ({ page }) => {
+        await openTerminalPanel(page);
+        await expect(page.locator('.wterm').getByText('anycode-demo').first()).toBeVisible({ timeout: 10000 });
+
+        const wtermScreen = page.locator('.wterm .term-grid, .wterm').first();
+        await wtermScreen.click();
+
+        const wideLine = 'COL1_ALPHA____COL2_BRAVO____COL3_CHARLIE____COL4_DELTA____COL5_ECHO_ENDMARKER';
+        await page.keyboard.type(wideLine);
+        await expect(page.locator('.wterm').getByText('COL5_ECHO_ENDMARKER').first()).toBeVisible({ timeout: 10000 });
+
+        // Shrink viewport so the terminal container becomes narrow and wraps the line
+        await page.setViewportSize({ width: 520, height: 800 });
+        await page.waitForTimeout(200);
+
+        // Restore wide viewport and verify the right-hand side of the line was not truncated
+        await page.setViewportSize({ width: 1280, height: 800 });
+        await page.waitForTimeout(200);
+
+        const fullText = await page.locator('.wterm').first().innerText();
+        expect(fullText.replace(/\s+/g, '')).toContain(wideLine);
+    });
+
+    test('should preserve terminal output and bottom scroll position when switching tabs and reloading', async ({ page }) => {
+        await openTerminalPanel(page);
+        await expect(page.locator('.wterm').getByText('anycode-demo').first()).toBeVisible({ timeout: 10000 });
+
+        const wtermScreen = page.locator('.wterm .term-grid, .wterm').first();
+        await wtermScreen.click();
+
+        // Produce enough output to create scrollback
+        for (let i = 0; i < 4; i++) {
             await page.keyboard.type('cat README.md');
             await page.keyboard.press('Enter');
-            await expect(page.locator('.xterm').getByText('Welcome to Anycode').first()).toBeVisible({ timeout: 10000 });
-
-            // Command 2: cd src
-            await page.keyboard.type('cd src');
-            await page.keyboard.press('Enter');
-            await expect(page.locator('.xterm').getByText('anycode-demo/src').first()).toBeVisible({ timeout: 10000 });
-
-            // Command 3: pwd
-            await page.keyboard.type('pwd');
-            await page.keyboard.press('Enter');
-            await expect(page.locator('.xterm').getByText('/workspace/anycode-demo/src').first()).toBeVisible({ timeout: 10000 });
         }
+        await page.keyboard.type('whoami');
+        await page.keyboard.press('Enter');
+        await expect(page.locator('.wterm').getByText('developer').first()).toBeVisible({ timeout: 10000 });
+
+        // Switch away to Editor tab (hides terminal container) and back to Terminal
+        const editorTab = page.getByRole('tab', { name: 'Editor' }).first();
+        await editorTab.click();
+        await page.waitForTimeout(150);
+        await openTerminalPanel(page);
+
+        await expect(page.locator('.wterm').getByText('developer').first()).toBeVisible({ timeout: 10000 });
+
+        const isAtBottom = await page.locator('.wterm').first().evaluate((el) => {
+            return el.scrollHeight - el.scrollTop - el.clientHeight < 10;
+        });
+        expect(isAtBottom).toBe(true);
+
+        // Wait for debounced snapshot save and verify localStorage persistence
+        await page.waitForTimeout(200);
+        const hasSnapshot = await page.evaluate(() => {
+            return Object.keys(localStorage).some(
+                (k) => k.startsWith('terminal:data:') && (localStorage.getItem(k) || '').includes('developer')
+            );
+        });
+        expect(hasSnapshot).toBe(true);
+
+        // Reload page and verify terminal restores previous output from snapshot
+        await page.reload();
+        await openTerminalPanel(page);
+        await expect(page.locator('.wterm').getByText('developer').first()).toBeVisible({ timeout: 10000 });
+    });
+
+    test('should preserve manual terminal scrollback position when scrolled up and switching tabs', async ({ page }) => {
+        await openTerminalPanel(page);
+        await expect(page.locator('.wterm').getByText('anycode-demo').first()).toBeVisible({ timeout: 10000 });
+
+        const wtermEl = page.locator('.wterm').first();
+        await wtermEl.click();
+
+        // Produce enough output to make the terminal scrollable
+        for (let i = 0; i < 8; i++) {
+            await page.keyboard.type('help');
+            await page.keyboard.press('Enter');
+        }
+        await expect.poll(() => wtermEl.evaluate((el) => el.scrollHeight > el.clientHeight + 40)).toBe(true);
+
+        // Scroll up to a non-bottom position
+        await wtermEl.evaluate((el) => {
+            el.scrollTop = 25;
+            el.dispatchEvent(new Event('scroll'));
+        });
+        await expect.poll(() => wtermEl.evaluate((el) => Math.round(el.scrollTop))).toBe(25);
+
+        // Switch to Editor tab and back to Terminal
+        await page.getByRole('tab', { name: 'Editor' }).first().click();
+        await page.waitForTimeout(150);
+        await openTerminalPanel(page);
+
+        await expect.poll(() => wtermEl.evaluate((el) => Math.round(el.scrollTop))).toBe(25);
+    });
+
+    test('should capture selected terminal word into agent selection quote and clean up localStorage on terminal close', async ({ page }) => {
+        await page.evaluate(() => {
+            localStorage.setItem(
+                'acpAgents',
+                JSON.stringify([{ id: 'demo-agent', name: 'Demo Agent', command: 'demo-acp', args: [] }])
+            );
+        });
+        await page.reload();
+        await page.getByText('Demo Agent').first().click();
+        await expect(page.getByPlaceholder('Ask anything...')).toBeVisible({ timeout: 5000 });
+
+        await openTerminalPanel(page);
+        await expect(page.locator('.wterm').getByText('anycode-demo').first()).toBeVisible({ timeout: 10000 });
+
+        const wtermEl = page.locator('.wterm').first();
+        await wtermEl.click();
+
+        await page.keyboard.type('whoami');
+        await page.keyboard.press('Enter');
+        const targetWord = page.locator('.wterm').getByText('developer').first();
+        await expect(targetWord).toBeVisible({ timeout: 10000 });
+
+        // Double-click the output word (at column ~1 on the left side of the row) to select it via WTerm + GhosttyCore word selection
+        await targetWord.dblclick({ position: { x: 12, y: 8 } });
+        await expect.poll(() => page.evaluate(() => window.getSelection()?.toString().trim() ?? '')).toBe('developer');
+
+        const quoteBtn = page.getByRole('button', { name: 'Quote selection' });
+        await expect(quoteBtn).toBeVisible({ timeout: 5000 });
+        await quoteBtn.click();
+        await expect(page.locator('.acp-input-quote-badge-label').getByText('Terminal: 1')).toBeVisible({ timeout: 5000 });
+
+        // Wait for snapshot to be written, then close the terminal from the bottom toolbar tab
+        await page.waitForTimeout(200);
+        const toolbarTermTab = page.locator('.toolbar-tabs .tab').filter({ hasText: /term:1/i }).first();
+        await toolbarTermTab.locator('.tab-close-button').dispatchEvent('click');
+
+        await expect.poll(() => page.evaluate(() => {
+            return Object.keys(localStorage).filter((k) => k.startsWith('terminal:data:') || k.startsWith('terminal:mouseMode:'));
+        })).toEqual([]);
     });
 
     test('should dynamically load and apply real project theme styles', async ({ page }) => {

@@ -21,7 +21,7 @@
 -   **Socket.IO Client**: Real-time bidirectional WebSocket transport to the Rust backend for file I/O, LSP, terminal, ACP, and file-watcher events.
 -   **web-tree-sitter**: WASM Tree-sitter runtime for incremental AST parsing, syntax highlighting, and code folding inside the browser.
 -   **vscode-textbuffer**: Piece-table text model optimized for frequent insert/delete operations in the editor core (`anycode-base`).
--   **Xterm.js**: Terminal emulator powering the integrated terminal UI (with fit and serialize addons).
+-   **wterm (`@wterm/dom`)**: WASM + DOM terminal emulator powering the integrated terminal UI.
 -   **Dockview**: Dockable multi-panel layout system for editor groups, sidebars, and tool windows.
 -   **react-markdown**: Streaming Markdown rendering for AI agent chat (GFM and soft line breaks via remark plugins).
 
@@ -109,4 +109,4 @@ The Rust backend acts as an LSP client for background language servers (e.g., `r
 
 ### Integrated Terminal
 
-Combines **Xterm.js** on the frontend and **portable-pty** on the Rust backend, spawning native shell instances (`zsh`, `bash`) connected over WebSockets.
+Combines **wterm** (`@wterm/dom`) on the frontend and **portable-pty** on the Rust backend, spawning native shell instances (`zsh`, `bash`) connected over WebSockets.

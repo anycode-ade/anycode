@@ -255,8 +255,8 @@
     flex: 1;
     position: relative;
     overflow: hidden;
-    padding: 0.5rem 0.5rem;
     height: 100%;
+    padding: 0 0.5rem;
 }
 
 .terminal-panel-empty {
