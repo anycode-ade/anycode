@@ -371,6 +371,28 @@
     background: #2a2a2a;
 }
 
+.layout-header-action-btn--preview.layout-header-action-btn--active {
+    color: #58a6ff;
+    background: #2a2a2a;
+}
+
+.layout-header-action-btn--preview .layout-header-action-icon,
+.layout-header-action-icon--eye {
+    fill: none;
+}
+
+.layout-header-action-btn--preview .layout-header-action-icon path,
+.layout-header-action-icon--eye path {
+    fill: none;
+    stroke: currentColor;
+}
+
+.layout-header-action-btn--preview .layout-header-action-icon circle,
+.layout-header-action-icon--eye circle {
+    fill: currentColor;
+    stroke: none;
+}
+
 .layout-header-action-btn--diff .layout-diff-plus path,
 .layout-header-action-btn--diff .layout-diff-minus path {
     stroke: currentColor;

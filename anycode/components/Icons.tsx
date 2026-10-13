@@ -243,4 +243,10 @@ export const Icons = {
       <line x1="14" y1="11" x2="14" y2="17" />
     </svg>
   ),
+  Eye: () => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="layout-header-action-icon layout-header-action-icon--eye">
+      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" fill="none" />
+      <circle cx="12" cy="12" r="3" fill="currentColor" stroke="none" />
+    </svg>
+  ),
 };

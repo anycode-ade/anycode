@@ -34,7 +34,7 @@ import { TerminalPanel } from './features/terminal/TerminalPanel';
 import { AgentPanel } from './features/agents/AgentPanel';
 import { BrowserPanel } from './features/browser/BrowserPanel';
 import { type DiffMode } from './types/diffMode';
-import { normalizePath, uriToFilePath } from './utils';
+import { getLanguageFromFileName, normalizePath, uriToFilePath } from './utils';
 import { useSettings } from './hooks/useSettings';
 
 const toMultibufferFiles = (files: ChangedFile[]): MultibufferFile[] => files.map((file) => ({
@@ -85,6 +85,7 @@ const App: React.FC = () => {
     const { currentThemeId, handleThemeChange } = useTheme({ wsRef, isConnected });
     const layoutActionsRef = useRef<LayoutActions | null>(null);
     const [multibufferReviews, setMultibufferReviews] = React.useState<Record<string, ReviewSession>>({});
+    const [markdownPreviews, setMarkdownPreviews] = React.useState<Record<string, boolean>>({});
     const activeReview = multibufferReviews[editors.activeEditorPaneId];
     const activeReviewFile = activeReview?.files.find((file) => file.id === activeReview.activeFileId);
     const activeContextFileId = activeReviewFile?.id ?? editors.activeFileId;
@@ -533,6 +534,26 @@ const App: React.FC = () => {
         }
     }, [editors]);
 
+    const isEditorMarkdown = useCallback((panelKey: string) => {
+        const fileId = editors.getActiveFileIdForPane(panelKey);
+        if (!fileId) return false;
+        const file = editors.files.find((f) => f.id === fileId);
+        if (!file) return false;
+        const filePath = file.source?.path || file.name || file.id;
+        return file.language === 'markdown' || getLanguageFromFileName(filePath) === 'markdown';
+    }, [editors.files, editors.getActiveFileIdForPane]);
+
+    const isEditorMarkdownPreviewOpen = useCallback((panelKey: string) => {
+        return Boolean(markdownPreviews[panelKey]);
+    }, [markdownPreviews]);
+
+    const handleToggleEditorMarkdownPreview = useCallback((panelKey: string) => {
+        setMarkdownPreviews((prev) => ({
+            ...prev,
+            [panelKey]: !prev[panelKey],
+        }));
+    }, []);
+
     const sessionsArray = useMemo(() => Array.from(agents.acpSessions.values()), [agents.acpSessions]);
     const availableAgents = useMemo<AcpAgent[]>(() => getAllAgents(), [agents.agentsVersion]);
     const settingsAgents = useMemo<AcpAgent[]>(() => (
@@ -770,6 +791,8 @@ const App: React.FC = () => {
                         onMultibufferActiveFileChange={handleReviewActiveFileChange}
                         onGoToDefinition={handleGoToDefinition}
                         onLoadDeletedFile={git.fetchOriginalFileContent}
+                        markdownPreviewOpen={Boolean(markdownPreviews[panelKey])}
+                        onOpenFile={handleOpenFile}
                     />
                 );
             case 'terminal':
@@ -891,6 +914,12 @@ const App: React.FC = () => {
 
         if (panelId === 'editor') {
             closeReview(panelKey);
+            setMarkdownPreviews((prev) => {
+                if (!prev[panelKey]) return prev;
+                const next = { ...prev };
+                delete next[panelKey];
+                return next;
+            });
             editors.unregisterEditorPane(panelKey);
             return;
         }
@@ -968,6 +997,9 @@ const App: React.FC = () => {
                     }}
                     canResetPanel={canResetPanel}
                     onResetPanel={handleResetPanel}
+                    isEditorMarkdown={isEditorMarkdown}
+                    isEditorMarkdownPreviewOpen={isEditorMarkdownPreviewOpen}
+                    onToggleEditorMarkdownPreview={handleToggleEditorMarkdownPreview}
                 />
             </div>
         </div>

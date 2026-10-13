@@ -6,6 +6,7 @@ import type { FileState, ReferencesPeekState } from '../../types';
 import type { DiffMode } from '../../types/diffMode';
 import { ReferencesPeek } from './ReferencesPeek';
 import MultibufferPanel, { type MultibufferFile } from './MultibufferPanel';
+import { MarkdownPreview } from '../markdown/MarkdownPreview';
 import { getFileName, getLanguageFromFileName, toRelativeDisplayPath } from '../../utils';
 import { selectionQuoteStore } from '../agents/selectionQuoteStore';
 
@@ -40,6 +41,8 @@ type EditorPanelProps = {
     onMultibufferActiveFileChange?: (paneId: string, fileId: string) => void;
     onGoToDefinition?: (request: DefinitionRequest) => Promise<DefinitionResponse>;
     onLoadDeletedFile?: (path: string) => Promise<string | null>;
+    markdownPreviewOpen?: boolean;
+    onOpenFile?: (path: string, line?: number, column?: number) => void;
 };
 
 export const EditorPanel = ({
@@ -54,6 +57,8 @@ export const EditorPanel = ({
     onMultibufferActiveFileChange,
     onGoToDefinition,
     onLoadDeletedFile,
+    markdownPreviewOpen = false,
+    onOpenFile,
 }: EditorPanelProps) => {
     const layoutVersion = useContext(LayoutVersionContext);
     const paneFileId = editors.getActiveFileIdForPane(panelKey);
@@ -62,30 +67,54 @@ export const EditorPanel = ({
     const referencesPeek = editors.referencesPeekByPane
         ? (editors.referencesPeekByPane[panelKey] ?? null)
         : editors.getReferencesPeekForPane(panelKey);
-    const [lastReadyEditor, setLastReadyEditor] = useState<{ id: string; state: AnycodeEditor } | null>(null);
+    const targetFilePath = paneFile?.source?.path || paneFile?.name || paneFileId || '';
+    const isCurrentFileMarkdown = Boolean(
+        (paneFile && paneFile.language === 'markdown') ||
+        (targetFilePath && getLanguageFromFileName(targetFilePath) === 'markdown')
+    );
+
+    type ActivePanelView =
+        | { type: 'markdown'; file: FileState; editor: AnycodeEditor | null }
+        | { type: 'editor'; id: string; state: AnycodeEditor };
+
+    const [lastReadyView, setLastReadyView] = useState<ActivePanelView | null>(null);
     const explicitDiffMode = editors.editorDiffModeByPane?.[panelKey];
     const diffMode = explicitDiffMode ?? (multibufferOpen ? 'diff' : (editors.getEditorDiffMode ? editors.getEditorDiffMode(panelKey) : undefined));
 
     useEffect(() => {
         if (!paneFileId) {
-            setLastReadyEditor(null);
+            setLastReadyView(null);
             return;
         }
 
-        if (paneFile && editorState) {
-            setLastReadyEditor({ id: paneFile.id, state: editorState });
+        if (paneFile && editorState && paneFile.id === paneFileId) {
+            if (markdownPreviewOpen && isCurrentFileMarkdown) {
+                setLastReadyView({ type: 'markdown', file: paneFile, editor: editorState });
+            } else {
+                setLastReadyView({ type: 'editor', id: paneFile.id, state: editorState });
+            }
         }
-    }, [paneFileId, paneFile, editorState]);
+    }, [paneFileId, paneFile, editorState, markdownPreviewOpen, isCurrentFileMarkdown]);
 
-    const editorForCurrentFile = lastReadyEditor?.id === paneFileId
-        ? lastReadyEditor
+    const isCurrentReady = Boolean(paneFile && editorState && paneFile.id === paneFileId);
+    const currentView: ActivePanelView | null = isCurrentReady
+        ? (markdownPreviewOpen && isCurrentFileMarkdown
+            ? { type: 'markdown', file: paneFile!, editor: editorState }
+            : { type: 'editor', id: paneFile!.id, state: editorState! })
         : null;
-    const fallbackEditor = editors.keepPreviousEditorByPane[panelKey]
-        ? lastReadyEditor
-        : editorForCurrentFile;
-    const displayedEditor = paneFile && editorState
-        ? { id: paneFile.id, state: editorState }
-        : fallbackEditor;
+
+    const lastReadyViewId = lastReadyView
+        ? (lastReadyView.type === 'markdown' ? lastReadyView.file.id : lastReadyView.id)
+        : null;
+
+    const fallbackView = editors.keepPreviousEditorByPane[panelKey]
+        ? lastReadyView
+        : (lastReadyViewId === paneFileId ? lastReadyView : null);
+
+    const displayedView = currentView ?? fallbackView;
+    const displayedEditor = displayedView?.type === 'editor'
+        ? { id: displayedView.id, state: displayedView.state }
+        : null;
 
     useEffect(() => {
         if (multibufferOpen || !displayedEditor) return;
@@ -152,6 +181,23 @@ export const EditorPanel = ({
             }
         });
     };
+
+    if (displayedView?.type === 'markdown') {
+        return (
+            <div
+                className="editor-container"
+                onMouseDown={() => editors.setActiveEditorPaneId(panelKey)}
+                onWheelCapture={() => editors.setActiveEditorPaneId(panelKey)}
+            >
+                <MarkdownPreview
+                    key={displayedView.file.id}
+                    file={displayedView.file}
+                    editor={displayedView.editor}
+                    onOpenFile={onOpenFile}
+                />
+            </div>
+        );
+    }
 
     if (multibufferOpen) {
         return (

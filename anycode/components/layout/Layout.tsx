@@ -290,6 +290,9 @@ type LayoutProps = {
     onActionsReady?: (actions: LayoutActions | null) => void;
     canResetPanel?: (panelKey: string, panelId: PanelId) => boolean;
     onResetPanel?: (panelKey: string, panelId: PanelId) => void;
+    isEditorMarkdown?: (panelKey: string) => boolean;
+    isEditorMarkdownPreviewOpen?: (panelKey: string) => boolean;
+    onToggleEditorMarkdownPreview?: (panelKey: string) => void;
 };
 
 export type LayoutActions = {
@@ -580,6 +583,9 @@ const LayoutHeaderActions: React.FC<IDockviewHeaderActionsProps & {
     getEditorDiffMode?: (panelKey: string) => DiffMode;
     canResetPanel?: (panelKey: string, panelId: PanelId) => boolean;
     onResetPanel?: (panelKey: string, panelId: PanelId) => void;
+    isEditorMarkdown?: (panelKey: string) => boolean;
+    isEditorMarkdownPreviewOpen?: (panelKey: string) => boolean;
+    onToggleEditorMarkdownPreview?: (panelKey: string) => void;
 }> = ({
     containerApi,
     activePanel,
@@ -592,6 +598,9 @@ const LayoutHeaderActions: React.FC<IDockviewHeaderActionsProps & {
     getEditorDiffMode,
     canResetPanel,
     onResetPanel,
+    isEditorMarkdown,
+    isEditorMarkdownPreviewOpen,
+    onToggleEditorMarkdownPreview,
 }) => {
     if (!activePanel) {
         return null;
@@ -658,6 +667,18 @@ const LayoutHeaderActions: React.FC<IDockviewHeaderActionsProps & {
                     aria-label={`Diff mode ${diffMode}. Next ${nextDiffMode}`}
                 >
                     {diffMode === 'plain' ? 'P' : diffMode === 'diff' ? 'D' : 'C'}
+                </button>
+            ) : null}
+
+            {isEditorPanel && isEditorMarkdown?.(activePanel.id) ? (
+                <button
+                    className={`layout-header-action-btn layout-header-action-btn--preview ${isEditorMarkdownPreviewOpen?.(activePanel.id) ? 'layout-header-action-btn--active' : ''}`}
+                    onClick={() => onToggleEditorMarkdownPreview?.(activePanel.id)}
+                    type="button"
+                    title={isEditorMarkdownPreviewOpen?.(activePanel.id) ? 'Show Editor' : 'Open Markdown Preview'}
+                    aria-label={isEditorMarkdownPreviewOpen?.(activePanel.id) ? 'Show Editor' : 'Open Markdown Preview'}
+                >
+                    <Icons.Eye />
                 </button>
             ) : null}
 
@@ -764,6 +785,9 @@ export const Layout: React.FC<LayoutProps> = ({
     onActionsReady,
     canResetPanel,
     onResetPanel,
+    isEditorMarkdown,
+    isEditorMarkdownPreviewOpen,
+    onToggleEditorMarkdownPreview,
 }) => {
     const apiRef = useRef<DockviewApi | null>(null);
     const [visibility, setVisibility] = useState<PanelVisibility>(loadPanelVisibility);
@@ -1355,8 +1379,11 @@ export const Layout: React.FC<LayoutProps> = ({
             getEditorDiffMode={getEditorDiffMode}
             canResetPanel={canResetPanel}
             onResetPanel={onResetPanel}
+            isEditorMarkdown={isEditorMarkdown}
+            isEditorMarkdownPreviewOpen={isEditorMarkdownPreviewOpen}
+            onToggleEditorMarkdownPreview={onToggleEditorMarkdownPreview}
         />
-    ), [getEditorDiffMode, isEditorDiffEnabled, onCycleEditorDiffMode, canResetPanel, onResetPanel]);
+    ), [getEditorDiffMode, isEditorDiffEnabled, onCycleEditorDiffMode, canResetPanel, onResetPanel, isEditorMarkdown, isEditorMarkdownPreviewOpen, onToggleEditorMarkdownPreview]);
 
     useEffect(() => () => {
         if (layoutSaveTimerRef.current !== null) {
