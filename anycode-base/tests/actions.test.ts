@@ -545,6 +545,96 @@ describe('Actions Test Suite', () => {
             expect(result.ctx.cursor).toEqual({ row: 0, column: 16 });
         });
 
+        it('pastes over active selection', () => {
+            const code = new Code('<TargetFramework>net9.0</TargetFramework>', 'test.csproj', 'xml');
+            const ctx: ActionContext = {
+                cursor: { row: 0, column: 23 },
+                selection: new Selection({ row: 0, column: 20 }, { row: 0, column: 23 }),
+                code,
+            };
+
+            const result = handlePasteText(ctx, '10.0');
+            expect(result.changed).toBe(true);
+            expect(code.getContent()).toBe('<TargetFramework>net10.0</TargetFramework>');
+        });
+
+        it('pastes over active selection rescued from DOM getSelection if ctx.selection is empty', () => {
+            const code = new Code('<TargetFramework>net9.0</TargetFramework>', 'test.csproj', 'xml');
+            type MockNode = {
+                nodeType: number;
+                textContent: string;
+                childNodes: MockNode[];
+                parentElement?: MockNode;
+                classList?: { contains: (name: string) => boolean };
+                lineNumber?: number;
+                contains: (node: MockNode) => boolean;
+                closest: (selector: string) => MockNode | null;
+            };
+
+            const ctx: ActionContext = {
+                cursor: { row: 0, column: 22 },
+                code,
+            };
+
+            const mockTextNode: MockNode = {
+                nodeType: 3,
+                textContent: '<TargetFramework>net9.0</TargetFramework>',
+                childNodes: [],
+                contains: () => false,
+                closest: () => null,
+            };
+            const mockSpan: MockNode = {
+                nodeType: 1,
+                childNodes: [mockTextNode],
+                contains: (node) => node === mockTextNode || node === mockSpan,
+                closest: (s: string) => (s === '.line' ? mockLine : null),
+                textContent: '<TargetFramework>net9.0</TargetFramework>',
+            };
+            const mockLine: MockNode = {
+                nodeType: 1,
+                classList: { contains: (c: string) => c === 'line' },
+                lineNumber: 0,
+                childNodes: [mockSpan],
+                textContent: '<TargetFramework>net9.0</TargetFramework>',
+                contains: (node) => node === mockLine || node === mockSpan || node === mockTextNode,
+                closest: (s: string) => (s === '.line' ? mockLine : null),
+            };
+            const mockRoot = {
+                contains: (node: MockNode) => node === mockLine || node === mockSpan || node === mockTextNode,
+            };
+            ctx.selectionRoot = mockRoot as unknown as Node;
+            mockTextNode.parentElement = mockSpan;
+            mockSpan.parentElement = mockLine;
+
+            const globalWithWindow = globalThis as typeof globalThis & { window?: Window };
+            const prevWindow = globalWithWindow.window;
+            globalWithWindow.window = {
+                getSelection: () => ({
+                    rangeCount: 1,
+                    getRangeAt: () => ({
+                        collapsed: false,
+                        startContainer: mockTextNode as unknown as Node,
+                        startOffset: 17,
+                        endContainer: mockTextNode as unknown as Node,
+                        endOffset: 23,
+                    } as Range),
+                    isCollapsed: false,
+                }),
+            } as unknown as Window;
+
+            try {
+                const result = handlePasteText(ctx, 'net10.0');
+                expect(result.changed).toBe(true);
+                expect(code.getContent()).toBe('<TargetFramework>net10.0</TargetFramework>');
+            } finally {
+                if (prevWindow) {
+                    globalWithWindow.window = prevWindow;
+                } else {
+                    delete globalWithWindow.window;
+                }
+            }
+        });
+
         it('pastes multiline text adjusting indentation to target context', () => {
             const code = new Code('    function test() {\n        \n    }', 'test.ts', 'typescript');
             const cursor: Point = { row: 1, column: 8 };

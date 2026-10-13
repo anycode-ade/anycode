@@ -2,7 +2,7 @@ import { CSS_CLASS } from "./constants";
 import { Code, Change, Position, Operation, type FoldRange, WordHighlight, areWordHighlightsEqual, type Point } from "./code";
 import { Renderer } from './renderer/Renderer';
 import { getPosFromMouse } from './mouse';
-import { Selection, hasDiagnosticSelection, pointsEqual } from "./selection";
+import { Selection, hasDiagnosticSelection, pointsEqual, getSelection } from "./selection";
 import {
     Completion,
     CompletionRequest,
@@ -147,6 +147,7 @@ export class AnycodeEditor {
     private stickyHeaderEnabled: boolean;
     private wordHighlight: WordHighlight | null = null;
     private isApplyingInternalEdit = false;
+    private isHandlingKeyboardPaste = false;
     private unsubscribeCodeChanges: (() => void) | null = null;
 
     constructor(
@@ -461,12 +462,32 @@ export class AnycodeEditor {
         }
     }
 
+    public getEffectiveSelection(): Selection | null {
+        if (this.selection && this.selection.nonEmpty()) {
+            return this.selection;
+        }
+
+        const domSel = getSelection(this.codeContent);
+        if (domSel) {
+            const startPoint: Point = { row: domSel.start.row, column: domSel.start.col };
+            const endPoint: Point = { row: domSel.end.row, column: domSel.end.col };
+            if (!pointsEqual(startPoint, endPoint)) {
+                const rescued = new Selection(startPoint, endPoint);
+                this.selection = rescued;
+                return rescued;
+            }
+        }
+
+        return null;
+    }
+
     public getSelectedText(): string {
-        if (!this.selection || this.selection.isEmpty()) {
+        const selection = this.getEffectiveSelection();
+        if (!selection || selection.isEmpty()) {
             return '';
         }
 
-        const [start, end] = this.selection.sorted();
+        const [start, end] = selection.sorted();
         return this.code.getTextRange(start, end);
     }
 
@@ -1174,8 +1195,12 @@ export class AnycodeEditor {
         this.isLineSelection = false;
         const targetPoint: Point = { row: pos.row, column: pos.col };
 
-        if (e.shiftKey && this.selection) {
-            this.selection.updateCursor(targetPoint);
+        if (e.shiftKey) {
+            const anchor = (this.selection && !this.selection.isEmpty())
+                ? this.selection.anchor
+                : this.cursor;
+            this.selection = new Selection(anchor, targetPoint);
+            this.cursor = targetPoint;
             this.renderer.renderSelection(this.code, this.selection);
         } else {
             if (this.selection) {
@@ -1228,7 +1253,10 @@ export class AnycodeEditor {
 
         let oldSelection = this.selection?.clone();
 
-        if (pos && this.selection) {
+        if (pos) {
+            if (!this.selection) {
+                this.selection = new Selection({ row: pos.row, column: pos.col }, { row: pos.row, column: pos.col });
+            }
             const clamped = this.code.clampPoint({ row: pos.row, column: pos.col });
             const { row, column: col } = clamped;
 
@@ -1248,8 +1276,8 @@ export class AnycodeEditor {
                     const anchorEndCol = findNextWord(anchorLine, anchor.column);
                     const anchorEnd: Point = { row: anchor.row, column: anchorEndCol };
 
-                    // Update selection from new word start to anchor word end
-                    this.selection = new Selection(newCursor, anchorEnd);
+                    // Update selection from anchor word end to new word start
+                    this.selection = new Selection(anchorEnd, newCursor);
                     this.cursor = newCursor;
                 } else {
                     // Selection is moving right (forward) — find end of current word
@@ -1271,7 +1299,7 @@ export class AnycodeEditor {
                     // Selection moving up
                     const start: Point = { row, column: 0 };
                     const end: Point = { row: anchorRow, column: this.code.lineLength(anchorRow) };
-                    this.selection = new Selection(start, end);
+                    this.selection = new Selection(end, start);
                     this.cursor = start;
                 } else {
                     // Selection moving down or same line
@@ -1453,10 +1481,20 @@ export class AnycodeEditor {
 
         event.preventDefault();
 
+        if (action === Action.PASTE) {
+            this.isHandlingKeyboardPaste = true;
+            setTimeout(() => {
+                this.isHandlingKeyboardPaste = false;
+            }, 300);
+        }
+
+        const effectiveSelection = this.getEffectiveSelection();
+
         const ctx: ActionContext = {
             cursor: this.cursor,
             code: this.code,
-            selection: this.selection || undefined,
+            selection: effectiveSelection || undefined,
+            selectionRoot: this.codeContent,
             event: event
         };
 
@@ -1666,11 +1704,13 @@ export class AnycodeEditor {
 
         this.isApplyingInternalEdit = true;
         try {
+            const effectiveSelection = this.getEffectiveSelection();
             if (e.inputType === 'deleteContentBackward') {
                 const ctx: ActionContext = {
                     cursor: this.cursor,
                     code: this.code,
-                    selection: this.selection || undefined,
+                    selection: effectiveSelection || undefined,
+                    selectionRoot: this.codeContent,
                 };
                 const result = await executeAction(Action.BACKSPACE, ctx);
                 this.applyEditResult(result);
@@ -1685,7 +1725,8 @@ export class AnycodeEditor {
                 const ctx: ActionContext = {
                     cursor: this.cursor,
                     code: this.code,
-                    selection: this.selection || undefined,
+                    selection: effectiveSelection || undefined,
+                    selectionRoot: this.codeContent,
                     event: { key } as KeyboardEvent
                 };
 
@@ -1700,26 +1741,27 @@ export class AnycodeEditor {
     private handlePasteEvent(e: ClipboardEvent) {
         this.clearPendingHover();
         this.closeHover();
-        if (this.ignoreEdits) {
-            e.preventDefault();
-            e.stopPropagation();
-            return;
-        }
-        // In secure contexts, paste is handled via Action.PASTE using navigator.clipboard
-        if (navigator.clipboard && window.isSecureContext) {
+        e.preventDefault();
+        e.stopPropagation();
+
+        if (this.ignoreEdits || this.readOnly) {
             return;
         }
 
-        e.preventDefault();
-        e.stopPropagation();
+        if (this.isHandlingKeyboardPaste) {
+            this.isHandlingKeyboardPaste = false;
+            return;
+        }
 
         const pastedText = e.clipboardData?.getData('text/plain') ?? '';
         if (!pastedText) return;
 
+        const effectiveSelection = this.getEffectiveSelection();
         const ctx: ActionContext = {
             cursor: this.cursor,
             code: this.code,
-            selection: this.selection || undefined,
+            selection: effectiveSelection || undefined,
+            selectionRoot: this.codeContent,
         };
 
         this.isApplyingInternalEdit = true;

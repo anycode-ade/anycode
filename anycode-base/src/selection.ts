@@ -71,7 +71,8 @@ export class Selection {
     }
 }
 
-export function getSelection(): { start: Pos, end: Pos } | null {
+export function getSelection(root?: Node): { start: Pos, end: Pos } | null {
+    if (typeof window === 'undefined') return null;
     const sel = window.getSelection();
     if (!sel || sel.rangeCount === 0) {
         return null;
@@ -79,6 +80,10 @@ export function getSelection(): { start: Pos, end: Pos } | null {
 
     const range = sel.getRangeAt(0);
     if (range.collapsed) {
+        return null;
+    }
+
+    if (root && (!root.contains(range.startContainer) || !root.contains(range.endContainer))) {
         return null;
     }
 
@@ -93,9 +98,21 @@ export function getSelection(): { start: Pos, end: Pos } | null {
 }
 
 export function hasDiagnosticSelection(): boolean {
+    if (typeof window === 'undefined') return false;
     const sel = window.getSelection();
     if (!sel || sel.isCollapsed) return false;
     return isInsideDiagnostic(sel.anchorNode) || isInsideDiagnostic(sel.focusNode);
+}
+
+function getNodeCharOffset(node: Node, nodeOffset: number): number {
+    if (node.nodeType === 3) {
+        return nodeOffset;
+    }
+    let charOffset = 0;
+    for (let i = 0; i < Math.min(nodeOffset, node.childNodes.length); i++) {
+        charOffset += node.childNodes[i].textContent?.length ?? 0;
+    }
+    return charOffset;
 }
 
 export function resolveAbsoluteOffset(node: Node, nodeOffset: number): Pos | null {
@@ -105,17 +122,21 @@ export function resolveAbsoluteOffset(node: Node, nodeOffset: number): Pos | nul
 
     // corner case, whole row selected
     if (
+        typeof HTMLElement !== 'undefined' &&
         node instanceof HTMLElement &&
         node.classList.contains("line")
     ) {
         const lineDiv = node as AnycodeLine;
+        if (nodeOffset > 0) {
+            return { row: lineDiv.lineNumber, col: getLineTextLength(lineDiv) };
+        }
         return { row: lineDiv.lineNumber, col: 0 };
     }
 
     const lineDiv = (
-        node instanceof HTMLElement
+        typeof HTMLElement !== 'undefined' && node instanceof HTMLElement
             ? node.closest(".line")
-            : node.parentElement?.closest(".line")
+            : (node.parentElement as any)?.closest?.(".line")
     ) as AnycodeLine | null;
 
     if (!lineDiv || typeof lineDiv.lineNumber !== "number") return null;
@@ -129,11 +150,11 @@ export function resolveAbsoluteOffset(node: Node, nodeOffset: number): Pos | nul
 
         if (child.contains(node)) {
             if (child === node) {
-                offset += nodeOffset;
+                offset += getNodeCharOffset(node, nodeOffset);
             } else {
                 for (const sub of child.childNodes) {
                     if (sub === node) {
-                        offset += nodeOffset;
+                        offset += getNodeCharOffset(node, nodeOffset);
                         found = true;
                         break;
                     } else {

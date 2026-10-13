@@ -1,5 +1,5 @@
 import { Operation, type Code, type Point } from "./code";
-import { Selection } from "./selection";
+import { Selection, getSelection, pointsEqual } from "./selection";
 import { getIndentation, getPrevGraphemeIndex, getNextGraphemeIndex, findPrevWord } from "./utils";
 
 export enum Action {
@@ -38,6 +38,7 @@ export type ActionContext = {
     cursor: Point;
     code: Code;
     selection?: Selection;
+    selectionRoot?: Node;
     event?: KeyboardEvent;
 };
 
@@ -48,6 +49,18 @@ export type ActionResult = {
 
 function syncCursor(ctx: ActionContext, row: number, column: number): void {
     ctx.cursor = { row, column };
+}
+
+export function ensureSelection(ctx: ActionContext): void {
+    if ((!ctx.selection || ctx.selection.isEmpty()) && ctx.selectionRoot) {
+        const domSel = getSelection(ctx.selectionRoot);
+        if (domSel && !pointsEqual({ row: domSel.start.row, column: domSel.start.col }, { row: domSel.end.row, column: domSel.end.col })) {
+            ctx.selection = new Selection(
+                { row: domSel.start.row, column: domSel.start.col },
+                { row: domSel.end.row, column: domSel.end.col }
+            );
+        }
+    }
 }
 
 export function isCrossFileSelection(ctx: ActionContext): boolean {
@@ -71,6 +84,7 @@ export const executeAction = async (
 
         // Editing
         case Action.BACKSPACE: return handleBackspace(ctx);
+        case Action.DELETE: return handleDelete(ctx);
         case Action.ENTER: return handleEnter(ctx);
         case Action.TAB: return handleTab(ctx);
         case Action.UNTAB: return handleUnTab(ctx);
@@ -91,6 +105,7 @@ export const executeAction = async (
 };
 
 export const handleTextInput = (ctx: ActionContext): ActionResult => {
+    ensureSelection(ctx);
     if (!ctx.code.isLineEditable(ctx.cursor.row) || isCrossFileSelection(ctx)) {
         return { ctx, changed: false };
     }
@@ -127,6 +142,7 @@ export const removeSelection = (ctx: ActionContext) => {
 };
 
 export const handleBackspace = (ctx: ActionContext): ActionResult => {
+    ensureSelection(ctx);
     if (!ctx.code.isLineEditable(ctx.cursor.row) || isCrossFileSelection(ctx)) {
         return { ctx, changed: false };
     }
@@ -204,6 +220,46 @@ export const handleBackspace = (ctx: ActionContext): ActionResult => {
     ctx.code.removeRange(startPoint, ctx.cursor);
     syncCursor(ctx, targetLine, targetCol);
 
+    ctx.code.setStateAfter(ctx.cursor, ctx.selection);
+    ctx.code.commit();
+
+    return { ctx, changed: true };
+};
+
+export const handleDelete = (ctx: ActionContext): ActionResult => {
+    ensureSelection(ctx);
+    if (!ctx.code.isLineEditable(ctx.cursor.row) || isCrossFileSelection(ctx)) {
+        return { ctx, changed: false };
+    }
+
+    ctx.code.tx();
+    ctx.code.setStateBefore(ctx.cursor, ctx.selection);
+
+    if (ctx.selection?.nonEmpty()) {
+        removeSelection(ctx);
+        ctx.code.setStateAfter(ctx.cursor, ctx.selection);
+        ctx.code.commit();
+        return { ctx, changed: true };
+    }
+
+    const { row: line, column } = ctx.cursor;
+    const currentLine = ctx.code.line(line);
+
+    let startPoint = ctx.cursor;
+    let endPoint: Point;
+
+    if (column >= currentLine.length) {
+        const nextLine = ctx.code.getNextLine(line);
+        if (nextLine >= ctx.code.linesLength() || !ctx.code.isLineEditable(nextLine) || !ctx.code.isSameFileBody(line, nextLine)) {
+            return { ctx, changed: false };
+        }
+        endPoint = { row: nextLine, column: 0 };
+    } else {
+        const nextCol = getNextGraphemeIndex(currentLine, column);
+        endPoint = { row: line, column: nextCol };
+    }
+
+    ctx.code.removeRange(startPoint, endPoint);
     ctx.code.setStateAfter(ctx.cursor, ctx.selection);
     ctx.code.commit();
 
@@ -308,6 +364,7 @@ export const handleSelectAll = (ctx: ActionContext): ActionResult => {
 };
 
 export const handleCopy = async (ctx: ActionContext): Promise<ActionResult> => {
+    ensureSelection(ctx);
     if (!ctx.selection || ctx.selection.isEmpty()) {
         return { ctx, changed: false };
     }
@@ -362,6 +419,7 @@ export const handlePaste = async (ctx: ActionContext): Promise<ActionResult> => 
 };
 
 export const handlePasteText = (ctx: ActionContext, text: string): ActionResult => {
+    ensureSelection(ctx);
     if (!ctx.code.isLineEditable(ctx.cursor.row) || isCrossFileSelection(ctx)) {
         return { ctx, changed: false };
     }
@@ -489,6 +547,7 @@ export const handleDuplicate = async (ctx: ActionContext): Promise<ActionResult>
 };
 
 export const handleCut = async (ctx: ActionContext): Promise<ActionResult> => {
+    ensureSelection(ctx);
     if (!ctx.selection || ctx.selection.isEmpty() || isCrossFileSelection(ctx)) {
         return { ctx, changed: false };
     }

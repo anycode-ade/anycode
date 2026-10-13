@@ -25,18 +25,29 @@ export function getPosFromMouse(e: MouseEvent): Pos | null {
     return resolvePosition(pos.offsetNode, pos.offset)
 }
 
+function getNodeCharOffset(node: Node, nodeOffset: number): number {
+    if (node.nodeType === 3) {
+        return nodeOffset;
+    }
+    let charOffset = 0;
+    for (let i = 0; i < Math.min(nodeOffset, node.childNodes.length); i++) {
+        charOffset += node.childNodes[i].textContent?.length ?? 0;
+    }
+    return charOffset;
+}
+
 function resolvePosition(node: Node, nodeOffset: number): Pos | null {
     // corner case, out of row, on buttons/gutter/folds columns
-    const sideElement = node instanceof HTMLElement
+    const sideElement = typeof HTMLElement !== 'undefined' && node instanceof HTMLElement
         ? node.closest(".bt, .ln, .fd")
-        : node.parentElement?.closest(".bt, .ln, .fd");
+        : (node.parentElement as any)?.closest?.(".bt, .ln, .fd");
 
     if (isSideLineElement(sideElement)) {
         return { row: sideElement.lineNumber, col: 0 };
     }
 
     // corner case, whole row selected
-    if (node instanceof HTMLElement && node.classList.contains("line")) {
+    if (typeof HTMLElement !== 'undefined' && node instanceof HTMLElement && node.classList.contains("line")) {
         const lineDiv = node as AnycodeLine;
         if (nodeOffset > 0) {
             return { row: lineDiv.lineNumber, col: getLineTextLength(lineDiv) };
@@ -45,9 +56,9 @@ function resolvePosition(node: Node, nodeOffset: number): Pos | null {
     }
 
     const lineDiv = (
-        node instanceof HTMLElement
+        typeof HTMLElement !== 'undefined' && node instanceof HTMLElement
             ? node.closest(".line")
-            : node.parentElement?.closest(".line")
+            : (node.parentElement as any)?.closest?.(".line")
     ) as AnycodeLine | null;
 
     if (!lineDiv || typeof lineDiv.lineNumber !== "number") return null;
@@ -69,11 +80,11 @@ function resolvePosition(node: Node, nodeOffset: number): Pos | null {
 
         if (child.contains(node)) {
             if (child === node) {
-                offset += nodeOffset;
+                offset += getNodeCharOffset(node, nodeOffset);
             } else {
                 for (const sub of child.childNodes) {
                     if (sub === node) {
-                        offset += nodeOffset;
+                        offset += getNodeCharOffset(node, nodeOffset);
                         found = true;
                         break;
                     } else {
