@@ -116,12 +116,14 @@ fn print_help() {
     println!("    anycode [OPTIONS]");
     println!();
     println!("OPTIONS:");
-    println!("    -h, --help         Print help information");
-    println!("    -v, -V, --version  Print version information");
-    println!("    -p, --port <PORT>  Port to listen on");
+    println!("    -h, --help           Print help information");
+    println!("    -v, -V, --version    Print version information");
+    println!("    -p, --port <PORT>    Port to listen on (default: 3000)");
+    println!("    -t, --token <TOKEN>  Require authentication token to access anycode");
     println!();
     println!("ENVIRONMENT:");
     println!("    ANYCODE_PORT                  Port to listen on (default: 3000)");
+    println!("    ANYCODE_TOKEN                 Require authentication token to access anycode");
     println!("    ANYCODE_HOME                  Path to configuration directory");
     println!("    ANYCODE_ACP_PERMISSION_MODE   ACP permission mode: full_access (default) or ask");
     println!();
@@ -145,6 +147,10 @@ pub fn handle_early_cli_flags() {
                 // Skip value for port flag in early pass.
                 let _ = args.next();
             }
+            "--token" | "-t" => {
+                // Skip value for token flag in early pass.
+                let _ = args.next();
+            }
             _ => {}
         }
     }
@@ -156,9 +162,19 @@ fn parse_port(value: &str, source: &str) -> Result<u16> {
         .map_err(|_| anyhow::anyhow!("Invalid {source}: {value}"))
 }
 
-pub fn resolve_server_port() -> Result<u16> {
-    let mut args = std::env::args().skip(1);
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ServerOptions {
+    pub port: u16,
+    pub token: Option<String>,
+}
+
+pub fn parse_server_options_from_iter_and_env<I, F>(mut args: I, get_env: F) -> Result<ServerOptions>
+where
+    I: Iterator<Item = String>,
+    F: Fn(&str) -> Result<String, std::env::VarError>,
+{
     let mut cli_port: Option<u16> = None;
+    let mut cli_token: Option<String> = None;
 
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -179,6 +195,15 @@ pub fn resolve_server_port() -> Result<u16> {
             _ if arg.starts_with("--port=") => {
                 cli_port = Some(parse_port(&arg["--port=".len()..], "CLI port")?);
             }
+            "--token" | "-t" => {
+                let value = args
+                    .next()
+                    .ok_or_else(|| anyhow::anyhow!("Missing value for {arg}"))?;
+                cli_token = Some(value);
+            }
+            _ if arg.starts_with("--token=") => {
+                cli_token = Some(arg["--token=".len()..].to_string());
+            }
             _ if arg.starts_with('-') => {
                 anyhow::bail!("Unknown option: {arg}");
             }
@@ -188,14 +213,37 @@ pub fn resolve_server_port() -> Result<u16> {
         }
     }
 
-    if let Some(port) = cli_port {
-        return Ok(port);
-    }
+    let port = if let Some(port) = cli_port {
+        port
+    } else {
+        match get_env("ANYCODE_PORT") {
+            Ok(value) => parse_port(&value, "ANYCODE_PORT")?,
+            Err(_) => DEFAULT_PORT,
+        }
+    };
 
-    match std::env::var("ANYCODE_PORT") {
-        Ok(value) => parse_port(&value, "ANYCODE_PORT"),
-        Err(_) => Ok(DEFAULT_PORT),
-    }
+    let token = cli_token
+        .or_else(|| get_env("ANYCODE_TOKEN").ok())
+        .map(|t| t.trim().to_string())
+        .filter(|t| !t.is_empty());
+
+    Ok(ServerOptions { port, token })
+}
+
+pub fn parse_server_options_from_iter<I>(args: I) -> Result<ServerOptions>
+where
+    I: Iterator<Item = String>,
+{
+    parse_server_options_from_iter_and_env(args, |k| std::env::var(k))
+}
+
+pub fn resolve_server_options() -> Result<ServerOptions> {
+    parse_server_options_from_iter(std::env::args().skip(1))
+}
+
+#[allow(dead_code)]
+pub fn resolve_server_port() -> Result<u16> {
+    resolve_server_options().map(|opts| opts.port)
 }
 
 #[cfg(test)]
@@ -236,5 +284,53 @@ mod congif_tests {
             Themes::get("default-theme.json").expect("default-theme.json should be embedded");
         let content = std::str::from_utf8(default_theme.data.as_ref()).unwrap();
         assert!(content.contains("themes"));
+    }
+
+    #[test]
+    fn test_parse_server_options_defaults() {
+        let opts = parse_server_options_from_iter_and_env(std::iter::empty(), |_| {
+            Err(std::env::VarError::NotPresent)
+        })
+        .unwrap();
+        assert_eq!(opts.port, 3000);
+        assert_eq!(opts.token, None);
+    }
+
+    #[test]
+    fn test_parse_server_options_with_token_and_port() {
+        let args = vec![
+            "-p".to_string(),
+            "8080".to_string(),
+            "--token".to_string(),
+            "secret123".to_string(),
+        ];
+        let opts = parse_server_options_from_iter_and_env(args.into_iter(), |_| {
+            Err(std::env::VarError::NotPresent)
+        })
+        .unwrap();
+        assert_eq!(opts.port, 8080);
+        assert_eq!(opts.token, Some("secret123".to_string()));
+    }
+
+    #[test]
+    fn test_parse_server_options_with_short_token_flag() {
+        let args = vec!["-t".to_string(), "abc".to_string()];
+        let opts = parse_server_options_from_iter_and_env(args.into_iter(), |_| {
+            Err(std::env::VarError::NotPresent)
+        })
+        .unwrap();
+        assert_eq!(opts.token, Some("abc".to_string()));
+    }
+
+    #[test]
+    fn test_parse_server_options_from_mock_env() {
+        let opts = parse_server_options_from_iter_and_env(std::iter::empty(), |var| match var {
+            "ANYCODE_PORT" => Ok("4567".to_string()),
+            "ANYCODE_TOKEN" => Ok("my_env_token".to_string()),
+            _ => Err(std::env::VarError::NotPresent),
+        })
+        .unwrap();
+        assert_eq!(opts.port, 4567);
+        assert_eq!(opts.token, Some("my_env_token".to_string()));
     }
 }

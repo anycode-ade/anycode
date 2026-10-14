@@ -1,12 +1,14 @@
 use axum::{
-    extract::Query,
-    http::{StatusCode, Uri, header},
+    extract::{Query, State},
+    http::{HeaderMap, StatusCode, Uri, header},
     response::{Html, IntoResponse, Response},
 };
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
 use tokio::fs;
 use tracing::info;
+
+use crate::app_state::AppState;
 
 static INDEX_HTML: &str = "index.html";
 
@@ -24,31 +26,77 @@ fn resolve_workspace_path(path: &str, workspace_root: &Path) -> PathBuf {
     }
 }
 
-pub async fn static_handler(uri: Uri) -> impl IntoResponse {
+pub async fn static_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    uri: Uri,
+) -> Response {
     info!("static handler {:?}", uri.path());
+
+    let mut set_cookie = None;
+
+    // If access token is required, reject requests without a valid token
+    if state.is_auth_required() {
+        let candidate = crate::handlers::auth_handler::extract_token_from_http(&headers, &uri);
+        if !state.is_token_valid(candidate.as_deref()) {
+            return (
+                StatusCode::UNAUTHORIZED,
+                [
+                    (header::CONTENT_TYPE, "text/plain; charset=utf-8"),
+                    (header::WWW_AUTHENTICATE, "Bearer"),
+                ],
+                "Unauthorized: valid token required (provide ?token=<token> or Cookie)",
+            )
+                .into_response();
+        }
+
+        if let Some(token) = candidate {
+            set_cookie = Some(format!("anycode_token={token}; Path=/; SameSite=Lax; HttpOnly"));
+        }
+    }
 
     let path = uri.path().trim_start_matches('/');
 
-    if path.is_empty() || path == INDEX_HTML {
-        return index_html().await;
-    }
-
-    match crate::config::Dist::get(path) {
-        Some(content) => {
-            let mime = mime_guess::from_path(path).first_or_octet_stream();
-            ([(header::CONTENT_TYPE, mime.as_ref())], content.data).into_response()
-        }
-        None => {
-            if path.contains('.') {
-                return not_found().await;
+    let mut response = if path.is_empty() || path == INDEX_HTML {
+        index_html().await
+    } else {
+        match crate::config::Dist::get(path) {
+            Some(content) => {
+                let mime = mime_guess::from_path(path).first_or_octet_stream();
+                ([(header::CONTENT_TYPE, mime.as_ref())], content.data).into_response()
             }
+            None => {
+                if path.contains('.') {
+                    return not_found().await;
+                }
 
-            index_html().await
+                index_html().await
+            }
+        }
+    };
+
+    if let Some(cookie) = set_cookie {
+        if let Ok(val) = header::HeaderValue::from_str(&cookie) {
+            response.headers_mut().insert(header::SET_COOKIE, val);
         }
     }
+
+    response
 }
 
-pub async fn local_image_handler(Query(query): Query<LocalImageQuery>) -> impl IntoResponse {
+pub async fn local_image_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    uri: Uri,
+    Query(query): Query<LocalImageQuery>,
+) -> impl IntoResponse {
+    if state.is_auth_required() {
+        let candidate = crate::handlers::auth_handler::extract_token_from_http(&headers, &uri);
+        if !state.is_token_valid(candidate.as_deref()) {
+            return (StatusCode::UNAUTHORIZED, "unauthorized").into_response();
+        }
+    }
+
     let path = query.path.trim();
     if path.is_empty() {
         return (StatusCode::BAD_REQUEST, "missing path").into_response();

@@ -2,6 +2,23 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { io, type Socket } from 'socket.io-client';
 import { BACKEND_URL } from '../constants';
 import { DemoSocket } from '../demoSocket';
+const IS_DEMO_MODE =
+    import.meta.env.MODE === 'demo' ||
+    import.meta.env.VITE_DEMO_MODE === 'true' ||
+    (typeof window !== 'undefined' && (new URLSearchParams(window.location.search).get('demo') === 'true' || window.location.hash.includes('demo')));
+
+const getToken = (): string => {
+    if (typeof window === 'undefined') return '';
+    const urlToken = new URLSearchParams(window.location.search).get('token');
+    if (urlToken) {
+        localStorage.setItem('anycode_token', urlToken.trim());
+        const url = new URL(window.location.href);
+        url.searchParams.delete('token');
+        window.history.replaceState(window.history.state, '', url);
+        return urlToken.trim();
+    }
+    return localStorage.getItem('anycode_token')?.trim() || '';
+};
 
 type UseSocketParams = {
     onConnect?: () => void;
@@ -9,11 +26,6 @@ type UseSocketParams = {
     onConnectError?: (error: Error) => void;
     onError?: (data: { message: string }) => void;
 };
-
-const IS_DEMO_MODE =
-    import.meta.env.MODE === 'demo' ||
-    import.meta.env.VITE_DEMO_MODE === 'true' ||
-    (typeof window !== 'undefined' && (new URLSearchParams(window.location.search).get('demo') === 'true' || window.location.hash.includes('demo')));
 
 export const useSocket = ({ onConnect, onDisconnect, onConnectError, onError }: UseSocketParams) => {
     const wsRef = useRef<Socket | null>(null);
@@ -35,6 +47,7 @@ export const useSocket = ({ onConnect, onDisconnect, onConnectError, onError }: 
 
             setConnectionStatus('connecting');
 
+            const token = getToken();
             const ws = IS_DEMO_MODE
                 ? (new DemoSocket() as unknown as Socket)
                 : io(BACKEND_URL, {
@@ -44,6 +57,9 @@ export const useSocket = ({ onConnect, onDisconnect, onConnectError, onError }: 
                     reconnectionDelay: 1000,
                     reconnectionDelayMax: 5000,
                     timeout: 10000,
+                    auth: {
+                        token,
+                    },
                 });
             wsRef.current = ws;
 
@@ -66,7 +82,7 @@ export const useSocket = ({ onConnect, onDisconnect, onConnectError, onError }: 
             ws.on('connect_error', (error) => {
                 setIsConnected(false);
                 setConnectionStatus('reconnecting');
-                setConnectionError('Failed to connect to backend');
+                setConnectionError(error?.message || 'Failed to connect to backend');
                 onConnectError?.(error);
             });
 

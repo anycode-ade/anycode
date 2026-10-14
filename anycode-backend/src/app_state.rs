@@ -26,6 +26,7 @@ pub struct AppState {
     pub socket2data: Arc<Mutex<HashMap<String, SocketData>>>,
     pub terminals: Arc<Mutex<HashMap<String, TerminalData>>>,
     pub acp_db: Arc<crate::acp_db::AcpDb>,
+    pub auth_token: Option<String>,
 }
 
 #[derive(Clone, Default)]
@@ -50,6 +51,7 @@ impl AppState {
     pub fn new(
         diagnostic_tx: mpsc::Sender<PublishDiagnosticsParams>,
         acp_fs_tx: mpsc::Sender<acp_fs::AcpFsCommand>,
+        auth_token: Option<String>,
     ) -> Self {
         let config = crate::config::get();
 
@@ -80,6 +82,21 @@ impl AppState {
             socket2data: Arc::new(Mutex::new(HashMap::new())),
             terminals: Arc::new(Mutex::new(HashMap::new())),
             acp_db,
+            auth_token,
+        }
+    }
+
+    pub fn is_auth_required(&self) -> bool {
+        self.auth_token.is_some()
+    }
+
+    pub fn is_token_valid(&self, candidate: Option<&str>) -> bool {
+        match &self.auth_token {
+            None => true,
+            Some(expected) => match candidate {
+                Some(cand) => cand == expected,
+                None => false,
+            },
         }
     }
 

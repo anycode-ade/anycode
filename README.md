@@ -50,6 +50,39 @@ Windows installer details:
 - Supports overrides via `ANYCODE_VERSION`, `ANYCODE_INSTALL_DIR`, and `ANYCODE_REPO`
 - Current release installer targets Windows x64; Windows ARM64 can still build from source
 
+## Usage
+
+Start `anycode` from any project directory:
+
+```bash
+anycode
+```
+
+### Options & Security
+
+| Flag | Env Variable | Default | Description |
+|---|---|---|---|
+| `-p, --port <PORT>` | `ANYCODE_PORT` | `3000` | Port to listen on |
+| `-t, --token <TOKEN>` | `ANYCODE_TOKEN` | _None_ | Require access token to access web UI and WebSocket |
+
+#### Access Token Protection
+
+When hosting `anycode` on a remote machine, cloud instance, or local network, protect your workspace by setting a token:
+
+```bash
+anycode --token mysecret
+# or with short flag and custom port:
+anycode -t mysecret -p 8080
+```
+
+The server will print an authenticated URL:
+```text
+INFO Starting anycode at http://localhost:8080
+INFO Access token protection enabled.
+INFO Open with token: http://localhost:8080?token=mysecret
+```
+
+Any attempt to access the web interface or WebSocket without the token will be rejected with `401 Unauthorized`. Once opened with `?token=...`, the browser securely stores the session cookie for subsequent visits.
 
 ## Development
 
