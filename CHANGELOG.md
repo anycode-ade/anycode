@@ -2,6 +2,18 @@
 
 All notable changes are documented here by release tag.
 
+## v0.1.2 - 2026-10-14
+
+### Highlights
+- Added token-based access protection (`--token`, `-t`, `ANYCODE_TOKEN`) to protect the web UI, static files, and WebSocket connections with `401 Unauthorized` checks and secure HttpOnly session cookies.
+- Fixed editor selection replacement behavior so pasting or typing with an active selection reliably replaces selected text.
+- Added interactive live Markdown preview panel with code block syntax highlighting and scroll persistence.
+
+### Commits
+- `b5ef93b` feat(auth): add token-based access protection for web UI and websocket
+- `daa9cf3` fix(editor): reliably replace selected text on paste and user input
+- `a79fa34` feat(markdown): add interactive markdown preview with code highlighting and scroll persistence
+
 ## v0.1.1 - 2026-10-09
 
 ### Highlights
