@@ -21,6 +21,7 @@ import {
 } from '../../types';
 import { LANGUAGE_EXTENSIONS, EDITOR_SUPPORTED_LANGUAGES, getFileName, copyTextToClipboard, uriToFilePath, formatBytes } from '../../utils';
 import { toolOutputCache } from '../../features/agents/toolOutputCache';
+import { MermaidBlock } from '../../features/markdown/MermaidBlock';
 import './AcpMessage.css';
 
 let codeBlockIdCounter = 0;
@@ -1057,6 +1058,10 @@ const MarkdownCodeBlock: React.FC<{
   language: string;
   isOpen?: boolean;
 }> = ({ code, language, isOpen = false }) => {
+  if (language === 'mermaid' || language === 'mmd') {
+    return <MermaidBlock code={code} isStreaming={isOpen} />;
+  }
+
   const [editor, setEditor] = React.useState<AnycodeEditor | null>(null);
   const blockIdRef = React.useRef<string | null>(null);
   const containerRef = React.useRef<HTMLDivElement | null>(null);

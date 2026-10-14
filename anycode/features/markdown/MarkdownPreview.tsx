@@ -6,6 +6,7 @@ import type { AnycodeEditor } from 'anycode-base';
 import type { FileState } from '../../types';
 import { Icons } from '../../components/Icons';
 import { copyTextToClipboard, normalizePath } from '../../utils';
+import { MermaidBlock } from './MermaidBlock';
 import './MarkdownPreview.css';
 
 export type MarkdownPreviewProps = {
@@ -455,6 +456,11 @@ export const MarkdownPreview: React.FC<MarkdownPreviewProps> = ({
                                 }
 
                                 const rawLang = match ? match[1] : '';
+                                const normalizedLang = rawLang.toLowerCase();
+
+                                if (normalizedLang === 'mermaid' || normalizedLang === 'mmd') {
+                                    return <MermaidBlock code={text} />;
+                                }
 
                                 return (
                                     <MarkdownCodeBlock

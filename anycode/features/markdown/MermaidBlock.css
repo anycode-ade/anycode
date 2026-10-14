@@ -1,0 +1,473 @@
+.mermaid-block {
+    position: relative;
+    margin: 16px 0;
+    border: 1px solid var(--theme-border, rgba(255, 255, 255, 0.1));
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.22);
+    overflow: hidden;
+    transition: border-color 0.15s ease;
+}
+
+.mermaid-block:hover {
+    border-color: var(--theme-border-hover, rgba(255, 255, 255, 0.18));
+}
+
+.mermaid-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 10px;
+    background: rgba(255, 255, 255, 0.03);
+    border-bottom: 1px solid var(--theme-border, rgba(255, 255, 255, 0.08));
+    font-size: 12px;
+    user-select: none;
+    gap: 8px;
+    min-height: 32px;
+    box-sizing: border-box;
+}
+
+.mermaid-header-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+
+.mermaid-badge {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: 600;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: var(--theme-tab-foreground, #8b929c);
+    white-space: nowrap;
+}
+
+.mermaid-badge svg {
+    color: #58a6ff;
+    flex-shrink: 0;
+}
+
+.mermaid-error-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: rgba(248, 81, 73, 0.15);
+    border: 1px solid rgba(248, 81, 73, 0.3);
+    color: #ffa198;
+    font-size: 11px;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 200px;
+}
+
+.mermaid-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+}
+
+.mermaid-view-toggle {
+    display: flex;
+    align-items: center;
+    background: rgba(0, 0, 0, 0.35);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 5px;
+    padding: 2px;
+    gap: 2px;
+}
+
+.mermaid-toggle-btn {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 7px;
+    border-radius: 3px;
+    border: none;
+    background: transparent;
+    color: var(--theme-tab-foreground, #8b929c);
+    font-size: 11px;
+    font-weight: 500;
+    cursor: pointer;
+    line-height: 1.2;
+    transition: background-color 0.12s ease, color 0.12s ease;
+}
+
+.mermaid-toggle-btn:hover {
+    color: var(--theme-foreground, #ffffff);
+}
+
+.mermaid-toggle-btn.active {
+    background: rgba(255, 255, 255, 0.12);
+    color: var(--theme-foreground, #ffffff);
+}
+
+.mermaid-zoom-controls {
+    display: flex;
+    align-items: center;
+    background: rgba(0, 0, 0, 0.35);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 5px;
+    padding: 2px;
+    gap: 1px;
+}
+
+.mermaid-zoom-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 18px;
+    border: none;
+    background: transparent;
+    color: var(--theme-tab-foreground, #8b929c);
+    font-size: 11px;
+    font-family: monospace;
+    font-weight: 600;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: background-color 0.12s ease, color 0.12s ease;
+}
+
+.mermaid-zoom-btn:hover {
+    color: var(--theme-foreground, #ffffff);
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.mermaid-zoom-reset {
+    font-size: 10px;
+    width: auto;
+    padding: 0 4px;
+}
+
+.mermaid-action-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 24px;
+    padding: 0;
+    border-radius: 4px;
+    border: none;
+    background: transparent;
+    color: var(--theme-tab-foreground, #8b929c);
+    cursor: pointer;
+    transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.mermaid-action-btn:hover {
+    color: var(--theme-foreground, #ffffff);
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.mermaid-action-btn.copied {
+    color: #7ee787;
+    background: rgba(46, 160, 67, 0.15);
+}
+
+.mermaid-body {
+    position: relative;
+    min-height: 60px;
+}
+
+.mermaid-fit-btn {
+    font-size: 10px;
+    font-weight: 600;
+    width: auto;
+    padding: 0 5px;
+    border-right: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.mermaid-fit-btn.active {
+    background: rgba(88, 166, 255, 0.2);
+    color: #58a6ff;
+}
+
+.mermaid-diagram-container {
+    overflow: auto;
+    max-width: 100%;
+    padding: 24px 20px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    box-sizing: border-box;
+    min-height: 100px;
+}
+
+.mermaid-svg-wrapper {
+    display: inline-flex;
+    justify-content: center;
+    align-items: center;
+    transition: transform 0.12s ease-out;
+    transform-origin: top center;
+    margin: 0 auto;
+}
+
+.mermaid-svg-wrapper svg {
+    display: block;
+    margin: 0 auto;
+    height: auto;
+}
+
+.mermaid-svg-wrapper:not(.mermaid-fit) svg {
+    max-width: none;
+}
+
+.mermaid-svg-wrapper.mermaid-fit svg {
+    max-width: 100%;
+}
+
+.mermaid-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    color: var(--theme-tab-foreground, #8b929c);
+    padding: 32px 16px;
+    font-size: 12px;
+}
+
+.mermaid-spinner {
+    width: 14px;
+    height: 14px;
+    border: 2px solid rgba(255, 255, 255, 0.15);
+    border-top-color: #58a6ff;
+    border-radius: 50%;
+    animation: mermaid-spin 0.7s linear infinite;
+}
+
+@keyframes mermaid-spin {
+    to { transform: rotate(360deg); }
+}
+
+.mermaid-error-container {
+    padding: 16px;
+    background: rgba(248, 81, 73, 0.06);
+    border-top: 1px solid rgba(248, 81, 73, 0.18);
+}
+
+.mermaid-error-title {
+    color: #ffa198;
+    font-weight: 600;
+    font-size: 12px;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.mermaid-error-message {
+    font-family: var(--code-font-family, "JetBrains Mono", monospace);
+    font-size: 11px;
+    line-height: 1.45;
+    color: #ffc2b4;
+    white-space: pre-wrap;
+    background: rgba(0, 0, 0, 0.4);
+    padding: 10px 12px;
+    border-radius: 5px;
+    border: 1px solid rgba(248, 81, 73, 0.25);
+    margin: 0 0 12px 0;
+    overflow-x: auto;
+}
+
+.mermaid-code-view {
+    margin: 0;
+    padding: 14px 16px;
+    overflow-x: auto;
+    font-family: var(--code-font-family, "JetBrains Mono", monospace);
+    font-size: 12.5px;
+    line-height: 1.5;
+    background: transparent;
+    tab-size: 4;
+}
+
+.mermaid-code-view code {
+    display: inline-block;
+    background: transparent;
+    padding: 0;
+    font-size: inherit;
+    font-family: inherit;
+    color: inherit;
+}
+
+/* =========================================================================
+   Zed-Style Modern Diagram Palette & High-Contrast Typography
+   ========================================================================= */
+
+/* Remove Mermaid's harsh blurry white drop-shadow */
+.mermaid-svg-wrapper svg [data-look="neo"] rect,
+.mermaid-svg-wrapper svg [data-look="neo"] polygon,
+.mermaid-svg-wrapper svg [data-look="neo"] path,
+.mermaid-svg-wrapper svg [data-look="neo"] circle,
+.mermaid-svg-wrapper svg .node rect,
+.mermaid-svg-wrapper svg .node polygon,
+.mermaid-svg-wrapper svg .node circle,
+.mermaid-svg-wrapper svg .node path {
+    filter: none !important;
+}
+
+/* Crisp rounded corners and clean borders */
+.mermaid-svg-wrapper svg .node rect {
+    rx: 6px !important;
+    ry: 6px !important;
+    stroke-width: 1.5px !important;
+}
+
+/* Modern clean typography inside diagram nodes */
+.mermaid-svg-wrapper svg text,
+.mermaid-svg-wrapper svg .nodeLabel,
+.mermaid-svg-wrapper svg .edgeLabel,
+.mermaid-svg-wrapper svg .label,
+.mermaid-svg-wrapper svg span {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important;
+    font-size: 13px !important;
+    color: #f0f6fc !important;
+    fill: #f0f6fc !important;
+}
+
+/* Subtle, clean subgraphs (clusters) */
+.mermaid-svg-wrapper svg .cluster rect {
+    rx: 8px !important;
+    ry: 8px !important;
+    stroke: rgba(255, 255, 255, 0.15) !important;
+    stroke-width: 1px !important;
+    fill: rgba(255, 255, 255, 0.02) !important;
+}
+
+.mermaid-svg-wrapper svg .cluster span,
+.mermaid-svg-wrapper svg .cluster text {
+    font-weight: 600 !important;
+    font-size: 12px !important;
+    color: #8b949e !important;
+    fill: #8b949e !important;
+}
+
+/* Smooth curved connection lines / arrows */
+.mermaid-svg-wrapper svg .edgePath path,
+.mermaid-svg-wrapper svg .flowchart-link {
+    stroke: #58a6ff !important;
+    stroke-width: 1.5px !important;
+    stroke-linecap: round !important;
+    stroke-linejoin: round !important;
+}
+
+.mermaid-svg-wrapper svg .marker {
+    fill: #58a6ff !important;
+    stroke: #58a6ff !important;
+}
+
+/* Zed-style vibrant color-cycling for flowchart nodes */
+/* 1. Cyan / Teal */
+.mermaid-svg-wrapper svg .nodes > .node:nth-child(6n + 1) rect,
+.mermaid-svg-wrapper svg .nodes > .node:nth-child(6n + 1) polygon,
+.mermaid-svg-wrapper svg .nodes > .node:nth-child(6n + 1) circle,
+.mermaid-svg-wrapper svg .nodes > .node:nth-child(6n + 1) path:not(.outer-path) {
+    stroke: #38bdf8 !important;
+    fill: rgba(56, 189, 248, 0.12) !important;
+}
+
+/* 2. Orange / Amber */
+.mermaid-svg-wrapper svg .nodes > .node:nth-child(6n + 2) rect,
+.mermaid-svg-wrapper svg .nodes > .node:nth-child(6n + 2) polygon,
+.mermaid-svg-wrapper svg .nodes > .node:nth-child(6n + 2) circle,
+.mermaid-svg-wrapper svg .nodes > .node:nth-child(6n + 2) path:not(.outer-path) {
+    stroke: #fb923c !important;
+    fill: rgba(251, 146, 60, 0.12) !important;
+}
+
+/* 3. Purple / Violet */
+.mermaid-svg-wrapper svg .nodes > .node:nth-child(6n + 3) rect,
+.mermaid-svg-wrapper svg .nodes > .node:nth-child(6n + 3) polygon,
+.mermaid-svg-wrapper svg .nodes > .node:nth-child(6n + 3) circle,
+.mermaid-svg-wrapper svg .nodes > .node:nth-child(6n + 3) path:not(.outer-path) {
+    stroke: #c084fc !important;
+    fill: rgba(192, 132, 252, 0.12) !important;
+}
+
+/* 4. Gold / Yellow */
+.mermaid-svg-wrapper svg .nodes > .node:nth-child(6n + 4) rect,
+.mermaid-svg-wrapper svg .nodes > .node:nth-child(6n + 4) polygon,
+.mermaid-svg-wrapper svg .nodes > .node:nth-child(6n + 4) circle,
+.mermaid-svg-wrapper svg .nodes > .node:nth-child(6n + 4) path:not(.outer-path) {
+    stroke: #facc15 !important;
+    fill: rgba(250, 204, 21, 0.12) !important;
+}
+
+/* 5. Rose / Crimson */
+.mermaid-svg-wrapper svg .nodes > .node:nth-child(6n + 5) rect,
+.mermaid-svg-wrapper svg .nodes > .node:nth-child(6n + 5) polygon,
+.mermaid-svg-wrapper svg .nodes > .node:nth-child(6n + 5) circle,
+.mermaid-svg-wrapper svg .nodes > .node:nth-child(6n + 5) path:not(.outer-path) {
+    stroke: #f43f5e !important;
+    fill: rgba(244, 63, 94, 0.12) !important;
+}
+
+/* 6. Green / Emerald */
+.mermaid-svg-wrapper svg .nodes > .node:nth-child(6n + 6) rect,
+.mermaid-svg-wrapper svg .nodes > .node:nth-child(6n + 6) polygon,
+.mermaid-svg-wrapper svg .nodes > .node:nth-child(6n + 6) circle,
+.mermaid-svg-wrapper svg .nodes > .node:nth-child(6n + 6) path:not(.outer-path) {
+    stroke: #4ade80 !important;
+    fill: rgba(74, 222, 128, 0.12) !important;
+}
+
+/* Sequence diagram actor color cycling */
+.mermaid-svg-wrapper svg .actor:nth-of-type(4n + 1) rect {
+    stroke: #38bdf8 !important;
+    fill: rgba(56, 189, 248, 0.14) !important;
+    rx: 6px !important;
+    ry: 6px !important;
+}
+.mermaid-svg-wrapper svg .actor:nth-of-type(4n + 2) rect {
+    stroke: #fb923c !important;
+    fill: rgba(251, 146, 60, 0.14) !important;
+    rx: 6px !important;
+    ry: 6px !important;
+}
+.mermaid-svg-wrapper svg .actor:nth-of-type(4n + 3) rect {
+    stroke: #c084fc !important;
+    fill: rgba(192, 132, 252, 0.14) !important;
+    rx: 6px !important;
+    ry: 6px !important;
+}
+.mermaid-svg-wrapper svg .actor:nth-of-type(4n + 4) rect {
+    stroke: #facc15 !important;
+    fill: rgba(250, 204, 21, 0.14) !important;
+    rx: 6px !important;
+    ry: 6px !important;
+}
+
+/* State diagram states */
+.mermaid-svg-wrapper svg .statediagram-state rect {
+    rx: 6px !important;
+    ry: 6px !important;
+    stroke-width: 1.5px !important;
+}
+
+.mermaid-svg-wrapper svg .statediagram-state:nth-of-type(5n + 1) rect {
+    stroke: #38bdf8 !important;
+    fill: rgba(56, 189, 248, 0.12) !important;
+}
+.mermaid-svg-wrapper svg .statediagram-state:nth-of-type(5n + 2) rect {
+    stroke: #fb923c !important;
+    fill: rgba(251, 146, 60, 0.12) !important;
+}
+.mermaid-svg-wrapper svg .statediagram-state:nth-of-type(5n + 3) rect {
+    stroke: #c084fc !important;
+    fill: rgba(192, 132, 252, 0.12) !important;
+}
+.mermaid-svg-wrapper svg .statediagram-state:nth-of-type(5n + 4) rect {
+    stroke: #facc15 !important;
+    fill: rgba(250, 204, 21, 0.12) !important;
+}
+.mermaid-svg-wrapper svg .statediagram-state:nth-of-type(5n + 5) rect {
+    stroke: #4ade80 !important;
+    fill: rgba(74, 222, 128, 0.12) !important;
+}

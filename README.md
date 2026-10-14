@@ -19,7 +19,8 @@
 - **Free layout**: Flexible pane layout for arranging the workspace the way you want.
 - **Integrated terminal**: Full-featured terminal emulator with WebSocket-based communication, supporting real-time command execution and output.
 - **Search functionality**: Powerful search capabilities including local search within files and global search across project.
-- **ACP integration**: Agent Client Protocol (ACP) support for seamless integration with AI agents, including tool-call streaming, history-backed undo, session resume, frontend-controlled permission mode, model and reasoning selectors, streamed markdown and code blocks, markdown file links, and improved tool-call diff display.
+- **Markdown Preview & Mermaid Diagrams**: Live synchronized markdown preview with full Mermaid diagram rendering (flowcharts, sequence diagrams, state, class, ER, Git graphs), diagram/code view toggle, interactive zoom, and copy controls.
+- **ACP integration**: Agent Client Protocol (ACP) support for seamless integration with AI agents, including tool-call streaming, history-backed undo, session resume, frontend-controlled permission mode, model and reasoning selectors, streamed markdown and code blocks, markdown file links, interactive Mermaid diagrams in chat, and improved tool-call diff display.
 
 ## Architecture
 

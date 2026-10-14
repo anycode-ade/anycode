@@ -15,6 +15,9 @@ const vendorChunk = (id) => {
   if (id.includes("react-markdown") || id.includes("remark-") || id.includes("micromark")) {
     return "markdown";
   }
+  if (id.includes("mermaid") || id.includes("dayjs") || id.includes("cytoscape") || id.includes("d3") || id.includes("khroma") || id.includes("dagre")) {
+    return "mermaid";
+  }
   if (id.includes("dockview")) {
     return "dockview";
   }

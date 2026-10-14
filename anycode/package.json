@@ -27,6 +27,7 @@
     "dockview": "^7.0.2",
     "dockview-react": "^7.0.2",
     "jetbrains-mono": "^1.0.6",
+    "mermaid": "^12.2.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-markdown": "^10.1.0",
