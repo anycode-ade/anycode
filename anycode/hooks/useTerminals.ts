@@ -231,6 +231,25 @@ export const useTerminals = ({ wsRef, isConnected }: UseTerminalsParams) => {
         });
     }, [wsRef, isConnected]);
 
+    const closeAllTerminals = useCallback(() => {
+        for (const terminal of terminals) {
+            localStorage.removeItem(`terminal:data:${terminal.name}`);
+            localStorage.removeItem(`terminal:mouseMode:${terminal.name}`);
+            clearResizeState(terminal.name);
+            if (wsRef.current && isConnected) {
+                wsRef.current.emit('terminal:close', {
+                    name: terminal.name,
+                    session: terminal.session,
+                });
+            }
+        }
+        closingTerminalsRef.current.clear();
+        newTerminalsRef.current.clear();
+        terminalListenersRef.current.clear();
+        setTerminals([]);
+        localStorage.removeItem('terminals');
+    }, [clearResizeState, terminals, wsRef, isConnected]);
+
     useEffect(() => {
         return () => {
             clearResizeState();
@@ -244,6 +263,7 @@ export const useTerminals = ({ wsRef, isConnected }: UseTerminalsParams) => {
         handleTerminalDataCallback,
         addTerminal,
         closeTerminal,
+        closeAllTerminals,
         reconnectTerminals,
         isTerminalClosing,
         uploadFile,

@@ -9,5 +9,7 @@ export { HistoryPanel } from './HistoryPanel';
 export type { ChangedFile } from './ChangesPanel';
 export { SettingsPanel } from './SettingsPanel';
 export { FileIcon } from './FileIcon';
+export { DynamicBackground } from './DynamicBackground';
 
 export * from '../types';
+

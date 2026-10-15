@@ -1,6 +1,6 @@
-import React, { useCallback, useEffect, useMemo, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import 'dockview-react/dist/styles/dockview.css';
-import { ChangesPanel, HistoryPanel, type ChangedFile, SettingsPanel } from './components';
+import { ChangesPanel, HistoryPanel, type ChangedFile, SettingsPanel, DynamicBackground } from './components';
 import Search from './components/Search';
 import { Layout, type LayoutActions, type PanelId } from './components/layout/Layout';
 import { Toolbar } from './components/toolbar/Toolbar';
@@ -35,8 +35,11 @@ import { TerminalPanel } from './features/terminal/TerminalPanel';
 import { AgentPanel } from './features/agents/AgentPanel';
 import { BrowserPanel } from './features/browser/BrowserPanel';
 import { type DiffMode } from './types/diffMode';
-import { getLanguageFromFileName, normalizePath, uriToFilePath } from './utils';
+import { announceWarp, getLanguageFromFileName, normalizePath, uriToFilePath } from './utils';
 import { useSettings } from './hooks/useSettings';
+import { isTauri, warpCssVars, warpSwapMs } from './constants';
+import { WelcomeScreen } from './components/WelcomeScreen';
+import { openFolderDialog, openWorkspace } from './workspace';
 
 const toMultibufferFiles = (files: ChangedFile[]): MultibufferFile[] => files.map((file) => ({
     id: file.path,
@@ -55,7 +58,12 @@ type ReviewSession = {
     focusRequest?: { path: string; line?: number; column?: number; token: number };
 };
 
-const App: React.FC = () => {
+interface AppProps {
+    /** Active workspace path reported by the backend; null shows the Welcome screen. */
+    initialWorkspace: string | null;
+}
+
+const App: React.FC<AppProps> = ({ initialWorkspace }) => {
     const { wsRef, isConnected, connectionStatus, connectToBackend } = useSocket({});
     const [showConnectionBanner, setShowConnectionBanner] = React.useState(false);
     const settings = useSettings();
@@ -208,7 +216,114 @@ const App: React.FC = () => {
         search.handleSearchEnd,
     ]);
 
+    const [workspacePath, setWorkspacePath] = useState<string | null>(initialWorkspace);
+    const [isWarping, setIsWarping] = useState<boolean>(false);
+    const [warpTransition, setWarpTransition] = useState<{
+        active: boolean;
+        direction: 'opening' | 'closing' | null;
+    }>({ active: false, direction: null });
+    const workspacePathRef = useRef<string | null>(workspacePath);
+    workspacePathRef.current = workspacePath;
+    const isTransitioningRef = useRef<boolean>(false);
+    const backgroundSettingsRef = useRef(settings.backgroundSettings);
+    backgroundSettingsRef.current = settings.backgroundSettings;
+
+    const isWorkspaceOpen = !isTauri || Boolean(workspacePath);
+
+    const handleWorkspaceTransition = useCallback(async (targetPath: string | null) => {
+        if (isTransitioningRef.current) return;
+        if (targetPath === workspacePathRef.current) return;
+
+        isTransitioningRef.current = true;
+        const direction = targetPath ? 'opening' : 'closing';
+        const { warpJump, warpDurationMs } = backgroundSettingsRef.current;
+
+        if (warpJump) {
+            announceWarp();
+            setWarpTransition({ active: true, direction });
+            setIsWarping(true);
+        }
+
+        editors.flushAllPendingChanges();
+
+        if (warpJump) {
+            await new Promise((r) => setTimeout(r, warpSwapMs(warpDurationMs)));
+        }
+
+        // Thoroughly teardown previous workspace state
+        editors.closeAllFiles();
+        fileTree.resetFileTree();
+        terminals.closeAllTerminals();
+        agents.resetAgents();
+        git.resetGitState();
+        search.resetSearch();
+        setMultibufferReviews({});
+        setMarkdownPreviews({});
+
+        // Notify backend to stop all LSP servers, kill terminals, and clear memory caches
+        if (wsRef.current && isConnected) {
+            wsRef.current.emit('workspace:close');
+        }
+
+        if (targetPath) {
+            setWorkspacePath(targetPath);
+            setTimeout(() => {
+                fileTree.openFolder('.');
+                git.fetchGitStatus();
+                git.fetchBranches();
+            }, 50);
+        } else {
+            setWorkspacePath(null);
+        }
+
+        const finishTransition = () => {
+            setIsWarping(false);
+            setWarpTransition({ active: false, direction: null });
+            if (typeof window !== 'undefined') {
+                (window as any).__ANYCODE_IS_WARPING__ = false;
+            }
+            isTransitioningRef.current = false;
+        };
+        if (warpJump) {
+            setTimeout(finishTransition, warpDurationMs);
+        } else {
+            finishTransition();
+        }
+    }, [editors, fileTree, git, terminals, agents, search, isConnected]);
+
     useEffect(() => {
+        if (!isTauri) return;
+
+        let unlisten: (() => void) | undefined;
+        import('@tauri-apps/api/event').then(({ listen }) => {
+            listen<string | null>('workspace_changed', (event) => {
+                handleWorkspaceTransition(event.payload);
+            }).then((u) => {
+                unlisten = u;
+            });
+        });
+
+        return () => {
+            if (unlisten) unlisten();
+        };
+    }, [handleWorkspaceTransition]);
+
+    const handleOpenFolderClick = useCallback(async () => {
+        const picked = await openFolderDialog();
+        if (picked) {
+            handleWorkspaceTransition(picked);
+        }
+    }, [handleWorkspaceTransition]);
+
+    const handleSelectWorkspace = useCallback(async (path: string) => {
+        const opened = await openWorkspace(path);
+        if (opened) {
+            handleWorkspaceTransition(opened);
+        }
+    }, [handleWorkspaceTransition]);
+
+    useEffect(() => {
+        if (!isWorkspaceOpen) return;
         if (isConnected && !wasConnectedRef.current) {
             fileTree.openFolder('.');
             terminals.reconnectTerminals();
@@ -217,7 +332,7 @@ const App: React.FC = () => {
             git.fetchBranches();
         }
         wasConnectedRef.current = isConnected;
-    }, [isConnected, fileTree.openFolder, terminals.reconnectTerminals,
+    }, [isConnected, isWorkspaceOpen, fileTree.openFolder, terminals.reconnectTerminals,
         agents.reconnectToAcpAgents, git.fetchGitStatus, git.fetchBranches]);
 
     useEffect(() => {
@@ -608,6 +723,12 @@ const App: React.FC = () => {
                 return;
             }
     
+            if (isTauri && (e.metaKey || e.ctrlKey) && (e.key === 'o' || e.key === 'O' || e.code === 'KeyO')) {
+                e.preventDefault();
+                handleOpenFolderClick();
+                return;
+            }
+
             if ((e.ctrlKey || e.metaKey) && (e.code === 'KeyS' || e.key.toLowerCase() === 's')) {
                 e.preventDefault();
                 if (editors.activeFileId) {
@@ -877,6 +998,8 @@ const App: React.FC = () => {
                         onFontSettingsChange={settings.updateFontSettings}
                         scrollbarSettings={settings.scrollbarSettings}
                         onScrollbarSettingsChange={settings.updateScrollbarSettings}
+                        backgroundSettings={settings.backgroundSettings}
+                        onBackgroundSettingsChange={settings.updateBackgroundSettings}
                     />
                 );
             default:
@@ -982,28 +1105,63 @@ const App: React.FC = () => {
 
     return (
         <div
-            className="app-container toolbar-header-compact"
-            style={{ '--file-icon-opacity': fileIconsOpacity } as React.CSSProperties}
+            className={`app-container toolbar-header-compact ${settings.backgroundSettings.enabled ? 'app-with-dynamic-bg' : ''} ${isWarping ? 'is-warping' : ''}`}
+            data-dynamic-bg={settings.backgroundSettings.enabled ? "global" : undefined}
+            style={{ '--file-icon-opacity': fileIconsOpacity, ...warpCssVars(settings.backgroundSettings.warpDurationMs) } as React.CSSProperties}
         >
-            <div className="main-content" style={{ flex: 1, display: 'flex' }}>
-                <Layout
-                    renderPanel={renderPanel}
-                    onPanelAdded={handlePanelAdded}
-                    onPanelRemoved={handlePanelRemoved}
-                    onPanelActivated={handlePanelActivated}
-                    onCycleEditorDiffMode={handleCycleEditorDiffMode}
-                    isEditorDiffEnabled={isEditorDiffEnabled}
-                    getEditorDiffMode={editors.getEditorDiffMode}
-                    onActionsReady={(actions) => {
-                        layoutActionsRef.current = actions;
-                    }}
-                    canResetPanel={canResetPanel}
-                    onResetPanel={handleResetPanel}
-                    isEditorMarkdown={isEditorMarkdown}
-                    isEditorMarkdownPreviewOpen={isEditorMarkdownPreviewOpen}
-                    onToggleEditorMarkdownPreview={handleToggleEditorMarkdownPreview}
+            {settings.backgroundSettings.enabled && (
+                <DynamicBackground
+                    settings={settings.backgroundSettings}
+                    className="app-global-dynamic-bg"
                 />
-            </div>
+            )}
+            {!isWorkspaceOpen ? (
+                <div
+                    className={`warp-screen-wrapper ${
+                        warpTransition.direction === 'opening'
+                            ? 'warping-out'
+                            : warpTransition.direction === 'closing'
+                            ? 'warping-in'
+                            : ''
+                    }`}
+                >
+                    <WelcomeScreen
+                        onOpenFolder={handleOpenFolderClick}
+                        onSelectWorkspace={handleSelectWorkspace}
+                        backgroundSettings={settings.backgroundSettings}
+                        hideBackground={settings.backgroundSettings.enabled}
+                    />
+                </div>
+            ) : (
+                <div
+                    className={`main-content warp-screen-wrapper ${
+                        warpTransition.direction === 'closing'
+                            ? 'warping-out'
+                            : warpTransition.direction === 'opening'
+                            ? 'warping-in'
+                            : ''
+                    }`}
+                    style={{ flex: 1, display: 'flex', position: 'relative', zIndex: 1, background: 'transparent' }}
+                >
+                    <Layout
+                        renderPanel={renderPanel}
+                        onPanelAdded={handlePanelAdded}
+                        onPanelRemoved={handlePanelRemoved}
+                        onPanelActivated={handlePanelActivated}
+                        onCycleEditorDiffMode={handleCycleEditorDiffMode}
+                        isEditorDiffEnabled={isEditorDiffEnabled}
+                        getEditorDiffMode={editors.getEditorDiffMode}
+                        onActionsReady={(actions) => {
+                            layoutActionsRef.current = actions;
+                        }}
+                        canResetPanel={canResetPanel}
+                        onResetPanel={handleResetPanel}
+                        isEditorMarkdown={isEditorMarkdown}
+                        isEditorMarkdownPreviewOpen={isEditorMarkdownPreviewOpen}
+                        onToggleEditorMarkdownPreview={handleToggleEditorMarkdownPreview}
+                    />
+                </div>
+            )}
         </div>
     );
 };

@@ -41,15 +41,17 @@ const getRelativeLuminance = ([r, g, b]: [number, number, number]): number => {
     return 0.2126 * rs + 0.7152 * gs + 0.0722 * bs;
 };
 
+const isSafari = typeof navigator !== 'undefined' && /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+
 /**
- * Determines if a dark color is near-black or deep dark neutral.
+ * Determines if a dark color is virtually pitch black (e.g. rgb <= 12).
  * For Safari to render deep black toolbar chrome (8, 8, 8) like x.com / GitHub without
- * translucent milky-gray blur artifacts, near-black backgrounds are mapped to #000000.
+ * translucent milky-gray blur artifacts, near-black toolbar chrome is mapped to #000000.
  */
-const isNearBlack = (color: string): boolean => {
+const isDeepBlack = (color: string): boolean => {
     const rgb = parseRgb(color);
     if (!rgb) return false;
-    return getRelativeLuminance(rgb) <= 0.03 || Math.max(...rgb) <= 45;
+    return getRelativeLuminance(rgb) <= 0.008 || Math.max(...rgb) <= 12;
 };
 
 export const useTheme = ({ wsRef, isConnected }: UseThemeParams) => {
@@ -59,7 +61,7 @@ export const useTheme = ({ wsRef, isConnected }: UseThemeParams) => {
     });
 
     const applyBrowserChromeColor = useCallback((color: string, isLight: boolean = false) => {
-        const safeColor = color?.trim() || (isLight ? '#ffffff' : '#000000');
+        const safeColor = color?.trim() || (isLight ? '#ffffff' : '#242424');
         const ensureMeta = (selector: string, attrs: Record<string, string>, contentVal: string) => {
             let meta = document.head.querySelector(selector) as HTMLMetaElement | null;
             if (!meta) {
@@ -72,13 +74,13 @@ export const useTheme = ({ wsRef, isConnected }: UseThemeParams) => {
             meta.setAttribute('content', contentVal);
         };
 
-        // In Tauri or when not Safari, use real color instead of forcing #000000
-        const darkChromeColor = isTauri ? safeColor : (!isLight ? (isNearBlack(safeColor) ? '#000000' : safeColor) : '#000000');
-        const targetColor = isTauri ? safeColor : (!isLight ? darkChromeColor : safeColor);
+        // For Safari toolbar chrome to render deep black without milky-gray blur, map truly near-black colors to #000000 in Safari meta only
+        const safariChromeColor = !isLight && isSafari && isDeepBlack(safeColor) ? '#000000' : safeColor;
+        const chromeColor = isTauri ? safeColor : safariChromeColor;
 
-        ensureMeta('meta[name="theme-color"][media="(prefers-color-scheme: dark)"]', { name: 'theme-color', media: '(prefers-color-scheme: dark)' }, isTauri ? safeColor : darkChromeColor);
+        ensureMeta('meta[name="theme-color"][media="(prefers-color-scheme: dark)"]', { name: 'theme-color', media: '(prefers-color-scheme: dark)' }, isLight ? '#ffffff' : chromeColor);
         ensureMeta('meta[name="theme-color"][media="(prefers-color-scheme: light)"]', { name: 'theme-color', media: '(prefers-color-scheme: light)' }, isLight ? safeColor : '#ffffff');
-        ensureMeta('meta[name="theme-color"]:not([media])', { name: 'theme-color' }, isTauri ? safeColor : (isLight ? safeColor : darkChromeColor));
+        ensureMeta('meta[name="theme-color"]:not([media])', { name: 'theme-color' }, chromeColor);
         ensureMeta('meta[name="color-scheme"]', { name: 'color-scheme' }, isLight ? 'light' : 'dark');
         ensureMeta('meta[name="apple-mobile-web-app-status-bar-style"]', { name: 'apple-mobile-web-app-status-bar-style' }, 'default');
 
@@ -93,13 +95,13 @@ export const useTheme = ({ wsRef, isConnected }: UseThemeParams) => {
         }
 
         if (typeof document !== 'undefined') {
-            document.documentElement.style.backgroundColor = targetColor;
+            document.documentElement.style.backgroundColor = safeColor;
             if (document.body) {
-                document.body.style.backgroundColor = targetColor;
+                document.body.style.backgroundColor = safeColor;
             }
             const shim = document.getElementById('safari-theme-shim');
             if (shim) {
-                shim.style.backgroundColor = targetColor;
+                shim.style.backgroundColor = chromeColor;
             }
         }
     }, []);
@@ -239,7 +241,7 @@ export const useTheme = ({ wsRef, isConnected }: UseThemeParams) => {
             // Ignore localStorage access errors
         }
         const isLight = storedMode === 'light';
-        const fallbackBg = isLight ? '#ffffff' : '#0a0a0a';
+        const fallbackBg = isLight ? '#ffffff' : '#242424';
         applyBrowserChromeColor(storedBg || fallbackBg, isLight);
     }, [applyBrowserChromeColor]);
 

@@ -261,8 +261,16 @@ pub fn normalize_watch_path(path: &Path) -> PathBuf {
 
 pub fn file_name(input: &str) -> String {
     let path_buf = std::path::PathBuf::from(input);
-    let file_name = path_buf.file_name().unwrap().to_string_lossy().into_owned();
-    file_name
+    path_buf
+        .file_name()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| {
+            if input.is_empty() {
+                String::new()
+            } else {
+                input.to_string()
+            }
+        })
 }
 
 pub fn relative_path(input: &str) -> String {
@@ -300,9 +308,7 @@ pub fn current_dir() -> PathBuf {
 }
 
 pub fn get_file_name(input: &str) -> String {
-    let path_buf = std::path::PathBuf::from(input);
-    let file_name = path_buf.file_name().unwrap().to_string_lossy().into_owned();
-    file_name
+    file_name(input)
 }
 
 pub fn path_to_uri(path: &str) -> anyhow::Result<Uri> {
@@ -406,5 +412,14 @@ mod tests {
         };
         let uri = path_to_uri(path).unwrap();
         assert!(uri.to_string().contains("file%23name%3F.ts"));
+    }
+
+    #[test]
+    fn test_file_name_root_and_edge_cases() {
+        assert_eq!(file_name("/"), "/");
+        assert_eq!(file_name(""), "");
+        assert_eq!(file_name("/a/b/c.txt"), "c.txt");
+        assert_eq!(file_name("/a/b/dir"), "dir");
+        assert_eq!(get_file_name("/"), "/");
     }
 }

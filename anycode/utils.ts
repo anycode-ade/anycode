@@ -1,3 +1,11 @@
+// Tells DynamicBackground and mounted panels that a warp started. Callers clear
+// window.__ANYCODE_IS_WARPING__ when the warp ends.
+export const announceWarp = (): void => {
+    (window as any).__ANYCODE_IS_WARPING__ = true;
+    (window as any).__ANYCODE_WARP_TIMESTAMP__ = Date.now();
+    window.dispatchEvent(new CustomEvent('anycode:warp-speed'));
+};
+
 export const normalizePath = (path: string): string => {
     return path.replace(/\\/g, '/');
 };

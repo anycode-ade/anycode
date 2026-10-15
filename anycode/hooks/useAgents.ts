@@ -1369,6 +1369,23 @@ export const useAgents = ({
     }, [wsRef, isConnected]);
 
 
+    const resetAgents = useCallback(() => {
+        if (wsRef.current && isConnected) {
+            wsRef.current.emit('acp:stop_all');
+        }
+        setAcpSessions(new Map());
+        acpSessionsRef.current = new Map();
+        setSelectedAgentId(null);
+        agentCounterRef.current.clear();
+        closedAgentIdsRef.current.clear();
+        pendingEventsRef.current = [];
+        toolOutputCache.clear();
+        if (flushTimerRef.current) {
+            clearTimeout(flushTimerRef.current);
+            flushTimerRef.current = null;
+        }
+    }, [wsRef, isConnected]);
+
     return {
         acpSessions,
         selectedAgentId,
@@ -1383,6 +1400,7 @@ export const useAgents = ({
         handleAcpHistory,
         handleAcpQueue,
         reconnectToAcpAgents,
+        resetAgents,
         startAgent,
         authenticateAgent,
         fetchAvailableSessions,

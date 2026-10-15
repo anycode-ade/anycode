@@ -35,3 +35,23 @@ export const BACKEND_URL = (() => {
 
 // File change batching delay in milliseconds
 export const BATCH_DELAY_MS = 30;
+
+// Warp jump transition length (ms). Default for the user-adjustable setting.
+export const WARP_DURATION_MS = 1000;
+export const WARP_DURATION_RANGE = { min: 200, max: 1200, step: 20 } as const;
+
+export const clampWarpDurationMs = (ms: number): number => {
+  const { min, max, step } = WARP_DURATION_RANGE;
+  const snapped = Math.round(ms / step) * step;
+  return Math.min(max, Math.max(min, snapped));
+};
+
+// The screen swaps one third of the way through the transition.
+export const warpSwapMs = (durationMs: number): number => Math.round(durationMs / 3);
+
+// CSS custom properties read by App.css and SettingsPanel.css.
+export const warpCssVars = (durationMs: number): Record<string, string> => ({
+  '--warp-duration': `${durationMs}ms`,
+  '--warp-swap-duration': `${warpSwapMs(durationMs)}ms`,
+  '--warp-in-duration': `${durationMs - warpSwapMs(durationMs)}ms`,
+});

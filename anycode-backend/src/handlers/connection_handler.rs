@@ -44,6 +44,7 @@ pub async fn handle_connect(socket: SocketRef, _state: State<AppState>) {
     socket.on("acp:queue:remove", handle_acp_queue_remove);
     socket.on("acp:queue:move", handle_acp_queue_move);
     socket.on("acp:stop", handle_acp_stop);
+    socket.on("acp:stop_all", handle_acp_stop_all);
     socket.on("acp:cancel", handle_acp_cancel);
     socket.on("acp:set_model", handle_acp_set_model);
     socket.on("acp:set_reasoning", handle_acp_set_reasoning);
@@ -82,9 +83,16 @@ pub async fn handle_connect(socket: SocketRef, _state: State<AppState>) {
     socket.on("git:stage", handle_git_stage);
     socket.on("git:unstage", handle_git_unstage);
 
+    socket.on("workspace:close", handle_workspace_close);
     socket.on("theme:list", handle_theme_list);
     socket.on("theme:get", handle_theme_get);
     socket.on_disconnect(handle_disconnect)
+}
+
+pub async fn handle_workspace_close(ack: socketioxide::extract::AckSender, state: State<AppState>) {
+    info!("handle_workspace_close: releasing all active workspace resources");
+    state.close_workspace().await;
+    ack.send(&serde_json::json!({ "success": true })).ok();
 }
 
 pub async fn handle_disconnect(socket: SocketRef, state: State<AppState>) {

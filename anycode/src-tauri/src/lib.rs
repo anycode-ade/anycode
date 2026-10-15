@@ -1,12 +1,85 @@
+mod workspace;
+
+use tauri::Emitter;
 use tokio_util::sync::CancellationToken;
+
+#[tauri::command]
+fn get_workspace_state() -> Result<workspace::WorkspaceConfig, String> {
+  Ok(workspace::load_config())
+}
+
+#[tauri::command]
+async fn open_folder_dialog(app: tauri::AppHandle) -> Result<Option<String>, String> {
+  let (tx, rx) = tokio::sync::oneshot::channel();
+  std::thread::spawn(move || {
+    let picked = rfd::FileDialog::new()
+      .set_title("Open Workspace Folder")
+      .pick_folder();
+    let _ = tx.send(picked);
+  });
+
+  if let Ok(Some(folder)) = rx.await {
+    let canonical = folder.canonicalize().unwrap_or_else(|_| folder);
+    let _ = std::env::set_current_dir(&canonical);
+    workspace::record_workspace(&canonical);
+    let path_str = canonical.to_string_lossy().to_string();
+    let _ = app.emit("workspace_changed", Some(path_str.clone()));
+    Ok(Some(path_str))
+  } else {
+    Ok(None)
+  }
+}
+
+#[tauri::command]
+fn open_workspace(path: String, app: tauri::AppHandle) -> Result<String, String> {
+  let p = std::path::PathBuf::from(&path);
+  if p.is_dir() {
+    let canonical = p.canonicalize().unwrap_or_else(|_| p);
+    let _ = std::env::set_current_dir(&canonical);
+    workspace::record_workspace(&canonical);
+    let path_str = canonical.to_string_lossy().to_string();
+    let _ = app.emit("workspace_changed", Some(path_str.clone()));
+    Ok(path_str)
+  } else {
+    Err(format!("Directory does not exist: {path}"))
+  }
+}
+
+#[tauri::command]
+fn remove_recent_workspace(path: String) -> Result<workspace::WorkspaceConfig, String> {
+  Ok(workspace::remove_recent_workspace(&path))
+}
+
+#[tauri::command]
+fn close_workspace(app: tauri::AppHandle) {
+  workspace::clear_current_workspace();
+  if let Some(home) = dirs::home_dir() {
+    let _ = std::env::set_current_dir(&home);
+  }
+  let _ = app.emit("workspace_changed", Option::<String>::None);
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+  let active_workspace = workspace::determine_initial_workspace();
+  if let Some(ref dir) = active_workspace {
+    let _ = std::env::set_current_dir(dir);
+  } else if let Some(home) = dirs::home_dir() {
+    let _ = std::env::set_current_dir(&home);
+  }
+
   let shutdown_token = CancellationToken::new();
   let shutdown_for_backend = shutdown_token.clone();
 
   tauri::Builder::default()
     .runtime(tauri_runtime_wry::Wry::default())
+    .invoke_handler(tauri::generate_handler![
+      get_workspace_state,
+      open_folder_dialog,
+      open_workspace,
+      remove_recent_workspace,
+      close_workspace
+    ])
     .setup(move |app| {
       if cfg!(debug_assertions) {
         app.handle().plugin(
@@ -18,6 +91,62 @@ pub fn run() {
 
       app.handle().plugin(tauri_plugin_process::init())?;
       app.handle().plugin(tauri_plugin_updater::Builder::new().build())?;
+
+      // Setup native menu
+      let handle = app.handle();
+      let app_menu = tauri::menu::Submenu::with_items(handle, "Anycode", true, &[
+        &tauri::menu::PredefinedMenuItem::about(handle, Some("About Anycode"), None)?,
+        &tauri::menu::PredefinedMenuItem::separator(handle)?,
+        &tauri::menu::PredefinedMenuItem::services(handle, None)?,
+        &tauri::menu::PredefinedMenuItem::separator(handle)?,
+        &tauri::menu::PredefinedMenuItem::hide(handle, None)?,
+        &tauri::menu::PredefinedMenuItem::hide_others(handle, None)?,
+        &tauri::menu::PredefinedMenuItem::show_all(handle, None)?,
+        &tauri::menu::PredefinedMenuItem::separator(handle)?,
+        &tauri::menu::PredefinedMenuItem::quit(handle, None)?,
+      ])?;
+
+      let file_menu = tauri::menu::Submenu::with_items(handle, "File", true, &[
+        &tauri::menu::MenuItem::with_id(handle, "open_folder", "Open Folder...", true, Some("CmdOrCtrl+O"))?,
+        &tauri::menu::MenuItem::with_id(handle, "close_workspace", "Close Workspace", true, None::<&str>)?,
+      ])?;
+
+      let edit_menu = tauri::menu::Submenu::with_items(handle, "Edit", true, &[
+        &tauri::menu::PredefinedMenuItem::undo(handle, None)?,
+        &tauri::menu::PredefinedMenuItem::redo(handle, None)?,
+        &tauri::menu::PredefinedMenuItem::separator(handle)?,
+        &tauri::menu::PredefinedMenuItem::cut(handle, None)?,
+        &tauri::menu::PredefinedMenuItem::copy(handle, None)?,
+        &tauri::menu::PredefinedMenuItem::paste(handle, None)?,
+        &tauri::menu::PredefinedMenuItem::select_all(handle, None)?,
+      ])?;
+
+      let menu = tauri::menu::Menu::with_items(handle, &[&app_menu, &file_menu, &edit_menu])?;
+      app.set_menu(menu)?;
+
+      app.on_menu_event(move |app_handle, event| {
+        if event.id() == "open_folder" {
+          let handle_clone = app_handle.clone();
+          std::thread::spawn(move || {
+            if let Some(folder) = rfd::FileDialog::new()
+              .set_title("Open Workspace Folder")
+              .pick_folder()
+            {
+              let canonical = folder.canonicalize().unwrap_or_else(|_| folder);
+              let _ = std::env::set_current_dir(&canonical);
+              workspace::record_workspace(&canonical);
+              let path_str = canonical.to_string_lossy().to_string();
+              let _ = handle_clone.emit("workspace_changed", Some(path_str));
+            }
+          });
+        } else if event.id() == "close_workspace" {
+          workspace::clear_current_workspace();
+          if let Some(home) = dirs::home_dir() {
+            let _ = std::env::set_current_dir(&home);
+          }
+          let _ = app_handle.emit("workspace_changed", Option::<String>::None);
+        }
+      });
 
       // Generate random secret token for this application run
       let secret_token = uuid::Uuid::new_v4().to_string();
@@ -44,7 +173,8 @@ pub fn run() {
 
       log::info!("Anycode backend running on 127.0.0.1:{port}");
 
-      // Inject port and token before any webview script runs
+      // Inject port and token before any webview script runs. The active workspace is
+      // not injected: it is read from the backend on every page load (reload included).
       let init_script = format!(
         r#"window.__ANYCODE_PORT__ = {port}; window.__ANYCODE_TOKEN__ = "{secret_token}";"#
       );

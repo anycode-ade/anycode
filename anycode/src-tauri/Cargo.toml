@@ -26,6 +26,8 @@ tauri-plugin-process = "3.0.0-alpha.3"
 uuid = { version = "1", features = ["v4"] }
 tokio = { version = "1", features = ["sync"] }
 tokio-util = { version = "0.7", features = ["compat"] }
+dirs = "6"
+rfd = "0.15"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2-web-kit = "0.3.2"

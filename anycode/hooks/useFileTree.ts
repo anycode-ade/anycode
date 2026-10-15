@@ -211,6 +211,11 @@ export const useFileTree = ({ wsRef, isConnected }: UseFileTreeParams) => {
         wsRef.current.emit('dir:list', { path }, handleOpenFolderResponse);
     }, [wsRef, isConnected, handleOpenFolderResponse]);
 
+    const resetFileTree = useCallback(() => {
+        setFileTree([]);
+        setActiveNodeId(null);
+    }, []);
+
     const toggleNode = useCallback((nodeId: string) => {
         setFileTree((prevTree) => {
             const updateNode = (nodes: TreeNode[]): TreeNode[] => {
@@ -555,6 +560,7 @@ export const useFileTree = ({ wsRef, isConnected }: UseFileTreeParams) => {
         activeNodeId,
         setActiveNode,
         openFolder,
+        resetFileTree,
         handleOpenFolderResponse,
         toggleNode,
         findNodeByPath,

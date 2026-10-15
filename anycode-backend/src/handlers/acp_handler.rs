@@ -412,6 +412,13 @@ pub async fn handle_acp_stop(
     ack.send(&json!({ "success": true })).ok();
 }
 
+pub async fn handle_acp_stop_all(ack: AckSender, state: State<AppState>) {
+    info!("handle_acp_stop_all: stopping all active agents");
+    let mut acp_manager = state.acp_manager.lock().await;
+    acp_manager.stop_all().await;
+    ack.send(&json!({ "success": true })).ok();
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct AcpGetToolOutputRequest {
     pub tool_id: String,

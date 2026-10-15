@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { clampWarpDurationMs, WARP_DURATION_MS } from '../constants';
 
 export type FontSection = 'interface' | 'editor' | 'terminal';
 
@@ -115,9 +116,124 @@ const loadScrollbarSettings = (): ScrollbarSettingsState => {
     }
 };
 
+export type BackgroundPhysicsMode = 'none' | 'blackhole' | 'lens' | 'invert' | 'repel' | 'vortex';
+export type BackgroundPulsationMode = 'none' | 'breathe' | 'radial' | 'radar' | 'twinkle' | 'shockwave';
+export type BackgroundScope = 'welcome' | 'all';
+export type GridPattern = 'matrix' | 'isometric';
+
+export interface DynamicBackgroundSettings {
+    version?: number;
+    enabled: boolean;
+    scope: BackgroundScope;
+    physics: BackgroundPhysicsMode;
+    pulsation: BackgroundPulsationMode;
+    satellites: boolean;
+    codeGlyphs: boolean;
+    rgbSplit: boolean;
+    aurora: boolean;
+    meshLines: boolean;
+    tilt: boolean;
+    keyboardShockwave: boolean;
+    particleSpacing: number;
+    dotScale: number;
+    gridPattern: GridPattern;
+    gridOpacity: number;
+    spotlight: boolean;
+    spotlightRadius: number;
+    spotlightAmbientOpacity: number;
+    spotlightPeakOpacity: number;
+    warpJump: boolean;
+    warpDurationMs: number;
+}
+
+export const BG_SETTINGS_VERSION = 2;
+
+export const DEFAULT_BACKGROUND_SETTINGS: DynamicBackgroundSettings = {
+    version: BG_SETTINGS_VERSION,
+    enabled: true,
+    scope: 'all',
+    physics: 'blackhole',
+    pulsation: 'radial',
+    satellites: false,
+    codeGlyphs: false,
+    rgbSplit: false,
+    aurora: false,
+    meshLines: true,
+    tilt: false,
+    keyboardShockwave: false,
+    particleSpacing: 27,
+    dotScale: 0.85,
+    gridPattern: 'matrix',
+    gridOpacity: 0.5,
+    spotlight: true,
+    spotlightRadius: 130,
+    spotlightAmbientOpacity: 0.04,
+    spotlightPeakOpacity: 0.45,
+    warpJump: true,
+    warpDurationMs: 1000,
+};
+
+const loadBackgroundSettings = (): DynamicBackgroundSettings => {
+    try {
+        const raw = localStorage.getItem('backgroundSettings');
+        if (!raw) {
+            return DEFAULT_BACKGROUND_SETTINGS;
+        }
+        const saved = JSON.parse(raw);
+        if (!saved || typeof saved !== 'object' || saved.version !== BG_SETTINGS_VERSION) {
+            return DEFAULT_BACKGROUND_SETTINGS;
+        }
+        return {
+            version: BG_SETTINGS_VERSION,
+            enabled: typeof saved.enabled === 'boolean' ? saved.enabled : DEFAULT_BACKGROUND_SETTINGS.enabled,
+            scope: saved.scope === 'welcome' || saved.scope === 'all' ? saved.scope : DEFAULT_BACKGROUND_SETTINGS.scope,
+            physics: ['none', 'blackhole', 'lens', 'invert', 'repel', 'vortex'].includes(saved.physics)
+                ? saved.physics
+                : DEFAULT_BACKGROUND_SETTINGS.physics,
+            pulsation: ['none', 'breathe', 'radial', 'radar', 'twinkle', 'shockwave'].includes(saved.pulsation)
+                ? saved.pulsation
+                : DEFAULT_BACKGROUND_SETTINGS.pulsation,
+            satellites: typeof saved.satellites === 'boolean' ? saved.satellites : DEFAULT_BACKGROUND_SETTINGS.satellites,
+            codeGlyphs: typeof saved.codeGlyphs === 'boolean' ? saved.codeGlyphs : DEFAULT_BACKGROUND_SETTINGS.codeGlyphs,
+            rgbSplit: typeof saved.rgbSplit === 'boolean' ? saved.rgbSplit : DEFAULT_BACKGROUND_SETTINGS.rgbSplit,
+            aurora: typeof saved.aurora === 'boolean' ? saved.aurora : DEFAULT_BACKGROUND_SETTINGS.aurora,
+            meshLines: typeof saved.meshLines === 'boolean' ? saved.meshLines : DEFAULT_BACKGROUND_SETTINGS.meshLines,
+            tilt: typeof saved.tilt === 'boolean' ? saved.tilt : DEFAULT_BACKGROUND_SETTINGS.tilt,
+            keyboardShockwave: typeof saved.keyboardShockwave === 'boolean' ? saved.keyboardShockwave : DEFAULT_BACKGROUND_SETTINGS.keyboardShockwave,
+            particleSpacing: typeof saved.particleSpacing === 'number'
+                ? Math.min(60, Math.max(8, saved.particleSpacing))
+                : DEFAULT_BACKGROUND_SETTINGS.particleSpacing,
+            dotScale: typeof saved.dotScale === 'number'
+                ? Math.min(3, Math.max(0.5, saved.dotScale))
+                : DEFAULT_BACKGROUND_SETTINGS.dotScale,
+            gridPattern: saved.gridPattern === 'isometric' ? 'isometric' : 'matrix',
+            gridOpacity: typeof saved.gridOpacity === 'number'
+                ? Math.min(2.5, Math.max(0.3, saved.gridOpacity))
+                : DEFAULT_BACKGROUND_SETTINGS.gridOpacity,
+            spotlight: typeof saved.spotlight === 'boolean' ? saved.spotlight : DEFAULT_BACKGROUND_SETTINGS.spotlight,
+            spotlightRadius: typeof saved.spotlightRadius === 'number'
+                ? Math.min(500, Math.max(100, saved.spotlightRadius))
+                : DEFAULT_BACKGROUND_SETTINGS.spotlightRadius,
+            spotlightAmbientOpacity: typeof saved.spotlightAmbientOpacity === 'number'
+                ? Math.min(0.5, Math.max(0.0, saved.spotlightAmbientOpacity))
+                : DEFAULT_BACKGROUND_SETTINGS.spotlightAmbientOpacity,
+            spotlightPeakOpacity: typeof saved.spotlightPeakOpacity === 'number'
+                ? Math.min(1.0, Math.max(0.1, saved.spotlightPeakOpacity))
+                : DEFAULT_BACKGROUND_SETTINGS.spotlightPeakOpacity,
+            warpJump: typeof saved.warpJump === 'boolean' ? saved.warpJump : DEFAULT_BACKGROUND_SETTINGS.warpJump,
+            warpDurationMs: typeof saved.warpDurationMs === 'number'
+                ? clampWarpDurationMs(saved.warpDurationMs)
+                : DEFAULT_BACKGROUND_SETTINGS.warpDurationMs,
+        };
+    } catch {
+        return DEFAULT_BACKGROUND_SETTINGS;
+    }
+};
+
 export const useSettings = () => {
     const [fontSettings, setFontSettings] = useState<FontSettings>(loadFontSettings);
     const [scrollbarSettings, setScrollbarSettings] = useState<ScrollbarSettingsState>(loadScrollbarSettings);
+    const [backgroundSettings, setBackgroundSettings] = useState<DynamicBackgroundSettings>(loadBackgroundSettings);
     const previousScrollbarSettingsRef = useRef<ScrollbarSettingsState | null>(null);
     const scrollbarPreviewTimerRef = useRef<number | null>(null);
 
@@ -178,6 +294,16 @@ export const useSettings = () => {
         };
     }, [scrollbarSettings]);
 
+    useEffect(() => {
+        const root = document.documentElement;
+        if (backgroundSettings.enabled) {
+            root.dataset.dynamicBg = 'global';
+        } else {
+            delete root.dataset.dynamicBg;
+        }
+        localStorage.setItem('backgroundSettings', JSON.stringify(backgroundSettings));
+    }, [backgroundSettings]);
+
     const updateFontSettings = useCallback((
         section: FontSection,
         patch: Partial<FontConfig>,
@@ -195,5 +321,21 @@ export const useSettings = () => {
         }));
     }, []);
 
-    return { fontSettings, updateFontSettings, scrollbarSettings, updateScrollbarSettings };
+    const updateBackgroundSettings = useCallback((patch: Partial<DynamicBackgroundSettings>) => {
+        setBackgroundSettings((current) => ({
+            ...current,
+            ...patch,
+            version: BG_SETTINGS_VERSION,
+        }));
+    }, []);
+
+    return {
+        fontSettings,
+        updateFontSettings,
+        scrollbarSettings,
+        updateScrollbarSettings,
+        backgroundSettings,
+        updateBackgroundSettings,
+    };
 };
+

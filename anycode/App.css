@@ -12,6 +12,49 @@
     box-sizing: border-box;
 }
 
+.app-container.app-with-dynamic-bg,
+.app-container[data-dynamic-bg="global"],
+[data-dynamic-bg="global"] .app-container,
+.app-container:has(.app-global-dynamic-bg) {
+    background: transparent !important;
+}
+
+/* Ensure editor and preview panes are transparent when dynamic background is active */
+.app-container.app-with-dynamic-bg .editor-container,
+.app-container[data-dynamic-bg="global"] .editor-container,
+[data-dynamic-bg="global"] .editor-container,
+.app-container.app-with-dynamic-bg .anyeditor-wrapper,
+.app-container[data-dynamic-bg="global"] .anyeditor-wrapper,
+[data-dynamic-bg="global"] .anyeditor-wrapper,
+.app-container.app-with-dynamic-bg .anyeditor,
+.app-container[data-dynamic-bg="global"] .anyeditor,
+[data-dynamic-bg="global"] .anyeditor,
+.app-container.app-with-dynamic-bg .multibuffer-panel,
+.app-container[data-dynamic-bg="global"] .multibuffer-panel,
+[data-dynamic-bg="global"] .multibuffer-panel,
+.app-container.app-with-dynamic-bg .multibuffer-scroll,
+.app-container[data-dynamic-bg="global"] .multibuffer-scroll,
+[data-dynamic-bg="global"] .multibuffer-scroll,
+.app-container.app-with-dynamic-bg .multibuffer-section,
+.app-container[data-dynamic-bg="global"] .multibuffer-section,
+[data-dynamic-bg="global"] .multibuffer-section,
+.app-container.app-with-dynamic-bg .markdown-preview,
+.app-container[data-dynamic-bg="global"] .markdown-preview,
+[data-dynamic-bg="global"] .markdown-preview {
+    background: transparent !important;
+    background-color: transparent !important;
+}
+
+.app-container.app-with-dynamic-bg .anyeditor .multibuffer-file-header-row,
+.app-container.app-with-dynamic-bg .anyeditor-wrapper .anyeditor-sticky-header,
+[data-dynamic-bg="global"] .anyeditor .multibuffer-file-header-row,
+[data-dynamic-bg="global"] .anyeditor-wrapper .anyeditor-sticky-header {
+    background: rgba(30, 30, 30, 0.75) !important;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+}
+
+
 .tab-bar {
     display: flex;
     overflow-x: scroll;
@@ -294,4 +337,47 @@
 
 .is-restoring-scroll::-webkit-scrollbar {
     display: none !important; /* Chrome, Safari, Opera */
+}
+
+/* Hyperspace Warp Jump Transitions */
+.warp-screen-wrapper {
+    flex: 1;
+    display: flex;
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    will-change: transform, opacity;
+}
+
+.warp-screen-wrapper.warping-out {
+    animation: warpHyperspaceOut var(--warp-swap-duration) cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    pointer-events: none;
+}
+
+.warp-screen-wrapper.warping-in {
+    animation: warpHyperspaceIn var(--warp-in-duration) cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes warpHyperspaceOut {
+    0% {
+        opacity: 1;
+        transform: scale(1);
+    }
+    100% {
+        opacity: 0;
+        transform: scale(1.04);
+    }
+}
+
+@keyframes warpHyperspaceIn {
+    0% {
+        opacity: 0;
+        transform: scale(0.97);
+    }
+    100% {
+        opacity: 1;
+        transform: scale(1);
+    }
 }

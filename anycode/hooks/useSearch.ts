@@ -173,6 +173,12 @@ export const useSearch = ({ wsRef, isConnected }: UseSearchParams) => {
         });
     }, [wsRef, isConnected]);
 
+    const resetSearch = useCallback(() => {
+        cancelSearch();
+        clearResults();
+        setSearchInput('');
+    }, [cancelSearch, clearResults]);
+
     return {
         searchInput,
         setSearchInput,
@@ -182,6 +188,7 @@ export const useSearch = ({ wsRef, isConnected }: UseSearchParams) => {
         cancelSearch,
         searchFiles,
         clearResults,
+        resetSearch,
         handleSearchResults,
         handleSearchEnd,
     };

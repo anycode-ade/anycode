@@ -1423,6 +1423,29 @@ export const useEditors = ({ wsRef, isConnected, onFileClosed }: UseEditorsParam
         pendingChangesRef.current.clear();
     }, [flushChanges]);
 
+    const closeAllFiles = useCallback(() => {
+        flushAllPendingChanges();
+        for (const file of filesRef.current) {
+            if (!isHistoricalFileId(file.id) && wsRef.current && isConnected) {
+                wsRef.current.emit('file:close', { file: file.id });
+            }
+            editorRefs.current.delete(file.id);
+            savedFileContentsRef.current.delete(file.id);
+            editorOpenRequestsRef.current.delete(file.id);
+            onFileClosed?.(file.id);
+        }
+        filesRef.current = [];
+        setFiles([]);
+        setEditorStates(new Map());
+        setPaneActiveFileIds({});
+        saveOpenFiles({
+            files: [],
+            activeFileId: null,
+            paneActiveFileIds: {},
+            cursorByFileId: {},
+        });
+    }, [flushAllPendingChanges, isHistoricalFileId, wsRef, isConnected, onFileClosed]);
+
     const closeFilesUnderPath = useCallback((dirPath: string) => {
         const filesToClose = filesRef.current.filter((file) => file.id === dirPath || file.id.startsWith(dirPath + '/'));
         filesToClose.forEach((file) => {
@@ -1574,6 +1597,7 @@ export const useEditors = ({ wsRef, isConnected, onFileClosed }: UseEditorsParam
         editorStates,
         keepPreviousEditorByPane,
         closeFile,
+        closeAllFiles,
         saveFile,
         openFile,
         openFiles,

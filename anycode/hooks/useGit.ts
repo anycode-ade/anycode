@@ -629,6 +629,27 @@ export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
         });
     }, [wsRef, isConnected, fetchGitStatus, fetchBranches, refreshHistory]);
 
+    const resetGitState = useCallback(() => {
+        cancelHistorySearch();
+        setChangedFiles([]);
+        setGitBranch('');
+        setBranches([]);
+        setPushStatus({ state: GitActionState.Idle });
+        setHistoryCommits([]);
+        setHistoryFiles({});
+        setHistoryHasMore(false);
+        setIsHistoryLoading(false);
+        setIsHistoryLoaded(false);
+        setHistoryPath(null);
+        setHistoryFilesLoading({});
+        isHistoryLoadingRef.current = false;
+        historyFilesLoadingRef.current.clear();
+        historyCommitsRef.current = [];
+        historySearchRef.current = null;
+        historyPathRef.current = null;
+        gitHeadHashRef.current = undefined;
+    }, [cancelHistorySearch]);
+
     return {
         changedFiles,
         gitBranch,
@@ -666,5 +687,6 @@ export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
         createBranch,
         stage,
         unstage,
+        resetGitState,
     };
 };

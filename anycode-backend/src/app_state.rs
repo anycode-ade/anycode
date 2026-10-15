@@ -116,6 +116,42 @@ impl AppState {
             let _ = terminal.terminal.kill().await;
         }
     }
+
+    pub async fn close_workspace(&self) {
+        // Stop all active LSP language servers
+        self.lsp_manager.lock().await.stop_all().await;
+
+        // Stop all active ACP AI agent processes
+        self.acp_manager.lock().await.stop_all().await;
+
+        // Kill and remove all open terminals
+        let mut terminals = self.terminals.lock().await;
+        for (_, term_data) in terminals.drain() {
+            let _ = term_data.terminal.kill().await;
+        }
+
+        // Clear in-memory file buffers
+        self.file2code.lock().await.clear();
+
+        // Reset socket data (opened files, cancel searches)
+        let mut socket2data = self.socket2data.lock().await;
+        for (_, data) in socket2data.iter_mut() {
+            if let Some(cancel) = data.search_cancel.take() {
+                cancel.cancel();
+            }
+            if let Some(cancel) = data.files_search_cancel.take() {
+                cancel.cancel();
+            }
+            data.opened_files.clear();
+            data.opened_dirs.clear();
+            let _ = data.cancel_git_history_search();
+        }
+
+        // Reset git manager to current directory
+        let mut git_mgr = self.git_manager.lock().await;
+        *git_mgr = crate::git::GitManager::new(crate::utils::current_dir());
+        let _ = git_mgr.refresh_status_cache();
+    }
 }
 
 #[macro_export]
