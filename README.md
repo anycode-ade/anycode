@@ -40,7 +40,7 @@ Download the prebuilt native installer for your operating system from [GitHub Re
 
 #### 🍏 macOS
 1. Download the `.dmg` matching your Mac architecture:
-   - **Apple Silicon** (M1/M2/M3/M4): `anycode-desktop-macos-arm64.dmg`
+   - **Apple Silicon** (M-series / ARM64): `anycode-desktop-macos-arm64.dmg`
    - **Intel**: `anycode-desktop-macos-x64.dmg`
 2. Open the `.dmg` and drag `anycode.app` to your **Applications** folder.
 3. **First launch (Gatekeeper approval):**  
