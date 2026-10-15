@@ -296,7 +296,6 @@ jobs:
           if [ "${{ runner.os }}" = "macOS" ]; then
             cp anycode/src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg dist-desktop/anycode-desktop-macos-${{ matrix.arch }}.dmg
           elif [ "${{ runner.os }}" = "Linux" ]; then
-            cp anycode/src-tauri/target/release/bundle/appimage/*.AppImage dist-desktop/anycode-desktop-linux-x86_64.AppImage
             cp anycode/src-tauri/target/release/bundle/deb/*.deb dist-desktop/anycode-desktop-linux-amd64.deb
           fi
           ls -la dist-desktop

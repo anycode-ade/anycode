@@ -449,8 +449,6 @@ jobs:
             cp anycode/src-tauri/target/${{ matrix.target }}/release/bundle/macos/*.tar.gz dist-desktop/ 2>/dev/null || true
             cp anycode/src-tauri/target/${{ matrix.target }}/release/bundle/macos/*.tar.gz.sig dist-desktop/ 2>/dev/null || true
           elif [ "${{ runner.os }}" = "Linux" ]; then
-            cp anycode/src-tauri/target/release/bundle/appimage/*.AppImage dist-desktop/anycode-desktop-linux-x86_64.AppImage 2>/dev/null || true
-            cp anycode/src-tauri/target/release/bundle/appimage/*.AppImage.sig dist-desktop/anycode-desktop-linux-x86_64.AppImage.sig 2>/dev/null || true
             cp anycode/src-tauri/target/release/bundle/deb/*.deb dist-desktop/anycode-desktop-linux-amd64.deb 2>/dev/null || true
             cp anycode/src-tauri/target/release/bundle/deb/*.deb.sig dist-desktop/anycode-desktop-linux-amd64.deb.sig 2>/dev/null || true
           fi
