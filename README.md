@@ -26,14 +26,39 @@
 
 The project consists of several packages:
 
-- **`anycode/`** - Main React frontend application
+- **`anycode/`** - Main React frontend application and Tauri desktop app
 - **`anycode-base/`** - Core editor library with tree-sitter support
 - **`anycode-react/`** - React wrapper for the editor
 - **`anycode-backend/`** - Rust backend for file system access
 - **`anycode-example/`** - Example application demonstrating anycode usage
 
 ## Installation
-### From releases
+
+### Desktop Application
+
+Download the prebuilt native installer for your operating system from [Releases](https://github.com/anycode-ade/anycode/releases):
+
+- **macOS**:
+  - Apple Silicon (M1/M2/M3/M4): `anycode-desktop-macos-arm64.dmg`
+  - Intel Mac: `anycode-desktop-macos-x64.dmg`
+- **Windows**: `anycode-desktop-windows-x64-setup.exe`
+- **Linux**:
+  - Debian / Ubuntu: `anycode-desktop-linux-amd64.deb`
+  - Universal binary: `anycode-desktop-linux-x86_64.tar.gz`
+
+> [!NOTE]
+> **macOS Gatekeeper ("Apple cannot check it for malicious software" / "damaged and can’t be opened"):**
+> Because pre-release builds are not yet Apple-notarized with an Apple Developer ID, macOS Gatekeeper may block the app after downloading it through a browser.
+> 
+> To allow `anycode` to run, open Terminal and remove the quarantine attribute:
+> ```bash
+> xattr -cr /Applications/anycode.app
+> ```
+> Alternatively, **Right-click (or Control-click)** `anycode.app` in Finder, select **Open**, and click **Open** in the confirmation dialog.
+
+---
+
+### CLI & Server (From releases)
 
 #### macOS and Linux one-shot installer:
 ```bash
@@ -115,7 +140,10 @@ Prerequisites:
    cargo run --release
    ```
 
-5. **Open your browser** and navigate to the frontend URL
+5. **Run Desktop app in development:**
+   ```bash
+   pnpm --filter anycode tauri dev
+   ```
 
 ## Contributing
 
