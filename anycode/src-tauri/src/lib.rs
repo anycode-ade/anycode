@@ -75,6 +75,9 @@ pub fn run() {
         });
       }
 
+      #[cfg(not(target_os = "macos"))]
+      let _ = window;
+
       Ok(())
     })
     .build(tauri::generate_context!())
