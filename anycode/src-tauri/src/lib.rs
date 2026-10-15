@@ -46,7 +46,8 @@ pub fn run() {
         r#"window.__ANYCODE_PORT__ = {port}; window.__ANYCODE_TOKEN__ = "{secret_token}";"#
       );
 
-      let window = tauri::WebviewWindowBuilder::new(
+      #[allow(unused_mut)]
+      let mut builder = tauri::WebviewWindowBuilder::new(
         app,
         "main",
         tauri::WebviewUrl::default(),
@@ -56,12 +57,17 @@ pub fn run() {
       .min_inner_size(800.0, 500.0)
       .resizable(true)
       .fullscreen(false)
-      .title_bar_style(tauri::TitleBarStyle::Transparent)
       .background_color(tauri::window::Color(36, 36, 36, 255))
       .disable_drag_drop_handler()
       .zoom_hotkeys_enabled(false)
-      .initialization_script(&init_script)
-      .build()?;
+      .initialization_script(&init_script);
+
+      #[cfg(target_os = "macos")]
+      {
+        builder = builder.title_bar_style(tauri::TitleBarStyle::Transparent);
+      }
+
+      let window = builder.build()?;
 
       #[cfg(target_os = "macos")]
       {
