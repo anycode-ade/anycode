@@ -451,6 +451,9 @@ jobs:
           elif [ "${{ runner.os }}" = "Linux" ]; then
             cp anycode/src-tauri/target/release/bundle/deb/*.deb dist-desktop/anycode-desktop-linux-amd64.deb 2>/dev/null || true
             cp anycode/src-tauri/target/release/bundle/deb/*.deb.sig dist-desktop/anycode-desktop-linux-amd64.deb.sig 2>/dev/null || true
+            strip anycode/src-tauri/target/release/anycode-desktop 2>/dev/null || true
+            tar -czf dist-desktop/anycode-desktop-linux-x86_64.tar.gz -C anycode/src-tauri/target/release anycode-desktop 2>/dev/null || true
+            cp anycode/src-tauri/target/release/bundle/tar.gz/*.tar.gz* dist-desktop/ 2>/dev/null || true
           fi
           ls -la dist-desktop
 

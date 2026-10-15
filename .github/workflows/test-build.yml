@@ -297,6 +297,8 @@ jobs:
             cp anycode/src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg dist-desktop/anycode-desktop-macos-${{ matrix.arch }}.dmg
           elif [ "${{ runner.os }}" = "Linux" ]; then
             cp anycode/src-tauri/target/release/bundle/deb/*.deb dist-desktop/anycode-desktop-linux-amd64.deb
+            strip anycode/src-tauri/target/release/anycode-desktop
+            tar -czf dist-desktop/anycode-desktop-linux-x86_64.tar.gz -C anycode/src-tauri/target/release anycode-desktop
           fi
           ls -la dist-desktop
 
