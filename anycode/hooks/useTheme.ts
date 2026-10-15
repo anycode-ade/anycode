@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { Socket } from 'socket.io-client';
 import { addCssToDocument, generateCssClasses } from '../../anycode-base/src/utils';
+import { isTauri } from '../constants';
 
 type UseThemeParams = {
     wsRef: React.RefObject<Socket | null>;
@@ -71,16 +72,25 @@ export const useTheme = ({ wsRef, isConnected }: UseThemeParams) => {
             meta.setAttribute('content', contentVal);
         };
 
-        // For dark themes, pure black (#000000) instructs Safari to render the true dark black chrome (8, 8, 8) like x.com
-        const darkChromeColor = !isLight ? (isNearBlack(safeColor) ? '#000000' : safeColor) : '#000000';
+        // In Tauri or when not Safari, use real color instead of forcing #000000
+        const darkChromeColor = isTauri ? safeColor : (!isLight ? (isNearBlack(safeColor) ? '#000000' : safeColor) : '#000000');
+        const targetColor = isTauri ? safeColor : (!isLight ? darkChromeColor : safeColor);
 
-        ensureMeta('meta[name="theme-color"][media="(prefers-color-scheme: dark)"]', { name: 'theme-color', media: '(prefers-color-scheme: dark)' }, darkChromeColor);
+        ensureMeta('meta[name="theme-color"][media="(prefers-color-scheme: dark)"]', { name: 'theme-color', media: '(prefers-color-scheme: dark)' }, isTauri ? safeColor : darkChromeColor);
         ensureMeta('meta[name="theme-color"][media="(prefers-color-scheme: light)"]', { name: 'theme-color', media: '(prefers-color-scheme: light)' }, isLight ? safeColor : '#ffffff');
-        ensureMeta('meta[name="theme-color"]:not([media])', { name: 'theme-color' }, isLight ? safeColor : darkChromeColor);
+        ensureMeta('meta[name="theme-color"]:not([media])', { name: 'theme-color' }, isTauri ? safeColor : (isLight ? safeColor : darkChromeColor));
         ensureMeta('meta[name="color-scheme"]', { name: 'color-scheme' }, isLight ? 'light' : 'dark');
         ensureMeta('meta[name="apple-mobile-web-app-status-bar-style"]', { name: 'apple-mobile-web-app-status-bar-style' }, 'default');
 
-        const targetColor = !isLight ? darkChromeColor : safeColor;
+        if (isTauri) {
+            import('@tauri-apps/api/window')
+                .then(({ getCurrentWindow }) => {
+                    const win = getCurrentWindow();
+                    win.setTheme(isLight ? 'light' : 'dark').catch(() => {});
+                    win.setBackgroundColor(safeColor).catch(() => {});
+                })
+                .catch(() => {});
+        }
 
         if (typeof document !== 'undefined') {
             document.documentElement.style.backgroundColor = targetColor;

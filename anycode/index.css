@@ -85,7 +85,7 @@ body {
     height: 1px;
     z-index: 999999;
     pointer-events: none;
-    background-color: #000000;
+    background-color: var(--background-color, #242424);
   }
 
   @media (prefers-color-scheme: light) {

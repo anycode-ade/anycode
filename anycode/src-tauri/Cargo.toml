@@ -1,0 +1,34 @@
+[package]
+name = "anycode-desktop"
+version = "0.1.0"
+description = "Anycode Desktop Application"
+authors = ["Anycode Team"]
+edition = "2024"
+rust-version = "1.90"
+
+[lib]
+name = "anycode_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "3.0.0-alpha.4", features = [] }
+
+[dependencies]
+anycode = { path = "../../anycode-backend" }
+serde_json = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+log = "0.4"
+tauri = { version = "3.0.0-alpha.5", features = [] }
+tauri-runtime-wry = "3.0.0-alpha.5"
+tauri-plugin-log = "3.0.0-alpha.3"
+objc2-web-kit = "0.3.2"
+uuid = { version = "1", features = ["v4"] }
+tokio = { version = "1", features = ["sync"] }
+tokio-util = { version = "0.7", features = ["compat"] }
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

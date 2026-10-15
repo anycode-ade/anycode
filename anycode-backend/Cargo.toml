@@ -3,6 +3,14 @@ name = "anycode"
 version = "0.1.2"
 edition = "2024"
 
+[lib]
+name = "anycode"
+path = "src/lib.rs"
+
+[[bin]]
+name = "anycode"
+path = "src/main.rs"
+
 [profile.release]
 opt-level = 3
 strip = true
@@ -54,4 +62,3 @@ zip = { version = "2", default-features = false, features = ["deflate"] }
 futures-util = "0.3"
 rusqlite = { version = "0.31", features = ["bundled"] }
 zstd = "0.13"
-

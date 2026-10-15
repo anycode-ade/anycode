@@ -12,13 +12,15 @@
     "build:demo": "vite build --mode demo",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:demo": "playwright test"
+    "test:demo": "playwright test",
+    "tauri": "tauri"
   },
   "keywords": [],
   "author": "",
   "license": "Apache-2.0",
   "packageManager": "pnpm@10.13.1",
   "dependencies": {
+    "@tauri-apps/api": "3.0.0-alpha.3",
     "@wterm/dom": "^0.5.4",
     "@wterm/ghostty": "^0.5.4",
     "anycode-base": "workspace:*",
@@ -38,6 +40,7 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.62.0",
+    "@tauri-apps/cli": "3.0.0-alpha.5",
     "@vitejs/plugin-react": "^6.0.1",
     "cpy-cli": "^7.0.0",
     "rimraf": "^6.0.1",

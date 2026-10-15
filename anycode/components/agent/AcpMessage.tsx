@@ -22,6 +22,8 @@ import {
 import { LANGUAGE_EXTENSIONS, EDITOR_SUPPORTED_LANGUAGES, getFileName, copyTextToClipboard, uriToFilePath, formatBytes } from '../../utils';
 import { toolOutputCache } from '../../features/agents/toolOutputCache';
 import { MermaidBlock } from '../../features/markdown/MermaidBlock';
+import { BACKEND_URL } from '../../constants';
+import { getToken } from '../../hooks/useSocket';
 import './AcpMessage.css';
 
 let codeBlockIdCounter = 0;
@@ -857,7 +859,9 @@ const mapLocalImageSrc = (src?: string): string | undefined => {
     } catch {
       normalizedPath = trimmed;
     }
-    return `/api/local-image?path=${encodeURIComponent(normalizedPath)}`;
+    const token = getToken();
+    const tokenParam = token ? `&token=${encodeURIComponent(token)}` : '';
+    return `${BACKEND_URL}/api/local-image?path=${encodeURIComponent(normalizedPath)}${tokenParam}`;
   }
 
   return trimmed;

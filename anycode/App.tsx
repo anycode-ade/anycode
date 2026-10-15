@@ -24,6 +24,7 @@ import { getHistoricalFileId, useEditors, type EditorSelectionRange } from './ho
 import { useAgents } from './hooks/useAgents';
 import { useLayout } from './hooks/useLayout';
 import { useTheme } from './hooks/useTheme';
+import { useZoom } from './hooks/useZoom';
 import { useEvent } from './hooks/useEvent';
 import { useTerminalPanes } from './features/terminal/useTerminalPanes';
 import { useAgentPanes } from './features/agents/useAgentPanes';
@@ -83,6 +84,7 @@ const App: React.FC = () => {
     const wasConnectedRef = useRef<boolean>(false);
     const agents = useAgents({ wsRef, isConnected });
     const { currentThemeId, handleThemeChange } = useTheme({ wsRef, isConnected });
+    useZoom();
     const layoutActionsRef = useRef<LayoutActions | null>(null);
     const [multibufferReviews, setMultibufferReviews] = React.useState<Record<string, ReviewSession>>({});
     const [markdownPreviews, setMarkdownPreviews] = React.useState<Record<string, boolean>>({});

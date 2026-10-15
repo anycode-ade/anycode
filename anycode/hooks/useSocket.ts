@@ -2,13 +2,18 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { io, type Socket } from 'socket.io-client';
 import { BACKEND_URL } from '../constants';
 import { DemoSocket } from '../demoSocket';
+import type { ConnectionStatus } from '../types';
+
 const IS_DEMO_MODE =
     import.meta.env.MODE === 'demo' ||
     import.meta.env.VITE_DEMO_MODE === 'true' ||
     (typeof window !== 'undefined' && (new URLSearchParams(window.location.search).get('demo') === 'true' || window.location.hash.includes('demo')));
 
-const getToken = (): string => {
+export const getToken = (): string => {
     if (typeof window === 'undefined') return '';
+    if (window.__ANYCODE_TOKEN__) {
+        return window.__ANYCODE_TOKEN__;
+    }
     const urlToken = new URLSearchParams(window.location.search).get('token');
     if (urlToken) {
         localStorage.setItem('anycode_token', urlToken.trim());
