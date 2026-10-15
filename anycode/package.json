@@ -21,6 +21,8 @@
   "packageManager": "pnpm@10.13.1",
   "dependencies": {
     "@tauri-apps/api": "3.0.0-alpha.3",
+    "@tauri-apps/plugin-process": "3.0.0-alpha.3",
+    "@tauri-apps/plugin-updater": "3.0.0-alpha.3",
     "@wterm/dom": "^0.5.4",
     "@wterm/ghostty": "^0.5.4",
     "anycode-base": "workspace:*",

@@ -9,6 +9,8 @@
     "core:default",
     "core:window:allow-set-background-color",
     "core:window:allow-set-theme",
-    "core:webview:allow-set-webview-zoom"
+    "core:webview:allow-set-webview-zoom",
+    "updater:default",
+    "process:default"
   ]
 }

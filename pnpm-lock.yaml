@@ -26,6 +26,12 @@ importers:
       '@tauri-apps/api':
         specifier: 3.0.0-alpha.3
         version: 3.0.0-alpha.3
+      '@tauri-apps/plugin-process':
+        specifier: 3.0.0-alpha.3
+        version: 3.0.0-alpha.3
+      '@tauri-apps/plugin-updater':
+        specifier: 3.0.0-alpha.3
+        version: 3.0.0-alpha.3
       '@wterm/dom':
         specifier: ^0.5.4
         version: 0.5.4
@@ -551,6 +557,12 @@ packages:
     resolution: {integrity: sha512-hISwd/X4CsjRKGugm8OxF9KkULCskBZoVROpdA0H8pPesQtHbIJxvFnJgHMV2WjgrrJENTNL3Q3R9Mc2YuCIcA==}
     engines: {node: '>= 10'}
     hasBin: true
+
+  '@tauri-apps/plugin-process@3.0.0-alpha.3':
+    resolution: {integrity: sha512-JVdxEpC8Pc3nGY+3Ai989sYCnDe2LmePxh1dgAMOwsKPfHbf7PA41qrs4GnxCO9iyLJV1GYLxogqAfmaQ8YjdQ==}
+
+  '@tauri-apps/plugin-updater@3.0.0-alpha.3':
+    resolution: {integrity: sha512-7J0W1o7WaZi8H9E9Ixteyf2KE/PgqDGlvT8fzhXoswrCWv8AES7zzwoxLRsK+Uz4tGkEFTqUbz8xyiiJ+N1xUQ==}
 
   '@tybys/wasm-util@0.10.1':
     resolution: {integrity: sha512-9tTaPJLSiejZKx+Bmog4uSubteqTvFrVrURwkmHixBo0G4seD0zUxp98E1DzUBJxLQ3NPwXrGKDiVjwx/DpPsg==}
@@ -2358,6 +2370,14 @@ snapshots:
       '@tauri-apps/cli-win32-arm64-msvc': 3.0.0-alpha.5
       '@tauri-apps/cli-win32-ia32-msvc': 3.0.0-alpha.5
       '@tauri-apps/cli-win32-x64-msvc': 3.0.0-alpha.5
+
+  '@tauri-apps/plugin-process@3.0.0-alpha.3':
+    dependencies:
+      '@tauri-apps/api': 3.0.0-alpha.3
+
+  '@tauri-apps/plugin-updater@3.0.0-alpha.3':
+    dependencies:
+      '@tauri-apps/api': 3.0.0-alpha.3
 
   '@tybys/wasm-util@0.10.1':
     dependencies:

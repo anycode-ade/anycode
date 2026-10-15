@@ -16,6 +16,9 @@ pub fn run() {
         )?;
       }
 
+      app.handle().plugin(tauri_plugin_process::init())?;
+      app.handle().plugin(tauri_plugin_updater::Builder::new().build())?;
+
       // Generate random secret token for this application run
       let secret_token = uuid::Uuid::new_v4().to_string();
       let secret_for_server = secret_token.clone();

@@ -21,6 +21,8 @@ log = "0.4"
 tauri = { version = "3.0.0-alpha.5", features = [] }
 tauri-runtime-wry = "3.0.0-alpha.5"
 tauri-plugin-log = "3.0.0-alpha.3"
+tauri-plugin-updater = "3.0.0-alpha.3"
+tauri-plugin-process = "3.0.0-alpha.3"
 uuid = { version = "1", features = ["v4"] }
 tokio = { version = "1", features = ["sync"] }
 tokio-util = { version = "0.7", features = ["compat"] }
