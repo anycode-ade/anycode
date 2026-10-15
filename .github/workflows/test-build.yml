@@ -111,6 +111,11 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - name: Optimize Windows Defender
+        shell: pwsh
+        run: |
+          Set-MpPreference -DisableRealtimeMonitoring $true -ErrorAction SilentlyContinue
+
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
@@ -185,11 +190,33 @@ jobs:
         working-directory: ./anycode-backend
         run: .\target\release\anycode.exe --help
 
-  test-desktop-macos:
-    name: Test Desktop Build macOS
-    runs-on: macos-latest
+  test-desktop:
+    name: Test Desktop (${{ matrix.platform }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macOS Apple Silicon
+            os: macos-latest
+            arch: arm64
+            target: aarch64-apple-darwin
+          - platform: Windows x64
+            os: windows-latest
+            arch: x64
+            target: ""
+          - platform: Linux x64
+            os: ubuntu-latest
+            arch: x64
+            target: ""
     steps:
       - uses: actions/checkout@v6
+
+      - name: Optimize Windows Defender
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Set-MpPreference -DisableRealtimeMonitoring $true -ErrorAction SilentlyContinue
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -199,59 +226,14 @@ jobs:
       - name: Install pnpm
         uses: pnpm/action-setup@v6
 
-      - name: Get pnpm store directory
+      - name: Get pnpm store directory (bash)
+        if: runner.os != 'Windows'
         shell: bash
         run: |
           echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
 
-      - name: Setup pnpm cache
-        uses: actions/cache@v5
-        with:
-          path: ${{ env.STORE_PATH }}
-          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-pnpm-store-
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: 1.96.0
-          targets: aarch64-apple-darwin,x86_64-apple-darwin
-
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: |
-            anycode-backend -> target
-            anycode/src-tauri -> anycode/src-tauri/target
-
-      - name: Build macOS Desktop DMG
-        run: pnpm --filter anycode tauri build --target universal-apple-darwin
-
-      - name: Upload macOS Desktop artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: anycode-macos-desktop
-          path: anycode/src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
-
-  test-desktop-windows:
-    name: Test Desktop Build Windows
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: '24'
-
-      - name: Install pnpm
-        uses: pnpm/action-setup@v6
-
-      - name: Get pnpm store directory
+      - name: Get pnpm store directory (pwsh)
+        if: runner.os == 'Windows'
         shell: pwsh
         run: |
           "STORE_PATH=$(pnpm store path --silent)" | Out-File -FilePath $env:GITHUB_ENV -Append
@@ -267,60 +249,8 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: 1.96.0
-
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: |
-            anycode-backend -> target
-            anycode/src-tauri -> anycode/src-tauri/target
-
-      - name: Build Windows Desktop
-        run: pnpm --filter anycode tauri build
-
-      - name: Upload Windows Desktop artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: anycode-windows-desktop
-          path: |
-            anycode/src-tauri/target/release/bundle/nsis/*.exe
-            anycode/src-tauri/target/release/bundle/msi/*.msi
-
-  test-desktop-linux:
-    name: Test Desktop Build Linux
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: '24'
-
-      - name: Install pnpm
-        uses: pnpm/action-setup@v6
-
-      - name: Get pnpm store directory
-        shell: bash
-        run: |
-          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
-
-      - name: Setup pnpm cache
-        uses: actions/cache@v5
-        with:
-          path: ${{ env.STORE_PATH }}
-          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-pnpm-store-
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
       - name: Install Linux system dependencies
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
@@ -329,6 +259,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: 1.96.0
+          targets: ${{ matrix.target }}
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
@@ -337,13 +268,52 @@ jobs:
             anycode-backend -> target
             anycode/src-tauri -> anycode/src-tauri/target
 
-      - name: Build Linux Desktop
-        run: pnpm --filter anycode tauri build
+      - name: Build Desktop (non-Windows)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          if [ -n "${{ matrix.target }}" ]; then
+            pnpm --filter anycode tauri build --target ${{ matrix.target }}
+          else
+            pnpm --filter anycode tauri build
+          fi
 
-      - name: Upload Linux Desktop artifact
+      - name: Build Desktop (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if ("${{ matrix.target }}") {
+            pnpm --filter anycode tauri build --target ${{ matrix.target }}
+          } else {
+            pnpm --filter anycode tauri build
+          }
+
+      - name: Package Desktop Artifacts (non-Windows)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          mkdir -p dist-desktop
+          if [ "${{ runner.os }}" = "macOS" ]; then
+            cp anycode/src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg dist-desktop/anycode-desktop-macos-${{ matrix.arch }}.dmg
+          elif [ "${{ runner.os }}" = "Linux" ]; then
+            cp anycode/src-tauri/target/release/bundle/appimage/*.AppImage dist-desktop/anycode-desktop-linux-x86_64.AppImage
+            cp anycode/src-tauri/target/release/bundle/deb/*.deb dist-desktop/anycode-desktop-linux-amd64.deb
+          fi
+          ls -la dist-desktop
+
+      - name: Package Desktop Artifacts (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist-desktop | Out-Null
+          $exe = Get-ChildItem -Path anycode/src-tauri/target/release/bundle/nsis/*.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($exe) { Copy-Item $exe.FullName dist-desktop/anycode-desktop-windows-x64-setup.exe }
+          $msi = Get-ChildItem -Path anycode/src-tauri/target/release/bundle/msi/*.msi -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($msi) { Copy-Item $msi.FullName dist-desktop/anycode-desktop-windows-x64.msi }
+          Get-ChildItem -Path dist-desktop
+
+      - name: Upload Desktop Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: anycode-linux-desktop
-          path: |
-            anycode/src-tauri/target/release/bundle/deb/*.deb
-            anycode/src-tauri/target/release/bundle/appimage/*.AppImage
+          name: anycode-desktop-${{ matrix.arch }}-${{ runner.os }}
+          path: dist-desktop/*
