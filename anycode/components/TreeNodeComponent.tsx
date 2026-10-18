@@ -1,6 +1,8 @@
 import React, { memo } from 'react';
 import { TreeNode } from '../types';
 import { FileIcon } from './FileIcon';
+import { Icons } from './Icons';
+import { ProjectSwitcher } from './ProjectSwitcher';
 import { normalizePath } from '../utils';
 import './TreeNodeComponent.css';
 
@@ -20,6 +22,10 @@ interface TreeNodeComponentProps {
     editingNodeId: string | null;
     onRename?: (path: string, newName: string) => void;
     onCancelRename?: () => void;
+    projectOptions?: Array<{ id: string; name: string }>;
+    onProjectChange?: (projectId: string) => void;
+    onAddProject?: (anchor: HTMLElement) => void;
+    isAddingProject?: boolean;
 }
 
 const isPathWithinNode = (nodePath: string, activeNodeId: string | null): boolean => {
@@ -50,12 +56,20 @@ const TreeNodeComponentImpl: React.FC<TreeNodeComponentProps> = ({
     editingNodeId,
     onRename,
     onCancelRename,
+    projectOptions,
+    onProjectChange,
+    onAddProject,
+    isAddingProject,
 }) => {
     const hasChildren = node.type === 'directory';
     const isExpanded = Boolean(node.isExpanded);
     const isSelected = Boolean(node.isSelected);
     const isActive = activeNodeId === node.id;
     const isEditing = editingNodeId === node.id;
+    const isProjectRoot = level === 0 && Boolean(node.project_id);
+    const canSwitchProject = Boolean(onProjectChange) && (projectOptions?.length ?? 0) > 1;
+    // The project root's menu holds both project switching and "add project", so it shows whenever either exists.
+    const isProjectSelector = isProjectRoot && (canSwitchProject || Boolean(onAddProject));
 
     const [renameValue, setRenameValue] = React.useState(node.name);
     const inputRef = React.useRef<HTMLInputElement>(null);
@@ -166,12 +180,12 @@ const TreeNodeComponentImpl: React.FC<TreeNodeComponentProps> = ({
     return (
         <div className="tree-item">
             <div
-                className={`tree-item-content ${node.type} ${isSelected ? 'selected' : ''} ${isActive ? 'active' : ''}`}
+                className={`tree-item-content ${node.type} ${isProjectRoot ? 'project-root-selector' : ''} ${isSelected && !isProjectRoot ? 'selected' : ''} ${isActive && !isProjectRoot ? 'active' : ''}`}
                 ref={(element) => onNodeRef(node.id, element)}
                 onMouseDown={handleActivateOnly}
                 onClick={handleNameClick}
                 onContextMenu={(e) => onContextMenu(e, node)}
-                style={{ cursor: 'pointer' }}
+                style={{ cursor: isProjectRoot ? 'default' : 'pointer' }}
             >
                 <div className="tree-indent" style={{ width: level * 16 }} onMouseDown={(e) => e.stopPropagation()}></div>
 
@@ -196,6 +210,23 @@ const TreeNodeComponentImpl: React.FC<TreeNodeComponentProps> = ({
                         onMouseDown={(e) => e.stopPropagation()}
                         onClick={(e) => e.stopPropagation()}
                     />
+                ) : isProjectSelector ? (
+                    <div
+                        className="tree-project-selector"
+                        onKeyDown={(e) => e.stopPropagation()}
+                    >
+                        <ProjectSwitcher
+                            options={projectOptions ?? []}
+                            value={node.project_id ?? ''}
+                            onChange={(projectId) => onProjectChange?.(projectId)}
+                            onAddProject={onAddProject}
+                            disabled={isAddingProject}
+                        />
+                    </div>
+                ) : isProjectRoot ? (
+                    <span className="tree-project-name" title={node.name}>
+                        {node.name}
+                    </span>
                 ) : (
                     <span className={`tree-name ${gitStatusClass}`} title={title} onMouseDown={(e) => e.stopPropagation()}>
                         {node.name}
@@ -241,6 +272,15 @@ const areEqual = (prev: TreeNodeComponentProps, next: TreeNodeComponentProps): b
     }
 
     if (prev.level !== next.level) {
+        return false;
+    }
+
+    if (
+        prev.projectOptions !== next.projectOptions
+        || prev.onProjectChange !== next.onProjectChange
+        || prev.onAddProject !== next.onAddProject
+        || prev.isAddingProject !== next.isAddingProject
+    ) {
         return false;
     }
 

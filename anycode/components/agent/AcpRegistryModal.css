@@ -22,6 +22,28 @@
   flex-shrink: 0;
 }
 
+.acp-registry-project-target {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 16px;
+  border-bottom: 1px solid color-mix(in srgb, var(--theme-foreground, #ffffff) 6%, transparent);
+  color: var(--theme-muted-foreground, #9aa0a6);
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+.acp-registry-project-target select {
+  min-width: 0;
+  max-width: min(320px, 70%);
+  padding: 3px 6px;
+  border: 1px solid var(--theme-border, #4a4a4a);
+  border-radius: 5px;
+  background: var(--theme-tab-background, var(--theme-background, #242424));
+  color: var(--theme-foreground, #f0f0f0);
+  font: inherit;
+}
+
 .acp-registry-header-left {
   display: flex;
   align-items: center;

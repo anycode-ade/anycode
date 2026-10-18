@@ -485,7 +485,6 @@
     align-items: center;
     justify-content: center;
     text-align: center;
-    background: var(--background-color, #242424);
     user-select: none;
     -webkit-user-select: none;
     overflow-y: auto;
@@ -610,7 +609,6 @@
     width: 100%;
     min-width: 0;
     overflow: hidden;
-    background: rgba(18, 18, 18, 0.45);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
     box-sizing: border-box;

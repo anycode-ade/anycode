@@ -38,6 +38,7 @@ const MESSAGE_FLUSH_MS = 100;
 type UseAgentsParams = {
     wsRef: React.RefObject<Socket | null>;
     isConnected: boolean;
+    projectId?: string | null;
     onAgentStarted?: () => void;
 };
 type PendingAcpEvent = { agent_id: string; item: AcpMessage };
@@ -313,6 +314,7 @@ export const mergeServerAndOptimisticQueue = (
 export const useAgents = ({
     wsRef,
     isConnected,
+    projectId,
     onAgentStarted,
 }: UseAgentsParams) => {
     const [acpSessions, setAcpSessions] = useState<Map<string, AcpSession>>(new Map());
@@ -451,6 +453,22 @@ export const useAgents = ({
             return newSessions;
         });
     }, []);
+
+    const removeProjectSessions = useCallback((projectId: string) => {
+        setAcpSessions((prev) => {
+            const next = new Map(prev);
+            for (const [agentId, session] of next) {
+                if (session.projectId === projectId) {
+                    closedAgentIdsRef.current.add(agentId);
+                    next.delete(agentId);
+                }
+            }
+            if (selectedAgentId && !next.has(selectedAgentId)) {
+                setSelectedAgentId(null);
+            }
+            return next;
+        });
+    }, [selectedAgentId]);
     
     const mergeChunkMessages = (messages: AcpMessage[]): AcpMessage[] => {
         const merged: AcpMessage[] = [];
@@ -912,6 +930,7 @@ export const useAgents = ({
                         newSessions.set(agent.id, {
                             ...existing,
                             sessionId: agent.session_id ?? existing.sessionId,
+                            projectId: agent.project_id ?? existing.projectId,
                             isActive: true,
                             isProcessing: Boolean(agent.is_processing),
                             queue: agent.queue ?? existing.queue,
@@ -921,6 +940,7 @@ export const useAgents = ({
                             agentId: agent.id,
                             agentName: agent.name,
                             sessionId: agent.session_id,
+                            projectId: agent.project_id,
                             messages: [],
                             isActive: true,
                             isProcessing: Boolean(agent.is_processing),
@@ -957,8 +977,9 @@ export const useAgents = ({
         });
     }, [wsRef, isConnected, selectedAgentId]);
 
-    const startAgent = useCallback((agent: AcpAgent | undefined, options?: { resumeSessionId?: string }) => {
+    const startAgent = useCallback((agent: AcpAgent | undefined, options?: { resumeSessionId?: string; projectId?: string }) => {
         if (!agent || !wsRef.current || !isConnected) return null;
+        const targetProjectId = options?.projectId ?? projectId ?? undefined;
 
         const { id, name, command, args, env, profile } = agent;
         const aid = generateAgentId(id);
@@ -973,6 +994,7 @@ export const useAgents = ({
                 agentId: aid,
                 agentName: name,
                 agentConfigId: id,
+                projectId: targetProjectId,
                 profile,
                 messages: existing?.messages ?? [],
                 isActive: false,
@@ -991,6 +1013,7 @@ export const useAgents = ({
             args,
             env: env ?? {},
             resume_session_id: options?.resumeSessionId ?? null,
+            project_id: targetProjectId ?? null,
         }, (response: any) => {
             if (response.success) {
                 setAcpSessions((prev) => {
@@ -1001,6 +1024,7 @@ export const useAgents = ({
                         agentId: aid,
                         agentName: name,
                         agentConfigId: id,
+                        projectId: response.project_id ?? targetProjectId,
                         profile,
                         sessionId: response.session_id,
                         messages: existing?.messages ?? [],
@@ -1033,7 +1057,7 @@ export const useAgents = ({
             }
         });
         return aid;
-    }, [wsRef, isConnected, generateAgentId, onAgentStarted]);
+    }, [wsRef, isConnected, generateAgentId, onAgentStarted, projectId]);
 
     const authenticateAgent = useCallback((agentId: string, methodId: string) => {
         if (!wsRef.current || !isConnected) return;
@@ -1081,7 +1105,7 @@ export const useAgents = ({
         });
     }, [wsRef, isConnected]);
 
-    const fetchAvailableSessions = useCallback((agent: AcpAgent | undefined): Promise<AcpSessionSummary[]> => {
+    const fetchAvailableSessions = useCallback((agent: AcpAgent | undefined, targetProjectId?: string): Promise<AcpSessionSummary[]> => {
         return new Promise((resolve, reject) => {
             if (!agent || !wsRef.current || !isConnected) {
                 resolve([]);
@@ -1091,6 +1115,7 @@ export const useAgents = ({
             wsRef.current.emit('acp:sessions_list', {
                 command: agent.command,
                 args: agent.args,
+                project_id: targetProjectId ?? projectId,
             }, (response: any) => {
                 if (!response.success) {
                     reject(new Error(response.error || 'Failed to load ACP sessions'));
@@ -1100,6 +1125,7 @@ export const useAgents = ({
                 const sessions = (response.sessions || []).map((session: any) => ({
                     sessionId: session.session_id,
                     cwd: session.cwd,
+                    projectId: targetProjectId ?? projectId ?? undefined,
                     title: session.title ?? undefined,
                     updatedAt: session.updated_at ?? undefined,
                 })) as AcpSessionSummary[];
@@ -1107,11 +1133,11 @@ export const useAgents = ({
                 resolve(sessions);
             });
         });
-    }, [wsRef, isConnected]);
+    }, [wsRef, isConnected, projectId]);
 
-    const resumeSession = useCallback((agent: AcpAgent | undefined, sessionId: string): string | null => {
-        return startAgent(agent, { resumeSessionId: sessionId });
-    }, [startAgent]);
+    const resumeSession = useCallback((agent: AcpAgent | undefined, sessionId: string, targetProjectId?: string): string | null => {
+        return startAgent(agent, { resumeSessionId: sessionId, projectId: targetProjectId ?? projectId ?? undefined });
+    }, [startAgent, projectId]);
 
     const sendPrompt = useCallback((agentId: string, prompt: string, attachments: AcpPromptAttachment[] = []) => {
         if (!wsRef.current || !isConnected) return;
@@ -1415,6 +1441,7 @@ export const useAgents = ({
         cancelPrompt,
         stopAgent,
         closeAgent,
+        removeProjectSessions,
         getToolOutput,
         markSessionAsRead,
     };

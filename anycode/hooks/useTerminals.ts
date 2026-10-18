@@ -9,6 +9,12 @@ type UseTerminalsParams = {
 };
 
 const TERMINAL_DELAY_MS = 100;
+const terminalKey = (name: string, session: string) => `${session}:${name}`;
+const terminalStorageKey = (kind: 'data' | 'mouseMode', name: string, session: string) => (
+    session === 'anycode'
+        ? `terminal:${kind}:${name}`
+        : `terminal:${kind}:${session}:${name}`
+);
 
 export const useTerminals = ({ wsRef, isConnected }: UseTerminalsParams) => {
     const [terminals, setTerminals] = useState<Terminal[]>(loadTerminals);
@@ -21,8 +27,8 @@ export const useTerminals = ({ wsRef, isConnected }: UseTerminalsParams) => {
     const resizeThrottleMsRef = useRef<number>(TERMINAL_DELAY_MS);
     const closingTerminalsRef = useRef<Set<string>>(new Set());
 
-    const clearResizeState = useCallback((name?: string) => {
-        if (!name) {
+    const clearResizeState = useCallback((name?: string, session?: string) => {
+        if (!name || !session) {
             resizeTimerRef.current.forEach((timerId) => {
                 clearTimeout(timerId);
             });
@@ -32,13 +38,14 @@ export const useTerminals = ({ wsRef, isConnected }: UseTerminalsParams) => {
             return;
         }
 
-        const timerId = resizeTimerRef.current.get(name);
+        const key = terminalKey(name, session);
+        const timerId = resizeTimerRef.current.get(key);
         if (timerId) {
             clearTimeout(timerId);
-            resizeTimerRef.current.delete(name);
+            resizeTimerRef.current.delete(key);
         }
-        pendingResizeRef.current.delete(name);
-        lastResizeSentRef.current.delete(name);
+        pendingResizeRef.current.delete(key);
+        lastResizeSentRef.current.delete(key);
     }, []);
 
     const initializeTerminal = useCallback((terminal: Terminal) => {
@@ -52,47 +59,50 @@ export const useTerminals = ({ wsRef, isConnected }: UseTerminalsParams) => {
             session: terminal.session,
             cols: terminal.cols,
             rows: terminal.rows,
+            ...(isNewTerminal && terminal.project_id ? { project_id: terminal.project_id } : {}),
         });
     }, [wsRef]);
 
-    const attachTerminalListener = useCallback((name: string, callback: (data: string) => void) => {
+    const attachTerminalListener = useCallback((name: string, session: string, callback: (data: string) => void) => {
         if (!wsRef.current) return;
-        const channel = `terminal:data:${name}`;
+        const channel = `terminal:data:${session}:${name}`;
         wsRef.current.on(channel, callback);
     }, [wsRef]);
 
-    const detachTerminalListener = useCallback((name: string, callback: (data: string) => void) => {
+    const detachTerminalListener = useCallback((name: string, session: string, callback: (data: string) => void) => {
         if (!wsRef.current) return;
-        const channel = `terminal:data:${name}`;
+        const channel = `terminal:data:${session}:${name}`;
         wsRef.current.off(channel, callback);
     }, [wsRef]);
 
-    const reattachTerminalListener = useCallback((name: string) => {
+    const reattachTerminalListener = useCallback((name: string, session: string) => {
         if (!wsRef.current) return;
-        const callbacks = terminalListenersRef.current.get(name);
+        const key = terminalKey(name, session);
+        const callbacks = terminalListenersRef.current.get(key);
         if (!callbacks) return;
 
         callbacks.forEach((callback) => {
-            detachTerminalListener(name, callback);
-            attachTerminalListener(name, callback);
+            detachTerminalListener(name, session, callback);
+            attachTerminalListener(name, session, callback);
         });
     }, [wsRef, attachTerminalListener, detachTerminalListener]);
 
-    const handleTerminalDataCallback = useCallback((name: string, callback: (data: string) => void) => {
-        if (!terminalListenersRef.current.has(name)) {
-            terminalListenersRef.current.set(name, new Set());
+    const handleTerminalDataCallback = useCallback((name: string, session: string, callback: (data: string) => void) => {
+        const key = terminalKey(name, session);
+        if (!terminalListenersRef.current.has(key)) {
+            terminalListenersRef.current.set(key, new Set());
         }
 
-        const callbacks = terminalListenersRef.current.get(name)!;
+        const callbacks = terminalListenersRef.current.get(key)!;
         callbacks.add(callback);
-        attachTerminalListener(name, callback);
+        attachTerminalListener(name, session, callback);
 
         return () => {
             callbacks.delete(callback);
-            detachTerminalListener(name, callback);
+            detachTerminalListener(name, session, callback);
 
             if (callbacks.size === 0) {
-                terminalListenersRef.current.delete(name);
+                terminalListenersRef.current.delete(key);
             }
         };
     }, [attachTerminalListener, detachTerminalListener]);
@@ -100,12 +110,12 @@ export const useTerminals = ({ wsRef, isConnected }: UseTerminalsParams) => {
     const reconnectTerminals = useCallback(() => {
         terminals.forEach((term) => {
             initializeTerminal(term);
-            reattachTerminalListener(term.name);
+            reattachTerminalListener(term.name, term.session);
         });
     }, [terminals, initializeTerminal, reattachTerminalListener]);
 
-    const handleTerminalData = useCallback((name: string, data: string) => {
-        const terminal = terminals.find((t) => t.name === name);
+    const handleTerminalData = useCallback((name: string, session: string, data: string) => {
+        const terminal = terminals.find((t) => t.name === name && t.session === session);
         if (!terminal || !wsRef.current || !isConnected) return;
 
         wsRef.current.emit('terminal:input', {
@@ -115,21 +125,22 @@ export const useTerminals = ({ wsRef, isConnected }: UseTerminalsParams) => {
         });
     }, [terminals, wsRef, isConnected]);
 
-    const handleTerminalResize = useCallback((name: string, cols: number, rows: number) => {
-        const terminal = terminals.find((t) => t.name === name);
+    const handleTerminalResize = useCallback((name: string, session: string, cols: number, rows: number) => {
+        const terminal = terminals.find((t) => t.name === name && t.session === session);
         if (!terminal || !wsRef.current || !isConnected) return;
-        pendingResizeRef.current.set(name, { cols, rows });
+        const key = terminalKey(name, session);
+        pendingResizeRef.current.set(key, { cols, rows });
 
-        if (resizeTimerRef.current.get(name)) {
+        if (resizeTimerRef.current.get(key)) {
             return;
         }
 
         const timerId = window.setTimeout(() => {
-            resizeTimerRef.current.delete(name);
-            const pending = pendingResizeRef.current.get(name);
+            resizeTimerRef.current.delete(key);
+            const pending = pendingResizeRef.current.get(key);
             if (!pending || !wsRef.current || !isConnected) return;
 
-            const lastSent = lastResizeSentRef.current.get(name);
+            const lastSent = lastResizeSentRef.current.get(key);
             if (lastSent && lastSent.cols === pending.cols && lastSent.rows === pending.rows) {
                 return;
             }
@@ -140,13 +151,13 @@ export const useTerminals = ({ wsRef, isConnected }: UseTerminalsParams) => {
                 cols: pending.cols,
                 rows: pending.rows,
             });
-            lastResizeSentRef.current.set(name, pending);
+            lastResizeSentRef.current.set(key, pending);
         }, resizeThrottleMsRef.current);
 
-        resizeTimerRef.current.set(name, timerId);
+        resizeTimerRef.current.set(key, timerId);
     }, [terminals, wsRef, isConnected]);
 
-    const addTerminal = useCallback(() => {
+    const addTerminal = useCallback((projectId: string) => {
         let nextId = terminalCounterRef.current + 1;
         while (terminals.find((t) => t.id === String(nextId))) {
             nextId += 1;
@@ -154,7 +165,14 @@ export const useTerminals = ({ wsRef, isConnected }: UseTerminalsParams) => {
         terminalCounterRef.current = nextId;
 
         const id = String(nextId);
-        const newTerminal: Terminal = { id, name: id, session: 'anycode', cols: 60, rows: 20 };
+        const newTerminal: Terminal = {
+            id,
+            name: id,
+            session: crypto.randomUUID(),
+            cols: 60,
+            rows: 20,
+            project_id: projectId,
+        };
         newTerminalsRef.current.add(id);
         setTerminals((prev) => [...prev, newTerminal]);
 
@@ -169,14 +187,15 @@ export const useTerminals = ({ wsRef, isConnected }: UseTerminalsParams) => {
         if (!terminalToRemove) return;
 
         // Clean up terminal history snapshot and mouse mode from localStorage
-        localStorage.removeItem(`terminal:data:${terminalToRemove.name}`);
-        localStorage.removeItem(`terminal:mouseMode:${terminalToRemove.name}`);
+        localStorage.removeItem(terminalStorageKey('data', terminalToRemove.name, terminalToRemove.session));
+        localStorage.removeItem(terminalStorageKey('mouseMode', terminalToRemove.name, terminalToRemove.session));
 
-        closingTerminalsRef.current.add(terminalToRemove.name);
+        const key = terminalKey(terminalToRemove.name, terminalToRemove.session);
+        closingTerminalsRef.current.add(key);
         newTerminalsRef.current.delete(terminalToRemove.id);
-        clearResizeState(terminalToRemove.name);
+        clearResizeState(terminalToRemove.name, terminalToRemove.session);
         window.setTimeout(() => {
-            closingTerminalsRef.current.delete(terminalToRemove.name);
+            closingTerminalsRef.current.delete(key);
         }, TERMINAL_DELAY_MS * 2);
         setTerminals((prev) => prev.filter((terminal) => terminal.id !== id));
 
@@ -188,8 +207,8 @@ export const useTerminals = ({ wsRef, isConnected }: UseTerminalsParams) => {
         }
     }, [clearResizeState, terminals, wsRef, isConnected]);
 
-    const isTerminalClosing = useCallback((name: string) => {
-        return closingTerminalsRef.current.has(name);
+    const isTerminalClosing = useCallback((name: string, session: string) => {
+        return closingTerminalsRef.current.has(terminalKey(name, session));
     }, []);
 
     const uploadFile = useCallback(async (file: File): Promise<string | null> => {
@@ -233,9 +252,9 @@ export const useTerminals = ({ wsRef, isConnected }: UseTerminalsParams) => {
 
     const closeAllTerminals = useCallback(() => {
         for (const terminal of terminals) {
-            localStorage.removeItem(`terminal:data:${terminal.name}`);
-            localStorage.removeItem(`terminal:mouseMode:${terminal.name}`);
-            clearResizeState(terminal.name);
+            localStorage.removeItem(terminalStorageKey('data', terminal.name, terminal.session));
+            localStorage.removeItem(terminalStorageKey('mouseMode', terminal.name, terminal.session));
+            clearResizeState(terminal.name, terminal.session);
             if (wsRef.current && isConnected) {
                 wsRef.current.emit('terminal:close', {
                     name: terminal.name,
@@ -249,6 +268,21 @@ export const useTerminals = ({ wsRef, isConnected }: UseTerminalsParams) => {
         setTerminals([]);
         localStorage.removeItem('terminals');
     }, [clearResizeState, terminals, wsRef, isConnected]);
+
+    const removeProjectTerminals = useCallback((projectId: string) => {
+        const removed = terminals.filter((terminal) => terminal.project_id === projectId);
+        for (const terminal of removed) {
+            const key = terminalKey(terminal.name, terminal.session);
+            closingTerminalsRef.current.add(key);
+            localStorage.removeItem(terminalStorageKey('data', terminal.name, terminal.session));
+            localStorage.removeItem(terminalStorageKey('mouseMode', terminal.name, terminal.session));
+            clearResizeState(terminal.name, terminal.session);
+            newTerminalsRef.current.delete(terminal.id);
+            terminalListenersRef.current.delete(key);
+            window.setTimeout(() => closingTerminalsRef.current.delete(key), TERMINAL_DELAY_MS * 2);
+        }
+        setTerminals((prev) => prev.filter((terminal) => terminal.project_id !== projectId));
+    }, [terminals, clearResizeState]);
 
     useEffect(() => {
         return () => {
@@ -264,6 +298,7 @@ export const useTerminals = ({ wsRef, isConnected }: UseTerminalsParams) => {
         addTerminal,
         closeTerminal,
         closeAllTerminals,
+        removeProjectTerminals,
         reconnectTerminals,
         isTerminalClosing,
         uploadFile,

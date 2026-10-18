@@ -9,7 +9,7 @@ export interface AcpSessionsViewProps {
   baseName: string;
   onClose: () => void;
   onLoadSessions: (agent: AcpAgent) => Promise<AcpSessionSummary[]>;
-  onResumeSession: (agent: AcpAgent, sessionId: string) => void;
+  onResumeSession: (agent: AcpAgent, sessionId: string, projectId?: string) => void;
 }
 
 const ITEM_HEIGHT = 60;
@@ -312,7 +312,7 @@ export const AcpSessionsView: React.FC<AcpSessionsViewProps> = ({
                     <button
                       className="acp-sessions-view-resume-btn"
                       onClick={() => {
-                        onResumeSession(agent, session.sessionId);
+                        onResumeSession(agent, session.sessionId, session.projectId);
                         onClose();
                       }}
                       type="button"

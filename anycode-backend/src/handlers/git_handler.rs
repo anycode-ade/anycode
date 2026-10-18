@@ -9,25 +9,49 @@ use socketioxide::extract::{AckSender, Data, SocketRef, State};
 use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 use tracing::info;
+use std::sync::Arc;
+use tokio::sync::Mutex;
+
+async fn project_git_for_request(
+    socket: &SocketRef,
+    state: &AppState,
+    project_id: Option<&str>,
+) -> anyhow::Result<Arc<Mutex<crate::git::GitManager>>> {
+    let project = match project_id {
+        Some(project_id) => state.workspace.lock().await.get(project_id),
+        None => state.project_for_socket(socket.id.as_str()).await,
+    };
+    project
+        .map(|project| project.git)
+        .ok_or_else(|| anyhow::anyhow!("No project is selected or the project was removed"))
+}
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct GitFileOriginalRequest {
     pub path: String,
+    #[serde(default)]
+    pub project_id: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct GitCommitRequest {
     pub message: String,
+    #[serde(default)]
+    pub project_id: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct GitRevertRequest {
     pub path: String,
+    #[serde(default)]
+    pub project_id: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct GitCheckoutRequest {
     pub branch: String,
+    #[serde(default)]
+    pub project_id: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -38,6 +62,8 @@ pub struct GitHistoryRequest {
     pub limit: usize,
     #[serde(default)]
     pub path: Option<String>,
+    #[serde(default)]
+    pub project_id: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -49,6 +75,8 @@ pub struct GitHistorySearchRequest {
     pub offset: usize,
     #[serde(default = "default_history_limit")]
     pub limit: usize,
+    #[serde(default)]
+    pub project_id: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -61,9 +89,17 @@ fn default_history_limit() -> usize {
     50
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct GitProjectRequest {
+    #[serde(default)]
+    pub project_id: Option<String>,
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct GitHistoryCommitRequest {
     pub hash: String,
+    #[serde(default)]
+    pub project_id: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -72,25 +108,45 @@ pub struct GitHistoryFileRequest {
     pub path: String,
     #[serde(default)]
     pub old_path: Option<String>,
+    #[serde(default)]
+    pub project_id: Option<String>,
 }
 
-pub async fn handle_git_status(ack: AckSender, state: State<AppState>) {
+pub async fn handle_git_status(
+    socket: SocketRef,
+    Data(request): Data<GitProjectRequest>,
+    ack: AckSender,
+    state: State<AppState>,
+) {
     info!("Received git:status");
+    let git_manager = match project_git_for_request(&socket, &state, request.project_id.as_deref()).await {
+        Ok(git) => git,
+        Err(error) => return send_response(ack, Err(error)),
+    };
     let result = {
-        let git = state.git_manager.lock().await;
+        let git = git_manager.lock().await;
         git.status().map(|s| s.to_json())
     };
+    let mut result = result;
+    if let (Some(project_id), Ok(value)) = (request.project_id, result.as_mut()) {
+        value["project_id"] = serde_json::json!(project_id);
+    }
     send_response(ack, result);
 }
 
 pub async fn handle_git_file_original(
+    socket: SocketRef,
     Data(request): Data<GitFileOriginalRequest>,
     ack: AckSender,
     state: State<AppState>,
 ) {
     info!("Received git:file-original: {:?}", request.path);
+    let git_manager = match project_git_for_request(&socket, &state, request.project_id.as_deref()).await {
+        Ok(git) => git,
+        Err(error) => return send_response(ack, Err(error)),
+    };
     let result = {
-        let git = state.git_manager.lock().await;
+        let git = git_manager.lock().await;
         git.file_original(&request.path).map(|f| {
             json!({
                 "content": f.content,
@@ -102,6 +158,7 @@ pub async fn handle_git_file_original(
 }
 
 pub async fn handle_git_history(
+    socket: SocketRef,
     Data(request): Data<GitHistoryRequest>,
     ack: AckSender,
     state: State<AppState>,
@@ -110,8 +167,12 @@ pub async fn handle_git_history(
         "Received git:history: offset={}, limit={}, path={:?}",
         request.offset, request.limit, request.path
     );
+    let git_manager = match project_git_for_request(&socket, &state, request.project_id.as_deref()).await {
+        Ok(git) => git,
+        Err(error) => return send_response(ack, Err(error)),
+    };
     let result = {
-        let git = state.git_manager.lock().await;
+        let git = git_manager.lock().await;
         request
             .path
             .as_deref()
@@ -140,6 +201,19 @@ pub async fn handle_git_history_search(
         request.request_id, request.mode, request.offset, request.limit
     );
 
+    let project = match request.project_id.as_deref() {
+        Some(project_id) => state.workspace.lock().await.get(project_id),
+        None => state.project_for_socket(socket.id.as_str()).await,
+    };
+    let project = match project {
+        Some(project) => project,
+        None => {
+            let _ = ack.send(&json!({ "success": false, "error": "No project is selected" }));
+            return;
+        }
+    };
+    let project_id = project.info.id.clone();
+    let project_root = std::path::PathBuf::from(&project.info.root);
     let sid = socket.id.as_str().to_string();
     let query = request.query.trim().to_string();
     let (sender, new_worker) = {
@@ -164,7 +238,7 @@ pub async fn handle_git_history_search(
             let cancel = CancellationToken::new();
             let (sender, receiver) = mpsc::unbounded_channel();
             let session = SearchHistorySession::new(
-                crate::utils::current_dir(),
+                project_root,
                 request.mode,
                 query.clone(),
                 cancel.clone(),
@@ -204,6 +278,7 @@ pub async fn handle_git_history_search(
             "git:history-search:results",
             &json!({
                 "request_id": request_id,
+                "project_id": project_id.clone(),
                 "commits": commits,
             }),
         );
@@ -214,6 +289,7 @@ pub async fn handle_git_history_search(
             let _ = ack.send(&json!({
                 "success": true,
                 "request_id": request_id,
+                "project_id": project_id.clone(),
                 "commits": [],
                 "streamed": true,
                 "has_more": page.has_more,
@@ -262,13 +338,18 @@ pub async fn handle_git_history_search_cancel(
 }
 
 pub async fn handle_git_history_files(
+    socket: SocketRef,
     Data(request): Data<GitHistoryCommitRequest>,
     ack: AckSender,
     state: State<AppState>,
 ) {
     info!("Received git:history-files: {}", request.hash);
+    let git_manager = match project_git_for_request(&socket, &state, request.project_id.as_deref()).await {
+        Ok(git) => git,
+        Err(error) => return send_response(ack, Err(error)),
+    };
     let result = {
-        let git = state.git_manager.lock().await;
+        let git = git_manager.lock().await;
         git.history_files(&request.hash)
             .map(|files| json!({ "files": files }))
     };
@@ -276,6 +357,7 @@ pub async fn handle_git_history_files(
 }
 
 pub async fn handle_git_history_file(
+    socket: SocketRef,
     Data(request): Data<GitHistoryFileRequest>,
     ack: AckSender,
     state: State<AppState>,
@@ -284,8 +366,12 @@ pub async fn handle_git_history_file(
         "Received git:history-file: {} {:?}",
         request.hash, request.path
     );
+    let git_manager = match project_git_for_request(&socket, &state, request.project_id.as_deref()).await {
+        Ok(git) => git,
+        Err(error) => return send_response(ack, Err(error)),
+    };
     let result = {
-        let git = state.git_manager.lock().await;
+        let git = git_manager.lock().await;
         git.history_file_content(&request.hash, &request.path, request.old_path.as_deref())
             .map(|content| json!(content))
     };
@@ -300,8 +386,13 @@ pub async fn handle_git_commit(
 ) {
     info!("Received git:commit");
 
+    let git_manager = match project_git_for_request(&socket, &state, request.project_id.as_deref()).await {
+        Ok(git) => git,
+        Err(error) => return send_response(ack, Err(error)),
+    };
+    let project_id = request.project_id.clone().or(state.active_project_id(socket.id.as_str()).await);
     let (result, changes_update) = {
-        let mut git = state.git_manager.lock().await;
+        let mut git = git_manager.lock().await;
         match git.commit(&request.message) {
             Ok(_) => {
                 let status = git.refresh_status_cache().map(|s| s.to_json());
@@ -313,44 +404,83 @@ pub async fn handle_git_commit(
 
     send_response(ack, result);
 
-    if let Some(update) = changes_update {
+    if let Some(mut update) = changes_update {
+        if let Some(object) = update.as_object_mut() {
+            object.insert("project_id".to_string(), json!(project_id));
+        }
         let _ = socket.emit("git:update", &update);
         let _ = socket.broadcast().emit("git:update", &update).await;
     }
 }
 
-pub async fn handle_git_push(ack: AckSender, state: State<AppState>) {
+pub async fn handle_git_push(
+    socket: SocketRef,
+    Data(request): Data<GitProjectRequest>,
+    ack: AckSender,
+    state: State<AppState>,
+) {
     info!("Received git:push");
+    let git_manager = match project_git_for_request(&socket, &state, request.project_id.as_deref()).await {
+        Ok(git) => git,
+        Err(error) => return send_response(ack, Err(error)),
+    };
     let result = {
-        let git = state.git_manager.lock().await;
+        let git = git_manager.lock().await;
         git.push().map(|status| json!({ "status": status }))
     };
     send_response(ack, result);
 }
 
-pub async fn handle_git_pull(ack: AckSender, state: State<AppState>) {
+pub async fn handle_git_pull(
+    socket: SocketRef,
+    Data(request): Data<GitProjectRequest>,
+    ack: AckSender,
+    state: State<AppState>,
+) {
     info!("Received git:pull");
+    let git_manager = match project_git_for_request(&socket, &state, request.project_id.as_deref()).await {
+        Ok(git) => git,
+        Err(error) => return send_response(ack, Err(error)),
+    };
     let result = {
-        let git = state.git_manager.lock().await;
+        let git = git_manager.lock().await;
         git.pull().map(|r| r.to_json())
     };
     send_response(ack, result);
 }
 
-pub async fn handle_git_fetch(ack: AckSender, state: State<AppState>) {
+pub async fn handle_git_fetch(
+    socket: SocketRef,
+    Data(request): Data<GitProjectRequest>,
+    ack: AckSender,
+    state: State<AppState>,
+) {
     info!("Received git:fetch");
+    let git_manager = match project_git_for_request(&socket, &state, request.project_id.as_deref()).await {
+        Ok(git) => git,
+        Err(error) => return send_response(ack, Err(error)),
+    };
     let result = {
-        let git = state.git_manager.lock().await;
+        let git = git_manager.lock().await;
         git.fetch().map(|_| json!({ "status": "success" }))
     };
     send_response(ack, result);
 }
 
 
-pub async fn handle_git_branches(ack: AckSender, state: State<AppState>) {
+pub async fn handle_git_branches(
+    socket: SocketRef,
+    Data(request): Data<GitProjectRequest>,
+    ack: AckSender,
+    state: State<AppState>,
+) {
     info!("Received git:branches");
+    let git_manager = match project_git_for_request(&socket, &state, request.project_id.as_deref()).await {
+        Ok(git) => git,
+        Err(error) => return send_response(ack, Err(error)),
+    };
     let result = {
-        let git = state.git_manager.lock().await;
+        let git = git_manager.lock().await;
         git.list_branches()
             .map(|branches| json!({ "branches": branches }))
     };
@@ -358,13 +488,18 @@ pub async fn handle_git_branches(ack: AckSender, state: State<AppState>) {
 }
 
 pub async fn handle_git_checkout(
+    socket: SocketRef,
     Data(request): Data<GitCheckoutRequest>,
     ack: AckSender,
     state: State<AppState>,
 ) {
     info!("Received git:checkout: {}", request.branch);
+    let git_manager = match project_git_for_request(&socket, &state, request.project_id.as_deref()).await {
+        Ok(git) => git,
+        Err(error) => return send_response(ack, Err(error)),
+    };
     let result = {
-        let mut git = state.git_manager.lock().await;
+        let mut git = git_manager.lock().await;
         git.checkout_branch(&request.branch)
             .and_then(|_| git.refresh_status_cache().map(|_| json!({})))
     };
@@ -372,13 +507,18 @@ pub async fn handle_git_checkout(
 }
 
 pub async fn handle_git_create_branch(
+    socket: SocketRef,
     Data(request): Data<GitCheckoutRequest>,
     ack: AckSender,
     state: State<AppState>,
 ) {
     info!("Received git:create_branch: {}", request.branch);
+    let git_manager = match project_git_for_request(&socket, &state, request.project_id.as_deref()).await {
+        Ok(git) => git,
+        Err(error) => return send_response(ack, Err(error)),
+    };
     let result = {
-        let mut git = state.git_manager.lock().await;
+        let mut git = git_manager.lock().await;
         git.create_branch(&request.branch)
             .and_then(|_| git.refresh_status_cache().map(|_| json!({})))
     };
@@ -392,8 +532,13 @@ pub async fn handle_git_revert(
     state: State<AppState>,
 ) {
     info!("Received git:revert: {:?}", request.path);
+    let git_manager = match project_git_for_request(&socket, &state, request.project_id.as_deref()).await {
+        Ok(git) => git,
+        Err(error) => return send_response(ack, Err(error)),
+    };
+    let project_id = request.project_id.clone().or(state.active_project_id(socket.id.as_str()).await);
     let (result, status_update) = {
-        let mut git = state.git_manager.lock().await;
+        let mut git = git_manager.lock().await;
         match git.revert(&request.path).and_then(|_| {
             git.refresh_status_cache()
                 .map(|status| (json!({}), status.to_json()))
@@ -404,7 +549,10 @@ pub async fn handle_git_revert(
     };
     send_response(ack, result);
 
-    if let Some(status) = status_update {
+    if let Some(mut status) = status_update {
+        if let Some(object) = status.as_object_mut() {
+            object.insert("project_id".to_string(), json!(project_id));
+        }
         let _ = socket.emit("git:update", &status);
     }
 }
@@ -412,36 +560,54 @@ pub async fn handle_git_revert(
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct GitStageRequest {
     pub path: String,
+    #[serde(default)]
+    pub project_id: Option<String>,
 }
 
 pub async fn handle_git_stage(
+    socket: SocketRef,
     Data(request): Data<GitStageRequest>,
     ack: AckSender,
     state: State<AppState>,
 ) {
     info!("Received git:stage: {:?}", request.path);
+    let git_manager = match project_git_for_request(&socket, &state, request.project_id.as_deref()).await {
+        Ok(git) => git,
+        Err(error) => return send_response(ack, Err(error)),
+    };
     let result = {
-        let git = state.git_manager.lock().await;
+        let git = git_manager.lock().await;
         git.stage(&request.path).map(|_| json!({}))
     };
     send_response(ack, result);
 }
 
 pub async fn handle_git_unstage(
+    socket: SocketRef,
     Data(request): Data<GitStageRequest>,
     ack: AckSender,
     state: State<AppState>,
 ) {
     info!("Received git:unstage: {:?}", request.path);
+    let git_manager = match project_git_for_request(&socket, &state, request.project_id.as_deref()).await {
+        Ok(git) => git,
+        Err(error) => return send_response(ack, Err(error)),
+    };
     let result = {
-        let git = state.git_manager.lock().await;
+        let git = git_manager.lock().await;
         git.unstage(&request.path).map(|_| json!({}))
     };
     send_response(ack, result);
 }
 
 pub async fn is_file_tracked(abs_path: &str, state: &AppState) -> bool {
-    let git = state.git_manager.lock().await;
+    let project = state
+        .workspace
+        .lock()
+        .await
+        .find_project_for_path(std::path::Path::new(abs_path));
+    let Some(project) = project else { return false };
+    let git = project.git.lock().await;
     match git.file_original(abs_path) {
         Ok(file) => !file.is_new,
         Err(_) => false,

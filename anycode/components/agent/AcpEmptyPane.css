@@ -198,6 +198,60 @@
     padding: 4px 8px;
 }
 
+.acp-start-card-project-wrap {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--theme-muted-foreground, #9aa0a6);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    user-select: none;
+}
+
+.acp-start-card-project-wrap:hover {
+    background: color-mix(in srgb, var(--theme-foreground, #ffffff) 10%, transparent);
+    color: var(--theme-foreground, #ffffff);
+}
+
+.acp-start-card-project-wrap.is-disabled {
+    cursor: default;
+}
+
+.acp-start-card-project-label {
+    max-width: 120px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 11px;
+    font-weight: 500;
+}
+
+.acp-start-card-project-select {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    cursor: pointer;
+    font-size: 16px;
+}
+
+.acp-start-card-project-select:disabled {
+    cursor: default;
+}
+
+.acp-start-card-project-select option {
+    background: var(--background-color, #242424);
+    color: var(--theme-foreground, #f0f0f0);
+    font-size: 13px;
+    padding: 4px 8px;
+}
+
 .acp-start-card-profile-label {
     font-size: 11px;
     font-weight: 500;
@@ -305,7 +359,7 @@
     text-align: left;
     user-select: none;
     -webkit-user-select: none;
-    max-height: 80px;
+    max-height: 112px;
     transition: all 0.22s cubic-bezier(0.4, 0, 0.2, 1);
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
     isolation: isolate;
@@ -371,6 +425,43 @@
     max-width: 100%;
 }
 
+.acp-pane-opened-context-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-width: 0;
+    width: 100%;
+    margin-top: 3px;
+    font-size: 10.5px;
+}
+
+.acp-pane-opened-context-item {
+    box-sizing: border-box;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+    max-width: 48%;
+    padding: 1px 6px;
+    color: var(--theme-muted-foreground, #b1bac4);
+}
+
+.acp-pane-opened-context-item svg {
+    flex-shrink: 0;
+    opacity: 0.8;
+}
+
+.acp-pane-opened-context-item span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.acp-pane-opened-profile {
+    color: var(--theme-accent-background, #64afff);
+}
+
 .acp-pane-close-button {
     position: absolute;
     top: 6px;
@@ -413,14 +504,8 @@
     color: var(--theme-foreground, #ffffff);
 }
 
-.acp-pane-opened-account {
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--theme-accent-background, #64afff);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 140px;
+.acp-pane-opened-project {
+    color: var(--theme-muted-foreground, #b1bac4);
 }
 
 .acp-pane-opened-info-row {

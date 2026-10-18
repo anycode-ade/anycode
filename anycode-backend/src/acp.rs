@@ -151,6 +151,7 @@ struct AcpClientImpl {
     agent_id: String,
     message_sender: broadcast::Sender<AcpMessage>,
     history: Arc<tokio::sync::Mutex<Vec<AcpMessage>>>,
+    project_root: PathBuf,
     /// Channel to send file operations to the ACP filesystem background task
     fs_sender: Option<mpsc::Sender<AcpFsCommand>>,
     acp_db: Option<Arc<crate::acp_db::AcpDb>>,
@@ -220,7 +221,7 @@ impl AcpClientImpl {
         let (resp_tx, resp_rx) = tokio::sync::oneshot::channel();
         let cmd = AcpFsCommand::WriteTextFile {
             agent_id: self.agent_id.clone(),
-            path: args.path.to_path_buf(),
+            path: self.resolve_project_path(args.path.as_ref()),
             content: args.content.clone(),
             resp: resp_tx,
         };
@@ -277,7 +278,7 @@ impl AcpClientImpl {
         let (resp_tx, resp_rx) = tokio::sync::oneshot::channel();
         let cmd = AcpFsCommand::ReadTextFile {
             agent_id: self.agent_id.clone(),
-            path: args.path.to_path_buf(),
+            path: self.resolve_project_path(args.path.as_ref()),
             resp: resp_tx,
         };
 
@@ -322,6 +323,14 @@ impl AcpClientImpl {
             self.agent_id, _args
         );
         Err(acp::Error::method_not_found())
+    }
+
+    fn resolve_project_path(&self, path: &std::path::Path) -> PathBuf {
+        if path.is_absolute() {
+            path.to_path_buf()
+        } else {
+            self.project_root.join(path)
+        }
     }
 
     async fn terminal_output(
@@ -727,22 +736,13 @@ pub struct AcpAgent {
     history_manager: Arc<RwLock<AcpHistoryManager>>,
     /// Channel to send file operations to the ACP filesystem background task
     fs_sender: mpsc::Sender<AcpFsCommand>,
+    project_root: PathBuf,
     queue: Arc<tokio::sync::Mutex<Vec<AcpQueuedMessage>>>,
     queue_notify: Arc<Notify>,
     pub acp_db: Option<Arc<crate::acp_db::AcpDb>>,
 }
 
 impl AcpAgent {
-    pub fn new(
-        agent_id: String,
-        agent_name: String,
-        fs_sender: mpsc::Sender<AcpFsCommand>,
-        acp_db: Option<Arc<crate::acp_db::AcpDb>>,
-    ) -> Self {
-        let project_root = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-        Self::new_with_project_root(agent_id, agent_name, project_root, fs_sender, acp_db)
-    }
-
     pub fn new_with_project_root(
         agent_id: String,
         agent_name: String,
@@ -773,6 +773,7 @@ impl AcpAgent {
             history: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             history_manager: Arc::new(RwLock::new(history_manager)),
             fs_sender,
+            project_root,
             queue: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             queue_notify: Arc::new(Notify::new()),
             acp_db,
@@ -827,7 +828,8 @@ impl AcpAgent {
         let (bootstrap_tx, bootstrap_rx) = oneshot::channel::<Result<SessionBootstrapOutcome>>();
 
         // Spawn agent process
-        let (mut child, stdin, stdout, stderr) = Self::spawn_agent_process(cmd, args, env.as_ref())?;
+        let (mut child, stdin, stdout, stderr) =
+            Self::spawn_agent_process(cmd, args, env.as_ref(), &self.project_root)?;
 
         // Setup connection and run in LocalSet
         let ready_clone = self.ready.clone();
@@ -840,6 +842,7 @@ impl AcpAgent {
         let queue_notify_clone = self.queue_notify.clone();
         let history_manager_clone = self.history_manager.clone();
         let acp_db_clone = self.acp_db.clone();
+        let project_root_clone = self.project_root.clone();
 
         let local_set_handle = tokio::task::spawn_blocking(move || {
             tokio::runtime::Handle::current().block_on(async {
@@ -865,6 +868,7 @@ impl AcpAgent {
                             bootstrap_tx,
                             resume_session_id,
                             acp_db_clone,
+                            project_root_clone,
                         )
                         .await;
                     })
@@ -927,6 +931,7 @@ impl AcpAgent {
         cmd: &str,
         args: &[String],
         env: Option<&HashMap<String, String>>,
+        project_root: &std::path::Path,
     ) -> io::Result<(
         tokio::process::Child,
         tokio::process::ChildStdin,
@@ -935,6 +940,7 @@ impl AcpAgent {
     )> {
         let mut command = Self::agent_command(cmd);
         command.args(args);
+        command.current_dir(project_root);
         if let Some(env_map) = env {
             for (key, val) in env_map {
                 let resolved_val = if val.starts_with("~/") {
@@ -1004,6 +1010,7 @@ impl AcpAgent {
         bootstrap_tx: oneshot::Sender<Result<SessionBootstrapOutcome>>,
         resume_session_id: Option<String>,
         acp_db: Option<Arc<crate::acp_db::AcpDb>>,
+        project_root: PathBuf,
     ) {
         // Clone history before moving client_impl
         let history_for_prompt = history.clone();
@@ -1013,6 +1020,7 @@ impl AcpAgent {
             agent_id: agent_id.clone(),
             message_sender: message_sender.clone(),
             history,
+            project_root: project_root.clone(),
             fs_sender: Some(fs_sender),
             acp_db,
         });
@@ -1111,7 +1119,12 @@ impl AcpAgent {
                 agent_client_protocol::on_receive_notification!(),
             )
             .connect_with(transport, async move |conn| {
-                let outcome = match Self::initialize_connection(&conn, &agent_id_for_conn, resume_session_id).await {
+                let outcome = match Self::initialize_connection(
+                    &conn,
+                    &agent_id_for_conn,
+                    resume_session_id,
+                    project_root,
+                ).await {
                     Ok(value) => value,
                     Err(e) => {
                         let recent_stderr = {
@@ -1299,10 +1312,9 @@ impl AcpAgent {
         conn: &ConnectionTo<agent_client_protocol::Agent>,
         agent_id: &str,
         resume_session_id: Option<String>,
+        cwd: PathBuf,
     ) -> Result<SessionBootstrapOutcome> {
         let (prompt_capabilities, auth_methods) = Self::initialize_agent_connection(conn, agent_id).await?;
-
-        let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
 
         if let Some(resume_session_id) = resume_session_id.as_deref() {
             match Self::restore_session(conn, resume_session_id, &cwd).await? {
@@ -2000,7 +2012,7 @@ impl AcpAgent {
                 local_set
                     .run_until(async move {
                         let (mut child, stdin, stdout, stderr) =
-                            Self::spawn_agent_process(&cmd, &args, None).map_err(|e| {
+                            Self::spawn_agent_process(&cmd, &args, None, &cwd).map_err(|e| {
                                 anyhow!("Failed to spawn ACP agent for session listing: {}", e)
                             })?;
 
@@ -2349,14 +2361,16 @@ impl AcpManager {
         args: &[String],
         env: Option<HashMap<String, String>>,
         resume_session_id: Option<String>,
+        project_root: PathBuf,
     ) -> Result<AcpStartOutcome> {
         if self.agents.contains_key(&agent_id) {
             return Err(anyhow::anyhow!("Agent {} already running", agent_id));
         }
 
-        let mut agent = AcpAgent::new(
+        let mut agent = AcpAgent::new_with_project_root(
             agent_id.clone(),
             agent_name.clone(),
+            project_root,
             self.fs_sender.clone(),
             self.acp_db.clone(),
         );
@@ -2569,5 +2583,31 @@ impl AcpManager {
         } else {
             false
         }
+    }
+}
+
+#[cfg(all(test, unix))]
+mod workspace_tests {
+    use super::AcpAgent;
+    use tokio::io::AsyncReadExt;
+
+    #[tokio::test]
+    async fn agent_process_starts_in_explicit_project_root() {
+        let project = tempfile::tempdir().unwrap();
+        let expected_root = project
+            .path()
+            .canonicalize()
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+        let (mut child, _stdin, mut stdout, _stderr) =
+            AcpAgent::spawn_agent_process("/bin/pwd", &[], None, project.path()).unwrap();
+
+        let mut output = Vec::new();
+        stdout.read_to_end(&mut output).await.unwrap();
+        let status = child.wait().await.unwrap();
+
+        assert!(status.success());
+        assert_eq!(String::from_utf8(output).unwrap().trim(), expected_root);
     }
 }

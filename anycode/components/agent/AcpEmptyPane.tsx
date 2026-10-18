@@ -6,24 +6,31 @@ import { Icons } from '../Icons';
 import { loadSelectedProfiles, saveSelectedProfiles } from '../../storage';
 import { AcpOpenedAgentCard } from './AcpOpenedAgentCard';
 import { AcpSessionsView } from './AcpSessionsView';
+import type { WorkspaceProject } from '../../workspace';
 import './AcpEmptyPane.css';
 
 export { parseAgentDisplayName };
 
 interface AcpEmptyPaneProps {
   agents: AcpSession[];
+  projects: WorkspaceProject[];
+  selectedProjectId: string;
+  onSelectProject: (projectId: string) => void;
   availableAgents: AcpAgent[];
   onSelectAgent: (agentId: string) => void;
   onCloseAgent: (agentId: string) => void;
-  onStartAgent: (agent: AcpAgent) => string | null | undefined;
+  onStartAgent: (agent: AcpAgent, projectId?: string) => string | null | undefined;
   onOpenSettings?: () => void;
   onOpenRegistry?: () => void;
-  onLoadSessions?: (agent: AcpAgent) => Promise<AcpSessionSummary[]>;
-  onResumeSession?: (agent: AcpAgent, sessionId: string) => void;
+  onLoadSessions?: (agent: AcpAgent, projectId?: string) => Promise<AcpSessionSummary[]>;
+  onResumeSession?: (agent: AcpAgent, sessionId: string, projectId?: string) => void;
 }
 
 export const AcpEmptyPane: React.FC<AcpEmptyPaneProps> = ({
   agents,
+  projects,
+  selectedProjectId,
+  onSelectProject,
   availableAgents,
   onSelectAgent,
   onCloseAgent,
@@ -36,6 +43,15 @@ export const AcpEmptyPane: React.FC<AcpEmptyPaneProps> = ({
   const openedSessions = agents.filter((item) => item.isActive || item.isStarting);
   const [selectedProfiles, setSelectedProfiles] = useState<Record<string, string>>(() => loadSelectedProfiles());
   const [activeSessionsAgent, setActiveSessionsAgent] = useState<{ agent: AcpAgent; baseName: string } | null>(null);
+  const selectedProject = projects.find((project) => project.id === selectedProjectId);
+
+  const startAgent = (agent: AcpAgent) => {
+    if (!selectedProjectId) return;
+    const startedAgentId = onStartAgent(agent, selectedProjectId);
+    if (startedAgentId) {
+      onSelectAgent(startedAgentId);
+    }
+  };
 
   const handleSelectProfile = (baseName: string, agentId: string) => {
     setSelectedProfiles((prev) => {
@@ -51,7 +67,7 @@ export const AcpEmptyPane: React.FC<AcpEmptyPaneProps> = ({
         agent={activeSessionsAgent.agent}
         baseName={activeSessionsAgent.baseName}
         onClose={() => setActiveSessionsAgent(null)}
-        onLoadSessions={onLoadSessions}
+        onLoadSessions={(agent) => onLoadSessions(agent, selectedProjectId)}
         onResumeSession={onResumeSession}
       />
     );
@@ -68,6 +84,7 @@ export const AcpEmptyPane: React.FC<AcpEmptyPaneProps> = ({
                 key={openedSession.agentId}
                 session={openedSession}
                 availableAgents={availableAgents}
+                projects={projects}
                 onSelectAgent={onSelectAgent}
                 onCloseAgent={onCloseAgent}
               />
@@ -132,24 +149,19 @@ export const AcpEmptyPane: React.FC<AcpEmptyPaneProps> = ({
                     className="acp-start-card"
                     onClick={(event) => {
                       event.stopPropagation();
-                      const startedAgentId = onStartAgent(selectedAgent);
-                      if (startedAgentId) {
-                        onSelectAgent(startedAgentId);
-                      }
+                      startAgent(selectedAgent);
                     }}
                     role="button"
                     tabIndex={0}
+                    aria-disabled={!selectedProjectId}
                     onKeyDown={(e) => {
                       if (e.target !== e.currentTarget) return;
                       if (e.key === 'Enter' || e.key === ' ') {
                         e.preventDefault();
-                        const startedAgentId = onStartAgent(selectedAgent);
-                        if (startedAgentId) {
-                          onSelectAgent(startedAgentId);
-                        }
+                        startAgent(selectedAgent);
                       }
                     }}
-                    title={`Start ${group.baseName}`}
+                    title={selectedProjectId ? `Start ${group.baseName} in ${selectedProject?.name ?? 'selected project'}` : 'Select a project before starting an agent'}
                   >
                     <div className="acp-start-card-icon-box">
                       <AgentIcon
@@ -219,6 +231,37 @@ export const AcpEmptyPane: React.FC<AcpEmptyPaneProps> = ({
                             <span>{group.profiles[0].profileName}</span>
                           </div>
                         ) : null}
+
+                        {projects.length > 0 && (
+                          <div
+                            className={`acp-start-card-project-wrap ${projects.length < 2 ? 'is-disabled' : ''}`}
+                            onClick={(event) => event.stopPropagation()}
+                            onPointerDown={(event) => event.stopPropagation()}
+                          >
+                            <svg className="acp-start-card-meta-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                            </svg>
+                            <span className="acp-start-card-project-label">
+                              {selectedProject?.name ?? 'Select project'}
+                            </span>
+                            {projects.length > 1 && <span className="acp-start-card-profile-arrow">▾</span>}
+                            <select
+                              className="acp-start-card-project-select"
+                              value={selectedProjectId}
+                              onChange={(event) => {
+                                event.stopPropagation();
+                                onSelectProject(event.target.value);
+                              }}
+                              disabled={projects.length < 2}
+                              title={selectedProject?.root ?? 'Select the project for this agent'}
+                              aria-label={`Project for ${group.baseName}`}
+                            >
+                              {projects.map((project) => (
+                                <option key={project.id} value={project.id}>{project.name}</option>
+                              ))}
+                            </select>
+                          </div>
+                        )}
 
                         {onLoadSessions && onResumeSession && (
                           <button

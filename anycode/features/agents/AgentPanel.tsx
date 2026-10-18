@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import type { Socket } from 'socket.io-client';
 import { AcpSettings } from '../../components/agent/AcpSettings';
 import { AcpSession } from '../../components/agent/AcpSession';
@@ -13,6 +13,7 @@ import type {
     OpenFileInfo,
     WorkspaceFileInfo,
 } from '../../types';
+import type { WorkspaceProject } from '../../workspace';
 
 type AgentPanelProps = {
     panelKey: string;
@@ -35,7 +36,9 @@ type AgentPanelProps = {
         agentsVersion: number;
         setAgentsVersion: React.Dispatch<React.SetStateAction<number>>;
         closeAgent: (agentId: string) => void;
-        fetchAvailableSessions: (agent: AcpAgent) => Promise<AcpSessionSummary[]>;
+        resumeSession: (agent: AcpAgent | undefined, sessionId: string, targetProjectId?: string) => string | null;
+        authenticateAgent: (agentId: string, methodId: string) => void;
+        fetchAvailableSessions: (agent: AcpAgent, targetProjectId?: string) => Promise<AcpSessionSummary[]>;
         sendPrompt: (...args: any[]) => void;
         updateQueuedPrompt?: (agentId: string, itemId: string, prompt: string) => void;
         removeQueuedPrompt?: (agentId: string, itemId: string) => void;
@@ -48,13 +51,15 @@ type AgentPanelProps = {
         markSessionAsRead?: (agentId: string) => void;
     };
     sessions: AcpSessionState[];
+    projects: WorkspaceProject[];
+    activeProjectId: string | null;
     availableAgents: AcpAgent[];
     settingsAgents: AcpAgent[];
     settingsDefaultAgentId: string | null;
     onSaveAgents: (agentList: AcpAgent[], defaultAgentId: string | null) => void;
     onCloseSettings: () => void;
-    onResumeSettingsSession: (agent: AcpAgent, sessionId: string) => void;
-    onStartSpecificAgent: (agent: AcpAgent) => string | null | undefined;
+    onResumeSettingsSession: (agent: AcpAgent, sessionId: string, projectId?: string) => void;
+    onStartSpecificAgent: (agent: AcpAgent, projectId?: string) => string | null | undefined;
     onOpenSettings: () => void;
     onOpenFile: (path: string, line?: number, column?: number) => void;
     onOpenFileDiff: (path: string, line?: number, column?: number) => void;
@@ -71,6 +76,8 @@ const AgentPanelComponent = ({
     agentPanes,
     agents,
     sessions,
+    projects,
+    activeProjectId,
     availableAgents,
     settingsAgents,
     settingsDefaultAgentId,
@@ -83,6 +90,9 @@ const AgentPanelComponent = ({
     onOpenFileDiff,
 }: AgentPanelProps) => {
     const panelRef = useRef<HTMLDivElement | null>(null);
+    const [startProjectId, setStartProjectId] = useState(
+        activeProjectId ?? projects[0]?.id ?? '',
+    );
     const selectedAgentId = agentPanes.getSelectedId(panelKey);
     const selectedSession = selectedAgentId ? agents.acpSessions.get(selectedAgentId) ?? null : null;
     const selectedSessionDisplay = selectedSession
@@ -91,6 +101,20 @@ const AgentPanelComponent = ({
     const handleSelectAgentForPane = (agentId: string) => {
         agentPanes.selectForPane(panelKey, agentId);
     };
+    const handleStartProjectChange = (projectId: string) => {
+        setStartProjectId(projectId);
+    };
+
+    useEffect(() => {
+        if (projects.some((project) => project.id === startProjectId)) {
+            return;
+        }
+        setStartProjectId(
+            activeProjectId && projects.some((project) => project.id === activeProjectId)
+                ? activeProjectId
+                : projects[0]?.id ?? '',
+        );
+    }, [activeProjectId, projects, startProjectId]);
 
     useEffect(() => {
         if (selectedSession) {
@@ -123,10 +147,13 @@ const AgentPanelComponent = ({
                 <AcpRegistryModal
                     wsRef={wsRef}
                     isConnected={isConnected}
+                    projects={projects}
+                    selectedProjectId={startProjectId}
+                    onSelectProject={handleStartProjectChange}
                     onClose={() => agents.setIsRegistryOpen(false)}
                     onStartAgent={(agent) => {
                         agents.setIsRegistryOpen(false);
-                        const startedAgentId = onStartSpecificAgent(agent);
+                        const startedAgentId = onStartSpecificAgent(agent, startProjectId);
                         if (startedAgentId) {
                             handleSelectAgentForPane(startedAgentId);
                         }
@@ -161,19 +188,23 @@ const AgentPanelComponent = ({
                 <div style={{ position: 'relative', flex: 1, minHeight: 0, overflow: 'hidden' }}>
                     <AcpEmptyPane
                         agents={sessions}
+                        projects={projects}
+                        selectedProjectId={startProjectId}
+                        onSelectProject={handleStartProjectChange}
                         availableAgents={availableAgents}
                         onSelectAgent={handleSelectAgentForPane}
                         onCloseAgent={agents.closeAgent}
                         onStartAgent={onStartSpecificAgent}
                         onOpenSettings={onOpenSettings}
                         onOpenRegistry={() => agents.setIsRegistryOpen(true)}
-                        onLoadSessions={agents.fetchAvailableSessions}
-                        onResumeSession={(agent, sessionId) => {
-                            const aid = agents.resumeSession(agent, sessionId);
+                        onLoadSessions={(agent) => agents.fetchAvailableSessions(agent, startProjectId)}
+                        onResumeSession={(agent, sessionId, targetProjectId) => {
+                            const projectId = targetProjectId ?? startProjectId;
+                            const aid = agents.resumeSession(agent, sessionId, projectId);
                             if (aid) {
                                 handleSelectAgentForPane(aid);
                             } else {
-                                onResumeSettingsSession(agent, sessionId);
+                                onResumeSettingsSession(agent, sessionId, projectId);
                             }
                         }}
                     />
