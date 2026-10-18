@@ -34,7 +34,7 @@ const applyTerminalTheme = (element: HTMLElement) => {
   const background =
     rootStyles.getPropertyValue("--background-color").trim() ||
     rootStyles.getPropertyValue("--theme-background").trim() ||
-    "#242424";
+    "#0a0a0a";
   const foreground =
     rootStyles.getPropertyValue("--foreground-color").trim() ||
     rootStyles.getPropertyValue("--theme-foreground").trim() ||
@@ -618,7 +618,7 @@ const Terminal: React.FC<TerminalProps> = ({
         height: "100%",
         padding: "6px 8px",
         boxSizing: "border-box",
-        backgroundColor: "var(--background-color, var(--theme-background, #242424))",
+        backgroundColor: "var(--background-color, var(--theme-background, #0a0a0a))",
         color: "var(--foreground-color, var(--theme-foreground, #f0f0f0))",
         position: "relative",
       }}

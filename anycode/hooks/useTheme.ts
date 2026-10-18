@@ -54,14 +54,37 @@ const isDeepBlack = (color: string): boolean => {
     return getRelativeLuminance(rgb) <= 0.008 || Math.max(...rgb) <= 12;
 };
 
+export const DEFAULT_THEME_FILE_NAME = 'default-theme.json';
+export const DEFAULT_THEME_NAME = 'Vesper Dark';
+export const DEFAULT_THEME_ID = `${DEFAULT_THEME_FILE_NAME}:${DEFAULT_THEME_NAME}`;
+export const DEFAULT_DARK_BACKGROUND = '#0a0a0a';
+
+const THEME_STORAGE_VERSION = 'v2_vesper';
+if (typeof window !== 'undefined') {
+    try {
+        if (localStorage.getItem('theme_default_version') !== THEME_STORAGE_VERSION) {
+            const current = localStorage.getItem('themeId');
+            if (!current || current === 'anycode.json:anycode') {
+                localStorage.removeItem('themeId');
+                localStorage.removeItem('themeFileName');
+                localStorage.removeItem('themeName');
+                localStorage.removeItem('themeBackground');
+            }
+            localStorage.setItem('theme_default_version', THEME_STORAGE_VERSION);
+        }
+    } catch {
+        // Ignore localStorage access errors
+    }
+}
+
 export const useTheme = ({ wsRef, isConnected }: UseThemeParams) => {
     const [currentThemeId, setCurrentThemeId] = useState<string | null>(() => {
         if (typeof window === 'undefined') return null;
-        return localStorage.getItem('themeId') || 'anycode.json:anycode';
+        return localStorage.getItem('themeId') || DEFAULT_THEME_ID;
     });
 
     const applyBrowserChromeColor = useCallback((color: string, isLight: boolean = false) => {
-        const safeColor = color?.trim() || (isLight ? '#ffffff' : '#242424');
+        const safeColor = color?.trim() || (isLight ? '#ffffff' : DEFAULT_DARK_BACKGROUND);
         const ensureMeta = (selector: string, attrs: Record<string, string>, contentVal: string) => {
             let meta = document.head.querySelector(selector) as HTMLMetaElement | null;
             if (!meta) {
@@ -108,12 +131,12 @@ export const useTheme = ({ wsRef, isConnected }: UseThemeParams) => {
 
     const applyTheme = useCallback((theme: any) => {
         const root = document.documentElement;
-        let uiBackground = '#242424';
+        let uiBackground = DEFAULT_DARK_BACKGROUND;
         let uiForeground = '#f0f0f0';
 
         if (theme.colors) {
             const getThemeColor = (key: string, fallback: string) => theme.colors[key] || fallback;
-            const baseBackground = getThemeColor('background', '#242424');
+            const baseBackground = getThemeColor('background', DEFAULT_DARK_BACKGROUND);
             const baseForeground = getThemeColor('foreground', '#f0f0f0');
             const baseBorder = getThemeColor('border', '#3f3f3f');
             const tabBackground = getThemeColor('tab.active.background', '#1C1C1C');
@@ -241,7 +264,7 @@ export const useTheme = ({ wsRef, isConnected }: UseThemeParams) => {
             // Ignore localStorage access errors
         }
         const isLight = storedMode === 'light';
-        const fallbackBg = isLight ? '#ffffff' : '#242424';
+        const fallbackBg = isLight ? '#ffffff' : DEFAULT_DARK_BACKGROUND;
         applyBrowserChromeColor(storedBg || fallbackBg, isLight);
     }, [applyBrowserChromeColor]);
 
@@ -250,9 +273,9 @@ export const useTheme = ({ wsRef, isConnected }: UseThemeParams) => {
             return;
         }
 
-        const storedThemeId = localStorage.getItem('themeId') || 'anycode.json:anycode';
-        const storedThemeFileName = localStorage.getItem('themeFileName') || 'anycode.json';
-        const storedThemeName = localStorage.getItem('themeName') || 'anycode';
+        const storedThemeId = localStorage.getItem('themeId') || DEFAULT_THEME_ID;
+        const storedThemeFileName = localStorage.getItem('themeFileName') || DEFAULT_THEME_FILE_NAME;
+        const storedThemeName = localStorage.getItem('themeName') || DEFAULT_THEME_NAME;
 
         wsRef.current.emit('theme:get', {
             fileName: storedThemeFileName,

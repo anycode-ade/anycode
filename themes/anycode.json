@@ -5,7 +5,7 @@
   "url": "https://github.com/anycode-ade/anycode",
   "themes": [
     {
-      "is_default": true,
+      "is_default": false,
       "name": "anycode",
       "mode": "dark",
       "colors": {

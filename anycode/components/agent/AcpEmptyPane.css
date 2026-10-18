@@ -48,7 +48,7 @@
     border-radius: 10px;
     background: color-mix(
         in srgb,
-        var(--theme-tab-background, var(--theme-background, var(--background-color, #242424))) 94%,
+        var(--theme-tab-background, var(--theme-background, var(--background-color, #0a0a0a))) 94%,
         var(--theme-foreground, #ffffff) 6%
     );
     border: 1px solid color-mix(in srgb, var(--theme-border, #4a4a4a) 45%, transparent);
@@ -65,7 +65,7 @@
     background: color-mix(
         in srgb,
         var(--theme-accent-background, #007acc) 12%,
-        var(--background-color, #242424)
+        var(--background-color, #0a0a0a)
     );
     border-color: color-mix(in srgb, var(--theme-accent-background, #007acc) 50%, var(--theme-border, #4a4a4a));
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.22);
@@ -192,7 +192,7 @@
 }
 
 .acp-start-card-profile-select option {
-    background: var(--background-color, #242424);
+    background: var(--background-color, #0a0a0a);
     color: var(--theme-foreground, #f0f0f0);
     font-size: 13px;
     padding: 4px 8px;
@@ -246,7 +246,7 @@
 }
 
 .acp-start-card-project-select option {
-    background: var(--background-color, #242424);
+    background: var(--background-color, #0a0a0a);
     color: var(--theme-foreground, #f0f0f0);
     font-size: 13px;
     padding: 4px 8px;
@@ -347,7 +347,7 @@
     background: color-mix(
         in srgb,
         var(--theme-accent-background, #007acc) 8%,
-        var(--theme-tab-background, var(--theme-background, var(--background-color, #242424)))
+        var(--theme-tab-background, var(--theme-background, var(--background-color, #0a0a0a)))
     );
     color: var(--theme-foreground, #f0f0f0);
     cursor: pointer;
@@ -369,7 +369,7 @@
     background: color-mix(
         in srgb,
         var(--theme-accent-background, #007acc) 14%,
-        var(--background-color, #242424)
+        var(--background-color, #0a0a0a)
     );
     color: var(--theme-foreground, #ffffff);
     border-color: color-mix(
@@ -734,7 +734,7 @@
     border: 1px solid color-mix(in srgb, var(--theme-border, #4a4a4a) 70%, transparent);
     background: color-mix(
         in srgb,
-        var(--background-color, #242424) 95%,
+        var(--background-color, #0a0a0a) 95%,
         var(--theme-foreground, #ffffff) 5%
     );
     color: var(--theme-tab-foreground, #a0a0a0);
@@ -755,7 +755,7 @@
     background: color-mix(
         in srgb,
         var(--theme-accent-background, #007acc) 12%,
-        var(--background-color, #242424)
+        var(--background-color, #0a0a0a)
     );
     color: var(--theme-foreground, #ffffff);
     border-color: color-mix(
@@ -788,7 +788,7 @@
     background: color-mix(
         in srgb,
         var(--theme-accent-background, #007acc) 18%,
-        var(--background-color, #242424)
+        var(--background-color, #0a0a0a)
     );
     color: var(--theme-foreground, #ffffff);
 }

@@ -7,7 +7,7 @@
     overflow-x: hidden;
     overflow-y: auto;
     width: 100%;
-    /*background-color: var(--background-color, #242424);*/
+    /*background-color: var(--background-color, #0a0a0a);*/
     color: var(--theme-foreground, var(--foreground-color, #f0f0f0));
     font-family: var(--interface-font-family);
     font-size: var(--interface-font-size, 14px);
@@ -47,7 +47,7 @@
     justify-content: space-between;
     align-items: center;
     padding: 12px 16px;
-    background: color-mix(in srgb, var(--background-color, #242424) 94%, var(--theme-foreground, #ffffff) 6%);
+    background: color-mix(in srgb, var(--background-color, #0a0a0a) 94%, var(--theme-foreground, #ffffff) 6%);
     border: 1px solid var(--theme-border, #3f3f3f);
     border-radius: 8px;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.22);
@@ -59,7 +59,7 @@
 
 .settings-option:hover {
     border-color: var(--theme-tab-foreground, #8f8f8f);
-    background: color-mix(in srgb, var(--background-color, #242424) 88%, var(--theme-foreground, #ffffff) 12%);
+    background: color-mix(in srgb, var(--background-color, #0a0a0a) 88%, var(--theme-foreground, #ffffff) 12%);
 }
 
 .settings-option-info {
@@ -143,7 +143,7 @@
     flex-direction: column;
     justify-content: space-between;
     padding: 14px 16px;
-    background: color-mix(in srgb, var(--background-color, #242424) 94%, var(--theme-foreground, #ffffff) 6%);
+    background: color-mix(in srgb, var(--background-color, #0a0a0a) 94%, var(--theme-foreground, #ffffff) 6%);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.22);
     border: 1px solid var(--theme-border, #3f3f3f);
     border-radius: 8px;
@@ -186,7 +186,7 @@
 }
 
 .settings-card:hover {
-    background: color-mix(in srgb, var(--background-color, #242424) 88%, var(--theme-foreground, #ffffff) 12%);
+    background: color-mix(in srgb, var(--background-color, #0a0a0a) 88%, var(--theme-foreground, #ffffff) 12%);
     border-color: var(--theme-tab-foreground, #8f8f8f);
 }
 
@@ -197,7 +197,7 @@
     background: color-mix(
         in srgb,
         var(--theme-accent-background, #007acc) 18%,
-        color-mix(in srgb, var(--background-color, #242424) 94%, var(--theme-foreground, #ffffff) 6%)
+        color-mix(in srgb, var(--background-color, #0a0a0a) 94%, var(--theme-foreground, #ffffff) 6%)
     );
     border-color: var(--theme-accent-background, #007acc);
     box-shadow: 0 4px 12px color-mix(in srgb, var(--theme-accent-background, #007acc) 25%, transparent), 0 0 0 1px var(--theme-accent-background, #007acc);
@@ -288,7 +288,7 @@
 .settings-select {
     width: 100%;
     padding: 10px 14px;
-    background: color-mix(in srgb, var(--background-color, #242424) 94%, var(--theme-foreground, #ffffff) 6%);
+    background: color-mix(in srgb, var(--background-color, #0a0a0a) 94%, var(--theme-foreground, #ffffff) 6%);
     border: 1px solid var(--theme-border, #3f3f3f);
     border-radius: 8px;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.22);
@@ -302,7 +302,7 @@
 
 .settings-select:hover {
     border-color: var(--theme-tab-foreground, #8f8f8f);
-    background-color: color-mix(in srgb, var(--background-color, #242424) 88%, var(--theme-foreground, #ffffff) 12%);
+    background-color: color-mix(in srgb, var(--background-color, #0a0a0a) 88%, var(--theme-foreground, #ffffff) 12%);
 }
 
 .settings-select:focus {
@@ -310,7 +310,7 @@
 }
 
 .settings-select option {
-    background: var(--background-color, #242424);
+    background: var(--background-color, #0a0a0a);
     color: var(--theme-foreground, var(--foreground-color, #f0f0f0));
 }
 
@@ -372,7 +372,7 @@
     box-sizing: border-box;
     border: 1px solid var(--theme-border, #3f3f3f);
     border-radius: 8px;
-    background: color-mix(in srgb, var(--background-color, #242424) 94%, var(--theme-foreground, #ffffff) 6%);
+    background: color-mix(in srgb, var(--background-color, #0a0a0a) 94%, var(--theme-foreground, #ffffff) 6%);
     color: var(--theme-foreground, #f0f0f0);
     font: inherit;
     padding: 7px 8px;
@@ -548,7 +548,7 @@
     align-items: center;
     gap: 16px;
     padding: 10px 14px;
-    background: color-mix(in srgb, var(--background-color, #242424) 94%, var(--theme-foreground, #ffffff) 6%);
+    background: color-mix(in srgb, var(--background-color, #0a0a0a) 94%, var(--theme-foreground, #ffffff) 6%);
     border: 1px solid var(--theme-border, #3f3f3f);
     border-radius: 8px;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.22);
@@ -722,12 +722,12 @@
 .app-container.app-with-dynamic-bg .settings-select,
 .app-container[data-dynamic-bg="global"] .settings-select,
 [data-dynamic-bg="global"] .settings-select {
-    background: color-mix(in srgb, var(--background-color, #242424) 86%, transparent 14%);
+    background: color-mix(in srgb, var(--background-color, #0a0a0a) 86%, transparent 14%);
     backdrop-filter: blur(14px);
     -webkit-backdrop-filter: blur(14px);
 }
 
 .app-container.app-with-dynamic-bg .settings-card:hover,
 .app-container.app-with-dynamic-bg .settings-option:hover {
-    background: color-mix(in srgb, var(--background-color, #242424) 80%, var(--theme-foreground, #ffffff) 10%);
+    background: color-mix(in srgb, var(--background-color, #0a0a0a) 80%, var(--theme-foreground, #ffffff) 10%);
 }

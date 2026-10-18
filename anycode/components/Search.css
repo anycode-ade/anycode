@@ -17,7 +17,7 @@
     padding: 4px;
     scrollbar-gutter: stable;
     scrollbar-width: thin;
-    scrollbar-color: var(--scrollbar-thumb, #8a8a8a) var(--background-color, #242424);
+    scrollbar-color: var(--scrollbar-thumb, #8a8a8a) var(--background-color, #0a0a0a);
 }
 
 .search-results::-webkit-scrollbar {
@@ -25,12 +25,12 @@
 }
 
 .search-results::-webkit-scrollbar-track {
-    background: var(--background-color, #242424);
+    background: var(--background-color, #0a0a0a);
 }
 
 .search-results::-webkit-scrollbar-thumb {
     background: var(--scrollbar-thumb, #8a8a8a);
-    border: 3px solid var(--background-color, #242424);
+    border: 3px solid var(--background-color, #0a0a0a);
     border-radius: 999px;
 }
 

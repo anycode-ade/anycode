@@ -39,7 +39,7 @@
   padding: 3px 6px;
   border: 1px solid var(--theme-border, #4a4a4a);
   border-radius: 5px;
-  background: var(--theme-tab-background, var(--theme-background, #242424));
+  background: var(--theme-tab-background, var(--theme-background, #0a0a0a));
   color: var(--theme-foreground, #f0f0f0);
   font: inherit;
 }

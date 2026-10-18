@@ -527,7 +527,7 @@
     );*/
     background: color-mix(
         in srgb,
-        var(--background-color, #242424) 94%,
+        var(--background-color, #0a0a0a) 94%,
         var(--theme-foreground, #ffffff) 6%
     );
     color: var(--theme-tab-foreground, #a0a0a0);
@@ -566,7 +566,7 @@
     background: color-mix(
         in srgb,
         var(--theme-accent-background, #007acc) 14%,
-        var(--background-color, #242424)
+        var(--background-color, #0a0a0a)
     );
     color: var(--theme-foreground, #ffffff);
     border-color: color-mix(
@@ -593,7 +593,7 @@
     background: color-mix(
         in srgb,
         var(--theme-accent-background, #007acc) 18%,
-        var(--background-color, #242424)
+        var(--background-color, #0a0a0a)
     );
     color: var(--theme-foreground, #ffffff);
 }
