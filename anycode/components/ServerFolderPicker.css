@@ -1,0 +1,306 @@
+.server-folder-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 10000;
+    display: grid;
+    place-items: center;
+    padding: 24px;
+    background: rgba(0, 0, 0, 0.58);
+    backdrop-filter: blur(6px);
+}
+
+.server-folder-dialog {
+    width: min(640px, 100%);
+    max-height: min(760px, 90vh);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    color: var(--text-primary, #eee);
+    background: var(--panel-bg, #202124);
+    border: 1px solid var(--border-color, #3a3a3a);
+    border-radius: 10px;
+    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
+}
+
+.server-folder-header,
+.server-folder-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 18px;
+}
+
+.server-folder-header {
+    justify-content: space-between;
+    border-bottom: 1px solid var(--border-color, #3a3a3a);
+}
+
+.server-folder-header h2 {
+    margin: 0;
+    font-size: 16px;
+}
+
+.server-folder-header p {
+    margin: 5px 0 0;
+    color: var(--text-secondary, #a9a9a9);
+    font-size: 12px;
+}
+
+.server-folder-header button,
+.server-folder-path button,
+.server-folder-actions button {
+    color: inherit;
+    background: var(--button-bg, #303236);
+    border: 1px solid var(--border-color, #45474b);
+    border-radius: 5px;
+    padding: 6px 10px;
+    cursor: pointer;
+}
+
+.server-folder-path {
+    display: grid;
+    gap: 7px;
+    padding: 14px 18px 10px;
+}
+
+.server-folder-path label,
+.server-folder-recents > span {
+    color: var(--text-secondary, #a9a9a9);
+    font-size: 11px;
+}
+
+.server-folder-path > div {
+    display: flex;
+    gap: 8px;
+}
+
+.server-folder-path input {
+    min-width: 0;
+    flex: 1;
+    color: inherit;
+    background: var(--input-bg, #151618);
+    border: 1px solid var(--border-color, #45474b);
+    border-radius: 5px;
+    padding: 8px 10px;
+    font: inherit;
+}
+
+.server-folder-recents {
+    display: grid;
+    gap: 5px;
+    padding: 4px 18px 10px;
+}
+
+.server-folder-recents button {
+    display: grid;
+    justify-items: start;
+    gap: 2px;
+    padding: 6px 8px;
+    color: inherit;
+    text-align: left;
+    background: transparent;
+    border: 0;
+    border-radius: 5px;
+    cursor: pointer;
+}
+
+.server-folder-recents button:hover,
+.server-folder-entry:hover {
+    background: var(--hover-bg, rgba(255, 255, 255, 0.07));
+}
+
+.server-folder-recents small,
+.server-folder-entry small {
+    overflow: hidden;
+    width: 100%;
+    color: var(--text-secondary, #999);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.server-folder-list {
+    min-height: 150px;
+    max-height: 280px;
+    overflow: auto;
+    border-top: 1px solid var(--border-color, #3a3a3a);
+}
+
+.server-folder-entry {
+    display: grid;
+    grid-template-columns: 22px minmax(100px, 1fr) minmax(120px, 2fr);
+    align-items: center;
+    width: 100%;
+    gap: 8px;
+    padding: 7px 18px;
+    color: inherit;
+    text-align: left;
+    background: transparent;
+    border: 0;
+    cursor: pointer;
+}
+
+.server-folder-entry small {
+    text-align: right;
+}
+
+.server-folder-loading,
+.server-folder-empty {
+    padding: 28px 18px;
+    color: var(--text-secondary, #999);
+    text-align: center;
+    font-size: 13px;
+}
+
+.server-folder-error {
+    margin: 10px 18px 0;
+    padding: 9px 10px;
+    color: #ffb4a9;
+    background: rgba(150, 30, 20, 0.18);
+    border: 1px solid rgba(255, 100, 80, 0.28);
+    border-radius: 5px;
+    font-size: 12px;
+}
+
+.server-folder-actions {
+    gap: 6px;
+}
+
+.server-folder-actions .primary {
+    color: #fff;
+    background: #2563eb;
+    border-color: #2563eb;
+}
+
+.server-folder-dialog button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* Popover opened from the project row's "+" button. Styled like the tree/tab context menus:
+   translucent panel, inset rows with 10px radius, inset separators. Positioned by inline style. */
+.server-folder-popover {
+    position: fixed;
+    z-index: 10000;
+    padding: 4px 0;
+    color: #f3f6fb;
+    background-color: rgba(28, 28, 28, 0.52);
+    background-image: linear-gradient(160deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.015));
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 12px;
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.34);
+    backdrop-filter: blur(10px) saturate(130%);
+    -webkit-backdrop-filter: blur(10px) saturate(130%);
+}
+
+.server-folder-popover > * {
+    position: relative;
+    box-sizing: border-box;
+    padding: 4px 8px;
+    border-top: 0;
+    gap: 8px;
+}
+
+.server-folder-popover .server-folder-header {
+    padding: 6px 8px 6px 16px;
+    border-bottom: 0;
+}
+
+.server-folder-popover .server-folder-actions button {
+    display: inline-flex;
+    align-items: center;
+    box-sizing: border-box;
+    height: 24px;
+    padding: 0 10px;
+}
+
+.server-folder-actions .server-folder-close,
+.server-folder-popover .server-folder-actions .server-folder-close {
+    display: grid;
+    place-items: center;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+}
+
+.server-folder-actions .server-folder-close svg {
+    display: block;
+}
+
+.server-folder-popover .server-folder-header h2 {
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.server-folder-popover .server-folder-header p {
+    display: none;
+}
+
+.server-folder-popover .server-folder-path label {
+    display: none;
+}
+
+.server-folder-popover .server-folder-path {
+    gap: 4px;
+    padding: 6px 8px;
+}
+
+.server-folder-popover .server-folder-path input {
+    padding: 4px 8px;
+    color: #f3f6fb;
+    background: transparent;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 8px;
+}
+
+.server-folder-popover .server-folder-list {
+    flex: 0 1 auto;
+    min-height: 120px;
+    max-height: min(320px, 60vh);
+    padding: 4px 8px;
+}
+
+.server-folder-popover .server-folder-entry {
+    grid-template-columns: 22px minmax(0, 1fr);
+    padding: 4px 8px;
+    border-radius: 10px;
+    color: #f3f6fb;
+}
+
+.server-folder-popover .server-folder-entry small {
+    display: none;
+}
+
+.server-folder-popover .server-folder-loading,
+.server-folder-popover .server-folder-empty {
+    padding: 16px 8px;
+}
+
+.server-folder-popover .server-folder-error {
+    margin: 4px 8px;
+}
+
+.server-folder-popover button {
+    color: #f3f6fb;
+    background: transparent;
+    border: 0;
+    border-radius: 10px;
+    padding: 4px 8px;
+    font: inherit;
+    cursor: pointer;
+}
+
+.server-folder-popover button:hover:not(:disabled),
+.server-folder-popover button:focus-visible:not(:disabled) {
+    background-color: rgba(130, 130, 130, 0.33);
+}
+
+/* Open is the only action, so keep it quiet: neutral fill instead of the blue primary. */
+.server-folder-popover .server-folder-actions .primary {
+    color: #f3f6fb;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+.server-folder-popover .server-folder-actions .primary:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.16);
+}

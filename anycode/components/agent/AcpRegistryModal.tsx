@@ -17,6 +17,7 @@ import {
 } from '../../agents';
 import { AgentIcon, hasBuiltinAgentIcon } from './AgentIcon';
 import { AcpIcons } from './AcpIcons';
+import type { WorkspaceProject } from '../../workspace';
 import './AcpRegistryModal.css';
 
 export const getAgentBrandColor = (id: string = '', name: string = ''): string => {
@@ -46,6 +47,9 @@ export const getAgentBrandColor = (id: string = '', name: string = ''): string =
 interface AcpRegistryModalProps {
     wsRef: React.RefObject<Socket | null>;
     isConnected: boolean;
+    projects: WorkspaceProject[];
+    selectedProjectId: string;
+    onSelectProject: (projectId: string) => void;
     onClose: () => void;
     onStartAgent: (agent: AcpAgent) => void;
     onAgentsChanged?: () => void;
@@ -54,6 +58,9 @@ interface AcpRegistryModalProps {
 export const AcpRegistryModal: React.FC<AcpRegistryModalProps> = ({
     wsRef,
     isConnected,
+    projects,
+    selectedProjectId,
+    onSelectProject,
     onClose,
     onStartAgent,
     onAgentsChanged,
@@ -343,6 +350,23 @@ export const AcpRegistryModal: React.FC<AcpRegistryModalProps> = ({
                     </button>
                 </div>
             </div>
+
+            {projects.length > 0 && (
+                <div className="acp-registry-project-target">
+                    <label htmlFor="acp-registry-project-select">Start agents in</label>
+                    <select
+                        id="acp-registry-project-select"
+                        value={selectedProjectId}
+                        onChange={(event) => onSelectProject(event.target.value)}
+                        disabled={projects.length < 2}
+                        title={projects.find((project) => project.id === selectedProjectId)?.root}
+                    >
+                        {projects.map((project) => (
+                            <option key={project.id} value={project.id}>{project.name}</option>
+                        ))}
+                    </select>
+                </div>
+            )}
 
             {/* Optional search bar */}
             {isSearchVisible && (

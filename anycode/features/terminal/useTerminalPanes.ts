@@ -4,7 +4,7 @@ import { loadItem, saveItem } from '../../storage';
 
 type UseTerminalPanesParams = {
     terminals: Terminal[];
-    addTerminal: () => string;
+    addTerminal: (projectId: string) => string;
     closeTerminal: (id: string) => void;
 };
 
@@ -70,8 +70,8 @@ export const useTerminalPanes = ({
         });
     }, [closeTerminal]);
 
-    const createTerminalForActivePane = useCallback((targetPaneKey?: string) => {
-        const terminalId = addTerminal();
+    const createTerminalForActivePane = useCallback((projectId: string, targetPaneKey?: string) => {
+        const terminalId = addTerminal(projectId);
         const paneKey = targetPaneKey || activePaneId || 'terminal';
         setActivePaneId(paneKey);
         setSelectedForPane(paneKey, terminalId);

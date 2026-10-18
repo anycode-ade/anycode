@@ -14,6 +14,7 @@ use std::collections::hash_map::{Entry, HashMap};
 use std::{collections::VecDeque, sync::Arc};
 use tokio::sync::{Mutex, mpsc};
 use tokio_util::sync::CancellationToken;
+use std::path::PathBuf;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -25,8 +26,12 @@ pub struct AppState {
     pub acp_registry: Arc<crate::acp_registry::AcpRegistryManager>,
     pub socket2data: Arc<Mutex<HashMap<String, SocketData>>>,
     pub terminals: Arc<Mutex<HashMap<String, TerminalData>>>,
+    pub agent_project_ids: Arc<Mutex<HashMap<String, String>>>,
     pub acp_db: Arc<crate::acp_db::AcpDb>,
     pub auth_token: Option<String>,
+    pub workspace: Arc<Mutex<crate::workspace::WorkspaceManager>>,
+    pub workspace_lifecycle: Arc<Mutex<()>>,
+    pub watcher_control: Arc<std::sync::Mutex<Option<tokio::sync::mpsc::UnboundedSender<crate::background_tasks::ProjectWatchCommand>>>>,
 }
 
 #[derive(Clone, Default)]
@@ -35,9 +40,24 @@ pub struct SocketData {
     pub opened_dirs: HashSet<String>,
     pub search_cancel: Option<CancellationToken>,
     pub search_pattern: Option<String>,
+    pub search_project_id: Option<String>,
     pub search_last_file_result: Option<FileSearchResult>,
     pub files_search_cancel: Option<CancellationToken>,
     pub git_history_search: Option<ActiveGitHistorySearch>,
+    pub active_project_id: Option<String>,
+}
+
+impl SocketData {
+    pub fn select_project(&mut self, project_id: String) {
+        self.active_project_id = Some(project_id);
+    }
+}
+
+fn active_project_for_socket(data: &mut SocketData, fallback: Option<String>) -> Option<String> {
+    if data.active_project_id.is_none() {
+        data.active_project_id = fallback;
+    }
+    data.active_project_id.clone()
 }
 
 #[derive(Clone)]
@@ -45,6 +65,7 @@ pub struct TerminalData {
     pub terminal: Arc<Terminal>,
     pub sockets: Arc<Mutex<Vec<SocketRef>>>,
     pub buffer: Arc<Mutex<VecDeque<String>>>,
+    pub project_id: String,
 }
 
 impl AppState {
@@ -53,9 +74,58 @@ impl AppState {
         acp_fs_tx: mpsc::Sender<acp_fs::AcpFsCommand>,
         auth_token: Option<String>,
     ) -> Self {
+        Self::new_with_startup_root(
+            diagnostic_tx,
+            acp_fs_tx,
+            auth_token,
+            crate::utils::current_dir(),
+        )
+    }
+
+    pub fn new_with_startup_root(
+        diagnostic_tx: mpsc::Sender<PublishDiagnosticsParams>,
+        acp_fs_tx: mpsc::Sender<acp_fs::AcpFsCommand>,
+        auth_token: Option<String>,
+        startup_root: PathBuf,
+    ) -> Self {
+        Self::new_with_workspace(
+            diagnostic_tx,
+            acp_fs_tx,
+            auth_token,
+            startup_root,
+            true,
+        )
+    }
+
+    pub fn new_for_server(
+        diagnostic_tx: mpsc::Sender<PublishDiagnosticsParams>,
+        acp_fs_tx: mpsc::Sender<acp_fs::AcpFsCommand>,
+        auth_token: Option<String>,
+        startup_root: PathBuf,
+        add_startup_when_empty: bool,
+    ) -> Self {
+        Self::new_with_workspace(
+            diagnostic_tx,
+            acp_fs_tx,
+            auth_token,
+            startup_root,
+            add_startup_when_empty,
+        )
+    }
+
+    fn new_with_workspace(
+        diagnostic_tx: mpsc::Sender<PublishDiagnosticsParams>,
+        acp_fs_tx: mpsc::Sender<acp_fs::AcpFsCommand>,
+        auth_token: Option<String>,
+        startup_root: PathBuf,
+        add_startup_when_empty: bool,
+    ) -> Self {
         let config = crate::config::get();
 
-        let db_path = crate::utils::current_dir().join(".anycode").join("agent.db");
+        let db_path = dirs::home_dir()
+            .unwrap_or_else(|| startup_root.clone())
+            .join(".anycode")
+            .join("agent.db");
         let acp_db = match crate::acp_db::AcpDb::new(&db_path) {
             Ok(db) => Arc::new(db),
             Err(e) => {
@@ -64,12 +134,25 @@ impl AppState {
             }
         };
 
-        let mut lsp_manager = LspManager::new(config.clone());
-        lsp_manager.set_diagnostics_sender(diagnostic_tx);
+        let mut lsp_manager = LspManager::new_with_root(config.clone(), startup_root.clone());
+        lsp_manager.set_diagnostics_sender(diagnostic_tx.clone());
 
         let acp_manager = AcpManager::new(acp_fs_tx, Some(acp_db.clone()));
         let acp_registry = crate::acp_registry::AcpRegistryManager::new();
-        let mut git_manager = GitManager::new(crate::utils::current_dir());
+        let workspace = if add_startup_when_empty {
+            crate::workspace::WorkspaceManager::new(
+                startup_root.clone(),
+                config.clone(),
+                diagnostic_tx.clone(),
+            )
+        } else {
+            crate::workspace::WorkspaceManager::new_empty(
+                startup_root.clone(),
+                config.clone(),
+                diagnostic_tx,
+            )
+        };
+        let mut git_manager = GitManager::new(startup_root);
         let _ = git_manager.refresh_status_cache();
 
         Self {
@@ -81,8 +164,12 @@ impl AppState {
             acp_registry: Arc::new(acp_registry),
             socket2data: Arc::new(Mutex::new(HashMap::new())),
             terminals: Arc::new(Mutex::new(HashMap::new())),
+            agent_project_ids: Arc::new(Mutex::new(HashMap::new())),
             acp_db,
             auth_token,
+            workspace: Arc::new(Mutex::new(workspace)),
+            workspace_lifecycle: Arc::new(Mutex::new(())),
+            watcher_control: Arc::new(std::sync::Mutex::new(None)),
         }
     }
 
@@ -100,8 +187,111 @@ impl AppState {
         }
     }
 
+    pub async fn active_project_id(&self, socket_id: &str) -> Option<String> {
+        let fallback = self.workspace.lock().await.default_project_id();
+        let mut sockets = self.socket2data.lock().await;
+        let data = sockets
+            .entry(socket_id.to_string())
+            .or_insert_with(SocketData::default);
+        active_project_for_socket(data, fallback)
+    }
+
+    pub async fn project_for_socket(
+        &self,
+        socket_id: &str,
+    ) -> Option<crate::workspace::Project> {
+        let project_id = self.active_project_id(socket_id).await?;
+        self.workspace.lock().await.get(&project_id)
+    }
+
+    pub async fn project_for_path(&self, path: &str) -> Option<crate::workspace::Project> {
+        self.workspace
+            .lock()
+            .await
+            .find_project_for_path(std::path::Path::new(path))
+    }
+
+    pub async fn resolve_path_for_socket(
+        &self,
+        socket_id: &str,
+        input: &str,
+    ) -> Result<String> {
+        let requested = PathBuf::from(input);
+        let (path, relative_scope) = if requested.is_absolute() {
+            (requested, None)
+        } else {
+            let project = self
+                .project_for_socket(socket_id)
+                .await
+                .ok_or_else(|| anyhow!("Select a project before using relative file paths"))?;
+            (
+                PathBuf::from(project.info.root).join(requested),
+                Some(project.info.id),
+            )
+        };
+        let path = crate::utils::abs_file(&path.to_string_lossy())?;
+        let project = self
+            .workspace
+            .lock()
+            .await
+            .find_project_for_path(std::path::Path::new(&path))
+            .ok_or_else(|| anyhow!("File is not part of an open project"))?;
+        if relative_scope.as_deref().is_some_and(|id| id != project.info.id) {
+            return Err(anyhow!("File is not part of an open project"));
+        }
+        Ok(path)
+    }
+
+    pub async fn lsp_for_path(
+        &self,
+        path: &str,
+    ) -> Arc<Mutex<LspManager>> {
+        self.project_for_path(path)
+            .await
+            .map(|project| project.lsp)
+            .unwrap_or_else(|| self.lsp_manager.clone())
+    }
+
+    pub async fn git_for_path(
+        &self,
+        path: &str,
+    ) -> Arc<Mutex<GitManager>> {
+        self.project_for_path(path)
+            .await
+            .map(|project| project.git)
+            .unwrap_or_else(|| self.git_manager.clone())
+    }
+
+    pub async fn send_project_watch_command(
+        &self,
+        command: impl FnOnce(tokio::sync::oneshot::Sender<std::result::Result<(), String>>) -> crate::background_tasks::ProjectWatchCommand,
+    ) -> Result<()> {
+        let (reply, response) = tokio::sync::oneshot::channel();
+        if let Ok(control) = self.watcher_control.lock() {
+            if let Some(sender) = control.as_ref() {
+                sender
+                    .send(command(reply))
+                    .map_err(|_| anyhow!("Project watcher has stopped"))?;
+            } else {
+                return Err(anyhow!("Project watcher is not ready"));
+            }
+        } else {
+            return Err(anyhow!("Project watcher is unavailable"));
+        }
+        response
+            .await
+            .map_err(|_| anyhow!("Project watcher did not acknowledge the change"))?
+            .map_err(|error| anyhow!("{error}"))
+    }
+
     pub async fn shutdown(&self) {
         self.lsp_manager.lock().await.stop_all().await;
+        let projects = self.workspace.lock().await.projects();
+        for info in projects {
+            if let Some(project) = self.workspace.lock().await.get(&info.id) {
+                project.lsp.lock().await.stop_all().await;
+            }
+        }
         self.acp_manager.lock().await.stop_all().await;
 
         let terminal_handles = self
@@ -117,41 +307,6 @@ impl AppState {
         }
     }
 
-    pub async fn close_workspace(&self) {
-        // Stop all active LSP language servers
-        self.lsp_manager.lock().await.stop_all().await;
-
-        // Stop all active ACP AI agent processes
-        self.acp_manager.lock().await.stop_all().await;
-
-        // Kill and remove all open terminals
-        let mut terminals = self.terminals.lock().await;
-        for (_, term_data) in terminals.drain() {
-            let _ = term_data.terminal.kill().await;
-        }
-
-        // Clear in-memory file buffers
-        self.file2code.lock().await.clear();
-
-        // Reset socket data (opened files, cancel searches)
-        let mut socket2data = self.socket2data.lock().await;
-        for (_, data) in socket2data.iter_mut() {
-            if let Some(cancel) = data.search_cancel.take() {
-                cancel.cancel();
-            }
-            if let Some(cancel) = data.files_search_cancel.take() {
-                cancel.cancel();
-            }
-            data.opened_files.clear();
-            data.opened_dirs.clear();
-            let _ = data.cancel_git_history_search();
-        }
-
-        // Reset git manager to current directory
-        let mut git_mgr = self.git_manager.lock().await;
-        *git_mgr = crate::git::GitManager::new(crate::utils::current_dir());
-        let _ = git_mgr.refresh_status_cache();
-    }
 }
 
 #[macro_export]
@@ -188,6 +343,27 @@ pub fn send_response(
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::{SocketData, active_project_for_socket};
+
+    #[test]
+    fn active_project_selection_is_independent_per_socket() {
+        let mut first_client = SocketData::default();
+        let mut second_client = SocketData::default();
+        first_client.select_project("project-b".to_string());
+
+        assert_eq!(
+            active_project_for_socket(&mut first_client, Some("project-a".to_string())),
+            Some("project-b".to_string())
+        );
+        assert_eq!(
+            active_project_for_socket(&mut second_client, Some("project-a".to_string())),
+            Some("project-a".to_string())
+        );
+    }
+}
+
 pub fn get_or_create_code<'a>(
     f2c: &'a mut HashMap<String, Code>,
     path: &str,
@@ -215,6 +391,27 @@ pub async fn is_language_opened(lang: &str, state: &State<AppState>) -> bool {
     let f2c = state.file2code.lock().await;
     all_opened_files.iter().any(|file_path| {
         f2c.get(file_path)
+            .map(|code| code.lang == lang)
+            .unwrap_or(false)
+    })
+}
+
+pub async fn is_language_opened_in_project(
+    lang: &str,
+    project: &crate::workspace::Project,
+    state: &State<AppState>,
+) -> bool {
+    let root = std::path::Path::new(&project.info.root);
+    let sockets_data = state.socket2data.lock().await;
+    let opened_files = sockets_data
+        .values()
+        .flat_map(|data| data.opened_files.iter())
+        .filter(|path| std::path::Path::new(path).starts_with(root))
+        .collect::<Vec<_>>();
+    let file2code = state.file2code.lock().await;
+    opened_files.iter().any(|path| {
+        file2code
+            .get(*path)
             .map(|code| code.lang == lang)
             .unwrap_or(false)
     })

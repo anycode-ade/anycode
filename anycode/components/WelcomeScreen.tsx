@@ -5,7 +5,6 @@ import {
     getCachedWorkspaceState,
     openFolderDialog,
     openWorkspace,
-    removeRecentWorkspace,
     type RecentWorkspace,
 } from '../workspace';
 import { announceWarp, formatRelativeTime } from '../utils';
@@ -17,6 +16,8 @@ import './WelcomeScreen.css';
 interface WelcomeScreenProps {
     onOpenFolder?: () => void;
     onSelectWorkspace?: (path: string) => void;
+    onRemoveRecent: (path: string) => Promise<RecentWorkspace[]>;
+    recentProjects?: RecentWorkspace[];
     backgroundSettings?: DynamicBackgroundSettings;
     hideBackground?: boolean;
 }
@@ -24,16 +25,18 @@ interface WelcomeScreenProps {
 export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
     onOpenFolder,
     onSelectWorkspace,
+    onRemoveRecent,
+    recentProjects: remoteRecentProjects,
     backgroundSettings,
     hideBackground = false,
 }) => {
     const screenRef = React.useRef<HTMLDivElement | null>(null);
     const contentRef = React.useRef<HTMLDivElement | null>(null);
     const [recentProjects, setRecentProjects] = useState<RecentWorkspace[]>(() => {
-        return getCachedWorkspaceState()?.recent_workspaces || [];
+        return remoteRecentProjects ?? getCachedWorkspaceState()?.recent_workspaces ?? [];
     });
     const [isLoading, setIsLoading] = useState<boolean>(() => {
-        return !getCachedWorkspaceState();
+        return remoteRecentProjects === undefined && !getCachedWorkspaceState();
     });
 
     const handleMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
@@ -63,8 +66,16 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
     }, []);
 
     useEffect(() => {
+        if (remoteRecentProjects !== undefined) {
+            setRecentProjects(remoteRecentProjects);
+            setIsLoading(false);
+        }
+    }, [remoteRecentProjects]);
+
+    useEffect(() => {
+        if (remoteRecentProjects !== undefined) return;
         loadRecent();
-    }, [loadRecent]);
+    }, [loadRecent, remoteRecentProjects]);
 
     const handleOpenFolder = useCallback(async () => {
         if (onOpenFolder) {
@@ -87,9 +98,13 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
 
     const handleRemoveRecent = useCallback(async (e: React.MouseEvent, path: string) => {
         e.stopPropagation();
-        const updated = await removeRecentWorkspace(path);
-        setRecentProjects(updated.recent_workspaces || []);
-    }, []);
+        try {
+            const recent = await onRemoveRecent(path);
+            setRecentProjects(recent);
+        } catch (error) {
+            window.alert(error instanceof Error ? error.message : 'Could not remove this folder from recent items.');
+        }
+    }, [onRemoveRecent]);
 
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {

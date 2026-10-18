@@ -14,6 +14,7 @@ async fn main() -> Result<()> {
         host: "0.0.0.0".to_string(),
         port: server_options.port,
         token: server_options.token,
+        initial_workspace: Some(anycode::utils::current_dir()),
     };
 
     start_server(opts, None, None).await

@@ -18,6 +18,8 @@ pub struct AcpStartRequest {
     #[serde(default)]
     pub env: std::collections::HashMap<String, String>,
     pub resume_session_id: Option<String>,
+    #[serde(default)]
+    pub project_id: Option<String>,
 }
 
 pub async fn handle_acp_start(
@@ -34,7 +36,20 @@ pub async fn handle_acp_start(
         args,
         env,
         resume_session_id,
+        project_id,
     } = request;
+    let project_id = match project_id {
+        Some(project_id) => project_id,
+        None => match state.active_project_id(socket.id.as_str()).await {
+            Some(project_id) => project_id,
+            None => error_ack!(ack, &agent_id, "Choose a project before starting an agent"),
+        },
+    };
+    let project = match state.workspace.lock().await.get(&project_id) {
+        Some(project) => project,
+        None => error_ack!(ack, &agent_id, "Project is no longer part of this workspace"),
+    };
+    let project_root = PathBuf::from(&project.info.root);
     let (start_result, msg_rx) = {
         let mut acp_manager = state.acp_manager.lock().await;
 
@@ -51,6 +66,7 @@ pub async fn handle_acp_start(
                 &args,
                 Some(env),
                 resume_session_id,
+                project_root,
             )
             .await;
 
@@ -66,6 +82,11 @@ pub async fn handle_acp_start(
     match start_result {
         Ok(crate::acp::AcpStartOutcome::Ready { session_id }) => {
             info!("ACP agent {} started successfully", agent_id);
+            state
+                .agent_project_ids
+                .lock()
+                .await
+                .insert(agent_id.clone(), project_id.clone());
 
             send_agent_history(&socket, &state, &agent_id).await;
 
@@ -81,6 +102,7 @@ pub async fn handle_acp_start(
             ack.send(&json!({
                 "success": true,
                 "agent_id": agent_id,
+                "project_id": project_id,
                 "session_id": session_id,
                 "auth_required": false
             }))
@@ -88,6 +110,11 @@ pub async fn handle_acp_start(
         }
         Ok(crate::acp::AcpStartOutcome::AuthRequired { auth_methods }) => {
             info!("ACP agent {} requires authentication: {:?}", agent_id, auth_methods);
+            state
+                .agent_project_ids
+                .lock()
+                .await
+                .insert(agent_id.clone(), project_id.clone());
 
             send_agent_history(&socket, &state, &agent_id).await;
 
@@ -103,6 +130,7 @@ pub async fn handle_acp_start(
             ack.send(&json!({
                 "success": true,
                 "agent_id": agent_id,
+                "project_id": project_id,
                 "auth_required": true,
                 "auth_methods": auth_methods
             }))
@@ -261,7 +289,7 @@ fn get_mime_type(ext: &str) -> &'static str {
     }
 }
 
-fn find_local_paths(text: &str) -> Vec<PathBuf> {
+fn find_local_paths(text: &str, project_root: &std::path::Path) -> Vec<PathBuf> {
     let mut paths = Vec::new();
     let extensions = [
         ".png", ".jpg", ".jpeg", ".gif", ".webp", ".webm", ".wav", ".mp3", ".m4a", ".txt", ".md",
@@ -309,7 +337,7 @@ fn find_local_paths(text: &str) -> Vec<PathBuf> {
                                     best_path = Some(path.to_path_buf());
                                 }
                             } else {
-                                let rel = crate::utils::current_dir().join(candidate_clean);
+                                let rel = project_root.join(candidate_clean);
                                 if rel.is_file() {
                                     best_path = Some(rel);
                                 }
@@ -343,8 +371,20 @@ pub async fn handle_acp_prompt(
         mut attachments,
     } = request;
 
-    // Detect and load any local file paths mentioned in the prompt text
-    let detected_paths = find_local_paths(&prompt);
+    let project_root = {
+        let project_id = state.agent_project_ids.lock().await.get(&agent_id).cloned();
+        let Some(project_id) = project_id else {
+            error_ack!(ack, &agent_id, "Agent {} not found", agent_id);
+        };
+        let project = state.workspace.lock().await.get(&project_id);
+        let Some(project) = project else {
+            error_ack!(ack, &agent_id, "Agent project is no longer available");
+        };
+        PathBuf::from(project.info.root)
+    };
+
+    // Resolve relative paths against the agent's immutable project root.
+    let detected_paths = find_local_paths(&prompt, &project_root);
     for path in detected_paths {
         info!("Detected local file path in prompt: {:?}", path);
         if let Ok(bytes) = std::fs::read(&path) {
@@ -408,6 +448,7 @@ pub async fn handle_acp_stop(
 
     let mut acp_manager = state.acp_manager.lock().await;
     acp_manager.stop_agent(&agent_id).await;
+    state.agent_project_ids.lock().await.remove(&agent_id);
 
     ack.send(&json!({ "success": true })).ok();
 }
@@ -552,6 +593,7 @@ pub async fn handle_acp_set_reasoning(
 pub async fn handle_acp_list(ack: AckSender, state: State<AppState>) {
     info!("handle_acp_list");
 
+    let project_ids = state.agent_project_ids.lock().await.clone();
     let acp_manager = state.acp_manager.lock().await;
     let agents = acp_manager.list_agents();
 
@@ -560,6 +602,7 @@ pub async fn handle_acp_list(ack: AckSender, state: State<AppState>) {
         let queue = acp_manager.get_agent_queue(id).await.unwrap_or_default();
         agents_json.push(json!({
             "id": id,
+            "project_id": project_ids.get(id),
             "name": name,
             "is_processing": acp_manager.is_agent_processing(id),
             "queue": queue,
@@ -574,16 +617,30 @@ pub async fn handle_acp_list(ack: AckSender, state: State<AppState>) {
 pub struct AcpSessionsListRequest {
     pub command: String,
     pub args: Vec<String>,
+    #[serde(default)]
+    pub project_id: Option<String>,
 }
 
 pub async fn handle_acp_sessions_list(
+    socket: SocketRef,
     Data(request): Data<AcpSessionsListRequest>,
     ack: AckSender,
     state: State<AppState>,
 ) {
     info!("handle_acp_sessions_list {:?}", request);
-    let AcpSessionsListRequest { command, args } = request;
-    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    let AcpSessionsListRequest { command, args, project_id } = request;
+    let project_id = match project_id {
+        Some(project_id) => project_id,
+        None => match state.active_project_id(socket.id.as_str()).await {
+            Some(project_id) => project_id,
+            None => error_ack!(ack, &command, "Choose a project before listing sessions"),
+        },
+    };
+    let project = match state.workspace.lock().await.get(&project_id) {
+        Some(project) => project,
+        None => error_ack!(ack, &command, "Project is no longer part of this workspace"),
+    };
+    let cwd = PathBuf::from(project.info.root);
 
     let acp_manager = state.acp_manager.lock().await;
     match acp_manager.list_sessions(&command, &args, cwd).await {
@@ -601,6 +658,7 @@ pub async fn handle_acp_sessions_list(
 pub async fn handle_acp_reconnect(socket: SocketRef, ack: AckSender, state: State<AppState>) {
     info!("handle_acp_reconnect for socket {}", socket.id);
 
+    let project_ids = state.agent_project_ids.lock().await.clone();
     let mut acp_manager = state.acp_manager.lock().await;
     let agents = acp_manager.list_agents();
 
@@ -643,6 +701,7 @@ pub async fn handle_acp_reconnect(socket: SocketRef, ack: AckSender, state: Stat
         let session_id = acp_manager.get_agent_session_id(id);
         agents_json.push(json!({
             "id": id,
+            "project_id": project_ids.get(id),
             "name": name,
             "session_id": session_id,
             "is_processing": acp_manager.is_agent_processing(id),

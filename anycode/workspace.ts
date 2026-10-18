@@ -1,4 +1,5 @@
 import { isTauri } from './constants';
+import type { Socket } from 'socket.io-client';
 
 export type RecentWorkspace = {
     path: string;
@@ -9,6 +10,31 @@ export type RecentWorkspace = {
 export type WorkspaceConfig = {
     current_workspace: string | null;
     recent_workspaces: RecentWorkspace[];
+    projects?: string[];
+};
+
+export type WorkspaceProject = {
+    id: string;
+    name: string;
+    root: string;
+};
+
+export type WorkspaceState = {
+    projects: WorkspaceProject[];
+    active_project_id: string | null;
+    recent_workspaces: RecentWorkspace[];
+};
+
+export type ServerDirectory = {
+    name: string;
+    path: string;
+};
+
+export type ServerDirectoryListing = {
+    path: string;
+    name: string;
+    parent: string | null;
+    directories: ServerDirectory[];
 };
 
 let cachedWorkspaceConfig: WorkspaceConfig | null = null;
@@ -60,25 +86,70 @@ export async function openWorkspace(path: string): Promise<string | null> {
     return path;
 }
 
-export async function removeRecentWorkspace(path: string): Promise<WorkspaceConfig> {
-    if (isTauri) {
-        try {
-            const { invoke } = await import('@tauri-apps/api/core');
-            return await invoke<WorkspaceConfig>('remove_recent_workspace', { path });
-        } catch (e) {
-            console.error('Failed to remove recent workspace:', e);
-        }
-    }
-    return { current_workspace: null, recent_workspaces: [] };
-}
+const emitAck = <T,>(socket: Socket, event: string, payload?: unknown): Promise<T> => (
+    new Promise((resolve, reject) => {
+        socket.emit(event, payload ?? {}, (response: any) => {
+            if (!response?.success) {
+                reject(new Error(response?.error || `Request ${event} failed`));
+                return;
+            }
+            resolve(response as T);
+        });
+    })
+);
 
-export async function closeWorkspace(): Promise<void> {
-    if (isTauri) {
-        try {
-            const { invoke } = await import('@tauri-apps/api/core');
-            await invoke('close_workspace');
-        } catch (e) {
-            console.error('Failed to close workspace:', e);
-        }
-    }
-}
+export const getRemoteWorkspaceState = (
+    socket: Socket,
+): Promise<WorkspaceState> => emitAck<WorkspaceState>(socket, 'workspace:state');
+
+export const removeRemoteRecentWorkspace = async (
+    socket: Socket,
+    path: string,
+): Promise<RecentWorkspace[]> => {
+    const response = await emitAck<{ recent_workspaces: RecentWorkspace[] }>(
+        socket,
+        'workspace:remove-recent',
+        { path },
+    );
+    return response.recent_workspaces;
+};
+
+export const browseServerDirectory = (
+    socket: import('socket.io-client').Socket,
+    path?: string,
+): Promise<ServerDirectoryListing> => emitAck<ServerDirectoryListing>(
+    socket,
+    'workspace:browse',
+    { path },
+);
+
+export const addRemoteProject = (
+    socket: import('socket.io-client').Socket,
+    path: string,
+): Promise<WorkspaceState> => emitAck<WorkspaceState>(
+    socket,
+    'workspace:add-project',
+    { path },
+);
+
+export const removeRemoteProject = (
+    socket: import('socket.io-client').Socket,
+    projectId: string,
+): Promise<WorkspaceState> => emitAck<WorkspaceState>(
+    socket,
+    'workspace:remove-project',
+    { project_id: projectId },
+);
+
+export const selectRemoteProject = (
+    socket: import('socket.io-client').Socket,
+    projectId: string,
+): Promise<WorkspaceState> => emitAck<WorkspaceState>(
+    socket,
+    'workspace:select-project',
+    { project_id: projectId },
+);
+
+export const closeRemoteWorkspace = (
+    socket: import('socket.io-client').Socket,
+): Promise<WorkspaceState> => emitAck<WorkspaceState>(socket, 'workspace:close');

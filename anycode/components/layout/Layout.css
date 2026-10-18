@@ -609,7 +609,6 @@
     width: 100%;
     min-width: 0;
     overflow: hidden;
-    background: rgba(18, 18, 18, 0.45);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
     box-sizing: border-box;

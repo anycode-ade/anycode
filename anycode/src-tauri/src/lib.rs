@@ -9,7 +9,7 @@ fn get_workspace_state() -> Result<workspace::WorkspaceConfig, String> {
 }
 
 #[tauri::command]
-async fn open_folder_dialog(app: tauri::AppHandle) -> Result<Option<String>, String> {
+async fn open_folder_dialog() -> Result<Option<String>, String> {
   let (tx, rx) = tokio::sync::oneshot::channel();
   std::thread::spawn(move || {
     let picked = rfd::FileDialog::new()
@@ -20,10 +20,7 @@ async fn open_folder_dialog(app: tauri::AppHandle) -> Result<Option<String>, Str
 
   if let Ok(Some(folder)) = rx.await {
     let canonical = folder.canonicalize().unwrap_or_else(|_| folder);
-    let _ = std::env::set_current_dir(&canonical);
-    workspace::record_workspace(&canonical);
     let path_str = canonical.to_string_lossy().to_string();
-    let _ = app.emit("workspace_changed", Some(path_str.clone()));
     Ok(Some(path_str))
   } else {
     Ok(None)
@@ -31,43 +28,20 @@ async fn open_folder_dialog(app: tauri::AppHandle) -> Result<Option<String>, Str
 }
 
 #[tauri::command]
-fn open_workspace(path: String, app: tauri::AppHandle) -> Result<String, String> {
+fn open_workspace(path: String) -> Result<String, String> {
   let p = std::path::PathBuf::from(&path);
   if p.is_dir() {
     let canonical = p.canonicalize().unwrap_or_else(|_| p);
-    let _ = std::env::set_current_dir(&canonical);
-    workspace::record_workspace(&canonical);
     let path_str = canonical.to_string_lossy().to_string();
-    let _ = app.emit("workspace_changed", Some(path_str.clone()));
     Ok(path_str)
   } else {
     Err(format!("Directory does not exist: {path}"))
   }
 }
 
-#[tauri::command]
-fn remove_recent_workspace(path: String) -> Result<workspace::WorkspaceConfig, String> {
-  Ok(workspace::remove_recent_workspace(&path))
-}
-
-#[tauri::command]
-fn close_workspace(app: tauri::AppHandle) {
-  workspace::clear_current_workspace();
-  if let Some(home) = dirs::home_dir() {
-    let _ = std::env::set_current_dir(&home);
-  }
-  let _ = app.emit("workspace_changed", Option::<String>::None);
-}
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   let active_workspace = workspace::determine_initial_workspace();
-  if let Some(ref dir) = active_workspace {
-    let _ = std::env::set_current_dir(dir);
-  } else if let Some(home) = dirs::home_dir() {
-    let _ = std::env::set_current_dir(&home);
-  }
-
   let shutdown_token = CancellationToken::new();
   let shutdown_for_backend = shutdown_token.clone();
 
@@ -76,9 +50,7 @@ pub fn run() {
     .invoke_handler(tauri::generate_handler![
       get_workspace_state,
       open_folder_dialog,
-      open_workspace,
-      remove_recent_workspace,
-      close_workspace
+      open_workspace
     ])
     .setup(move |app| {
       if cfg!(debug_assertions) {
@@ -133,18 +105,12 @@ pub fn run() {
               .pick_folder()
             {
               let canonical = folder.canonicalize().unwrap_or_else(|_| folder);
-              let _ = std::env::set_current_dir(&canonical);
-              workspace::record_workspace(&canonical);
               let path_str = canonical.to_string_lossy().to_string();
-              let _ = handle_clone.emit("workspace_changed", Some(path_str));
+              let _ = handle_clone.emit("workspace_folder_selected", path_str);
             }
           });
         } else if event.id() == "close_workspace" {
-          workspace::clear_current_workspace();
-          if let Some(home) = dirs::home_dir() {
-            let _ = std::env::set_current_dir(&home);
-          }
-          let _ = app_handle.emit("workspace_changed", Option::<String>::None);
+          let _ = app_handle.emit("workspace_close_requested", ());
         }
       });
 
@@ -160,6 +126,7 @@ pub fn run() {
           host: "127.0.0.1".to_string(),
           port: 0,
           token: Some(secret_for_server),
+          initial_workspace: active_workspace.clone(),
         };
 
         if let Err(e) = anycode::start_server(opts, Some(ready_tx), Some(shutdown_for_backend)).await {

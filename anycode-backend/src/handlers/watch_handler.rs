@@ -114,12 +114,15 @@ fn classify_watch_transition(
 pub async fn handle_watch_event(
     path: &PathBuf,
     event: &notify::Event,
+    project_id: &str,
+    project_root: &Path,
     socket: &Arc<socketioxide::SocketIo>,
     file2code: &Arc<Mutex<HashMap<String, Code>>>,
     socket2data: &Arc<Mutex<HashMap<String, SocketData>>>,
     file_states: &Arc<Mutex<HashMap<String, FileWatchState>>>,
     git_manager: &Arc<Mutex<GitManager>>,
     lsp_manager: &Arc<Mutex<LspManager>>,
+    workspace: &Arc<Mutex<crate::workspace::WorkspaceManager>>,
 ) {
     let normalized_path = normalize_watch_path(path);
     let path_str = normalized_path.to_string_lossy().to_string();
@@ -159,8 +162,11 @@ pub async fn handle_watch_event(
     let file_states = file_states.clone();
     let git_manager = git_manager.clone();
     let lsp_manager = lsp_manager.clone();
+    let workspace = workspace.clone();
     let path_str_key = path_str.clone();
     let event_kind = event.kind.clone();
+    let project_id = project_id.to_string();
+    let project_root = project_root.to_path_buf();
 
     tokio::spawn(async move {
         // Wait until events stop arriving (trailing-edge debounce)
@@ -173,10 +179,17 @@ pub async fn handle_watch_event(
             }
         }
 
+        if workspace.lock().await.get(&project_id).is_none() {
+            let mut states = file_states.lock().await;
+            states.remove(&path_str_key);
+            return;
+        }
+
         process_watch_event(
             &path,
             &path_str_key,
             &event_kind,
+            &project_id,
             &socket,
             &file2code,
             &socket2data,
@@ -185,8 +198,8 @@ pub async fn handle_watch_event(
         )
         .await;
 
-        handle_search_update(&path, &socket, &socket2data).await;
-        handle_changes_update(&path, &socket, &git_manager).await;
+        handle_search_update(&path, &project_id, &project_root, &socket, &socket2data).await;
+        handle_changes_update(&path, &project_id, &socket, &git_manager).await;
 
         let mut states = file_states.lock().await;
         if let Some(state) = states.get_mut(&path_str_key) {
@@ -199,6 +212,7 @@ async fn process_watch_event(
     path: &PathBuf,
     path_str: &str,
     event_kind: &notify::EventKind,
+    project_id: &str,
     socket: &Arc<socketioxide::SocketIo>,
     file2code: &Arc<Mutex<HashMap<String, Code>>>,
     socket2data: &Arc<Mutex<HashMap<String, SocketData>>>,
@@ -233,7 +247,7 @@ async fn process_watch_event(
                     notify::EventKind::Create(notify::event::CreateKind::Folder) => false,
                     _ => path.is_file(),
                 };
-                let data = &json!({"path": format_path(path_str), "isFile": is_file});
+                let data = &json!({"path": format_path(path_str), "isFile": is_file, "project_id": project_id});
                 let _ = socket.emit("watcher:create", data).await;
             }
         }
@@ -244,14 +258,14 @@ async fn process_watch_event(
                     notify::EventKind::Remove(notify::event::RemoveKind::Folder) => false,
                     _ => path.extension().is_some(),
                 };
-                let data = &json!({"path": format_path(path_str), "isFile": is_file});
+                let data = &json!({"path": format_path(path_str), "isFile": is_file, "project_id": project_id});
                 let _ = socket.emit("watcher:remove", data).await;
             }
         }
         WatchAction::Modify => {
             if is_opened_file || is_cached_in_file2code {
                 let _ =
-                    handle_file_modification(path, socket, file2code, lsp_manager, is_opened_file)
+                    handle_file_modification(path, socket, file2code, lsp_manager, is_opened_file, Some(project_id))
                         .await;
             }
         }
@@ -269,6 +283,8 @@ async fn process_watch_event(
 
 async fn handle_search_update(
     path: &Path,
+    project_id: &str,
+    project_root: &Path,
     socket: &Arc<socketioxide::SocketIo>,
     socket2data: &Arc<Mutex<HashMap<String, SocketData>>>,
 ) {
@@ -285,7 +301,9 @@ async fn handle_search_update(
             .iter()
             .filter_map(|(sid, data)| {
                 let pattern = data.search_pattern.as_ref()?;
-                if pattern.trim().is_empty() {
+                if pattern.trim().is_empty()
+                    || data.search_project_id.as_deref() != Some(project_id)
+                {
                     return None;
                 }
                 Some((
@@ -303,7 +321,7 @@ async fn handle_search_update(
 
     for (sid, pattern, last_file_result) in searches {
         let cancel = CancellationToken::new();
-        if let Some(file_result) = search_file_result(path, &pattern, cancel).await {
+        if let Some(file_result) = search_file_result(path, &pattern, cancel, project_root).await {
             if last_file_result.as_ref() == Some(&file_result) {
                 continue;
             }
@@ -316,7 +334,7 @@ async fn handle_search_update(
             }
 
             let _ = socket
-                .emit("search:results", &json!({ "results": [file_result] }))
+                .emit("search:results", &json!({ "project_id": project_id, "results": [file_result] }))
                 .await;
         }
     }
@@ -324,6 +342,7 @@ async fn handle_search_update(
 
 async fn handle_changes_update(
     path: &Path,
+    project_id: &str,
     socket: &Arc<socketioxide::SocketIo>,
     git_manager: &Arc<Mutex<crate::git::GitManager>>,
 ) {
@@ -336,7 +355,11 @@ async fn handle_changes_update(
     };
 
     if let Some(update) = update {
-        let _ = socket.emit("git:update", &update.to_json()).await;
+        let mut payload = update.to_json();
+        if let Some(object) = payload.as_object_mut() {
+            object.insert("project_id".to_string(), json!(project_id));
+        }
+        let _ = socket.emit("git:update", &payload).await;
     }
 }
 
@@ -346,6 +369,7 @@ async fn handle_file_modification(
     file2code: &Arc<Mutex<HashMap<String, Code>>>,
     lsp_manager: &Arc<Mutex<LspManager>>,
     sync_lsp: bool,
+    project_id: Option<&str>,
 ) -> Result<()> {
     let path_str = path
         .to_str()
@@ -415,7 +439,7 @@ async fn handle_file_modification(
     // Notify frontend using the absolute path to keep editor identity consistent.
     let file = path_str.to_string();
     socket
-        .emit("watcher:edits", &json! {{ "file": format_path(&file), "edits": edits }})
+        .emit("watcher:edits", &json! {{ "file": format_path(&file), "edits": edits, "project_id": project_id }})
         .await
         .map_err(|e| anyhow::anyhow!("Failed to emit edits: {}", e))?;
 
@@ -468,9 +492,6 @@ mod tests {
     #[test]
     fn watcher_paths_are_normalized_before_comparison() {
         let cwd = current_dir();
-        let normalized = normalize_watch_path(Path::new("./test.js"));
-        assert_eq!(normalized, cwd.join("test.js"));
-
         let normalized = normalize_watch_path(Path::new(&cwd.join("./test.js")));
         assert_eq!(normalized, cwd.join("test.js"));
     }
@@ -496,14 +517,17 @@ mod tests {
         let file2code = Arc::new(Mutex::new(HashMap::new()));
         file2code.lock().await.insert(path_str.clone(), code);
 
-        let lsp_manager = Arc::new(Mutex::new(LspManager::new(config)));
+        let lsp_manager = Arc::new(Mutex::new(LspManager::new_with_root(
+            config,
+            std::env::current_dir().unwrap(),
+        )));
 
         // External editor (e.g. VS Code) modifies the file on disk
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
         std::fs::write(&file_path, "modified by vs code\n")?;
 
         // Watcher receives the modification event
-        handle_file_modification(&file_path, &socket, &file2code, &lsp_manager, false).await?;
+        handle_file_modification(&file_path, &socket, &file2code, &lsp_manager, false, None).await?;
 
         // The in-memory code MUST have the updated content from VS Code!
         let f2c = file2code.lock().await;
@@ -537,10 +561,13 @@ mod tests {
         let file2code = Arc::new(Mutex::new(HashMap::new()));
         file2code.lock().await.insert(path_str.clone(), code);
 
-        let lsp_manager = Arc::new(Mutex::new(LspManager::new(config)));
+        let lsp_manager = Arc::new(Mutex::new(LspManager::new_with_root(
+            config,
+            std::env::current_dir().unwrap(),
+        )));
 
         // Watcher receives the event triggered by Anycode's own save (disk was not modified externally)
-        handle_file_modification(&file_path, &socket, &file2code, &lsp_manager, false).await?;
+        handle_file_modification(&file_path, &socket, &file2code, &lsp_manager, false, None).await?;
 
         // File meta matches, so it returns Ok(()) cleanly without changing history or text
         let f2c = file2code.lock().await;

@@ -2,22 +2,25 @@ import Terminal from '../../components/terminal/Terminal';
 import { TerminalEmptyPane } from '../../components/terminal/TerminalEmptyPane';
 import type { Terminal as TerminalState } from '../../types';
 import type { FontConfig } from '../../hooks/useSettings';
+import type { WorkspaceProject } from '../../workspace';
 
 type TerminalPanelProps = {
     panelKey: string;
     focusRequestToken: number | null;
     isConnected: boolean;
     terminals: TerminalState[];
+    projects: WorkspaceProject[];
+    activeProjectId: string | null;
+    onCreateTerminal: (projectId: string) => void;
     terminalPanes: {
         getSelectedId: (paneKey: string) => string | null;
         setSelectedForPane: (paneKey: string, terminalId: string | null) => void;
         closeTab: (terminalId: string) => void;
-        createTerminalForActivePane: (paneKey?: string) => void;
     };
-    onTerminalData: (name: string, data: string) => void;
-    onTerminalMessage: (name: string, callback: (data: string) => void) => () => void;
-    onTerminalResize: (name: string, cols: number, rows: number) => void;
-    onIsTerminalClosing: (name: string) => boolean;
+    onTerminalData: (name: string, session: string, data: string) => void;
+    onTerminalMessage: (name: string, session: string, callback: (data: string) => void) => () => void;
+    onTerminalResize: (name: string, session: string, cols: number, rows: number) => void;
+    onIsTerminalClosing: (name: string, session: string) => boolean;
     onUploadFile: (file: File) => Promise<string | null>;
     fontConfig: FontConfig;
 };
@@ -27,6 +30,9 @@ export const TerminalPanel = ({
     focusRequestToken,
     isConnected,
     terminals,
+    projects,
+    activeProjectId,
+    onCreateTerminal,
     terminalPanes,
     onTerminalData,
     onTerminalMessage,
@@ -43,7 +49,9 @@ export const TerminalPanel = ({
                     terminals={terminals}
                     onSelectTerminal={(terminalId) => terminalPanes.setSelectedForPane(panelKey, terminalId)}
                     onCloseTerminal={terminalPanes.closeTab}
-                    onCreateTerminal={() => terminalPanes.createTerminalForActivePane(panelKey)}
+                    onCreateTerminal={onCreateTerminal}
+                    projects={projects}
+                    activeProjectId={activeProjectId}
                 />
             </div>
         );
@@ -57,7 +65,9 @@ export const TerminalPanel = ({
                     terminals={terminals}
                     onSelectTerminal={(terminalId) => terminalPanes.setSelectedForPane(panelKey, terminalId)}
                     onCloseTerminal={terminalPanes.closeTab}
-                    onCreateTerminal={() => terminalPanes.createTerminalForActivePane(panelKey)}
+                    onCreateTerminal={onCreateTerminal}
+                    projects={projects}
+                    activeProjectId={activeProjectId}
                 />
             </div>
         );
@@ -70,6 +80,7 @@ export const TerminalPanel = ({
                     <Terminal
                         key={`${panelKey}-${selectedTerminal.id}`}
                         name={selectedTerminal.name}
+                        session={selectedTerminal.session}
                         focusRequestToken={focusRequestToken}
                         onData={onTerminalData}
                         onMessage={onTerminalMessage}

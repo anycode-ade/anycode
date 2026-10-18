@@ -62,8 +62,10 @@ type OpenFilesOptions = {
 };
 
 const DEFAULT_EDITOR_PANE_ID = 'editor';
-const createGitFileId = (revision: string, path: string): string => (
-    `git:${encodeURIComponent(revision)}:${encodeURIComponent(path)}`
+const createGitFileId = (revision: string, path: string, projectId?: string): string => (
+    projectId
+        ? `git:${encodeURIComponent(projectId)}:${encodeURIComponent(revision)}:${encodeURIComponent(path)}`
+        : `git:${encodeURIComponent(revision)}:${encodeURIComponent(path)}`
 );
 export const getHistoricalFileId = createGitFileId;
 const persistedEditorState = loadOpenFiles();
@@ -817,9 +819,10 @@ export const useEditors = ({ wsRef, isConnected, onFileClosed }: UseEditorsParam
         content: string,
         paneId?: string,
         activate = true,
+        projectId?: string,
     ) => {
         if (!paneId && !hasVisibleEditorPane()) return;
-        const fileId = createGitFileId(hash, path);
+        const fileId = createGitFileId(hash, path, projectId);
         const existingFile = filesRef.current.find((file) => file.id === fileId);
         const targetPaneId = resolveTargetPaneId(paneId, existingFile?.id);
         const fileName = getFileName(path);
@@ -837,7 +840,7 @@ export const useEditors = ({ wsRef, isConnected, onFileClosed }: UseEditorsParam
                 id: fileId,
                 name: `${fileName} (${hash.slice(0, 8)})`,
                 language: getLanguageFromFileName(fileName),
-                source: { type: 'git', revision: hash, path },
+                source: { type: 'git', revision: hash, path, project_id: projectId },
             }]);
         setEditorDiffModeByPane((prev) => ({ ...prev, [targetPaneId]: 'diff' }));
         if (activate) {

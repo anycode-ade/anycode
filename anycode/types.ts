@@ -2,13 +2,14 @@ import { Change, Edit } from 'anycode-base';
 
 export type FileSource =
     | { type: 'filesystem'; path: string }
-    | { type: 'git'; revision: string; path: string };
+    | { type: 'git'; revision: string; path: string; project_id?: string };
 
 export interface TreeNode {
     id: string;
     name: string;
     type: 'file' | 'directory';
     path: string;
+    project_id?: string;
     size?: number;
     children?: TreeNode[];
     isExpanded?: boolean;
@@ -61,6 +62,8 @@ export interface DirectoryResponse {
     name: string;
     fullpath: string;
     relative_path: string;
+    project_id?: string;
+    project_name?: string;
 }
 
 export interface DirectoryErrorResponse {
@@ -101,6 +104,7 @@ export interface Terminal {
     session: string;
     cols: number;
     rows: number;
+    project_id?: string;
 }
 
 export interface WatcherEdits {
@@ -430,6 +434,7 @@ export interface AcpSession {
     agentName: string;
     profile?: string;
     sessionId?: string;
+    projectId?: string;
     agentConfigId?: string;
     messages: AcpMessage[];
     queue?: AcpQueuedMessage[];
@@ -460,6 +465,7 @@ export interface AgentPromptTemplate {
 export interface AcpSessionSummary {
     sessionId: string;
     cwd: string;
+    projectId?: string;
     title?: string;
     updatedAt?: string;
     preview?: string;
@@ -479,10 +485,12 @@ export interface SearchResult {
 }
 
 export interface SearchResultsBatch {
+    project_id?: string;
     results: SearchResult[];
 }
 
 export interface SearchEnd {
+    project_id?: string;
     elapsed: number;
     matches: number;
 }

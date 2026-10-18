@@ -3,10 +3,14 @@ import { FileIcon } from './FileIcon';
 import { Icons } from './Icons';
 import type { GitHistoryCommit, GitHistoryFile, GitHistorySearchMode } from '../hooks/useGit';
 import { usePersistedScroll } from '../hooks/usePersistedScroll';
+import type { WorkspaceProject } from '../workspace';
 import './HistoryPanel.css';
 
 interface HistoryPanelProps {
-    branch: string;
+    projects: WorkspaceProject[];
+    selectedProjectId: string | null;
+    historyProjectId: string | null;
+    onProjectChange: (projectId: string) => void;
     commits: GitHistoryCommit[];
     filesByCommit: Record<string, GitHistoryFile[]>;
     hasMore: boolean;
@@ -92,7 +96,10 @@ const statusTextColors: Record<GitHistoryFile['status'], string> = {
 };
 
 export const HistoryPanel: React.FC<HistoryPanelProps> = ({
-    branch,
+    projects,
+    selectedProjectId,
+    historyProjectId,
+    onProjectChange,
     commits,
     filesByCommit,
     hasMore,
@@ -128,10 +135,20 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = ({
     const listRef = usePersistedScroll<HTMLDivElement>('history-panel', 'session', [commits.length]);
 
     useEffect(() => {
-        if (!loaded && !loading) {
+        if (selectedProjectId && historyProjectId === selectedProjectId && !loaded && !loading) {
             onRefresh();
         }
-    }, [loaded, loading, onRefresh]);
+    }, [historyProjectId, loaded, loading, onRefresh, selectedProjectId]);
+
+    useEffect(() => {
+        setExpandedHashes(new Set());
+        setShowAllFilesHashes(new Set());
+        setSearchQuery('');
+        setAppliedQuery('');
+        setIsSearchOpen(false);
+        setShouldRenderSearch(false);
+        if (listRef.current) listRef.current.scrollTop = 0;
+    }, [selectedProjectId]);
 
     useEffect(() => {
         setShowAllFilesHashes(new Set());
@@ -312,11 +329,38 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = ({
     return (
         <div className="history-panel">
             <div className="history-header">
+                <label className="history-project-selector" title="Select project">
+                    <Icons.Folder size={14} />
+                    <select
+                        className="history-project-select"
+                        value={selectedProjectId ?? ''}
+                        onChange={(event) => onProjectChange(event.target.value)}
+                        disabled={projects.length === 0}
+                        aria-label="Project"
+                    >
+                        {projects.length === 0 ? (
+                            <option value="">No project selected</option>
+                        ) : (
+                            projects.map((project) => (
+                                <option key={project.id} value={project.id}>
+                                    {project.name}
+                                </option>
+                            ))
+                        )}
+                    </select>
+                    <span className="history-project-select-chevron" aria-hidden="true">
+                        <Icons.ChevronDown />
+                    </span>
+                </label>
                 <div className="history-scope" role="tablist" aria-label="History scope">
                     <button type="button" className={!historyPath ? 'active' : ''} onClick={onShowRepository} role="tab" aria-selected={!historyPath}>Repository</button>
                     <button type="button" className={historyPath ? 'active' : ''} onClick={handleShowFile} disabled={!activeFilePath} role="tab" aria-selected={!!historyPath} title={activeFilePath || 'Open a file to view its history'}>File</button>
-                    <span title={historyPath || branch || 'HEAD'}>{historyPath ? getDisplayName(historyPath) : branch || 'HEAD'}</span>
                 </div>
+                {historyPath ? (
+                    <span className="history-scope-path" title={historyPath}>
+                        {getDisplayName(historyPath)}
+                    </span>
+                ) : null}
                 <div className="history-header-actions">
                     {historyPath ? <button className="history-header-button active" type="button" onClick={handleShowFile} disabled={!activeFilePath} title={activeFilePath ? 'Show history for current file' : 'Open a file to view its history'} aria-label="Show history for current file" aria-pressed="true">
                         <Icons.Crosshair />

@@ -12,6 +12,8 @@ pub struct RecentWorkspace {
 pub struct WorkspaceConfig {
     pub current_workspace: Option<String>,
     pub recent_workspaces: Vec<RecentWorkspace>,
+    #[serde(default)]
+    pub projects: Vec<String>,
 }
 
 pub fn get_config_path() -> Option<PathBuf> {
@@ -50,6 +52,9 @@ pub fn record_workspace(path: &Path) {
 
     let mut config = load_config();
     config.current_workspace = Some(path_str.clone());
+    if !config.projects.contains(&path_str) {
+        config.projects.push(path_str.clone());
+    }
 
     config.recent_workspaces.retain(|r| r.path != path_str);
 
@@ -74,19 +79,6 @@ pub fn record_workspace(path: &Path) {
     save_config(&config);
 }
 
-pub fn clear_current_workspace() {
-    let mut config = load_config();
-    config.current_workspace = None;
-    save_config(&config);
-}
-
-pub fn remove_recent_workspace(path_to_remove: &str) -> WorkspaceConfig {
-    let mut config = load_config();
-    config.recent_workspaces.retain(|r| r.path != path_to_remove);
-    save_config(&config);
-    config
-}
-
 pub fn determine_initial_workspace() -> Option<PathBuf> {
     // 1. Explicit command-line argument: anycode <folder>
     if let Some(arg) = std::env::args().nth(1) {
@@ -99,7 +91,10 @@ pub fn determine_initial_workspace() -> Option<PathBuf> {
         }
     }
 
-    // Always start with Welcome screen by default on application launch
-    clear_current_workspace();
-    None
+    // Keep the last selected project available on reload. The backend restores
+    // all workspace roots; this value is only the desktop welcome-screen default.
+    load_config()
+        .current_workspace
+        .map(PathBuf::from)
+        .filter(|path| path.is_dir())
 }

@@ -119,7 +119,12 @@ export const useFileTree = ({ wsRef, isConnected }: UseFileTreeParams) => {
         setActiveNodeId(nodeId);
     }, []);
 
-    const convertToTree = useCallback((files: string[], dirs: string[], basePath: string): TreeNode[] => {
+    const convertToTree = useCallback((
+        files: string[],
+        dirs: string[],
+        basePath: string,
+        projectId?: string,
+    ): TreeNode[] => {
         const treeNodes: TreeNode[] = [];
 
         dirs.forEach((dirName) => {
@@ -129,6 +134,7 @@ export const useFileTree = ({ wsRef, isConnected }: UseFileTreeParams) => {
                 name: dirName,
                 type: 'directory',
                 path: dirPath,
+                project_id: projectId,
                 children: [],
                 isExpanded: false,
                 isSelected: false,
@@ -144,6 +150,7 @@ export const useFileTree = ({ wsRef, isConnected }: UseFileTreeParams) => {
                 name: fileName,
                 type: 'file',
                 path: filePath,
+                project_id: projectId,
                 isExpanded: false,
                 isSelected: false,
                 isLoading: false,
@@ -161,30 +168,39 @@ export const useFileTree = ({ wsRef, isConnected }: UseFileTreeParams) => {
         }
 
         const basePath = normalizePath(response.fullpath);
+        const projectId = response.project_id ?? basePath;
 
         setFileTree((prev) => {
             if (response.relative_path === '.') {
-                const prevRoot = prev.find((node) => node.id === basePath);
-                const children = convertToTree(response.files, response.dirs, basePath);
+                const prevRoot = prev.find((node) => (
+                    node.project_id === projectId || node.path === basePath
+                ));
+                const children = convertToTree(response.files, response.dirs, basePath, projectId);
                 const mergedChildren = mergeChildrenWithPreviousState(children, prevRoot?.children);
                 const rootNode: TreeNode = {
-                    id: basePath,
-                    name: response.name || 'Root',
+                    id: `project:${projectId}`,
+                    name: response.project_name || response.name || 'Root',
                     type: 'directory',
                     path: basePath,
+                    project_id: projectId,
                     children: mergedChildren,
                     isExpanded: true,
                     isSelected: prevRoot?.isSelected ?? false,
                     isLoading: false,
                     hasLoaded: true,
                 };
-                return [rootNode];
+                if (prevRoot) {
+                    return prev.map((root) => (
+                        root.project_id === projectId || root.path === basePath ? rootNode : root
+                    ));
+                }
+                return [...prev, rootNode];
             }
 
             const updateNode = (nodes: TreeNode[]): TreeNode[] => {
                 return nodes.map((node) => {
                     if (node.id === basePath) {
-                        const nextChildren = convertToTree(response.files, response.dirs, basePath);
+                        const nextChildren = convertToTree(response.files, response.dirs, basePath, projectId);
                         return {
                             ...node,
                             children: mergeChildrenWithPreviousState(nextChildren, node.children),
@@ -214,6 +230,13 @@ export const useFileTree = ({ wsRef, isConnected }: UseFileTreeParams) => {
     const resetFileTree = useCallback(() => {
         setFileTree([]);
         setActiveNodeId(null);
+    }, []);
+
+    const removeProjectRoot = useCallback((projectId: string) => {
+        setFileTree((previous) => previous.filter((node) => node.project_id !== projectId));
+        setActiveNodeId((previous) => (
+            previous && previous.startsWith(projectId) ? null : previous
+        ));
     }, []);
 
     const toggleNode = useCallback((nodeId: string) => {
@@ -288,23 +311,27 @@ export const useFileTree = ({ wsRef, isConnected }: UseFileTreeParams) => {
         });
     }, []);
 
-    const navigateByKey = useCallback((key: string, handlers: TreeNavigationHandlers): boolean => {
+    const navigateByKey = useCallback((
+        key: string,
+        handlers: TreeNavigationHandlers,
+        navigationTree: TreeNode[] = fileTree,
+    ): boolean => {
         if (!['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight', 'Enter'].includes(key)) {
             return false;
         }
 
-        if (!fileTree.length) {
+        if (!navigationTree.length) {
             return true;
         }
 
-        const fallbackNodeId = activeNodeId ?? findSelectedNodeId(fileTree);
+        const fallbackNodeId = activeNodeId ?? findSelectedNodeId(navigationTree);
         const {
             firstVisible,
             prevVisible,
             currentNode,
             nextVisible,
             parentNode,
-        } = walkVisibleForNode(fileTree, fallbackNodeId);
+        } = walkVisibleForNode(navigationTree, fallbackNodeId);
 
         if (key === 'ArrowDown') {
             if (!currentNode) {
@@ -471,9 +498,9 @@ export const useFileTree = ({ wsRef, isConnected }: UseFileTreeParams) => {
         });
     }, [wsRef, isConnected]);
 
-    const createNodeOnDisk = useCallback((parentPath: string, name: string, isFile: boolean, onCreated?: (path: string) => void) => {
+    const createNodeOnDisk = useCallback((parentPath: string, name: string, isFile: boolean, onCreated?: (path: string) => void, projectId?: string) => {
         if (!wsRef.current || !isConnected) return;
-        wsRef.current.emit('file:create', { parent_path: parentPath, name, is_file: isFile }, (response: any) => {
+        wsRef.current.emit('file:create', { parent_path: parentPath, name, is_file: isFile, project_id: projectId }, (response: any) => {
             if (response && response.success) {
                 const createdPath = isFile ? response.file : response.dir;
                 if (createdPath) {
@@ -533,20 +560,20 @@ export const useFileTree = ({ wsRef, isConnected }: UseFileTreeParams) => {
     }, []);
 
     const getRootFiles = useCallback((): WorkspaceFileInfo[] => {
-        const root = fileTree[0];
-        const rootBasePath = root?.type === 'directory' ? normalizePath(root.path) : '';
-        const children = root?.type === 'directory' && root.children?.length ? root.children : fileTree;
-        return children.map((node) => {
-            const normalized = normalizePath(node.path);
-            const relativePath = rootBasePath && normalized.startsWith(rootBasePath + '/')
-                ? normalized.slice(rootBasePath.length + 1)
-                : node.name;
-            return {
-                id: node.id,
-                name: node.name,
-                path: relativePath,
-                isDirectory: node.type === 'directory',
-            };
+        return fileTree.flatMap((root) => {
+            const rootBasePath = normalizePath(root.path);
+            return (root.children ?? []).map((node) => {
+                const normalized = normalizePath(node.path);
+                const relativePath = normalized.startsWith(rootBasePath + '/')
+                    ? normalized.slice(rootBasePath.length + 1)
+                    : node.name;
+                return {
+                    id: node.id,
+                    name: `${root.name}/${node.name}`,
+                    path: `${root.name}/${relativePath}`,
+                    isDirectory: node.type === 'directory',
+                };
+            });
         });
     }, [fileTree]);
 
@@ -561,6 +588,7 @@ export const useFileTree = ({ wsRef, isConnected }: UseFileTreeParams) => {
         setActiveNode,
         openFolder,
         resetFileTree,
+        removeProjectRoot,
         handleOpenFolderResponse,
         toggleNode,
         findNodeByPath,

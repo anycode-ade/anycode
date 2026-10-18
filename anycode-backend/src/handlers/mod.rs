@@ -9,4 +9,5 @@ pub mod search_handler;
 pub mod static_handler;
 pub mod terminal_handler;
 pub mod theme_handler;
+pub mod workspace_handler;
 pub mod watch_handler;

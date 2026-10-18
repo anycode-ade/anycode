@@ -145,6 +145,43 @@
     background-color: transparent;
 }
 
+.changes-project-selector {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 48%;
+    color: var(--theme-tab-foreground, #888);
+    cursor: pointer;
+}
+
+.changes-project-selector > svg {
+    flex: 0 0 auto;
+}
+
+.changes-project-select {
+    flex: 0 1 auto;
+    max-width: min(140px, 100%);
+    padding: 0;
+}
+
+.changes-project-select-chevron {
+    display: inline-flex;
+    align-items: center;
+    flex: 0 0 auto;
+    width: 12px;
+    height: 12px;
+    margin-left: -3px;
+    pointer-events: none;
+}
+
+.changes-project-select-chevron svg {
+    display: block;
+    width: 12px;
+    height: 12px;
+}
+
 .changes-new-branch-container {
     display: inline-flex;
     align-items: center;

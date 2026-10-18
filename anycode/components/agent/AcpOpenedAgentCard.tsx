@@ -1,8 +1,10 @@
 import React from 'react';
 import type { AcpAgent, AcpSession } from '../../types';
 import { resolveAgentDisplay } from '../../agents';
+import { Icons } from '../Icons';
 import { AgentIcon } from './AgentIcon';
 import { AcpIcons } from './AcpIcons';
+import type { WorkspaceProject } from '../../workspace';
 
 function getFirstMessagePreview(session: AcpSession): string | null {
   if (!session.messages || session.messages.length === 0) return null;
@@ -22,6 +24,7 @@ function getFirstMessagePreview(session: AcpSession): string | null {
 export interface AcpOpenedAgentCardProps {
   session: AcpSession;
   availableAgents: AcpAgent[];
+  projects: WorkspaceProject[];
   onSelectAgent: (agentId: string) => void;
   onCloseAgent: (agentId: string) => void;
 }
@@ -29,10 +32,16 @@ export interface AcpOpenedAgentCardProps {
 export const AcpOpenedAgentCard: React.FC<AcpOpenedAgentCardProps> = ({
   session,
   availableAgents,
+  projects,
   onSelectAgent,
   onCloseAgent,
 }) => {
   const { baseName, accountName, fullName } = resolveAgentDisplay(session, availableAgents);
+  const project = projects.find((item) => item.id === session.projectId);
+  const projectLabel = project?.name ?? (session.projectId ? 'Unavailable project' : 'No project');
+  const profileLabel = accountName ?? 'Default';
+  const projectTitle = project?.root
+    ?? (session.projectId ? `Project ID: ${session.projectId}` : 'This session has no project association');
   const firstMessage = getFirstMessagePreview(session);
   const messages = session.messages || [];
   const chatMessageCount = messages.filter((m) => m.role === 'user' || m.role === 'assistant').length;
@@ -127,12 +136,18 @@ export const AcpOpenedAgentCard: React.FC<AcpOpenedAgentCardProps> = ({
         <div className="acp-pane-opened-identity">
           <AgentIcon name={baseName} id={session.agentId} size={15} className="acp-agent-btn-icon" />
           <span className="acp-pane-opened-name" title={baseName}>{baseName}</span>
-          {accountName && (
-            <span className="acp-pane-opened-account" title={accountName}>
-              {accountName}
-            </span>
-          )}
         </div>
+      </div>
+
+      <div className="acp-pane-opened-context-row">
+        <span className="acp-pane-opened-context-item acp-pane-opened-profile" title={`Profile: ${profileLabel}`}>
+          <Icons.User size={12} />
+          <span>{profileLabel}</span>
+        </span>
+        <span className="acp-pane-opened-context-item acp-pane-opened-project" title={projectTitle}>
+          <Icons.Folder size={12} />
+          <span>{projectLabel}</span>
+        </span>
       </div>
 
       <div className="acp-pane-opened-info-row">

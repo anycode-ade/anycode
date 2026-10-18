@@ -1,10 +1,9 @@
 use crate::app_state::AppState;
 use crate::app_state::*;
 use crate::error_ack;
-use crate::utils::abs_file;
 use serde::{Deserialize, Serialize};
 use serde_json::{self, json};
-use socketioxide::extract::{AckSender, Data, State};
+use socketioxide::extract::{AckSender, Data, SocketRef, State};
 use tracing::{error, info};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -15,6 +14,7 @@ pub struct CompletionRequest {
 }
 
 pub async fn handle_completion(
+    socket: SocketRef,
     Data(request): Data<CompletionRequest>,
     ack: AckSender,
     state: State<AppState>,
@@ -22,7 +22,10 @@ pub async fn handle_completion(
     info!("handle_completion {:?}", request);
     let CompletionRequest { file, row, column } = request;
 
-    let abs_path = match abs_file(&file) {
+    let abs_path = match state
+        .resolve_path_for_socket(socket.id.as_str(), &file)
+        .await
+    {
         Ok(p) => p,
         Err(e) => error_ack!(ack, &file, "Failed to resolve file: {:?}", e),
     };
@@ -33,7 +36,8 @@ pub async fn handle_completion(
         Err(e) => error_ack!(ack, &abs_path, "{:?}", e),
     };
 
-    let mut lsp_manager = state.lsp_manager.lock().await;
+    let lsp_manager = state.lsp_for_path(&abs_path).await;
+    let mut lsp_manager = lsp_manager.lock().await;
 
     let result = match lsp_manager.get(&code.lang).await {
         Some(lsp) => lsp
@@ -55,6 +59,7 @@ pub struct HoverRequest {
 }
 
 pub async fn handle_hover(
+    socket: SocketRef,
     Data(request): Data<HoverRequest>,
     ack: AckSender,
     state: State<AppState>,
@@ -62,7 +67,10 @@ pub async fn handle_hover(
     info!("handle_hover {}", request.file);
     let HoverRequest { file, row, column } = request;
 
-    let abs_path = match abs_file(&file) {
+    let abs_path = match state
+        .resolve_path_for_socket(socket.id.as_str(), &file)
+        .await
+    {
         Ok(p) => p,
         Err(e) => error_ack!(ack, &file, "Failed to resolve file: {:?}", e),
     };
@@ -73,7 +81,8 @@ pub async fn handle_hover(
         Err(e) => error_ack!(ack, &abs_path, "{:?}", e),
     };
 
-    let mut lsp_manager = state.lsp_manager.lock().await;
+    let lsp_manager = state.lsp_for_path(&abs_path).await;
+    let mut lsp_manager = lsp_manager.lock().await;
 
     if let Some(lsp) = lsp_manager.get(&code.lang).await {
         match lsp.hover(&abs_path, row, column).await {
@@ -96,6 +105,7 @@ pub struct DefinitionRequest {
 }
 
 pub async fn handle_definition(
+    socket: SocketRef,
     Data(request): Data<DefinitionRequest>,
     ack: AckSender,
     state: State<AppState>,
@@ -103,7 +113,10 @@ pub async fn handle_definition(
     info!("handle_definition {}", request.file);
     let DefinitionRequest { file, row, column } = request;
 
-    let abs_path = match abs_file(&file) {
+    let abs_path = match state
+        .resolve_path_for_socket(socket.id.as_str(), &file)
+        .await
+    {
         Ok(p) => p,
         Err(e) => error_ack!(ack, &file, "Failed to resolve file: {:?}", e),
     };
@@ -114,7 +127,8 @@ pub async fn handle_definition(
         Err(e) => error_ack!(ack, &abs_path, "{:?}", e),
     };
 
-    let mut lsp_manager = state.lsp_manager.lock().await;
+    let lsp_manager = state.lsp_for_path(&abs_path).await;
+    let mut lsp_manager = lsp_manager.lock().await;
 
     let result = match lsp_manager.get(&code.lang).await {
         Some(lsp) => lsp
@@ -136,6 +150,7 @@ pub struct ReferencesRequest {
 }
 
 pub async fn handle_references(
+    socket: SocketRef,
     Data(request): Data<ReferencesRequest>,
     ack: AckSender,
     state: State<AppState>,
@@ -143,7 +158,10 @@ pub async fn handle_references(
     info!("handle_references {}", request.file);
     let ReferencesRequest { file, row, column } = request;
 
-    let abs_path = match abs_file(&file) {
+    let abs_path = match state
+        .resolve_path_for_socket(socket.id.as_str(), &file)
+        .await
+    {
         Ok(p) => p,
         Err(e) => error_ack!(ack, &file, "Failed to resolve file: {:?}", e),
     };
@@ -154,7 +172,8 @@ pub async fn handle_references(
         Err(e) => error_ack!(ack, &abs_path, "{:?}", e),
     };
 
-    let result = match state.lsp_manager.lock().await.get(&code.lang).await {
+    let lsp_manager = state.lsp_for_path(&abs_path).await;
+    let result = match lsp_manager.lock().await.get(&code.lang).await {
         Some(lsp) => lsp
             .references(&abs_path, row, column)
             .await

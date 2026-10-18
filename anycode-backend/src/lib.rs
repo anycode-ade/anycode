@@ -24,6 +24,7 @@ pub mod lsp;
 pub mod search;
 pub mod terminal;
 pub mod utils;
+pub mod workspace;
 
 use app_state::AppState;
 use handlers::auth_handler::auth_middleware;
@@ -37,6 +38,7 @@ pub struct ServerOptions {
     pub host: String,
     pub port: u16,
     pub token: Option<String>,
+    pub initial_workspace: Option<std::path::PathBuf>,
 }
 
 impl Default for ServerOptions {
@@ -45,6 +47,7 @@ impl Default for ServerOptions {
             host: "0.0.0.0".to_string(),
             port: 3000,
             token: None,
+            initial_workspace: None,
         }
     }
 }
@@ -56,7 +59,17 @@ pub async fn start_server(
 ) -> Result<()> {
     let (diagnostic_tx, diagnostic_rx) = mpsc::channel::<PublishDiagnosticsParams>(1);
     let (acp_fs_tx, acp_fs_rx) = mpsc::channel::<acp_fs::AcpFsCommand>(32);
-    let state = AppState::new(diagnostic_tx, acp_fs_tx, options.token.clone());
+    let startup_root = options
+        .initial_workspace
+        .clone()
+        .unwrap_or_else(crate::utils::current_dir);
+    let state = AppState::new_for_server(
+        diagnostic_tx,
+        acp_fs_tx,
+        options.token.clone(),
+        startup_root,
+        options.initial_workspace.is_some(),
+    );
 
     let (layer, io) = SocketIo::builder().with_state(state.clone()).build_layer();
     let cors = ServiceBuilder::new()
@@ -66,7 +79,7 @@ pub async fn start_server(
     let io = Arc::new(io);
 
     // Watcher must be kept alive — dropping it stops file watching
-    let _watcher = background_tasks::spawn_all(&state, &io, diagnostic_rx, acp_fs_rx)?;
+    background_tasks::spawn_all(&state, &io, diagnostic_rx, acp_fs_rx).await?;
 
     io.ns("/", handle_connect.with(auth_middleware));
 
