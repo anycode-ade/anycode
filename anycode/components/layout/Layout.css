@@ -485,7 +485,6 @@
     align-items: center;
     justify-content: center;
     text-align: center;
-    background: var(--background-color, #242424);
     user-select: none;
     -webkit-user-select: none;
     overflow-y: auto;

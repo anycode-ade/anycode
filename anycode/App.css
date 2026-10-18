@@ -40,9 +40,34 @@
 [data-dynamic-bg="global"] .multibuffer-section,
 .app-container.app-with-dynamic-bg .markdown-preview,
 .app-container[data-dynamic-bg="global"] .markdown-preview,
-[data-dynamic-bg="global"] .markdown-preview {
+[data-dynamic-bg="global"] .markdown-preview,
+.app-container.app-with-dynamic-bg .layout-panel-picker,
+.app-container[data-dynamic-bg="global"] .layout-panel-picker,
+[data-dynamic-bg="global"] .layout-panel-picker,
+.app-container.app-with-dynamic-bg .layout-dock-panel--picker,
+.app-container[data-dynamic-bg="global"] .layout-dock-panel--picker,
+[data-dynamic-bg="global"] .layout-dock-panel--picker {
     background: transparent !important;
     background-color: transparent !important;
+}
+
+.app-container.app-with-dynamic-bg .layout-panel-picker-item,
+.app-container[data-dynamic-bg="global"] .layout-panel-picker-item,
+[data-dynamic-bg="global"] .layout-panel-picker-item {
+    background: color-mix(in srgb, var(--background-color, #242424) 75%, transparent 25%);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid color-mix(in srgb, var(--theme-foreground, #ffffff) 10%, transparent);
+}
+
+.app-container.app-with-dynamic-bg .layout-panel-picker-item:hover,
+.app-container[data-dynamic-bg="global"] .layout-panel-picker-item:hover {
+    background: color-mix(
+        in srgb,
+        var(--theme-accent-background, #007acc) 18%,
+        color-mix(in srgb, var(--background-color, #242424) 75%, transparent 25%)
+    );
+    border-color: color-mix(in srgb, var(--theme-accent-background, #007acc) 50%, transparent);
 }
 
 .app-container.app-with-dynamic-bg .anyeditor .multibuffer-file-header-row,
