@@ -486,8 +486,8 @@ mod tests {
         let status_b = b.git.lock().await.status().unwrap();
         assert_eq!(status_a.files.len(), 1);
         assert_eq!(
-            Path::new(&status_a.files[0].path),
-            Path::new(&project_a.root).join("src/main.rs")
+            Path::new(&status_a.files[0].path).canonicalize().unwrap(),
+            Path::new(&project_a.root).join("src/main.rs").canonicalize().unwrap()
         );
         assert!(status_b.files.is_empty());
 
