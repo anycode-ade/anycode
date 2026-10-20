@@ -41,6 +41,10 @@ fn open_workspace(path: String) -> Result<String, String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+  // GUI apps on macOS/Linux don't inherit the shell's PATH, so LSP servers and
+  // other child processes can't find user-installed binaries. Load it first.
+  let _ = fix_path_env::fix();
+
   let active_workspace = workspace::determine_initial_workspace();
   let shutdown_token = CancellationToken::new();
   let shutdown_for_backend = shutdown_token.clone();
