@@ -69,6 +69,7 @@ jobs:
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
+          prefix-key: v1-rust
           workspaces: |
             anycode-backend -> target
       
@@ -212,6 +213,7 @@ jobs:
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
+          prefix-key: v1-rust
           workspaces: |
             anycode-backend -> target
       
@@ -255,6 +257,7 @@ jobs:
         shell: pwsh
         run: |
           Set-MpPreference -DisableRealtimeMonitoring $true -ErrorAction SilentlyContinue
+          Add-MpPreference -ExclusionPath $env:GITHUB_WORKSPACE, $env:CARGO_HOME -ErrorAction SilentlyContinue
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -305,6 +308,7 @@ jobs:
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
+          prefix-key: v1-rust
           workspaces: |
             anycode-backend -> target
 
@@ -360,6 +364,7 @@ jobs:
         shell: pwsh
         run: |
           Set-MpPreference -DisableRealtimeMonitoring $true -ErrorAction SilentlyContinue
+          Add-MpPreference -ExclusionPath $env:GITHUB_WORKSPACE, $env:CARGO_HOME -ErrorAction SilentlyContinue
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -407,9 +412,10 @@ jobs:
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
+          prefix-key: v1-rust
           workspaces: |
             anycode-backend -> target
-            anycode/src-tauri -> anycode/src-tauri/target
+            anycode/src-tauri -> target
 
       - name: Build Desktop (non-Windows)
         if: runner.os != 'Windows'
