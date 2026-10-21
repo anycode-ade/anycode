@@ -672,13 +672,14 @@ export const useAgents = ({
                     }
 
                     if (projectedItem.role === 'user') {
-                        const lastMessage = messages[messages.length - 1];
+                        const lastUser = messages.findLast((m): m is AcpUserMessage => m.role === 'user');
                         // send_prompt adds the complete user message before ACP
                         // echoes user_message_chunk for the live prompt.
-                        if (lastMessage?.role === 'user') {
-                            if (lastMessage.client_id && lastMessage.content === projectedItem.content) {
-                                messages[messages.length - 1] = {
-                                    ...lastMessage,
+                        if (lastUser && lastUser.content === projectedItem.content) {
+                            if (lastUser.client_id) {
+                                const idx = messages.lastIndexOf(lastUser);
+                                messages[idx] = {
+                                    ...lastUser,
                                     client_id: undefined,
                                 };
                             }
@@ -737,14 +738,35 @@ export const useAgents = ({
             }
 
             if (message.role === 'user') {
-                const lastMessage = existing.messages[existing.messages.length - 1];
-                if (lastMessage?.role === 'user' && lastMessage.client_id && lastMessage.content === message.content) {
-                    const updatedMessages = [...existing.messages];
-                    updatedMessages[updatedMessages.length - 1] = message;
-                    return {
-                        ...existing,
-                        messages: updatedMessages,
-                    };
+                // Check if there is an optimistic user message to reconcile
+                const optimisticIndex = existing.messages.findLastIndex(
+                    (m) => m.role === 'user' && Boolean((m as AcpUserMessage).client_id)
+                );
+                if (optimisticIndex !== -1) {
+                    const optimisticMessage = existing.messages[optimisticIndex] as AcpUserMessage;
+                    if (
+                        optimisticMessage.content === message.content
+                        || (message.client_id && optimisticMessage.client_id === message.client_id)
+                    ) {
+                        const updatedMessages = [...existing.messages];
+                        updatedMessages[optimisticIndex] = message;
+                        return {
+                            ...existing,
+                            messages: updatedMessages,
+                        };
+                    }
+                }
+
+                // If the most recent user message already has identical content, ignore duplicate echo
+                const lastUserMessage = existing.messages.findLast((m): m is AcpUserMessage => m.role === 'user');
+                if (lastUserMessage && lastUserMessage.content === message.content) {
+                    if (message.checkpoint_id && !lastUserMessage.checkpoint_id) {
+                        const idx = existing.messages.lastIndexOf(lastUserMessage);
+                        const updatedMessages = [...existing.messages];
+                        updatedMessages[idx] = { ...lastUserMessage, checkpoint_id: message.checkpoint_id };
+                        return { ...existing, messages: updatedMessages };
+                    }
+                    return existing;
                 }
             }
 

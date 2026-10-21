@@ -45,6 +45,7 @@ pub struct SocketData {
     pub files_search_cancel: Option<CancellationToken>,
     pub git_history_search: Option<ActiveGitHistorySearch>,
     pub active_project_id: Option<String>,
+    pub acp_subscribers: HashMap<String, CancellationToken>,
 }
 
 impl SocketData {

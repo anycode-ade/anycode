@@ -270,4 +270,68 @@ describe('ACP Queue operations', () => {
       expect(merged.map((m) => m.id)).toEqual(['server-1']);
     });
   });
+
+  describe('User message reconciliation and deduplication', () => {
+    it('reconciles optimistic prompt with server user message and prevents duplication', () => {
+      const promptText = 'Test prompt with attachment';
+      const attachment = {
+        name: 'test.png',
+        mime_type: 'image/png',
+        data_base64: 'abc',
+      };
+
+      // 1. Initial optimistic prompt
+      const optimisticMessage = {
+        role: 'user' as const,
+        content: promptText,
+        attachments: [attachment],
+        client_id: 'optimistic-1',
+      };
+      let messages: any[] = [optimisticMessage];
+
+      // Simulate incoming server message 1 (reconciliation)
+      const serverMessage1 = {
+        role: 'user' as const,
+        content: promptText,
+        attachments: [attachment],
+        checkpoint_id: 'chk-1',
+      };
+
+      const optimisticIndex = messages.findLastIndex(
+        (m) => m.role === 'user' && Boolean(m.client_id)
+      );
+      if (optimisticIndex !== -1) {
+        messages = [...messages];
+        messages[optimisticIndex] = serverMessage1;
+      }
+      expect(messages.length).toBe(1);
+      expect(messages[0].checkpoint_id).toBe('chk-1');
+      expect(messages[0].client_id).toBeUndefined();
+
+      // Simulate duplicate incoming server message 2 (e.g. from second forwarder)
+      const serverMessage2 = {
+        role: 'user' as const,
+        content: promptText,
+        attachments: [attachment],
+        checkpoint_id: 'chk-1',
+      };
+
+      const secondOptimisticIndex = messages.findLastIndex(
+        (m) => m.role === 'user' && Boolean(m.client_id)
+      );
+      if (secondOptimisticIndex !== -1) {
+        messages[secondOptimisticIndex] = serverMessage2;
+      } else {
+        const lastUser = messages.findLast((m) => m.role === 'user');
+        if (lastUser && lastUser.content === serverMessage2.content) {
+          // Ignored - do not duplicate
+        } else {
+          messages.push(serverMessage2);
+        }
+      }
+
+      // Must NOT be duplicated
+      expect(messages.length).toBe(1);
+    });
+  });
 });

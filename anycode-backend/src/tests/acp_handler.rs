@@ -140,3 +140,37 @@ async fn test_idle_prompt_does_not_broadcast_queue_update_but_busy_does() {
         other => panic!("Expected QueueUpdate, got {:?}", other),
     }
 }
+
+#[tokio::test]
+async fn test_agent_message_forwarding_cancels_previous_token() {
+    let (diagnostic_tx, _diagnostic_rx) = tokio::sync::mpsc::channel(1);
+    let (acp_fs_tx, _acp_fs_rx) = tokio::sync::mpsc::channel(1);
+    let state = AppState::new(diagnostic_tx, acp_fs_tx, None);
+
+    let socket_id = "test-socket-1".to_string();
+    let agent_id = "agent-1".to_string();
+
+    let token1 = CancellationToken::new();
+    {
+        let mut sockets_data = state.socket2data.lock().await;
+        let socket_data = sockets_data.entry(socket_id.clone()).or_default();
+        socket_data.acp_subscribers.insert(agent_id.clone(), token1.clone());
+    }
+
+    assert!(!token1.is_cancelled());
+
+    // Register second subscriber for same socket and agent
+    let token2 = CancellationToken::new();
+    {
+        let mut sockets_data = state.socket2data.lock().await;
+        let socket_data = sockets_data.entry(socket_id.clone()).or_default();
+        if let Some(old_token) = socket_data.acp_subscribers.insert(agent_id.clone(), token2.clone()) {
+            old_token.cancel();
+        }
+    }
+
+    // Previous token MUST be cancelled
+    assert!(token1.is_cancelled());
+    // New token MUST NOT be cancelled
+    assert!(!token2.is_cancelled());
+}

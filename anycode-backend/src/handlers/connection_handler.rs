@@ -119,6 +119,9 @@ pub async fn handle_disconnect(socket: SocketRef, state: State<AppState>) {
                 if let Some(cancel) = socket_data.files_search_cancel.take() {
                     cancel.cancel();
                 }
+                for (_, token) in socket_data.acp_subscribers.drain() {
+                    token.cancel();
+                }
                 socket_data.cancel_git_history_search();
                 socket_data.opened_files
             }
