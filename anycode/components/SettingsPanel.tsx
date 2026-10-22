@@ -18,7 +18,6 @@ import {
 import './SettingsPanel.css';
 import { WARP_DURATION_MS, WARP_DURATION_RANGE } from '../constants';
 import { announceWarp } from '../utils';
-import { AgentTemplatesManager } from './agent/AgentTemplatesManager';
 
 export interface ThemeItem {
     id: string;
@@ -1107,11 +1106,6 @@ const SettingsPanelComponent: React.FC<SettingsPanelProps> = ({
                     )}
                 </div>
             )}
-
-            <div className="settings-section">
-                <h3 className="settings-section-title">Agent Prompt Templates</h3>
-                <AgentTemplatesManager embedded />
-            </div>
         </div>
     );
 };

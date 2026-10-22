@@ -415,3 +415,37 @@
         border-radius: 10px;
     }
 }
+
+/* Dynamic background support */
+.app-container.app-with-dynamic-bg .terminal-pane-empty,
+.app-container[data-dynamic-bg="global"] .terminal-pane-empty,
+[data-dynamic-bg="global"] .terminal-pane-empty {
+    background: transparent !important;
+    background-color: transparent !important;
+}
+
+.app-container.app-with-dynamic-bg .terminal-pane-action,
+.app-container[data-dynamic-bg="global"] .terminal-pane-action,
+[data-dynamic-bg="global"] .terminal-pane-action,
+.app-container.app-with-dynamic-bg .terminal-pane-opened-action,
+.app-container[data-dynamic-bg="global"] .terminal-pane-opened-action,
+[data-dynamic-bg="global"] .terminal-pane-opened-action {
+    background: color-mix(in srgb, var(--background-color, #242424) 75%, transparent 25%) !important;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid color-mix(in srgb, var(--theme-foreground, #ffffff) 10%, transparent) !important;
+}
+
+.app-container.app-with-dynamic-bg .terminal-pane-action:hover,
+.app-container[data-dynamic-bg="global"] .terminal-pane-action:hover,
+[data-dynamic-bg="global"] .terminal-pane-action:hover,
+.app-container.app-with-dynamic-bg .terminal-pane-opened-action:hover,
+.app-container[data-dynamic-bg="global"] .terminal-pane-opened-action:hover,
+[data-dynamic-bg="global"] .terminal-pane-opened-action:hover {
+    background: color-mix(
+        in srgb,
+        var(--theme-accent-background, #007acc) 18%,
+        color-mix(in srgb, var(--background-color, #242424) 75%, transparent 25%)
+    ) !important;
+    border-color: color-mix(in srgb, var(--theme-accent-background, #007acc) 50%, transparent) !important;
+}

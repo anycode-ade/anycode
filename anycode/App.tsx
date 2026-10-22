@@ -68,6 +68,7 @@ const pathBelongsToProject = (path: string, root: string) => {
 };
 
 type ReviewSession = {
+    projectId: string;
     files: MultibufferFile[];
     title: string;
     ignoreEdits: boolean;
@@ -221,9 +222,10 @@ const App: React.FC<AppProps> = ({ initialWorkspace }) => {
     });
 
     const handleWatcherCreate = useEvent((data: { path: string; isFile: boolean; project_id?: string }) => {
-        if (!workspaceState.projects.some((project) => (
-            data.project_id ? project.id === data.project_id : pathBelongsToProject(data.path, project.root)
-        ))) return;
+        const project = workspaceState.projects.find((item) => (
+            data.project_id ? item.id === data.project_id : pathBelongsToProject(data.path, item.root)
+        ));
+        if (!project) return;
         fileTree.handleWatcherCreate(data);
         if (!data.isFile) return;
 
@@ -231,7 +233,11 @@ const App: React.FC<AppProps> = ({ initialWorkspace }) => {
             let changed = false;
             const next = { ...previous };
             for (const [paneId, review] of Object.entries(previous)) {
-                if (review.ignoreEdits || review.files.some((file) => file.id === data.path)) continue;
+                if (
+                    review.ignoreEdits
+                    || review.projectId !== project.id
+                    || review.files.some((file) => file.id === data.path)
+                ) continue;
                 next[paneId] = {
                     ...review,
                     files: [...review.files, {
@@ -731,7 +737,7 @@ const App: React.FC<AppProps> = ({ initialWorkspace }) => {
     }, [git.fetchGitStatus, git.fetchBranches]);
 
     const handleOpenMultibuffer = useEvent(() => {
-        if (workspaceChangedFiles.length === 0) return;
+        if (!selectedChangesProjectId || selectedChangesProjectFiles.length === 0) return;
 
         const paneId = layoutActionsRef.current?.ensureEditorPanel(editors.activeEditorPaneId);
         if (!paneId) return;
@@ -739,10 +745,11 @@ const App: React.FC<AppProps> = ({ initialWorkspace }) => {
         closeReview(paneId);
         editors.setActiveEditorPaneId(paneId);
         editors.setEditorDiffMode(paneId, 'diff');
-        const files = toMultibufferFiles(workspaceChangedFiles);
+        const files = toMultibufferFiles(selectedChangesProjectFiles);
         setMultibufferReviews((previous) => ({
             ...previous,
             [paneId]: {
+                projectId: selectedChangesProjectId,
                 files,
                 title: 'Review changes',
                 ignoreEdits: false,
@@ -769,13 +776,15 @@ const App: React.FC<AppProps> = ({ initialWorkspace }) => {
     }, [editors.openFiles, multibufferReviews]);
 
     useEffect(() => {
-        const nextFiles = toMultibufferFiles(workspaceChangedFiles);
         setMultibufferReviews((previous) => {
             let changed = false;
             const next = { ...previous };
 
             for (const [paneId, review] of Object.entries(previous)) {
                 if (review.ignoreEdits) continue;
+                const nextFiles = toMultibufferFiles(
+                    workspaceChangedFiles.filter((file) => file.project_id === review.projectId),
+                );
                 const sameFiles = review.files.length === nextFiles.length
                     && review.files.every((file, index) => {
                         const nextFile = nextFiles[index];
@@ -945,6 +954,7 @@ const App: React.FC<AppProps> = ({ initialWorkspace }) => {
         setMultibufferReviews((previous) => ({
             ...previous,
             [paneId]: {
+                projectId: targetProjectId,
                 files: reviewFiles,
                 title: `Review ${hash.slice(0, 7)}`,
                 ignoreEdits: true,

@@ -33,7 +33,7 @@ import {
 import { loadReadMessageCounts, saveReadMessageCounts } from '../storage';
 import { toolOutputCache } from '../features/agents/toolOutputCache';
 
-const MESSAGE_FLUSH_MS = 100;
+const MESSAGE_FLUSH_MS = 25;
 
 type UseAgentsParams = {
     wsRef: React.RefObject<Socket | null>;

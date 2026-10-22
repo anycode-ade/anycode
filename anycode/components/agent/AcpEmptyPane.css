@@ -20,20 +20,20 @@
 }
 
 .acp-pane-empty-actions {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(420px, 100%), 420px));
+    justify-content: center;
     gap: 8px;
-    width: min(420px, 100%);
+    width: 100%;
     margin: 6px auto 14px;
 }
 
 .acp-pane-opened-agents-list {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(420px, 100%), 420px));
+    justify-content: center;
     gap: 8px;
-    width: min(420px, 100%);
+    width: 100%;
     margin: 6px auto 14px;
 }
 
@@ -48,7 +48,7 @@
     border-radius: 10px;
     background: color-mix(
         in srgb,
-        var(--theme-tab-background, var(--theme-background, var(--background-color, #0a0a0a))) 94%,
+        var(--theme-tab-background, var(--theme-background, var(--background-color, #242424))) 94%,
         var(--theme-foreground, #ffffff) 6%
     );
     border: 1px solid color-mix(in srgb, var(--theme-border, #4a4a4a) 45%, transparent);
@@ -65,7 +65,7 @@
     background: color-mix(
         in srgb,
         var(--theme-accent-background, #007acc) 12%,
-        var(--background-color, #0a0a0a)
+        var(--background-color, #242424)
     );
     border-color: color-mix(in srgb, var(--theme-accent-background, #007acc) 50%, var(--theme-border, #4a4a4a));
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.22);
@@ -77,11 +77,10 @@
 }
 
 .acp-start-card-icon-box {
-    width: 32px;
-    height: 32px;
-    border-radius: 8px;
+    width: 40px;
+    height: 40px;
+    border-radius: 9px;
     background: color-mix(in srgb, var(--theme-accent-background, #3186ff) 18%, #161c28);
-    border: 1px solid color-mix(in srgb, var(--theme-accent-background, #3186ff) 32%, transparent);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -192,7 +191,7 @@
 }
 
 .acp-start-card-profile-select option {
-    background: var(--background-color, #0a0a0a);
+    background: var(--background-color, #242424);
     color: var(--theme-foreground, #f0f0f0);
     font-size: 13px;
     padding: 4px 8px;
@@ -246,7 +245,7 @@
 }
 
 .acp-start-card-project-select option {
-    background: var(--background-color, #0a0a0a);
+    background: var(--background-color, #242424);
     color: var(--theme-foreground, #f0f0f0);
     font-size: 13px;
     padding: 4px 8px;
@@ -325,6 +324,11 @@
     padding: 6px 0 0;
 }
 
+.acp-pane-opened-agents,
+.acp-pane-start-agents-wide {
+    width: 100%;
+}
+
 .acp-pane-opened-agents-title,
 .acp-pane-start-agents-title {
     color: var(--theme-foreground, #f0f0f0);
@@ -347,7 +351,7 @@
     background: color-mix(
         in srgb,
         var(--theme-accent-background, #007acc) 8%,
-        var(--theme-tab-background, var(--theme-background, var(--background-color, #0a0a0a)))
+        var(--theme-tab-background, var(--theme-background, var(--background-color, #242424)))
     );
     color: var(--theme-foreground, #f0f0f0);
     cursor: pointer;
@@ -369,7 +373,7 @@
     background: color-mix(
         in srgb,
         var(--theme-accent-background, #007acc) 14%,
-        var(--background-color, #0a0a0a)
+        var(--background-color, #242424)
     );
     color: var(--theme-foreground, #ffffff);
     border-color: color-mix(
@@ -405,6 +409,42 @@
     transition: opacity 0.18s ease, transform 0.2s ease, max-height 0.22s cubic-bezier(0.4, 0, 0.2, 1), padding 0.22s cubic-bezier(0.4, 0, 0.2, 1), margin 0.22s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.18s ease;
 }
 
+.acp-pane-opened-body {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    min-width: 0;
+}
+
+/* Custom agent avatar fills the same rounded box as the built-in icon. */
+.acp-pane-opened-icon-box {
+    width: 40px;
+    height: 40px;
+    border-radius: 9px;
+    overflow: hidden;
+    background: none;
+}
+
+.acp-pane-opened-icon-box .acp-avatar {
+    width: 100%;
+    height: 100%;
+    border: none;
+    background: none;
+    border-radius: 9px;
+}
+
+.acp-pane-opened-icon-box .acp-avatar-image {
+    border-radius: 9px;
+}
+
+.acp-pane-opened-content {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-width: 0;
+}
+
 .acp-pane-opened-header {
     box-sizing: border-box;
     display: flex;
@@ -413,7 +453,8 @@
     gap: 8px;
     width: 100%;
     min-height: 20px;
-    padding: 0;
+    /* Keep the title clear of the hover-only close button in the top-right corner. */
+    padding: 0 24px 0 0;
 }
 
 .acp-pane-opened-identity {
@@ -734,7 +775,7 @@
     border: 1px solid color-mix(in srgb, var(--theme-border, #4a4a4a) 70%, transparent);
     background: color-mix(
         in srgb,
-        var(--background-color, #0a0a0a) 95%,
+        var(--background-color, #242424) 95%,
         var(--theme-foreground, #ffffff) 5%
     );
     color: var(--theme-tab-foreground, #a0a0a0);
@@ -755,7 +796,7 @@
     background: color-mix(
         in srgb,
         var(--theme-accent-background, #007acc) 12%,
-        var(--background-color, #0a0a0a)
+        var(--background-color, #242424)
     );
     color: var(--theme-foreground, #ffffff);
     border-color: color-mix(
@@ -788,7 +829,7 @@
     background: color-mix(
         in srgb,
         var(--theme-accent-background, #007acc) 18%,
-        var(--background-color, #0a0a0a)
+        var(--background-color, #242424)
     );
     color: var(--theme-foreground, #ffffff);
 }

@@ -18,6 +18,9 @@
     -webkit-backdrop-filter: blur(10px) saturate(130%);
     box-sizing: border-box;
     cursor: pointer;
+    font-family: var(--interface-font-family);
+    font-size: var(--interface-font-size, 14px);
+    font-weight: var(--interface-font-weight, 700);
 }
 
 .tab-context-menu button {

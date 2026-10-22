@@ -757,8 +757,8 @@ export class DemoSocket {
             }
 
             case 'theme:get': {
-                const reqFileName = payload?.fileName || 'default-theme.json';
-                const reqThemeName = payload?.themeName || 'Vesper Dark';
+                const reqFileName = payload?.fileName || 'anycode.json';
+                const reqThemeName = payload?.themeName || 'anycode';
 
                 const themeFile = THEME_FILES_MAP[reqFileName] || Object.values(THEME_FILES_MAP)[0];
                 const themeDef = themeFile?.themes?.find((t: any) => t.name === reqThemeName)

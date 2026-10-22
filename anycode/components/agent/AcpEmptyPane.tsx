@@ -93,7 +93,7 @@ export const AcpEmptyPane: React.FC<AcpEmptyPaneProps> = ({
         </div>
       )}
       {availableAgents.length > 0 ? (
-        <div className="acp-pane-start-agents">
+        <div className="acp-pane-start-agents acp-pane-start-agents-wide">
           <div className="acp-pane-start-agents-title">Start a new agent</div>
           <div className="acp-pane-empty-actions">
             {(() => {

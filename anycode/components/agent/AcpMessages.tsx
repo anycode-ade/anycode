@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AcpMessage as AcpMessageType,
   AcpToolCall,
@@ -10,6 +10,7 @@ import {
 import { AcpMessage } from './AcpMessage';
 import { AcpWorkGroup } from './AcpWorkGroup';
 import { AcpEmptyTemplates } from './AcpEmptyTemplates';
+import { AcpAvatar } from './AcpAvatar';
 import './AcpMessages.css';
 
 interface AcpMessagesProps {
@@ -30,10 +31,26 @@ interface AcpMessagesProps {
   onSelectTemplate?: (template: AgentPromptTemplate, sendImmediately?: boolean) => void;
   onOpenSettings?: () => void;
   agentTitle?: string;
+  agentId?: string;
   agentAuthors?: string[];
+  agentWorking?: boolean;
   onGetToolOutput?: (toolId: string, sessionId?: string) => Promise<string | null>;
 }
 
+
+interface AcpTurnProps extends React.HTMLAttributes<HTMLDivElement> {
+  // Read once on mount: only turns created after the list has rendered fade in.
+  animateEnter: boolean;
+}
+
+const AcpTurn: React.FC<AcpTurnProps> = ({ animateEnter, className, children, ...rest }) => {
+  const [isEntering] = useState(animateEnter);
+  return (
+    <div className={`${className ?? ''}${isEntering ? ' acp-turn-enter' : ''}`} {...rest}>
+      {children}
+    </div>
+  );
+};
 
 const AcpMessagesComponent: React.FC<AcpMessagesProps> = ({
   messages,
@@ -53,25 +70,24 @@ const AcpMessagesComponent: React.FC<AcpMessagesProps> = ({
   onSelectTemplate,
   onOpenSettings,
   agentTitle,
+  agentId,
   agentAuthors,
+  agentWorking,
   onGetToolOutput,
 }) => {
-  if (messages.length === 0) {
-    return (
-      <div className="acp-empty-state">
-        {onSelectTemplate ? (
-          <AcpEmptyTemplates
-            onSelectTemplate={onSelectTemplate}
-            onOpenSettings={onOpenSettings}
-            agentTitle={agentTitle}
-            agentAuthors={agentAuthors}
-          />
-        ) : (
-          <p>No messages yet. Start a conversation with the agent.</p>
-        )}
-      </div>
-    );
-  }
+  const hasRenderedRef = useRef(false);
+  useEffect(() => {
+    hasRenderedRef.current = true;
+  }, []);
+
+  // Indexes committed so far. A message that remounts (e.g. text moving into a work group
+  // when a tool call arrives) must not replay its entrance animation.
+  const committedMessageIndexesRef = useRef(new Set<number>());
+  useEffect(() => {
+    for (let i = 0; i < messages.length; i++) {
+      committedMessageIndexesRef.current.add(i);
+    }
+  }, [messages]);
 
   const {
     toolCallIndexesById,
@@ -164,10 +180,14 @@ const AcpMessagesComponent: React.FC<AcpMessagesProps> = ({
       // was just sent, the previous work group must remain historical and
       // collapse immediately while the new response is pending.
       items.push({ type: 'group', messages: currentGroup, isLatest: true });
+    } else if (agentWorking && items[items.length - 1]?.type !== 'group') {
+      // Empty turn for the response that is about to stream. Reserving it here keeps
+      // the working avatar on one element, so its pulse doesn't restart when text arrives.
+      items.push({ type: 'group', messages: [], isLatest: true });
     }
 
     return items;
-  }, [messages, toolResultIndexesToSkip, toolUpdateIndexesToSkip]);
+  }, [messages, toolResultIndexesToSkip, toolUpdateIndexesToSkip, agentWorking]);
 
   const renderMessage = (message: AcpMessageType, index: number) => {
     let isExpanded = false;
@@ -197,6 +217,8 @@ const AcpMessagesComponent: React.FC<AcpMessagesProps> = ({
       onToggle = () => onToggleThought(index);
     }
 
+    const animateEnter = hasRenderedRef.current && !committedMessageIndexesRef.current.has(index);
+
     return (
       <div
         key={index}
@@ -213,6 +235,7 @@ const AcpMessagesComponent: React.FC<AcpMessagesProps> = ({
           onOpenFileDiff={onOpenFileDiff}
           onUserMessageToggle={onUserMessageToggle}
           onGetToolOutput={onGetToolOutput}
+          animateEnter={animateEnter}
           onUndo={
             message.role === 'user' && onUndoMessage
               ? () => onUndoMessage(message)
@@ -223,23 +246,80 @@ const AcpMessagesComponent: React.FC<AcpMessagesProps> = ({
     );
   };
 
+  // Early return must come after all hooks: messages can go from empty to non-empty on the same instance.
+  if (messages.length === 0) {
+    return (
+      <div className="acp-empty-state">
+        {onSelectTemplate ? (
+          <AcpEmptyTemplates
+            onSelectTemplate={onSelectTemplate}
+            onOpenSettings={onOpenSettings}
+            agentTitle={agentTitle}
+            agentAuthors={agentAuthors}
+          />
+        ) : (
+          <p>No messages yet. Start a conversation with the agent.</p>
+        )}
+      </div>
+    );
+  }
+
   return (
     <>
       {groupedItems.map((item, idx) => {
+        const isLatestAgentTurn = agentWorking && idx === groupedItems.length - 1;
         if (item.type === 'message') {
-          return renderMessage(item.message, item.index);
+          const isUser = item.message.role === 'user';
+          return (
+            <AcpTurn
+              key={`turn-${item.index}`}
+              animateEnter={hasRenderedRef.current}
+              className={`acp-turn ${isUser ? 'acp-turn-user' : 'acp-turn-agent'}${!isUser && isLatestAgentTurn ? ' acp-turn-agent-working' : ''}`}
+            >
+              <div className="acp-turn-avatar">
+                <AcpAvatar
+                  type={isUser ? 'user' : 'agent'}
+                  agentTitle={agentTitle}
+                  agentId={agentId}
+                />
+              </div>
+              <div className="acp-turn-content">
+                {renderMessage(item.message, item.index)}
+              </div>
+            </AcpTurn>
+          );
         } else if (item.type === 'group') {
           return (
-            <AcpWorkGroup
-              key={`group-${idx}`}
-              isLatest={item.isLatest}
-              messageCount={item.messages.length}
-              searchActive={activeSearchMessageIndex !== undefined}
-              isSearchMatch={item.messages.some(({ index }) => index === activeSearchMessageIndex)}
-              onExpansionChange={onWorkGroupExpansionChange}
+            <AcpTurn
+              key={`turn-group-${idx}`}
+              animateEnter={hasRenderedRef.current}
+              className={`acp-turn acp-turn-agent${isLatestAgentTurn ? ' acp-turn-agent-working' : ''}`}
+              role={isLatestAgentTurn && item.messages.length === 0 ? 'status' : undefined}
+              aria-label={isLatestAgentTurn && item.messages.length === 0 ? 'Agent is working' : undefined}
             >
-              {item.messages.map((m) => renderMessage(m.message, m.index))}
-            </AcpWorkGroup>
+              <div className="acp-turn-avatar">
+                <AcpAvatar
+                  type="agent"
+                  agentTitle={agentTitle}
+                  agentId={agentId}
+                />
+              </div>
+              <div className="acp-turn-content">
+                {item.messages.length <= 1 ? (
+                  item.messages.map((m) => renderMessage(m.message, m.index))
+                ) : (
+                  <AcpWorkGroup
+                    isLatest={item.isLatest}
+                    messageCount={item.messages.length}
+                    searchActive={activeSearchMessageIndex !== undefined}
+                    isSearchMatch={item.messages.some(({ index }) => index === activeSearchMessageIndex)}
+                    onExpansionChange={onWorkGroupExpansionChange}
+                  >
+                    {item.messages.map((m) => renderMessage(m.message, m.index))}
+                  </AcpWorkGroup>
+                )}
+              </div>
+            </AcpTurn>
           );
         }
         return null;

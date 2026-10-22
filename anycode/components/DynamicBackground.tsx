@@ -163,14 +163,14 @@ void main() {
         float sdy = originY - sw.y;
         float sdist = sqrt(sdx * sdx + sdy * sdy);
         float sdiff = abs(sdist - sw.z);
-        if (sdiff < 35.0) {
-            float factor = (1.0 - sdiff / 35.0) * max(0.0, 1.0 - sw.z / sw.w);
+        if (sdiff < 24.0) {
+            float factor = (1.0 - sdiff / 24.0) * max(0.0, 1.0 - sw.z / sw.w);
             float angle = atan(sdy, sdx);
-            shockwaveX += cos(angle) * factor * 22.0;
-            shockwaveY += sin(angle) * factor * 22.0;
+            shockwaveX += cos(angle) * factor * 6.0;
+            shockwaveY += sin(angle) * factor * 6.0;
             float swScale = (u_spotlight > 0.5) ? pulseScale : 1.0;
-            pulseRadiusMod += factor * 1.8 * swScale;
-            pulseOpacityMod += factor * 0.4 * swScale;
+            pulseRadiusMod += factor * 0.5 * swScale;
+            pulseOpacityMod += factor * 0.15 * swScale;
         }
     }
 
@@ -1039,21 +1039,7 @@ export const DynamicBackground: React.FC<DynamicBackgroundProps> = ({
                 const rect = container.getBoundingClientRect();
                 const x = e.clientX - rect.left;
                 const y = e.clientY - rect.top;
-                shockwaves.push({ x, y, radius: 0, maxRadius: 360, age: 0 });
-
-                for (let i = 0; i < 6; i++) {
-                    const ang = (Math.PI * 2 * i) / 6 + Math.random() * 0.3;
-                    const spd = Math.random() * 2.5 + 1.2;
-                    sparks.push({
-                        x,
-                        y,
-                        vx: Math.cos(ang) * spd,
-                        vy: Math.sin(ang) * spd,
-                        size: Math.random() * 1.8 + 1,
-                        alpha: 0.8,
-                        life: 1,
-                    });
-                }
+                shockwaves.push({ x, y, radius: 0, maxRadius: 200, age: 0 });
                 startLoop();
             };
 
@@ -1433,14 +1419,14 @@ export const DynamicBackground: React.FC<DynamicBackgroundProps> = ({
                     if (Math.abs(sdx) > sw.radius + 35 || Math.abs(sdy) > sw.radius + 35) continue;
                     const sdist = Math.sqrt(sdx * sdx + sdy * sdy);
                     const diff = Math.abs(sdist - sw.radius);
-                    if (diff < 35) {
-                        const factor = (1 - diff / 35) * Math.max(0, 1 - sw.radius / sw.maxRadius);
+                    if (diff < 24) {
+                        const factor = (1 - diff / 24) * Math.max(0, 1 - sw.radius / sw.maxRadius);
                         const angle = Math.atan2(sdy, sdx);
-                        shockwaveX += Math.cos(angle) * factor * 22;
-                        shockwaveY += Math.sin(angle) * factor * 22;
+                        shockwaveX += Math.cos(angle) * factor * 6;
+                        shockwaveY += Math.sin(angle) * factor * 6;
                         const swScale = s.spotlight ? pulseScale : 1.0;
-                        pulseRadiusMod += factor * 1.8 * swScale;
-                        pulseOpacityMod += factor * 0.4 * swScale;
+                        pulseRadiusMod += factor * 0.5 * swScale;
+                        pulseOpacityMod += factor * 0.15 * swScale;
                     }
                 }
 
@@ -1635,7 +1621,7 @@ export const DynamicBackground: React.FC<DynamicBackgroundProps> = ({
 
         const handleClick2D = (e: MouseEvent) => {
             const rect = container.getBoundingClientRect();
-            shockwaves.push({ x: e.clientX - rect.left, y: e.clientY - rect.top, radius: 0, maxRadius: 360, age: 0 });
+            shockwaves.push({ x: e.clientX - rect.left, y: e.clientY - rect.top, radius: 0, maxRadius: 200, age: 0 });
             startLoop2D();
         };
 

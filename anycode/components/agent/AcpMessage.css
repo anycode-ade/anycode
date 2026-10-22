@@ -7,8 +7,9 @@
 }
 
 .acp-message-user {
-    align-items: flex-end;
-    margin-bottom: 4px;
+    align-items: flex-start;
+    margin-bottom: 0px;
+    width: 100%;
 }
 
 .acp-message-assistant {
@@ -28,8 +29,8 @@
 }
 
 .acp-message-content {
-    padding: 6px 10px;
-    border-radius: 8px;
+    padding: 0;
+    border-radius: 0;
     word-wrap: break-word;
     overflow-wrap: break-word;
     word-break: break-word;
@@ -40,29 +41,64 @@
     width: 100%;
 }
 
+.acp-message-assistant .acp-message-content {
+    padding: 0;
+}
+
+.acp-message-thought .acp-message-content {
+    padding: 0;
+}
+
 .acp-message-markdown {
     white-space: normal;
-    line-height: 1.5;
+    line-height: 24px;
     color: inherit;
     overflow-wrap: break-word;
     word-break: normal;
 }
 
 .acp-message-assistant .acp-message-markdown {
-    padding-top: 6px;
-    padding-bottom: 6px;
+    padding: 0;
 }
 
 
-.acp-message-markdown > :first-child {
+.acp-message-markdown :first-child {
     margin-top: 0;
 }
 
-.acp-message-markdown > :last-child {
+.acp-message-markdown :last-child {
     margin-bottom: 0;
 }
 
-.acp-message-markdown p,
+.acp-message-markdown p {
+    margin: 0 0 0.75em 0;
+    line-height: 24px;
+}
+
+.acp-message-markdown p:first-child {
+    margin-top: 0;
+}
+
+.acp-message-markdown p:last-child {
+    margin-bottom: 0;
+}
+
+.acp-word-enter {
+    animation: acp-word-enter 0.18s ease-out;
+}
+
+@keyframes acp-word-enter {
+    from {
+        opacity: 0;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .acp-word-enter {
+        animation: none;
+    }
+}
+
 .acp-message-markdown ul,
 .acp-message-markdown ol,
 .acp-message-markdown blockquote,
@@ -235,7 +271,7 @@
 .acp-code {
     position: relative;
     padding: 0;
-    margin: 4px 0 6px 0;
+    margin: 10px 0 10px 0;
     border-radius: 6px;
     background: var(--assistant-message-bg, #2a2a2a);
     overflow: hidden;
@@ -377,8 +413,8 @@
 
 .acp-message-actions {
     position: absolute;
-    top: 4px;
-    right: 6px;
+    top: 0px;
+    right: 0px;
     display: flex;
     justify-content: flex-end;
     opacity: 0;
@@ -393,28 +429,37 @@
 
 .acp-undo-button {
     border: none;
-    background: rgba(0, 0, 0, 0);
-    color: inherit;
-    padding: 2px 6px;
-    font-size: 0.71em;
+    background: color-mix(in srgb, var(--theme-foreground, #fff) 8%, transparent);
+    color: var(--text-color-secondary, #aaa);
+    padding: 2px 8px;
+    font-size: 0.72em;
+    font-weight: 500;
     border-radius: 999px;
     cursor: pointer;
-    opacity: 0.9;
-    transition: opacity 0.15s, border-color 0.15s, background-color 0.15s;
+    opacity: 0.8;
+    transition: opacity 0.15s, background-color 0.15s, color 0.15s;
 }
 
 .acp-undo-button:hover {
     opacity: 1;
-    border-color: var(--text-color, #ccc);
+    color: var(--theme-foreground, #fff);
+    background: color-mix(in srgb, var(--theme-foreground, #fff) 16%, transparent);
 }
 
 .acp-message-user .acp-undo-button {
-    background: rgba(255, 255, 255, 0);
+    background: color-mix(in srgb, var(--theme-foreground, #fff) 8%, transparent);
 }
 
 .acp-message-user .acp-message-content {
-    background-color: var(--user-message-bg, var(--theme-accent-background, #3c3c3c));
-    color: var(--user-message-fg, var(--theme-accent-foreground, var(--text-color, #ffffff)));
+    background-color: transparent;
+    border: none;
+    border-radius: 0;
+    padding: 0;
+    color: var(--user-message-fg, var(--theme-foreground, var(--text-color, #ffffff)));
+    width: 100%;
+    box-sizing: border-box;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
 }
 
 .acp-user-message-body {
@@ -509,16 +554,33 @@
     background-color: transparent;
     width: fit-content;
     max-width: min(400px, 100%);
+    padding: 0;
+    border-radius: 0;
+    border: none;
 }
 
 .acp-tool-call-content-expanded {
-    background-color: rgba(127, 127, 127, 0.08);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.22);
+    background-color: transparent;
+    width: 100%;
+    padding: 0;
+    border-radius: 0;
+    border: none;
+    box-shadow: none;
+}
+
+.acp-tool-call-content-expanded .acp-tool-call-name {
+    opacity: 0.9;
 }
 
 .acp-tool-call-expanded {
     display: flex;
     flex-direction: column;
+    margin-top: 6px;
+    padding: 8px 12px;
+    border-radius: 8px;
+    background-color: rgba(127, 127, 127, 0.08);
+    border: 1px solid color-mix(in srgb, var(--theme-foreground, #fff) 8%, transparent);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.22);
     animation: acp-tool-call-expand 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
     transform-origin: top;
 }
@@ -527,7 +589,7 @@
     align-self: center;
     border: none;
     padding: 4px 12px;
-    margin: 0;
+    margin: 6px 0 0 0;
     background: transparent;
     color: var(--text-color-secondary, #888);
     cursor: pointer;
@@ -542,6 +604,8 @@
 }
 
 .acp-message-tool_result .acp-message-content {
+    padding: 8px 12px;
+    border-radius: 8px;
     background-color: var(--assistant-message-bg, #2a2a2a);
     color: var(--text-color, #ccc);
     border: 1px solid var(--border-color, #333);
@@ -642,6 +706,8 @@
 }
 
 .acp-message-tool_update .acp-message-content {
+    padding: 8px 12px;
+    border-radius: 8px;
     background-color: var(--assistant-message-bg, #2a2a2a);
     color: var(--text-color, #ccc);
     border: 1px solid var(--border-color, #333);
@@ -707,7 +773,11 @@
 }
 
 .acp-tool-call-section {
-    margin-top: 12px;
+    margin-top: 10px;
+}
+
+.acp-tool-call-section:first-child {
+    margin-top: 0;
 }
 
 .acp-tool-call-label {
@@ -774,16 +844,18 @@
     display: flex;
     align-items: center;
     gap: 6px;
+    min-height: 24px;
 }
 
 .acp-thought-text {
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     gap: 6px;
+    min-height: 24px;
+    line-height: 24px;
     font-size: 0.79em;
     color: var(--text-color, #ccc);
     opacity: 0.5;
-    line-height: 1.4;
     white-space: pre-wrap;
     transition: opacity 120ms ease;
 }
@@ -827,6 +899,8 @@
 }
 
 .acp-message-error .acp-message-content {
+    padding: 8px 12px;
+    border-radius: 8px;
     background-color: var(--error-bg, #5a2d2d);
     border: 1px solid var(--error-border, #7a3a3a);
     color: var(--error-text, #df8f8f);

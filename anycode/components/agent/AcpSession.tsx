@@ -24,6 +24,8 @@ import { selectionQuoteStore } from '../../features/agents/selectionQuoteStore';
 
 const ACP_INPUT_DRAFTS_STORAGE_KEY = 'acpInputDrafts';
 const EMPTY_ARRAY: any[] = [];
+// Share of the remaining gap to the bottom closed per frame while following streaming output.
+const FOLLOW_EASE = 0.2;
 
 const findTextMatches = (messages: AcpMessage[], query: string) => {
   const normalizedQuery = query.toLowerCase();
@@ -53,6 +55,7 @@ const useAutoScroll = (messages: AcpMessage[], isProcessing: boolean, agentId: s
   const pendingAutoScrollRafRef = useRef<number | null>(null);
   const autoScrollScrollbarTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const forceScrollAfterUpdateRef = useRef(false);
+  const followBottomRafRef = useRef<number | null>(null);
   const wasProcessingRef = useRef(isProcessing);
   const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
 
@@ -65,8 +68,16 @@ const useAutoScroll = (messages: AcpMessage[], isProcessing: boolean, agentId: s
     setAutoScrollEnabled((prev) => (prev === enabled ? prev : enabled));
   };
 
+  const stopFollowBottom = () => {
+    if (followBottomRafRef.current !== null) {
+      cancelAnimationFrame(followBottomRafRef.current);
+      followBottomRafRef.current = null;
+    }
+  };
+
   const disableAutoScrollImmediately = () => {
     autoScrollEnabledRef.current = false;
+    stopFollowBottom();
     setAutoScrollEnabled((prev) => (prev ? false : prev));
     contentRef.current?.classList.remove('acp-messages-auto-scrolling');
     if (autoScrollScrollbarTimerRef.current !== null) {
@@ -103,6 +114,33 @@ const useAutoScroll = (messages: AcpMessage[], isProcessing: boolean, agentId: s
       lastScrollTopRef.current = element.scrollTop;
       isProgrammaticScrollRef.current = false;
     });
+  };
+
+  // Streaming follow: each frame closes a fraction of the gap to the bottom, so frequent
+  // content updates glide instead of jumping. Stops when auto-scroll is disabled or caught up.
+  const followBottom = () => {
+    if (followBottomRafRef.current !== null) return;
+
+    const step = () => {
+      const element = contentRef.current;
+      if (!element || !autoScrollEnabledRef.current) {
+        followBottomRafRef.current = null;
+        return;
+      }
+
+      const gap = element.scrollHeight - element.clientHeight - element.scrollTop;
+      if (gap <= 0) {
+        followBottomRafRef.current = null;
+        return;
+      }
+
+      hideScrollbarDuringAutoScroll();
+      element.scrollTop = gap < 2 ? element.scrollHeight : element.scrollTop + gap * FOLLOW_EASE;
+      lastScrollTopRef.current = element.scrollTop;
+      followBottomRafRef.current = requestAnimationFrame(step);
+    };
+
+    followBottomRafRef.current = requestAnimationFrame(step);
   };
 
   useEffect(() => {
@@ -223,7 +261,7 @@ const useAutoScroll = (messages: AcpMessage[], isProcessing: boolean, agentId: s
       pendingAutoScrollRafRef.current = requestAnimationFrame(() => {
         pendingAutoScrollRafRef.current = null;
         if (!autoScrollEnabledRef.current) return;
-        scrollToBottom('auto');
+        followBottom();
       });
     }
   }, [messages, isProcessing, agentId]);
@@ -259,11 +297,14 @@ const useAutoScroll = (messages: AcpMessage[], isProcessing: boolean, agentId: s
 
     const observer = new ResizeObserver(() => {
       if (!autoScrollEnabledRef.current) return;
-      scrollToBottom('auto');
+      followBottom();
     });
 
     observer.observe(innerElement);
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      stopFollowBottom();
+    };
   }, [agentId]);
 
   const enableAutoScroll = () => {
@@ -314,6 +355,8 @@ interface AcpSessionProps {
   agentId: string;
   title: string;
   agentAuthors?: string[];
+  projectName?: string;
+  projectPath?: string;
   isConnected: boolean;
   isProcessing?: boolean;
   isStarting?: boolean;
@@ -353,6 +396,8 @@ const AcpSessionComponent: React.FC<AcpSessionProps> = ({
   agentId,
   title,
   agentAuthors,
+  projectName,
+  projectPath,
   isConnected,
   isProcessing = false,
   isStarting = false,
@@ -392,8 +437,6 @@ const AcpSessionComponent: React.FC<AcpSessionProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [currentSearchMatch, setCurrentSearchMatch] = useState(0);
   const [searchRenderVersion, setSearchRenderVersion] = useState(0);
-  const [showWorkingIndicator, setShowWorkingIndicator] = useState(isProcessing);
-  const [isWorkingIndicatorExiting, setIsWorkingIndicatorExiting] = useState(false);
   const [inputValues, setInputValues] = useState<Record<string, string>>(() => {
     const savedDrafts = loadItem<Record<string, unknown>>(ACP_INPUT_DRAFTS_STORAGE_KEY);
     if (!savedDrafts || typeof savedDrafts !== 'object') {
@@ -415,23 +458,24 @@ const AcpSessionComponent: React.FC<AcpSessionProps> = ({
     disableAutoScroll,
   } = useAutoScroll(messages, isProcessing, agentId);
 
+  // Pulses the scroll-to-bottom button while the working agent avatar is scrolled out of view.
+  const [workingAvatarOffscreen, setWorkingAvatarOffscreen] = useState(false);
   useEffect(() => {
-    if (isProcessing) {
-      setShowWorkingIndicator(true);
-      setIsWorkingIndicatorExiting(false);
+    const scroller = contentRef.current;
+    const avatar = scroller?.querySelector<HTMLElement>('.acp-turn-agent-working .acp-turn-avatar');
+    if (!scroller || !avatar) {
+      setWorkingAvatarOffscreen(false);
       return;
     }
 
-    if (!showWorkingIndicator) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => setWorkingAvatarOffscreen(!entry.isIntersecting),
+      { root: scroller },
+    );
+    observer.observe(avatar);
+    return () => observer.disconnect();
+  }, [contentRef, messages, isProcessing, agentId, autoScrollEnabled]);
 
-    setIsWorkingIndicatorExiting(true);
-    const hideTimer = window.setTimeout(() => {
-      setShowWorkingIndicator(false);
-      setIsWorkingIndicatorExiting(false);
-    }, 260);
-
-    return () => window.clearTimeout(hideTimer);
-  }, [isProcessing, showWorkingIndicator]);
   const searchMatches = useMemo(
     () => findTextMatches(messages, searchOpen ? searchQuery : ''),
     [messages, searchOpen, searchQuery],
@@ -912,29 +956,45 @@ const AcpSessionComponent: React.FC<AcpSessionProps> = ({
                 onSelectTemplate={handleSelectTemplate}
                 onOpenSettings={onOpenSettings}
                 agentTitle={title}
+                agentId={agentId}
                 agentAuthors={agentAuthors}
+                agentWorking={isProcessing}
                 onGetToolOutput={onGetToolOutput}
               />
             )}
-            {showWorkingIndicator && (
-              <div
-                className={`acp-chat-working${isWorkingIndicatorExiting ? ' acp-chat-working-exiting' : ''}`}
-                role="status"
-                aria-live="polite"
-                aria-label="Agent is working"
-              >
-                <span className="acp-chat-working-dots" aria-hidden="true">
-                  <span>.</span>
-                  <span>.</span>
-                  <span>.</span>
-                </span>
-            </div>
-            )}
+
+            <AcpInput
+              value={inputValue}
+              onChange={handleInputChange}
+              onSend={handleSend}
+              onCancel={handleCancel}
+              agentLabel={title}
+              projectName={projectName}
+              projectPath={projectPath}
+              onCloseAgent={handleCloseAgent}
+              isConnected={isConnected && !authRequired}
+              isStarting={isStarting}
+              isProcessing={isProcessing}
+              showProcessingDots={!autoScrollEnabled}
+              queue={queue}
+              onUpdateQueueItem={onUpdateQueueItem ? (itemId, prompt) => onUpdateQueueItem(agentId, itemId, prompt) : undefined}
+              onRemoveQueueItem={onRemoveQueueItem ? (itemId) => onRemoveQueueItem(agentId, itemId) : undefined}
+              onMoveQueueItem={onMoveQueueItem ? (itemId, dir) => onMoveQueueItem(agentId, itemId, dir) : undefined}
+              modelSelector={modelSelector}
+              reasoningSelector={reasoningSelector}
+              contextUsage={contextUsage}
+              availableCommands={availableCommands}
+              getOpenFiles={getOpenFiles}
+              getRootFiles={getRootFiles}
+              onSearchFiles={onSearchFiles}
+              onSelectModel={handleSelectModel}
+              onSelectReasoning={handleSelectReasoning}
+            />
           </div>
         </div>
         {!autoScrollEnabled && (
           <button
-            className="acp-scroll-to-bottom-btn"
+            className={`acp-scroll-to-bottom-btn${workingAvatarOffscreen ? ' acp-scroll-to-bottom-btn-pulse' : ''}`}
             onClick={enableAutoScroll}
             title="Enable auto-scroll"
             aria-label="Enable auto-scroll"
@@ -943,32 +1003,6 @@ const AcpSessionComponent: React.FC<AcpSessionProps> = ({
           </button>
         )}
       </div>
-
-      <AcpInput
-        value={inputValue}
-        onChange={handleInputChange}
-        onSend={handleSend}
-        onCancel={handleCancel}
-        agentLabel={title}
-        onCloseAgent={handleCloseAgent}
-        isConnected={isConnected && !authRequired}
-        isStarting={isStarting}
-        isProcessing={isProcessing}
-        showProcessingDots={!autoScrollEnabled}
-        queue={queue}
-        onUpdateQueueItem={onUpdateQueueItem ? (itemId, prompt) => onUpdateQueueItem(agentId, itemId, prompt) : undefined}
-        onRemoveQueueItem={onRemoveQueueItem ? (itemId) => onRemoveQueueItem(agentId, itemId) : undefined}
-        onMoveQueueItem={onMoveQueueItem ? (itemId, dir) => onMoveQueueItem(agentId, itemId, dir) : undefined}
-        modelSelector={modelSelector}
-        reasoningSelector={reasoningSelector}
-        contextUsage={contextUsage}
-        availableCommands={availableCommands}
-        getOpenFiles={getOpenFiles}
-        getRootFiles={getRootFiles}
-        onSearchFiles={onSearchFiles}
-        onSelectModel={handleSelectModel}
-        onSelectReasoning={handleSelectReasoning}
-      />
     </div>
   );
 };

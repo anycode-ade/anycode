@@ -1,31 +1,39 @@
 .acp-input {
     display: flex;
-    flex-direction: column;
-    padding: 8px 12px;
-    border: 1px solid #8f8f8f2e;
-    align-items: stretch;
-    border-radius: 24px;
-    position: absolute;
-    bottom: 7px;
-    left: 12px;
-    right: 12px;
-    z-index: 10;
-    background: rgba(30, 30, 30, 0.75);
-    background: color-mix(in srgb, var(--theme-background, #0a0a0a) 75%, transparent);
-    backdrop-filter: blur(4px);
-    -webkit-backdrop-filter: blur(4px);
-    /*box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);*/
+    flex-direction: row;
+    gap: 12px;
+    align-items: flex-start;
+    width: 100%;
+    margin-top: 16px;
+    padding: 0;
+    border: none;
+    border-radius: 0;
+    position: relative;
+    background: transparent;
     transform: translateY(0);
     opacity: 1;
     visibility: visible;
     font-family: var(--interface-font-family);
     font-size: var(--interface-font-size, 14px);
     font-weight: var(--interface-font-weight, 700);
+    box-sizing: border-box;
+}
+
+.acp-input-turn-avatar {
+    flex: 0 0 var(--acp-chat-avatar-size, 24px);
+    width: var(--acp-chat-avatar-size, 24px);
+    height: var(--acp-chat-avatar-size, 24px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0;
+    flex-shrink: 0;
+    transition: width 0.15s ease, height 0.15s ease, flex-basis 0.15s ease;
 }
 
 .acp-input-drag-over {
-    box-shadow: inset 0 0 0 1px var(--focus-border, #007acc), 0 4px 20px rgba(0, 0, 0, 0.25);
-    background: color-mix(in srgb, var(--focus-border, #007acc) 8%, color-mix(in srgb, var(--theme-background, #0a0a0a) 75%, transparent));
+    box-shadow: inset 0 0 0 1px var(--focus-border, #007acc);
+    background: color-mix(in srgb, var(--focus-border, #007acc) 8%, color-mix(in srgb, var(--theme-background, #242424) 85%, transparent));
 }
 
 .acp-input-minimized {
@@ -55,6 +63,9 @@
 .acp-input-full-container {
     display: flex;
     flex-direction: column;
+    flex: 1 1 auto;
+    min-width: 0;
+    position: relative;
 }
 
 .acp-input-full-content {
@@ -62,7 +73,6 @@
     overflow: hidden;
     display: flex;
     flex-direction: column;
-    gap: 8px;
 }
 
 .acp-input-attachments {
@@ -158,8 +168,7 @@
 
 .acp-input-block-text-row {
     display: flex;
-    align-items: flex-end;
-    gap: 6px;
+    align-items: flex-start;
     width: 100%;
 }
 
@@ -171,13 +180,14 @@
     background: transparent;
     border: none;
     outline: none;
-    padding: 4px 6px;
+    padding: 0;
+    margin: 0;
     color: var(--text-color, #fff);
     -webkit-text-fill-color: var(--text-color, #fff);
     font-family: var(--interface-font-family);
     font-size: var(--interface-font-size, 14px);
-    font-weight: 400;
-    line-height: 1.45;
+    font-weight: var(--interface-font-weight, 700);
+    line-height: 24px;
     resize: none;
     box-sizing: border-box;
 }
@@ -195,6 +205,43 @@
 
 .acp-input-block-quote {
     animation: acpQuoteFadeIn 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.acp-input-block-image {
+    position: relative;
+    align-self: flex-start;
+    max-width: 100%;
+    animation: acpQuoteFadeIn 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.acp-input-block-image img {
+    display: block;
+    max-width: 100%;
+    max-height: 200px;
+    object-fit: contain;
+    border-radius: 6px;
+    border: 1px solid var(--border-color, rgba(255, 255, 255, 0.1));
+}
+
+.acp-input-block-image-remove {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.6);
+    color: #fff;
+    cursor: pointer;
+}
+
+.acp-input-block-image-remove:hover {
+    background: rgba(0, 0, 0, 0.8);
 }
 
 .acp-input-quote-badge {
@@ -333,15 +380,31 @@
 .acp-input-controls-row {
     display: flex;
     align-items: center;
-    flex-wrap: wrap;
-    justify-content: flex-end;
+    justify-content: space-between;
     gap: 8px;
-    overflow-x: auto;
-    padding-bottom: 1px;
-    min-height: 30px;
+    width: 100%;
+    min-height: 28px;
 }
 
-.acp-input-controls-row > * {
+.acp-input-chips-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    width: 100%;
+}
+
+.acp-input-controls-left {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    gap: 8px;
+    min-width: 0;
+    flex: 1 1 auto;
+}
+
+.acp-input-controls-left > * {
     flex: 0 0 auto;
 }
 
@@ -355,9 +418,9 @@
 .acp-input-context-value {
     min-height: 26px;
     border-radius: 8px;
-    color: var(--text-color, #fff);
+    color: var(--text-color-secondary, rgba(255, 255, 255, 0.6));
     font-size: 0.79em;
-    padding: 0 8px;
+    padding: 0;
     user-select: none;
     --webkit-user-select: none;
     cursor: pointer;
@@ -388,7 +451,7 @@
     align-items: center;
     justify-content: center;
     white-space: nowrap;
-    padding: 0 10px;
+    padding: 0;
 }
 
 .acp-input-context {
@@ -405,13 +468,19 @@
     max-width: 220px;
 }
 
-.acp-input-agent-chip-icon {
-    flex-shrink: 0;
-    display: block;
+.acp-input .acp-input-project-chip,
+.acp-input .acp-input-profile-chip {
+    padding: 0;
+    color: var(--text-color-secondary, rgba(255, 255, 255, 0.6));
+    font-family: system-ui, sans-serif;
+    font-weight: 400;
+    font-size: 0.79em;
 }
 
 .acp-input-agent-chip-label {
-    color: var(--text-color, #fff);
+    color: var(--text-color-secondary, rgba(255, 255, 255, 0.6));
+    font-family: system-ui, sans-serif;
+    font-weight: 400;
     font-size: 0.79em;
     line-height: 1.2;
     white-space: nowrap;
@@ -426,12 +495,13 @@
     flex: 1;
     background-color: transparent;
     border: none;
-    padding: 6px 8px;
+    padding: 0;
     color: var(--text-color, #fff);
     -webkit-text-fill-color: var(--text-color, #fff);
     font-family: var(--interface-font-family);
     font-size: var(--interface-font-size, 14px);
     font-weight: var(--interface-font-weight, 700);
+    line-height: 24px;
     resize: none;
 }
 
@@ -540,17 +610,18 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 36px;
-    height: 36px;
+    width: 24px;
+    height: 24px;
     flex-shrink: 0;
     outline: none;
 }
 
 .acp-prompt-action-switch {
     position: relative;
-    width: 36px;
-    height: 36px;
-    flex: 0 0 36px;
+    width: 24px;
+    height: 24px;
+    flex: 0 0 24px;
+    align-self: center;
 }
 
 .acp-prompt-action-switch > .acp-send-btn,
@@ -580,6 +651,7 @@
     gap: 6px;
     width: auto;
     flex: 0 0 auto;
+    height: 24px;
 }
 
 .acp-prompt-action-switch.has-both > .acp-send-btn,
@@ -589,6 +661,19 @@
 
 .acp-send-btn {
     color: var(--theme-accent-background, #3c3c3c);
+    border: none;
+    padding: 0px;
+    border-radius: 50%;
+    cursor: pointer;
+    font-size: 1em;
+    font-weight: inherit;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    flex-shrink: 0;
+    outline: none;
 }
 
 .acp-send-btn:focus,
@@ -601,8 +686,8 @@
 
 .acp-send-btn svg,
 .acp-stop-prompt-btn svg {
-    width: 20px;
-    height: 20px;
+    width: 16px;
+    height: 16px;
 }
 
 

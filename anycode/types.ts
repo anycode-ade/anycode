@@ -135,6 +135,8 @@ export interface AcpAgent {
     args: string[];
     description?: string;
     icon?: string;
+    avatar?: string;
+    avatarOriginal?: string;
     version?: string;
     profile?: string;
     authors?: string[];

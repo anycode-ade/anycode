@@ -19,7 +19,7 @@
     background: transparent !important;
 }
 
-/* Ensure editor and preview panes are transparent when dynamic background is active */
+/* Ensure editor, preview, and terminal panes are transparent when dynamic background is active */
 .app-container.app-with-dynamic-bg .editor-container,
 .app-container[data-dynamic-bg="global"] .editor-container,
 [data-dynamic-bg="global"] .editor-container,
@@ -46,9 +46,32 @@
 [data-dynamic-bg="global"] .layout-panel-picker,
 .app-container.app-with-dynamic-bg .layout-dock-panel--picker,
 .app-container[data-dynamic-bg="global"] .layout-dock-panel--picker,
-[data-dynamic-bg="global"] .layout-dock-panel--picker {
+[data-dynamic-bg="global"] .layout-dock-panel--picker,
+.app-container.app-with-dynamic-bg .terminal-panel,
+.app-container[data-dynamic-bg="global"] .terminal-panel,
+[data-dynamic-bg="global"] .terminal-panel,
+.app-container.app-with-dynamic-bg .terminal-content,
+.app-container[data-dynamic-bg="global"] .terminal-content,
+[data-dynamic-bg="global"] .terminal-content,
+.app-container.app-with-dynamic-bg .terminal-container,
+.app-container[data-dynamic-bg="global"] .terminal-container,
+[data-dynamic-bg="global"] .terminal-container,
+.app-container.app-with-dynamic-bg .terminal-wrapper,
+.app-container[data-dynamic-bg="global"] .terminal-wrapper,
+[data-dynamic-bg="global"] .terminal-wrapper,
+.app-container.app-with-dynamic-bg .terminal-container .wterm,
+.app-container[data-dynamic-bg="global"] .terminal-container .wterm,
+[data-dynamic-bg="global"] .terminal-container .wterm,
+.app-container.app-with-dynamic-bg .wterm.wterm,
+.app-container[data-dynamic-bg="global"] .wterm.wterm,
+[data-dynamic-bg="global"] .wterm.wterm,
+.app-container.app-with-dynamic-bg .terminal-pane-empty,
+.app-container[data-dynamic-bg="global"] .terminal-pane-empty,
+[data-dynamic-bg="global"] .terminal-pane-empty {
     background: transparent !important;
     background-color: transparent !important;
+    --term-bg: transparent !important;
+    --term-app-bg: transparent !important;
 }
 
 .app-container.app-with-dynamic-bg .layout-panel-picker-item,
@@ -70,13 +93,11 @@
     border-color: color-mix(in srgb, var(--theme-accent-background, #007acc) 50%, transparent);
 }
 
+/* Dynamic background: in-flow file headers blend into the transparent editor.
+   The sticky header keeps its opaque theme background so content doesn't show through it. */
 .app-container.app-with-dynamic-bg .anyeditor .multibuffer-file-header-row,
-.app-container.app-with-dynamic-bg .anyeditor-wrapper .anyeditor-sticky-header,
-[data-dynamic-bg="global"] .anyeditor .multibuffer-file-header-row,
-[data-dynamic-bg="global"] .anyeditor-wrapper .anyeditor-sticky-header {
-    background: rgba(30, 30, 30, 0.75) !important;
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
+[data-dynamic-bg="global"] .anyeditor .multibuffer-file-header-row {
+    background: transparent !important;
 }
 
 

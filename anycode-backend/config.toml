@@ -1,4 +1,4 @@
-theme = "themes/default-theme.json"
+theme = "themes/anycode.json"
 left_panel_width = 25
 
 terminal.command = "bash"

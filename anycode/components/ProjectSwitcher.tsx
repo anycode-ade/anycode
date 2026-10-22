@@ -153,10 +153,7 @@ export const ProjectSwitcher: React.FC<ProjectSwitcherProps> = ({ options, value
                                 className="project-switcher-option"
                                 onClick={addProject}
                             >
-                                <span className="project-switcher-option-name">Add project folder…</span>
-                                <span className="project-switcher-check" aria-hidden="true">
-                                    <Icons.Plus size={12} />
-                                </span>
+                                <span className="project-switcher-option-name">Add project</span>
                             </button>
                         </>
                     )}

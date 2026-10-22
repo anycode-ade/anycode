@@ -407,3 +407,63 @@
     font-size: 16px;
   }
 }
+
+/* Agent avatar in card header (next to Duplicate) */
+.agent-settings-header-avatar {
+  position: relative;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  overflow: hidden;
+  cursor: pointer;
+  background: var(--theme-tab-inactive-background, #1e1e1e);
+  border: 1px solid var(--theme-border, rgba(255, 255, 255, 0.15));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.agent-settings-header-avatar:hover {
+  transform: scale(1.1);
+  border-color: var(--theme-accent-background, #007acc);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.agent-settings-header-avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.agent-settings-header-avatar-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--theme-foreground, #ccc);
+}
+
+.agent-settings-header-avatar-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.agent-settings-header-avatar:hover .agent-settings-header-avatar-overlay {
+  opacity: 1;
+}
+
+.agent-settings-header-avatar-icon {
+  font-size: 11px;
+  line-height: 1;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.6));
+}

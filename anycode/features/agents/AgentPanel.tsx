@@ -98,6 +98,9 @@ const AgentPanelComponent = ({
     const selectedSessionDisplay = selectedSession
         ? resolveAgentDisplay(selectedSession, availableAgents)
         : null;
+    const selectedSessionProject = selectedSession?.projectId
+        ? projects.find((project) => project.id === selectedSession.projectId)
+        : undefined;
     const handleSelectAgentForPane = (agentId: string) => {
         agentPanes.selectForPane(panelKey, agentId);
     };
@@ -147,9 +150,6 @@ const AgentPanelComponent = ({
                 <AcpRegistryModal
                     wsRef={wsRef}
                     isConnected={isConnected}
-                    projects={projects}
-                    selectedProjectId={startProjectId}
-                    onSelectProject={handleStartProjectChange}
                     onClose={() => agents.setIsRegistryOpen(false)}
                     onStartAgent={(agent) => {
                         agents.setIsRegistryOpen(false);
@@ -221,6 +221,8 @@ const AgentPanelComponent = ({
                     agentId={selectedSession.agentId}
                     title={selectedSessionDisplay?.fullName ?? selectedSession.agentId}
                     agentAuthors={selectedSessionDisplay?.authors}
+                    projectName={selectedSessionProject?.name}
+                    projectPath={selectedSessionProject?.root}
                     isConnected={selectedSession.isActive && isConnected}
                     isProcessing={selectedSession.isProcessing || false}
                     isStarting={selectedSession.isStarting}

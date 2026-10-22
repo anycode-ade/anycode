@@ -45,8 +45,8 @@ const isSafari = typeof navigator !== 'undefined' && /^((?!chrome|android).)*saf
 
 /**
  * Determines if a dark color is virtually pitch black (e.g. rgb <= 12).
- * For Safari to render deep black toolbar chrome (8, 8, 8) like x.com / GitHub without
- * translucent milky-gray blur artifacts, near-black toolbar chrome is mapped to #000000.
+ * Safari tints its toolbar from the page background and adds a light overlay to dark colors,
+ * so near-black page backgrounds are mapped to #000000 there to keep the toolbar black.
  */
 const isDeepBlack = (color: string): boolean => {
     const rgb = parseRgb(color);
@@ -54,37 +54,14 @@ const isDeepBlack = (color: string): boolean => {
     return getRelativeLuminance(rgb) <= 0.008 || Math.max(...rgb) <= 12;
 };
 
-export const DEFAULT_THEME_FILE_NAME = 'default-theme.json';
-export const DEFAULT_THEME_NAME = 'Vesper Dark';
-export const DEFAULT_THEME_ID = `${DEFAULT_THEME_FILE_NAME}:${DEFAULT_THEME_NAME}`;
-export const DEFAULT_DARK_BACKGROUND = '#0a0a0a';
-
-const THEME_STORAGE_VERSION = 'v2_vesper';
-if (typeof window !== 'undefined') {
-    try {
-        if (localStorage.getItem('theme_default_version') !== THEME_STORAGE_VERSION) {
-            const current = localStorage.getItem('themeId');
-            if (!current || current === 'anycode.json:anycode') {
-                localStorage.removeItem('themeId');
-                localStorage.removeItem('themeFileName');
-                localStorage.removeItem('themeName');
-                localStorage.removeItem('themeBackground');
-            }
-            localStorage.setItem('theme_default_version', THEME_STORAGE_VERSION);
-        }
-    } catch {
-        // Ignore localStorage access errors
-    }
-}
-
 export const useTheme = ({ wsRef, isConnected }: UseThemeParams) => {
     const [currentThemeId, setCurrentThemeId] = useState<string | null>(() => {
         if (typeof window === 'undefined') return null;
-        return localStorage.getItem('themeId') || DEFAULT_THEME_ID;
+        return localStorage.getItem('themeId') || 'anycode.json:anycode';
     });
 
     const applyBrowserChromeColor = useCallback((color: string, isLight: boolean = false) => {
-        const safeColor = color?.trim() || (isLight ? '#ffffff' : DEFAULT_DARK_BACKGROUND);
+        const safeColor = color?.trim() || (isLight ? '#ffffff' : '#242424');
         const ensureMeta = (selector: string, attrs: Record<string, string>, contentVal: string) => {
             let meta = document.head.querySelector(selector) as HTMLMetaElement | null;
             if (!meta) {
@@ -97,12 +74,12 @@ export const useTheme = ({ wsRef, isConnected }: UseThemeParams) => {
             meta.setAttribute('content', contentVal);
         };
 
-        // For Safari toolbar chrome to render deep black without milky-gray blur, map truly near-black colors to #000000 in Safari meta only
-        const safariChromeColor = !isLight && isSafari && isDeepBlack(safeColor) ? '#000000' : safeColor;
-        const chromeColor = isTauri ? safeColor : safariChromeColor;
+        const chromeColor = safeColor;
+        const pageColor = !isLight && isSafari && !isTauri && isDeepBlack(safeColor) ? '#000000' : safeColor;
 
-        ensureMeta('meta[name="theme-color"][media="(prefers-color-scheme: dark)"]', { name: 'theme-color', media: '(prefers-color-scheme: dark)' }, isLight ? '#ffffff' : chromeColor);
-        ensureMeta('meta[name="theme-color"][media="(prefers-color-scheme: light)"]', { name: 'theme-color', media: '(prefers-color-scheme: light)' }, isLight ? safeColor : '#ffffff');
+        // Both variants get the app theme color: the media queries follow the OS appearance, not the app theme.
+        ensureMeta('meta[name="theme-color"][media="(prefers-color-scheme: dark)"]', { name: 'theme-color', media: '(prefers-color-scheme: dark)' }, chromeColor);
+        ensureMeta('meta[name="theme-color"][media="(prefers-color-scheme: light)"]', { name: 'theme-color', media: '(prefers-color-scheme: light)' }, chromeColor);
         ensureMeta('meta[name="theme-color"]:not([media])', { name: 'theme-color' }, chromeColor);
         ensureMeta('meta[name="color-scheme"]', { name: 'color-scheme' }, isLight ? 'light' : 'dark');
         ensureMeta('meta[name="apple-mobile-web-app-status-bar-style"]', { name: 'apple-mobile-web-app-status-bar-style' }, 'default');
@@ -118,25 +95,25 @@ export const useTheme = ({ wsRef, isConnected }: UseThemeParams) => {
         }
 
         if (typeof document !== 'undefined') {
-            document.documentElement.style.backgroundColor = safeColor;
+            document.documentElement.style.backgroundColor = pageColor;
             if (document.body) {
-                document.body.style.backgroundColor = safeColor;
+                document.body.style.backgroundColor = pageColor;
             }
             const shim = document.getElementById('safari-theme-shim');
             if (shim) {
-                shim.style.backgroundColor = chromeColor;
+                shim.style.backgroundColor = pageColor;
             }
         }
     }, []);
 
     const applyTheme = useCallback((theme: any) => {
         const root = document.documentElement;
-        let uiBackground = DEFAULT_DARK_BACKGROUND;
+        let uiBackground = '#242424';
         let uiForeground = '#f0f0f0';
 
         if (theme.colors) {
             const getThemeColor = (key: string, fallback: string) => theme.colors[key] || fallback;
-            const baseBackground = getThemeColor('background', DEFAULT_DARK_BACKGROUND);
+            const baseBackground = getThemeColor('background', '#242424');
             const baseForeground = getThemeColor('foreground', '#f0f0f0');
             const baseBorder = getThemeColor('border', '#3f3f3f');
             const tabBackground = getThemeColor('tab.active.background', '#1C1C1C');
@@ -264,7 +241,7 @@ export const useTheme = ({ wsRef, isConnected }: UseThemeParams) => {
             // Ignore localStorage access errors
         }
         const isLight = storedMode === 'light';
-        const fallbackBg = isLight ? '#ffffff' : DEFAULT_DARK_BACKGROUND;
+        const fallbackBg = isLight ? '#ffffff' : '#242424';
         applyBrowserChromeColor(storedBg || fallbackBg, isLight);
     }, [applyBrowserChromeColor]);
 
@@ -273,9 +250,9 @@ export const useTheme = ({ wsRef, isConnected }: UseThemeParams) => {
             return;
         }
 
-        const storedThemeId = localStorage.getItem('themeId') || DEFAULT_THEME_ID;
-        const storedThemeFileName = localStorage.getItem('themeFileName') || DEFAULT_THEME_FILE_NAME;
-        const storedThemeName = localStorage.getItem('themeName') || DEFAULT_THEME_NAME;
+        const storedThemeId = localStorage.getItem('themeId') || 'anycode.json:anycode';
+        const storedThemeFileName = localStorage.getItem('themeFileName') || 'anycode.json';
+        const storedThemeName = localStorage.getItem('themeName') || 'anycode';
 
         wsRef.current.emit('theme:get', {
             fileName: storedThemeFileName,

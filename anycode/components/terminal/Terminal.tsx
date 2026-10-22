@@ -31,10 +31,14 @@ const terminalStorageKey = (kind: "data" | "mouseMode", name: string, session: s
 
 const applyTerminalTheme = (element: HTMLElement) => {
   const rootStyles = getComputedStyle(document.documentElement);
-  const background =
-    rootStyles.getPropertyValue("--background-color").trim() ||
-    rootStyles.getPropertyValue("--theme-background").trim() ||
-    "#0a0a0a";
+  const isDynamicBg = Boolean(
+    document.querySelector(".app-with-dynamic-bg, [data-dynamic-bg='global']")
+  );
+  const background = isDynamicBg
+    ? "transparent"
+    : rootStyles.getPropertyValue("--background-color").trim() ||
+      rootStyles.getPropertyValue("--theme-background").trim() ||
+      "#0a0a0a";
   const foreground =
     rootStyles.getPropertyValue("--foreground-color").trim() ||
     rootStyles.getPropertyValue("--theme-foreground").trim() ||
@@ -44,6 +48,7 @@ const applyTerminalTheme = (element: HTMLElement) => {
     "rgba(86, 156, 214, 0.3)";
 
   element.style.setProperty("--term-bg", background);
+  element.style.setProperty("--term-app-bg", background);
   element.style.setProperty("--term-fg", foreground);
   element.style.setProperty("--term-cursor", foreground);
   element.style.setProperty("--term-selection-bg", selectionBackground);
@@ -406,6 +411,13 @@ const Terminal: React.FC<TerminalProps> = ({
       attributes: true,
       attributeFilter: ["style", "class", "data-theme"],
     });
+    const appContainer = document.querySelector(".app-container");
+    if (appContainer) {
+      themeObserver.observe(appContainer, {
+        attributes: true,
+        attributeFilter: ["class", "data-dynamic-bg"],
+      });
+    }
     themeObserverRef.current = themeObserver;
 
     const onDocumentSelectionChange = () => {
@@ -607,6 +619,7 @@ const Terminal: React.FC<TerminalProps> = ({
 
   return (
     <div
+      className="terminal-wrapper"
       onKeyDownCapture={handleKeyDownCapture}
       onPasteCapture={handlePaste}
       onDragOverCapture={handleDragOver}
@@ -618,7 +631,6 @@ const Terminal: React.FC<TerminalProps> = ({
         height: "100%",
         padding: "6px 8px",
         boxSizing: "border-box",
-        backgroundColor: "var(--background-color, var(--theme-background, #0a0a0a))",
         color: "var(--foreground-color, var(--theme-foreground, #f0f0f0))",
         position: "relative",
       }}

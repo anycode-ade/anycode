@@ -39,6 +39,8 @@ interface AcpMessageProps {
   onOpenFile?: (path: string, line?: number, column?: number) => void;
   onOpenFileDiff?: (path: string, line?: number, column?: number) => void;
   onGetToolOutput?: (toolId: string, sessionId?: string) => Promise<string | null>;
+  // Read on mount only: the assistant text fades in all its words when it mounts as a live message.
+  animateEnter?: boolean;
 }
 
 const ToolCallMessage: React.FC<{
@@ -985,29 +987,111 @@ const MarkdownPreBlock: React.FC<React.ComponentProps<'pre'>> = ({ children, ...
   return <pre {...props}>{children}</pre>;
 };
 
+// Words before this window are never wrapped, which keeps per-render DOM work bounded on long replies.
+const FADE_WORD_WINDOW = 80;
+
+type HastNode = {
+  type: string;
+  value?: string;
+  tagName?: string;
+  properties?: Record<string, unknown>;
+  children?: HastNode[];
+};
+
+const countWords = (node: HastNode): number => {
+  if (node.type === 'text') {
+    return (node.value ?? '').split(/\s+/).filter(Boolean).length;
+  }
+  return (node.children ?? []).reduce((sum, child) => sum + countWords(child), 0);
+};
+
+type FadeState = { wordIndex: number; firstFadingWord: number };
+
+// Splits text into words; words from `firstFadingWord` on are wrapped in spans that fade in.
+const fadeWordsIn = (node: HastNode, state: FadeState): HastNode[] => {
+  if (node.type !== 'text') {
+    if (node.children) {
+      node.children = node.children.flatMap((child) => fadeWordsIn(child, state));
+    }
+    return [node];
+  }
+
+  const result: HastNode[] = [];
+  let plain = '';
+  for (const piece of (node.value ?? '').split(/(\s+)/)) {
+    if (piece.trim() === '') {
+      plain += piece;
+      continue;
+    }
+    const wordIndex = state.wordIndex;
+    state.wordIndex += 1;
+    if (wordIndex < state.firstFadingWord) {
+      plain += piece;
+      continue;
+    }
+    if (plain) result.push({ type: 'text', value: plain });
+    plain = '';
+    result.push({
+      type: 'element',
+      tagName: 'span',
+      properties: { className: ['acp-word-enter'] },
+      children: [{ type: 'text', value: piece }],
+    });
+  }
+  if (plain) result.push({ type: 'text', value: plain });
+  return result;
+};
+
+type FadeInWordsOptions = {
+  // Filled on the block's first render: words already rendered then stay still.
+  mountedWordCount: { current: number | null };
+  fadeAllWords: boolean;
+};
+
+const rehypeFadeInWords = (options: FadeInWordsOptions) => (tree: HastNode) => {
+  const totalWords = countWords(tree);
+  let mountedWords = options.mountedWordCount.current;
+  if (mountedWords === null) {
+    mountedWords = options.fadeAllWords ? 0 : totalWords;
+    options.mountedWordCount.current = mountedWords;
+  }
+  const firstFadingWord = Math.max(mountedWords, totalWords - FADE_WORD_WINDOW);
+  if (firstFadingWord >= totalWords) return;
+  fadeWordsIn(tree, { wordIndex: 0, firstFadingWord });
+};
+
 const MarkdownTextBlock: React.FC<{
   content: string;
+  // Streaming text: words that arrive after this block mounted fade in.
+  fadeInWords?: boolean;
+  // The whole block is new since the message mounted, so all of its words fade in.
+  fadeAllWords?: boolean;
   onOpenFile?: (path: string, line?: number, column?: number) => void;
   onOpenFileDiff?: (path: string, line?: number, column?: number) => void;
-}> = ({ content, onOpenFile, onOpenFileDiff }) => (
-  <ReactMarkdown
-    remarkPlugins={[remarkGfm, remarkBreaks]}
-    components={{
-      a: ({ node: _node, ...props }) => (
-        <MarkdownLink
-          {...props}
-          onOpenFile={onOpenFile}
-          onOpenFileDiff={onOpenFileDiff}
-        />
-      ),
-      code: MarkdownInlineCode,
-      pre: MarkdownPreBlock,
-      img: ({ node: _node, ...props }) => <MarkdownImage {...props} />,
-    }}
-  >
-    {content}
-  </ReactMarkdown>
-);
+}> = ({ content, fadeInWords = false, fadeAllWords = false, onOpenFile, onOpenFileDiff }) => {
+  const mountedWordCount = React.useRef<number | null>(null);
+
+  return (
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm, remarkBreaks]}
+      rehypePlugins={fadeInWords ? [[rehypeFadeInWords, { mountedWordCount, fadeAllWords }]] : []}
+      components={{
+        a: ({ node: _node, ...props }) => (
+          <MarkdownLink
+            {...props}
+            onOpenFile={onOpenFile}
+            onOpenFileDiff={onOpenFileDiff}
+          />
+        ),
+        code: MarkdownInlineCode,
+        pre: MarkdownPreBlock,
+        img: ({ node: _node, ...props }) => <MarkdownImage {...props} />,
+      }}
+    >
+      {content}
+    </ReactMarkdown>
+  );
+};
 
 const CodeCopyButton: React.FC<{ content: string }> = ({ content }) => {
   const [copyStatus, setCopyStatus] = React.useState<'idle' | 'copied' | 'error'>('idle');
@@ -1270,41 +1354,51 @@ const DiffCodeBlock: React.FC<{
 
 const StreamingMarkdownContent: React.FC<{
   content: string;
+  fadeAllOnMount?: boolean;
   onOpenFile?: (path: string, line?: number, column?: number) => void;
   onOpenFileDiff?: (path: string, line?: number, column?: number) => void;
-}> = ({ content, onOpenFile, onOpenFileDiff }) => (
-  <div className="acp-message-markdown">
-    {parseMarkdownParts(content).map((part, index) => {
-      if (part.kind === 'code') {
+}> = ({ content, fadeAllOnMount = false, onOpenFile, onOpenFileDiff }) => {
+  const parts = parseMarkdownParts(content);
+  // Parts present on mount (e.g. history) stay still unless fadeAllOnMount; parts that arrive later fade in.
+  const [initialPartCount] = React.useState(fadeAllOnMount ? 0 : parts.length);
+
+  return (
+    <div className="acp-message-markdown">
+      {parts.map((part, index) => {
+        if (part.kind === 'code') {
+          return (
+            <MarkdownCodeBlock
+              key={`code-${index}`}
+              code={part.content}
+              language={part.language}
+              isOpen={part.isOpen}
+            />
+          );
+        }
+
         return (
-          <MarkdownCodeBlock
-            key={`code-${index}`}
-            code={part.content}
-            language={part.language}
-            isOpen={part.isOpen}
+          <MarkdownTextBlock
+            key={`text-${index}`}
+            content={part.content}
+            fadeInWords
+            fadeAllWords={index >= initialPartCount}
+            onOpenFile={onOpenFile}
+            onOpenFileDiff={onOpenFileDiff}
           />
         );
-      }
-
-      return (
-        <MarkdownTextBlock
-          key={`text-${index}`}
-          content={part.content}
-          onOpenFile={onOpenFile}
-          onOpenFileDiff={onOpenFileDiff}
-        />
-      );
-    })}
-  </div>
-);
+      })}
+    </div>
+  );
+};
 
 const TextMessage: React.FC<{
   message: AcpUserMessage | AcpAssistantMessage;
+  animateEnter?: boolean;
   onUserMessageToggle?: () => void;
   onUndo?: () => void;
   onOpenFile?: (path: string, line?: number, column?: number) => void;
   onOpenFileDiff?: (path: string, line?: number, column?: number) => void;
-}> = ({ message, onUserMessageToggle, onUndo, onOpenFile, onOpenFileDiff }) => {
+}> = ({ message, animateEnter = false, onUserMessageToggle, onUndo, onOpenFile, onOpenFileDiff }) => {
   const [isExpanded, setIsExpanded] = React.useState(false);
   const [isCollapsible, setIsCollapsible] = React.useState(false);
   const bodyRef = React.useRef<HTMLDivElement>(null);
@@ -1332,6 +1426,7 @@ const TextMessage: React.FC<{
         >
           <StreamingMarkdownContent
             content={message.content}
+            fadeAllOnMount={animateEnter}
             onOpenFile={onOpenFile}
             onOpenFileDiff={onOpenFileDiff}
           />
@@ -1500,6 +1595,7 @@ const AcpMessageComponent: React.FC<AcpMessageProps> = ({
   onOpenFile,
   onOpenFileDiff,
   onGetToolOutput,
+  animateEnter = false,
 }) => {
   switch (message.role) {
     case 'tool_call':
@@ -1548,6 +1644,7 @@ const AcpMessageComponent: React.FC<AcpMessageProps> = ({
       return (
         <TextMessage
           message={message}
+          animateEnter={animateEnter}
           onOpenFile={onOpenFile}
           onOpenFileDiff={onOpenFileDiff}
         />

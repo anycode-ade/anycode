@@ -14,7 +14,7 @@
 
   color-scheme: light dark;
   color: rgba(255, 255, 255, 0.87);
-  background-color: #0a0a0a;
+  background-color: #242424;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -24,7 +24,7 @@
   --separator-border: #838383;
 
   --active-file: #b1fce5;
-  --background-color: #0a0a0a;
+  --background-color: #242424;
 }
 
 html {
@@ -68,7 +68,7 @@ body {
 
 html,
 body {
-  background-color: var(--background-color, #0a0a0a);
+  background-color: var(--background-color, #242424);
 }
 
 #safari-theme-shim {
@@ -85,7 +85,7 @@ body {
     height: 1px;
     z-index: 999999;
     pointer-events: none;
-    background-color: var(--background-color, #0a0a0a);
+    background-color: var(--background-color, #242424);
   }
 
   @media (prefers-color-scheme: light) {

@@ -2,7 +2,7 @@ import React from 'react';
 import type { AcpAgent, AcpSession } from '../../types';
 import { resolveAgentDisplay } from '../../agents';
 import { Icons } from '../Icons';
-import { AgentIcon } from './AgentIcon';
+import { AcpAvatar } from './AcpAvatar';
 import { AcpIcons } from './AcpIcons';
 import type { WorkspaceProject } from '../../workspace';
 
@@ -132,103 +132,99 @@ export const AcpOpenedAgentCard: React.FC<AcpOpenedAgentCardProps> = ({
         <AcpIcons.CloseSmall />
       </button>
 
-      <div className="acp-pane-opened-header">
-        <div className="acp-pane-opened-identity">
-          <AgentIcon name={baseName} id={session.agentId} size={15} className="acp-agent-btn-icon" />
-          <span className="acp-pane-opened-name" title={baseName}>{baseName}</span>
+      <div className="acp-pane-opened-body">
+        <div className="acp-start-card-icon-box acp-pane-opened-icon-box">
+          <AcpAvatar type="agent" agentId={session.agentId} agentTitle={baseName} size={18} />
         </div>
-      </div>
 
-      <div className="acp-pane-opened-context-row">
-        <span className="acp-pane-opened-context-item acp-pane-opened-profile" title={`Profile: ${profileLabel}`}>
-          <Icons.User size={12} />
-          <span>{profileLabel}</span>
-        </span>
-        <span className="acp-pane-opened-context-item acp-pane-opened-project" title={projectTitle}>
-          <Icons.Folder size={12} />
-          <span>{projectLabel}</span>
-        </span>
-      </div>
+        <div className="acp-pane-opened-content">
+          <div className="acp-pane-opened-header">
+            <div className="acp-pane-opened-identity">
+              <span className="acp-pane-opened-name" title={baseName}>{baseName}</span>
+            </div>
+          </div>
 
-      <div className="acp-pane-opened-info-row">
-        {isStarting ? (
-          <span className="acp-pane-opened-starting" title="Starting agent...">
-            <span className="acp-pane-opened-spinner" />
-            <span>Starting…</span>
-          </span>
-        ) : (
-          <>
-            <span className="acp-pane-opened-count" title={`${chatMessageCount} messages`}>
-              <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M2 3a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5l-3 3V3z" />
-              </svg>
-              <span>{chatMessageCount} {chatMessageCount === 1 ? 'msg' : 'msgs'}</span>
+          <div className="acp-pane-opened-context-row">
+            <span className="acp-pane-opened-context-item acp-pane-opened-profile" title={`Profile: ${profileLabel}`}>
+              <Icons.User size={12} />
+              <span>{profileLabel}</span>
             </span>
-            {toolCallCount > 0 && (
-              <span className="acp-pane-opened-tools" title={`${toolCallCount} tool calls`}>
-                <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M10 2a4 4 0 0 0-3.4 6.1L1.5 13.2a1 1 0 0 0 1.4 1.4l5.1-5.1A4 4 0 1 0 10 2z" />
-                </svg>
-                <span>{toolCallCount} {toolCallCount === 1 ? 'tool' : 'tools'}</span>
-              </span>
-            )}
-            {queueCount > 0 && (
-              <span className="acp-pane-opened-queued" title={`${queueCount} queued prompt${queueCount === 1 ? '' : 's'}`}>
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <line x1="8" y1="6" x2="21" y2="6" />
-                  <line x1="8" y1="12" x2="21" y2="12" />
-                  <line x1="8" y1="18" x2="21" y2="18" />
-                  <line x1="3" y1="6" x2="3.01" y2="6" />
-                  <line x1="3" y1="12" x2="3.01" y2="12" />
-                  <line x1="3" y1="18" x2="3.01" y2="18" />
-                </svg>
-                <span>{queueCount} queued</span>
-              </span>
-            )}
-            {displaySessionId && (
-              <span
-                className={`acp-pane-opened-session-id ${isCopied ? 'is-copied' : ''}`}
-                onClick={handleCopySessionId}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    handleCopySessionId(e);
-                  }
-                }}
-                onPointerDown={(e) => e.stopPropagation()}
-                title={isCopied ? 'Copied!' : `Session ID: ${displaySessionId} (click to copy)`}
-                role="button"
-                tabIndex={0}
-              >
-                <span>{isCopied ? 'Copied' : displaySessionId.length > 8 ? `${displaySessionId.slice(0, 8)}…` : displaySessionId}</span>
-              </span>
-            )}
-            <span
-              className={`acp-pane-opened-unread-badge ${hasUnread ? 'is-visible' : ''}`}
-              title={hasUnread ? `${unreadCount} new message${unreadCount === 1 ? '' : 's'}` : undefined}
-              aria-hidden={!hasUnread}
-            >
-              <span className="acp-pane-opened-unread-dot" />
-              <span>{unreadCount > 1 ? `${unreadCount} new` : 'New'}</span>
+            <span className="acp-pane-opened-context-item acp-pane-opened-project" title={projectTitle}>
+              <Icons.Folder size={12} />
+              <span>{projectLabel}</span>
             </span>
-            {isWorking && (
-              <span className="acp-pane-opened-working" title="Agent is working...">
-                <span className="acp-pane-opened-working-dots" aria-hidden="true">
-                  <span />
-                  <span />
-                  <span />
+          </div>
+
+          <div className="acp-pane-opened-info-row">
+            {isStarting ? (
+              <span className="acp-pane-opened-starting" title="Starting agent...">
+                <span className="acp-pane-opened-spinner" />
+                <span>Starting…</span>
+              </span>
+            ) : (
+              <>
+                <span className="acp-pane-opened-count" title={`${chatMessageCount} messages`}>
+                  <AcpIcons.Messages size={11} />
+                  <span>{chatMessageCount} {chatMessageCount === 1 ? 'msg' : 'msgs'}</span>
                 </span>
-              </span>
+                {toolCallCount > 0 && (
+                  <span className="acp-pane-opened-tools" title={`${toolCallCount} tool calls`}>
+                    <AcpIcons.Wrench size={11} />
+                    <span>{toolCallCount} {toolCallCount === 1 ? 'tool' : 'tools'}</span>
+                  </span>
+                )}
+                {queueCount > 0 && (
+                  <span className="acp-pane-opened-queued" title={`${queueCount} queued prompt${queueCount === 1 ? '' : 's'}`}>
+                    <AcpIcons.Queue size={11} />
+                    <span>{queueCount} queued</span>
+                  </span>
+                )}
+                {displaySessionId && (
+                  <span
+                    className={`acp-pane-opened-session-id ${isCopied ? 'is-copied' : ''}`}
+                    onClick={handleCopySessionId}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        handleCopySessionId(e);
+                      }
+                    }}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    title={isCopied ? 'Copied!' : `Session ID: ${displaySessionId} (click to copy)`}
+                    role="button"
+                    tabIndex={0}
+                  >
+                    <span>{isCopied ? 'Copied' : displaySessionId.length > 8 ? `${displaySessionId.slice(0, 8)}…` : displaySessionId}</span>
+                  </span>
+                )}
+                <span
+                  className={`acp-pane-opened-unread-badge ${hasUnread ? 'is-visible' : ''}`}
+                  title={hasUnread ? `${unreadCount} new message${unreadCount === 1 ? '' : 's'}` : undefined}
+                  aria-hidden={!hasUnread}
+                >
+                  <span className="acp-pane-opened-unread-dot" />
+                  <span>{unreadCount > 1 ? `${unreadCount} new` : 'New'}</span>
+                </span>
+                {isWorking && (
+                  <span className="acp-pane-opened-working" title="Agent is working...">
+                    <span className="acp-pane-opened-working-dots" aria-hidden="true">
+                      <span />
+                      <span />
+                      <span />
+                    </span>
+                  </span>
+                )}
+              </>
             )}
-          </>
-        )}
-      </div>
+          </div>
 
-      <div className="acp-pane-opened-preview" title={firstMessage || undefined}>
-        {firstMessage ? (
-          firstMessage
-        ) : (
-          <span className="acp-pane-opened-no-message">No messages yet</span>
-        )}
+          <div className="acp-pane-opened-preview" title={firstMessage || undefined}>
+            {firstMessage ? (
+              firstMessage
+            ) : (
+              <span className="acp-pane-opened-no-message">No messages yet</span>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );

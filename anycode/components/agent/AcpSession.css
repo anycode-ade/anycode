@@ -179,7 +179,7 @@
 .acp-scroll-to-bottom-btn {
     position: absolute;
     right: 16px;
-    bottom: max(calc(var(--acp-input-height) + 23px), 60px);
+    bottom: 24px;
     width: 36px;
     height: 36px;
     border: none;
@@ -189,9 +189,9 @@
     justify-content: center;
     cursor: pointer;
     color: var(--theme-accent-background, #3c3c3c);
-    background: rgba(45, 45, 45, 0.25);
-    backdrop-filter: blur(2px);
-    -webkit-backdrop-filter: blur(2px);
+    background: rgba(45, 45, 45, 0.4);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
     z-index: 11;
 }
 
@@ -205,6 +205,16 @@
     height: 22px;
 }
 
+/* The working agent avatar is out of view: same green pulse as the avatar itself. */
+.acp-scroll-to-bottom-btn-pulse {
+    animation: acp-scroll-to-bottom-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes acp-scroll-to-bottom-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, #65d68a 0%, transparent); }
+    50% { box-shadow: 0 0 0 4px color-mix(in srgb, #65d68a 45%, transparent); }
+}
+
 @media (max-width: 768px) {
     .acp-search-bar {
         right: 10px;
@@ -213,7 +223,7 @@
 
     .acp-scroll-to-bottom-btn {
         right: 12px;
-        bottom: max(calc(var(--acp-input-height) + 23px), 60px);
+        bottom: 20px;
     }
 }
 

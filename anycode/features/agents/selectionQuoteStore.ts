@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from 'react';
 import { getLanguageFromFileName, toRelativeDisplayPath, getFileName } from '../../utils';
+import type { AcpPromptAttachment } from '../../types';
 
 export type QuoteSource = 'editor' | 'terminal' | 'agent';
 
@@ -61,7 +62,8 @@ export const useSelectionQuote = (): SelectionQuote | null => {
 
 export type InputBlock =
   | { id: string; type: 'text'; text: string }
-  | { id: string; type: 'quote'; quote: SelectionQuote };
+  | { id: string; type: 'quote'; quote: SelectionQuote }
+  | { id: string; type: 'image'; attachment: AcpPromptAttachment };
 
 export const formatSingleQuote = (quote: SelectionQuote): string => {
   const rawText = quote.text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();

@@ -1,3 +1,7 @@
+.terminal-wrapper {
+  background-color: var(--background-color, var(--theme-background, #0a0a0a));
+}
+
 .terminal-container .wterm,
 .wterm.wterm {
   box-sizing: border-box;
@@ -71,4 +75,37 @@
   color: var(--foreground-color, var(--theme-foreground, #f0f0f0));
   font-size: 1.2rem;
   z-index: 10;  
+}
+
+/* Dynamic background transparency */
+.app-container.app-with-dynamic-bg .terminal-panel,
+.app-container[data-dynamic-bg="global"] .terminal-panel,
+[data-dynamic-bg="global"] .terminal-panel,
+.app-container.app-with-dynamic-bg .terminal-content,
+.app-container[data-dynamic-bg="global"] .terminal-content,
+[data-dynamic-bg="global"] .terminal-content,
+.app-container.app-with-dynamic-bg .terminal-container,
+.app-container[data-dynamic-bg="global"] .terminal-container,
+[data-dynamic-bg="global"] .terminal-container,
+.app-container.app-with-dynamic-bg .terminal-wrapper,
+.app-container[data-dynamic-bg="global"] .terminal-wrapper,
+[data-dynamic-bg="global"] .terminal-wrapper,
+.app-container.app-with-dynamic-bg .terminal-container .wterm,
+.app-container[data-dynamic-bg="global"] .terminal-container .wterm,
+[data-dynamic-bg="global"] .terminal-container .wterm,
+.app-container.app-with-dynamic-bg .wterm.wterm,
+.app-container[data-dynamic-bg="global"] .wterm.wterm,
+[data-dynamic-bg="global"] .wterm.wterm {
+  background: transparent !important;
+  background-color: transparent !important;
+  --term-bg: transparent !important;
+  --term-app-bg: transparent !important;
+}
+
+.app-container.app-with-dynamic-bg .term-selection-status,
+.app-container[data-dynamic-bg="global"] .term-selection-status,
+[data-dynamic-bg="global"] .term-selection-status {
+  background: rgba(30, 30, 30, 0.75) !important;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
 }

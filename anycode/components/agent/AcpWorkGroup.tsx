@@ -38,7 +38,7 @@ export const AcpWorkGroup: React.FC<AcpWorkGroupProps> = ({
     previousIsLatestRef.current = isLatest;
   }, [isLatest, isSearchMatch, onExpansionChange, searchActive]);
 
-  if (isLatest && !searchActive) {
+  if ((isLatest && !searchActive) || messageCount <= 1) {
     return <>{children}</>;
   }
 
