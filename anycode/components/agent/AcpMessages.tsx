@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import {
   AcpMessage as AcpMessageType,
   AcpToolCall,
@@ -35,6 +36,7 @@ interface AcpMessagesProps {
   agentAuthors?: string[];
   agentWorking?: boolean;
   onGetToolOutput?: (toolId: string, sessionId?: string) => Promise<string | null>;
+  scrollerRef: React.RefObject<HTMLDivElement | null>;
 }
 
 
@@ -53,6 +55,37 @@ const AcpTurn: React.FC<AcpTurnProps> = ({ animateEnter, className, children, ..
 };
 
 type WorkEntry = { index: number; message: AcpMessageType };
+
+// One row of the list: a user message, or an agent response with all its work groups and text.
+type TurnItem =
+  | { type: 'message'; key: string; index: number; message: AcpMessageType }
+  | { type: 'group'; key: string; messages: WorkEntry[]; isLatest: boolean };
+
+// Estimated height of a turn, including its bottom margin, until it has been measured once.
+const ESTIMATED_TURN_HEIGHT = 240;
+// Turns mounted beyond the viewport edges, so small scrolls don't mount and unmount them.
+const WINDOW_OVERSCAN_PX = 1200;
+
+// Index of the last turn whose top edge is at or above y.
+const turnAt = (offsets: Float64Array, y: number, count: number) => {
+  let low = 0;
+  let high = count - 1;
+  while (low < high) {
+    const mid = (low + high + 1) >> 1;
+    if (offsets[mid] <= y) low = mid;
+    else high = mid - 1;
+  }
+  return low;
+};
+
+// Turns [start, end) that intersect the viewport, plus overscan.
+const turnWindowFor = (offsets: Float64Array, count: number, scrollTop: number, viewportHeight: number) => ({
+  start: turnAt(offsets, Math.max(0, scrollTop - WINDOW_OVERSCAN_PX), count),
+  end: Math.min(count, turnAt(offsets, scrollTop + viewportHeight + WINDOW_OVERSCAN_PX, count) + 1),
+});
+
+const getBoxHeight = (element: HTMLElement) =>
+  element.offsetHeight + (parseFloat(getComputedStyle(element).marginBottom) || 0);
 
 type WorkSegment =
   | { type: 'tools'; messages: WorkEntry[] }
@@ -114,6 +147,7 @@ const AcpMessagesComponent: React.FC<AcpMessagesProps> = ({
   agentAuthors,
   agentWorking,
   onGetToolOutput,
+  scrollerRef,
 }) => {
   const hasRenderedRef = useRef(false);
   useEffect(() => {
@@ -183,10 +217,7 @@ const AcpMessagesComponent: React.FC<AcpMessagesProps> = ({
   }, [messages]);
 
   const groupedItems = useMemo(() => {
-    const items: Array<
-      | { type: 'message'; index: number; message: AcpMessageType }
-      | { type: 'group'; messages: WorkEntry[]; isLatest: boolean }
-    > = [];
+    const items: TurnItem[] = [];
 
     let currentGroup: Array<{ index: number; message: AcpMessageType }> | null = null;
 
@@ -208,10 +239,10 @@ const AcpMessagesComponent: React.FC<AcpMessagesProps> = ({
         currentGroup.push({ index: i, message });
       } else {
         if (currentGroup && currentGroup.length > 0) {
-          items.push({ type: 'group', messages: currentGroup, isLatest: false });
+          items.push({ type: 'group', key: `turn-group-${items.length}`, messages: currentGroup, isLatest: false });
           currentGroup = null;
         }
-        items.push({ type: 'message', index: i, message });
+        items.push({ type: 'message', key: `turn-${i}`, index: i, message });
       }
     }
 
@@ -219,11 +250,11 @@ const AcpMessagesComponent: React.FC<AcpMessagesProps> = ({
       // A group is latest only when it is the final item. If a user message
       // was just sent, the previous work group must remain historical and
       // collapse immediately while the new response is pending.
-      items.push({ type: 'group', messages: currentGroup, isLatest: true });
+      items.push({ type: 'group', key: `turn-group-${items.length}`, messages: currentGroup, isLatest: true });
     } else if (agentWorking && items[items.length - 1]?.type !== 'group') {
       // Empty turn for the response that is about to stream. Reserving it here keeps
       // the working avatar on one element, so its pulse doesn't restart when text arrives.
-      items.push({ type: 'group', messages: [], isLatest: true });
+      items.push({ type: 'group', key: `turn-group-${items.length}`, messages: [], isLatest: true });
     }
 
     return items;
@@ -290,10 +321,15 @@ const AcpMessagesComponent: React.FC<AcpMessagesProps> = ({
     const segments = splitIntoSegments(entries, toolResultsById);
     return segments.map((segment, segmentIndex) => {
       if (segment.type === 'tools') {
+        const workKey = `work-${segment.messages[0].index}`;
+        const isSegmentLatest = isLatest && segmentIndex === segments.length - 1;
+        const stored = groupExpansionRef.current.get(workKey);
         return (
           <AcpWorkGroup
-            key={`work-${segment.messages[0].index}`}
-            isLatest={isLatest && segmentIndex === segments.length - 1}
+            key={workKey}
+            storedExpanded={stored?.isLatest === isSegmentLatest ? stored.expanded : undefined}
+            onExpandedChange={(expanded) => groupExpansionRef.current.set(workKey, { expanded, isLatest: isSegmentLatest })}
+            isLatest={isSegmentLatest}
             messageCount={segment.messages.filter(({ message }) => message.role === 'tool_call').length}
             searchActive={activeSearchMessageIndex !== undefined}
             isSearchMatch={segment.messages.some(({ index }) => index === activeSearchMessageIndex)}
@@ -327,6 +363,182 @@ const AcpMessagesComponent: React.FC<AcpMessagesProps> = ({
     });
   };
 
+  // Turns are virtualized: only those near the viewport are mounted, the rest are spacers. A turn's
+  // height is measured once it mounts and cached by its key, so the cache survives unmounting.
+  const turnCount = groupedItems.length;
+  const turnHeightsRef = useRef(new Map<string, number>());
+  const [heightsVersion, setHeightsVersion] = useState(0);
+  const [turnRange, setTurnRange] = useState({ start: 0, end: 0 });
+  const layoutRef = useRef({ offsets: new Float64Array(1), count: 0 });
+  const rowObserverRef = useRef<ResizeObserver | null>(null);
+  const seenTurnKeysRef = useRef(new Set<string>());
+  // A user's work-group toggle lives here, not in the group, so it survives the group unmounting.
+  // It only applies while the group keeps its latest/historical state; otherwise the default wins.
+  const groupExpansionRef = useRef(new Map<string, { expanded: boolean; isLatest: boolean }>());
+
+  const turnOffsets = useMemo(() => {
+    const offsets = new Float64Array(turnCount + 1);
+    for (let i = 0; i < turnCount; i += 1) {
+      offsets[i + 1] = offsets[i] + (turnHeightsRef.current.get(groupedItems[i].key) ?? ESTIMATED_TURN_HEIGHT);
+    }
+    return offsets;
+  }, [groupedItems, turnCount, heightsVersion]);
+
+  const updateTurnRange = useCallback(() => {
+    const scroller = scrollerRef.current;
+    const { offsets, count } = layoutRef.current;
+    if (!scroller || count === 0) return;
+    const next = turnWindowFor(offsets, count, scroller.scrollTop, scroller.clientHeight);
+    setTurnRange((current) => (current.start === next.start && current.end === next.end ? current : next));
+  }, [scrollerRef]);
+
+  useLayoutEffect(() => {
+    layoutRef.current = { offsets: turnOffsets, count: turnCount };
+    updateTurnRange();
+  }, [turnOffsets, turnCount, updateTurnRange]);
+
+  useEffect(() => {
+    const scroller = scrollerRef.current;
+    if (!scroller) return;
+    const resizeObserver = new ResizeObserver(() => updateTurnRange());
+    resizeObserver.observe(scroller);
+    scroller.addEventListener('scroll', updateTurnRange, { passive: true });
+    return () => {
+      scroller.removeEventListener('scroll', updateTurnRange);
+      resizeObserver.disconnect();
+    };
+  }, [scrollerRef, updateTurnRange]);
+
+  // Measures rows, stores their heights, and offsets the scroll position for changes above the viewport.
+  // Returns true when any height changed.
+  const measureRows = useCallback((rows: HTMLElement[]) => {
+    const scroller = scrollerRef.current;
+    if (!scroller) return false;
+    const viewportTop = scroller.getBoundingClientRect().top;
+    let changed = false;
+    let scrollCompensation = 0;
+    for (const row of rows) {
+      const key = row.dataset.turnKey ?? '';
+      const previous = turnHeightsRef.current.get(key) ?? ESTIMATED_TURN_HEIGHT;
+      const next = getBoxHeight(row);
+      if (next === previous) continue;
+      turnHeightsRef.current.set(key, next);
+      changed = true;
+      // A row that ends above the viewport (after its change) shifts the visible content by the change.
+      // Rows reaching into the viewport keep their top, so they are not offset.
+      if (row.getBoundingClientRect().top + next <= viewportTop) {
+        scrollCompensation += next - previous;
+      }
+    }
+    if (scrollCompensation !== 0) scroller.scrollTop += scrollCompensation;
+    return changed;
+  }, [scrollerRef]);
+
+  // Height changes outside a React commit (images, fonts, resizes) are caught by the ResizeObserver.
+  useLayoutEffect(() => {
+    const scroller = scrollerRef.current;
+    if (!scroller) return;
+    const observer = new ResizeObserver((entries) => {
+      const rows: HTMLElement[] = [];
+      for (const entry of entries) {
+        const row = entry.target as HTMLElement;
+        if (row.isConnected) rows.push(row);
+        else observer.unobserve(row);
+      }
+      if (measureRows(rows)) flushSync(() => setHeightsVersion((version) => version + 1));
+    });
+    rowObserverRef.current = observer;
+    return () => observer.disconnect();
+  }, [scrollerRef, measureRows]);
+
+  // Runs after every commit, before paint: rows that just mounted are measured in the same frame, so the
+  // scroll compensation for rows above the viewport doesn't lag one frame behind the new layout.
+  useLayoutEffect(() => {
+    const scroller = scrollerRef.current;
+    if (!scroller) return;
+    const rows = Array.from(scroller.querySelectorAll<HTMLElement>('[data-turn-key]'));
+    rows.forEach((row) => rowObserverRef.current?.observe(row));
+    if (measureRows(rows)) setHeightsVersion((version) => version + 1);
+  });
+
+  const activeSearchTurn = useMemo(() => {
+    if (activeSearchMessageIndex === undefined) return -1;
+    return groupedItems.findIndex((item) => (
+      item.type === 'message'
+        ? item.index === activeSearchMessageIndex
+        : item.messages.some((entry) => entry.index === activeSearchMessageIndex)
+    ));
+  }, [activeSearchMessageIndex, groupedItems]);
+
+  // A search match can sit in a turn outside the window. Bring that turn into the window before the
+  // search highlight effect in AcpSession looks up its DOM node. The key (not the groupedItems array)
+  // is the dependency, so streaming updates don't pull the viewport back to the match.
+  const activeSearchTurnKey = activeSearchTurn >= 0 ? groupedItems[activeSearchTurn].key : undefined;
+  useLayoutEffect(() => {
+    const scroller = scrollerRef.current;
+    const { offsets, count } = layoutRef.current;
+    if (!scroller || activeSearchTurnKey === undefined || count === 0) return;
+    // Already mounted: AcpSession centers the exact match itself.
+    if (scroller.querySelector(`[data-turn-key="${activeSearchTurnKey}"]`)) return;
+    const scrollTop = Math.max(0, offsets[activeSearchTurn] - scroller.clientHeight / 2);
+    scroller.scrollTop = scrollTop;
+    setTurnRange(turnWindowFor(offsets, count, scrollTop, scroller.clientHeight));
+  }, [activeSearchMessageIndex, activeSearchTurn, activeSearchTurnKey, scrollerRef]);
+
+  // Only turns created after the list has rendered fade in. Turns that merely re-mount on scroll don't.
+  useEffect(() => {
+    for (const item of groupedItems) seenTurnKeysRef.current.add(item.key);
+  }, [groupedItems]);
+
+  const renderTurn = (item: TurnItem, idx: number) => {
+    const isLatestAgentTurn = agentWorking && idx === turnCount - 1;
+    const animateEnter = hasRenderedRef.current && !seenTurnKeysRef.current.has(item.key);
+    if (item.type === 'message') {
+      const isUser = item.message.role === 'user';
+      return (
+        <AcpTurn
+          key={item.key}
+          data-turn-key={item.key}
+          animateEnter={animateEnter}
+          className={`acp-turn ${isUser ? 'acp-turn-user' : 'acp-turn-agent'}${!isUser && isLatestAgentTurn ? ' acp-turn-agent-working' : ''}`}
+        >
+          <div className="acp-turn-avatar">
+            <AcpAvatar
+              type={isUser ? 'user' : 'agent'}
+              agentTitle={agentTitle}
+              agentId={agentId}
+            />
+          </div>
+          <div className="acp-turn-content">
+            {renderMessage(item.message, item.index)}
+          </div>
+        </AcpTurn>
+      );
+    }
+    const isPending = isLatestAgentTurn && item.messages.length === 0;
+    return (
+      <AcpTurn
+        key={item.key}
+        data-turn-key={item.key}
+        animateEnter={animateEnter}
+        className={`acp-turn acp-turn-agent${isLatestAgentTurn ? ' acp-turn-agent-working' : ''}`}
+        role={isPending ? 'status' : undefined}
+        aria-label={isPending ? 'Agent is working' : undefined}
+      >
+        <div className="acp-turn-avatar">
+          <AcpAvatar
+            type="agent"
+            agentTitle={agentTitle}
+            agentId={agentId}
+          />
+        </div>
+        <div className="acp-turn-content">
+          {renderTurnContent(item.messages, item.isLatest)}
+        </div>
+      </AcpTurn>
+    );
+  };
+
   // Early return must come after all hooks: messages can go from empty to non-empty on the same instance.
   if (messages.length === 0) {
     return (
@@ -346,54 +558,26 @@ const AcpMessagesComponent: React.FC<AcpMessagesProps> = ({
     );
   }
 
+  const { start, end } = turnRange;
+  const lastTurn = turnCount - 1;
+  // The last turn is still streaming and holds the working avatar, so it stays mounted outside the window.
+  const pinLastTurn = turnCount > 0 && end < turnCount;
+  const turnNodes: React.ReactNode[] = [
+    <div key="spacer-top" className="acp-turn-spacer" aria-hidden="true" style={{ height: turnOffsets[start] }} />,
+  ];
+  for (let i = start; i < end; i += 1) {
+    turnNodes.push(renderTurn(groupedItems[i], i));
+  }
+  if (pinLastTurn) {
+    turnNodes.push(
+      <div key="spacer-middle" className="acp-turn-spacer" aria-hidden="true" style={{ height: turnOffsets[lastTurn] - turnOffsets[end] }} />,
+      renderTurn(groupedItems[lastTurn], lastTurn),
+    );
+  }
+
   return (
     <>
-      {groupedItems.map((item, idx) => {
-        const isLatestAgentTurn = agentWorking && idx === groupedItems.length - 1;
-        if (item.type === 'message') {
-          const isUser = item.message.role === 'user';
-          return (
-            <AcpTurn
-              key={`turn-${item.index}`}
-              animateEnter={hasRenderedRef.current}
-              className={`acp-turn ${isUser ? 'acp-turn-user' : 'acp-turn-agent'}${!isUser && isLatestAgentTurn ? ' acp-turn-agent-working' : ''}`}
-            >
-              <div className="acp-turn-avatar">
-                <AcpAvatar
-                  type={isUser ? 'user' : 'agent'}
-                  agentTitle={agentTitle}
-                  agentId={agentId}
-                />
-              </div>
-              <div className="acp-turn-content">
-                {renderMessage(item.message, item.index)}
-              </div>
-            </AcpTurn>
-          );
-        } else if (item.type === 'group') {
-          return (
-            <AcpTurn
-              key={`turn-group-${idx}`}
-              animateEnter={hasRenderedRef.current}
-              className={`acp-turn acp-turn-agent${isLatestAgentTurn ? ' acp-turn-agent-working' : ''}`}
-              role={isLatestAgentTurn && item.messages.length === 0 ? 'status' : undefined}
-              aria-label={isLatestAgentTurn && item.messages.length === 0 ? 'Agent is working' : undefined}
-            >
-              <div className="acp-turn-avatar">
-                <AcpAvatar
-                  type="agent"
-                  agentTitle={agentTitle}
-                  agentId={agentId}
-                />
-              </div>
-              <div className="acp-turn-content">
-                {renderTurnContent(item.messages, item.isLatest)}
-              </div>
-            </AcpTurn>
-          );
-        }
-        return null;
-      })}
+      {turnNodes}
 
       {toolCalls.length > 0 && (
         <div className="acp-tool-calls">

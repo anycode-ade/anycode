@@ -2,6 +2,8 @@
     height: 100%;
     overflow-y: auto;
     overflow-x: hidden;
+    /* Turn spacers are compensated manually in AcpMessages.tsx; native anchoring would double-adjust. */
+    overflow-anchor: none;
     min-height: 0;
     font-family: var(--interface-font-family);
     font-size: var(--interface-font-size, 14px);
@@ -53,6 +55,10 @@
     position: relative;
     /* Matches the markdown line-height in AcpMessage.css. */
     --acp-message-line-height: 24px;
+}
+
+.acp-turn-spacer {
+    flex: 0 0 auto;
 }
 
 /* Only turns created after the list mounted fade in (see AcpTurn in AcpMessages.tsx). */

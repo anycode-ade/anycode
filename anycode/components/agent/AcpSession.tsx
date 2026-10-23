@@ -589,7 +589,9 @@ const AcpSessionComponent: React.FC<AcpSessionProps> = ({
       return;
     }
 
-    const frame = requestAnimationFrame(() => {
+    // Highlights only cover mounted messages, so repaint whenever rows mount or unmount while
+    // scrolling or streaming. Only the first paint scrolls to the active match.
+    const paint = (scrollToMatch: boolean) => {
       const messageTargets = innerRef.current
         ? Array.from(innerRef.current.querySelectorAll<HTMLElement>('[data-message-index]'))
         : [];
@@ -636,6 +638,7 @@ const AcpSessionComponent: React.FC<AcpSessionProps> = ({
         CSS.highlights.set('acp-search-current', new Highlight(currentRange));
       }
 
+      if (!scrollToMatch) return;
       const scroller = contentRef.current;
       if (scroller) {
         const activeTarget = messageTargets.find(
@@ -650,10 +653,22 @@ const AcpSessionComponent: React.FC<AcpSessionProps> = ({
           behavior: 'auto',
         });
       }
+    };
+
+    const frame = requestAnimationFrame(() => paint(true));
+    let repaintFrame = 0;
+    const observer = new MutationObserver(() => {
+      cancelAnimationFrame(repaintFrame);
+      repaintFrame = requestAnimationFrame(() => paint(false));
     });
+    if (innerRef.current) {
+      observer.observe(innerRef.current, { childList: true, subtree: true, characterData: true });
+    }
 
     return () => {
       cancelAnimationFrame(frame);
+      cancelAnimationFrame(repaintFrame);
+      observer.disconnect();
       clearHighlights();
     };
   }, [activeOccurrence, activeSearchMessageIndex, contentRef, innerRef, searchQuery, searchRenderVersion]);
@@ -957,6 +972,7 @@ const AcpSessionComponent: React.FC<AcpSessionProps> = ({
                 expandedToolResults={expandedToolResults}
                 expandedThoughts={searchExpandedThoughts}
                 activeSearchMessageIndex={activeSearchMessageIndex}
+                scrollerRef={contentRef}
                 onWorkGroupExpansionChange={handleWorkGroupExpansionChange}
                 onUserMessageToggle={disableAutoScroll}
                 onToggleToolCall={handleToggleToolCall}
