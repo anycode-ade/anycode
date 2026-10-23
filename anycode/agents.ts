@@ -1,5 +1,6 @@
 import { AcpAgent, ResolvedAgentPreset } from './types';
 import { loadAgents, saveAgents, loadDefaultAgentId, saveDefaultAgentId } from './storage';
+import { IS_DEMO_MODE } from './constants';
 
 // Default configuration of agents in code
 // Can be overridden by user settings
@@ -69,7 +70,11 @@ export function getProfileEnvForAgent(agent: AcpAgent, newId: string): Record<st
     return result;
 }
 
-export const DEFAULT_AGENTS: AcpAgent[] = [];
+// Seeded on first run only (no saved agent list yet). Demo mode has no real agent binaries,
+// so it gets the mock agent that DemoSocket answers for.
+export const DEFAULT_AGENTS: AcpAgent[] = IS_DEMO_MODE
+    ? [{ id: 'demo-agent', name: 'Demo Agent', command: 'demo-acp', args: [] }]
+    : [];
 
 const isLegacyMockAgent = (agent: AcpAgent): boolean => {
     if (agent.id === 'qwen' && agent.command === 'qwen') return true;
@@ -86,7 +91,7 @@ export function getAllAgents(): AcpAgent[] {
         return cachedAgents;
     }
 
-    const rawSavedAgents = loadAgents();
+    const rawSavedAgents = loadAgents() ?? DEFAULT_AGENTS;
     const savedAgents = rawSavedAgents.filter(a => !isLegacyMockAgent(a));
     if (savedAgents.length !== rawSavedAgents.length) {
         saveAgents(savedAgents);

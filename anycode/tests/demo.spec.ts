@@ -1,5 +1,13 @@
 import { test, expect, type Page } from '@playwright/test';
 
+// Demo mode seeds the Demo Agent on first run; starting it enables the prompt input.
+const startDemoAgent = async (page: Page) => {
+    await page.getByTitle('Start Demo Agent in').click();
+    const promptInput = page.getByPlaceholder('Ask anything...');
+    await expect(promptInput).toBeEnabled({ timeout: 10000 });
+    return promptInput;
+};
+
 const openSettingsPanel = async (page: Page) => {
     const settingsPanel = page.locator('.layout-dock-panel--settings:visible').first();
     if (await settingsPanel.count() === 0) {
@@ -485,144 +493,139 @@ test.describe('Anycode Live Demo Mode E2E Tests', () => {
     });
 
     test('should perform complete ACP agent lifecycle (user message, thought reasoning, tool card toggle, streaming response & demo notice)', async ({ page }) => {
-        const promptInput = page.getByPlaceholder('Ask anything...');
-        if (await promptInput.isVisible({ timeout: 5000 }).catch(() => false)) {
-            // 1. Send User Prompt
-            await promptInput.fill('hello, scan my workspace');
-            await promptInput.press('Enter');
+        const promptInput = await startDemoAgent(page);
+        // 1. Send User Prompt
+        await promptInput.fill('hello, scan my workspace');
+        await promptInput.press('Enter');
 
-            // 2. Assert User Prompt Bubble appears
-            await expect(page.getByText('hello, scan my workspace').first()).toBeVisible({ timeout: 10000 });
+        // 2. Assert User Prompt Bubble appears
+        await expect(page.getByText('hello, scan my workspace').first()).toBeVisible({ timeout: 10000 });
 
-            // 3. Assert Thought reasoning block appears
-            await expect(page.getByText(/Analyzing workspace VFS files/i).first()).toBeVisible({ timeout: 10000 });
+        // 3. Assert Thought reasoning block appears
+        await expect(page.getByText(/Analyzing workspace VFS files/i).first()).toBeVisible({ timeout: 10000 });
 
-            // 4. Assert Tool Call Card appears and expands in the latest group
-            const toolToggle = page.locator('.acp-tool-call-toggle').first();
-            await expect(toolToggle).toBeVisible({ timeout: 10000 });
-            await toolToggle.click();
+        // 4. Assert Tool Call Card appears and expands in the latest group
+        const toolToggle = page.locator('.acp-tool-call-toggle').first();
+        await expect(toolToggle).toBeVisible({ timeout: 10000 });
+        await toolToggle.click();
 
-            // 5. Assert Tool Command details are rendered inside expanded card
-            await expect(page.locator('.acp-tool-call-expanded, .acp-tool-call-name').getByText(/list_dir|Scanning/i).first()).toBeVisible({ timeout: 10000 });
+        // 5. Assert Tool Command details are rendered inside expanded card
+        await expect(page.locator('.acp-tool-call-expanded, .acp-tool-call-name').getByText(/list_dir|Scanning/i).first()).toBeVisible({ timeout: 10000 });
 
-            // 6. Assert Assistant streaming response with English demo notice appears
-            await expect(
-                page.getByText(/Demo Mode Notice/i).first()
-            ).toBeVisible({ timeout: 10000 });
-        }
+        // 6. Assert Assistant streaming response with English demo notice appears
+        await expect(
+            page.getByText(/Demo Mode Notice/i).first()
+        ).toBeVisible({ timeout: 10000 });
     });
 
     test('should collapse and expand long user messages', async ({ page }) => {
-        const promptInput = page.getByPlaceholder('Ask anything...');
-        if (await promptInput.isVisible({ timeout: 5000 }).catch(() => false)) {
-            const longPrompt = Array.from({ length: 24 }, (_, index) => `Log line ${index + 1}: repeated diagnostic output`).join('\n');
-            await promptInput.fill(longPrompt);
-            await promptInput.press('Enter');
+        const promptInput = await startDemoAgent(page);
+        const longPrompt = Array.from({ length: 24 }, (_, index) => `Log line ${index + 1}: repeated diagnostic output`).join('\n');
+        await promptInput.fill(longPrompt);
+        await promptInput.press('Enter');
 
-            const userMessage = page.locator('.acp-message-user').filter({ hasText: 'Log line 24' }).last();
-            const toggle = userMessage.getByRole('button', { name: 'Show more' });
-            await expect(toggle).toBeVisible({ timeout: 10000 });
-            await expect(toggle).toHaveAttribute('aria-expanded', 'false');
-            await expect(userMessage.locator('.acp-user-message-body')).toHaveClass(/acp-user-message-body-collapsed/);
+        const userMessage = page.locator('.acp-message-user').filter({ hasText: 'Log line 24' }).last();
+        const toggle = userMessage.getByRole('button', { name: 'Show more' });
+        await expect(toggle).toBeVisible({ timeout: 10000 });
+        await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+        await expect(userMessage.locator('.acp-user-message-body')).toHaveClass(/acp-user-message-body-collapsed/);
 
-            await toggle.click();
-            await expect(userMessage.getByRole('button', { name: 'Show less' })).toHaveAttribute('aria-expanded', 'true');
-            await expect(userMessage.locator('.acp-user-message-body')).not.toHaveClass(/acp-user-message-body-collapsed/);
-            await expect(page.getByRole('button', { name: 'Enable auto-scroll' })).toBeVisible();
-        }
+        await toggle.click();
+        await expect(userMessage.getByRole('button', { name: 'Show less' })).toHaveAttribute('aria-expanded', 'true');
+        await expect(userMessage.locator('.acp-user-message-body')).not.toHaveClass(/acp-user-message-body-collapsed/);
+        await expect(page.getByRole('button', { name: 'Enable auto-scroll' })).toBeVisible();
     });
 
-    test('should search ACP text without expanding unrelated work groups', async ({ page }) => {
-        const promptInput = page.getByPlaceholder('Ask anything...');
-        if (await promptInput.isVisible({ timeout: 5000 }).catch(() => false)) {
-            await promptInput.fill('first first search turn');
-            await promptInput.press('Enter');
-            await expect(page.getByText(/Demo Mode Notice/i).first()).toBeVisible({ timeout: 10000 });
+    test('should search ACP text without expanding unrelated tool calls', async ({ page }) => {
+        const promptInput = await startDemoAgent(page);
+        await promptInput.fill('first first search turn');
+        await promptInput.press('Enter');
+        await expect(page.getByText(/Demo Mode Notice/i).first()).toBeVisible({ timeout: 10000 });
+        // A prompt sent while the agent still streams is queued, so wait until the first turn has finished.
+        await expect(page.getByRole('button', { name: 'Cancel prompt' })).toHaveCount(0, { timeout: 10000 });
 
-            await promptInput.fill('second search turn');
-            await promptInput.press('Enter');
-            await expect(page.locator('.acp-work-group').first()).toHaveClass(/collapsed/);
-            await expect(page.locator('.acp-message-markdown blockquote')).toHaveCount(2, { timeout: 10000 });
+        await promptInput.fill('second search turn');
+        await promptInput.press('Enter');
+        await expect(page.locator('.acp-message-markdown blockquote')).toHaveCount(2, { timeout: 10000 });
 
-            const selectedMessage = page.locator('.acp-message-user').filter({ hasText: 'first first search turn' });
-            await selectedMessage.evaluate((element) => {
-                const range = document.createRange();
-                range.selectNodeContents(element.querySelector('.acp-message-content')!);
-                window.getSelection()?.removeAllRanges();
-                window.getSelection()?.addRange(range);
-            });
-            await page.keyboard.press('Control+f');
+        const selectedMessage = page.locator('.acp-message-user').filter({ hasText: 'first first search turn' });
+        await selectedMessage.evaluate((element) => {
+            const range = document.createRange();
+            range.selectNodeContents(element.querySelector('.acp-message-content p')!);
+            window.getSelection()?.removeAllRanges();
+            window.getSelection()?.addRange(range);
+        });
+        await page.keyboard.press('Control+f');
 
-            const conversationSearch = page.getByRole('search').getByLabel('Find in conversation');
-            await expect(conversationSearch).toBeFocused();
-            await expect(conversationSearch).toHaveValue('first first search turn');
+        const conversationSearch = page.getByRole('search').getByLabel('Find in conversation');
+        await expect(conversationSearch).toBeFocused();
+        await expect(conversationSearch).toHaveValue('first first search turn');
 
-            await expect(page.locator('.acp-search-count')).toHaveText('1 / 3');
-            await expect(page.locator('.acp-search-current-hit')).toBeVisible();
+        await expect(page.locator('.acp-search-count')).toHaveText('1 / 3');
+        await expect.poll(() => page.evaluate(() => CSS.highlights.get('acp-search-current')?.size ?? 0)).toBe(1);
 
-            await conversationSearch.press('Enter');
-            await expect(page.locator('.acp-search-count')).toHaveText('2 / 3');
-            await expect(page.locator('[data-search-expanded="true"]')).toHaveCount(1);
-            await expect(page.locator('.acp-tool-call-expanded')).toHaveCount(0);
+        await conversationSearch.press('Enter');
+        await expect(page.locator('.acp-search-count')).toHaveText('2 / 3');
+        await expect(page.locator('.acp-tool-call-expanded')).toHaveCount(0);
 
-            await conversationSearch.fill('first');
-            await expect(page.locator('.acp-search-count')).toHaveText('1 / 6');
-            await conversationSearch.press('Enter');
-            await expect(page.locator('.acp-search-count')).toHaveText('2 / 6');
+        await conversationSearch.fill('first');
+        await expect(page.locator('.acp-search-count')).toHaveText('1 / 6');
+        await conversationSearch.press('Enter');
+        await expect(page.locator('.acp-search-count')).toHaveText('2 / 6');
 
-            await conversationSearch.fill('Read 182 bytes from README.md');
-            await expect(page.locator('.acp-search-count')).toHaveText('No results');
-            await expect(page.locator('[data-search-expanded="true"]')).toHaveCount(0);
+        await conversationSearch.fill('Read 182 bytes from README.md');
+        await expect(page.locator('.acp-search-count')).toHaveText('No results');
+        await expect(page.locator('.acp-tool-call-expanded')).toHaveCount(0);
 
-            await conversationSearch.press('Escape');
-            await expect(page.getByRole('search')).not.toBeVisible();
-        }
+        await conversationSearch.press('Escape');
+        await expect(page.getByRole('search')).not.toBeVisible();
     });
 
     test('should generate interactive Git diff cards (apply_diff) and verify acp-code and acp-diff-code CSS classes', async ({ page }) => {
-        const promptInput = page.getByPlaceholder('Ask anything...');
-        if (await promptInput.isVisible({ timeout: 5000 }).catch(() => false)) {
-            // Send Code Edit Prompt
-            await promptInput.fill('fix demo.py code');
-            await promptInput.press('Enter');
+        const promptInput = await startDemoAgent(page);
+        // Send Code Edit Prompt
+        await promptInput.fill('fix demo.py code');
+        await promptInput.press('Enter');
 
-            // Assert Tool Call Card for apply_diff appears
-            const diffToolCard = page.locator('.acp-message-tool_call').first();
-            await expect(diffToolCard).toBeVisible({ timeout: 10000 });
+        // Assert Tool Call Card for apply_diff appears
+        const diffToolCard = page.locator('.acp-message-tool_call').first();
+        await expect(diffToolCard).toBeVisible({ timeout: 10000 });
 
-            // Click toggle to expand tool call details
-            const toggleBtn = diffToolCard.locator('.acp-tool-call-toggle').first();
-            if (await toggleBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
-                await toggleBtn.click();
+        // Click toggle to expand tool call details
+        const toggleBtn = diffToolCard.locator('.acp-tool-call-toggle').first();
+        await expect(toggleBtn).toBeVisible({ timeout: 10000 });
+        await toggleBtn.click();
 
-                // Assert 1: Clickable file link button demo.py is rendered inside diff card
-                const diffFileLink = diffToolCard.locator('.acp-tool-call-diff-link').getByText('demo.py').first();
-                await expect(diffFileLink).toBeVisible({ timeout: 10000 });
+        // Assert 1: Clickable file link button demo.py is rendered inside diff card
+        const diffFileLink = diffToolCard.locator('.acp-tool-call-diff-link').getByText('demo.py').first();
+        await expect(diffFileLink).toBeVisible({ timeout: 10000 });
 
-                // Assert 2: Verify .acp-code.acp-diff-code element is rendered in DOM for Git diff card
-                const acpDiffCodeElement = page.locator('.acp-code.acp-diff-code, .acp-tool-call-diffs').first();
-                await expect(acpDiffCodeElement).toBeVisible({ timeout: 10000 });
-            }
+        // Assert 2: Verify .acp-code.acp-diff-code element is rendered in DOM for Git diff card
+        const acpDiffCodeElement = page.locator('.acp-code.acp-diff-code, .acp-tool-call-diffs').first();
+        await expect(acpDiffCodeElement).toBeVisible({ timeout: 10000 });
 
-            // Assert 3: Verify .acp-code element is rendered in DOM for Markdown code response
-            const acpCodeElement = page.locator('.acp-code').first();
-            await expect(acpCodeElement).toBeVisible({ timeout: 10000 });
+        // Assert 3: Verify .acp-code element is rendered in DOM for Markdown code response
+        const acpCodeElement = page.locator('.acp-code').first();
+        await expect(acpCodeElement).toBeVisible({ timeout: 10000 });
 
-            // Assert 4: Code block diff snippet is rendered in response message
-            await expect(page.locator('.acp-message-content code, pre').getByText(/def greet/i).first()).toBeVisible({ timeout: 10000 });
+        // Assert 4: Code block diff snippet is rendered in response message
+        await expect(page.locator('.acp-message-content code, pre').getByText(/def greet/i).first()).toBeVisible({ timeout: 10000 });
 
-            // Assert 5: Markdown code blocks expose a copy action and acknowledge the copy
-            const markdownCode = page.locator('.acp-message-markdown').last();
-            const copyCodeButton = markdownCode.getByRole('button', { name: 'Copy code' }).first();
-            const codeBlock = markdownCode.locator('.acp-code').filter({ has: copyCodeButton }).first();
-            await expect(copyCodeButton).not.toBeVisible();
-            await codeBlock.hover();
-            await expect(copyCodeButton).toBeVisible({ timeout: 10000 });
-            await expect(copyCodeButton.locator('svg')).toBeVisible();
-            await expect(codeBlock.locator('.acp-code-toolbar')).toHaveCSS('position', 'absolute');
-            await copyCodeButton.click();
-            await expect(page.getByRole('button', { name: 'Code copied' }).first()).toBeVisible({ timeout: 5000 });
-        }
+        // Assert 5: Markdown code blocks expose a copy action and acknowledge the copy
+        const markdownCode = page.locator('.acp-message-markdown').last();
+        const codeBlock = markdownCode.locator('.acp-code').first();
+        const copyCodeButton = codeBlock.getByRole('button', { name: 'Copy code' });
+        // The copy button is hidden with opacity until the block is hovered.
+        await expect(copyCodeButton).toHaveCSS('opacity', '0');
+        await codeBlock.hover();
+        await expect(copyCodeButton).toBeVisible({ timeout: 10000 });
+        await expect(copyCodeButton.locator('svg')).toBeVisible();
+        await expect(codeBlock.locator('.acp-code-toolbar')).toHaveCSS('position', 'absolute');
+        // The button only receives pointer events while the block is hovered, so keep the block under the pointer until the click.
+        await codeBlock.scrollIntoViewIfNeeded();
+        await codeBlock.hover();
+        await copyCodeButton.click();
+        await expect(page.getByRole('button', { name: 'Code copied' }).first()).toBeVisible({ timeout: 5000 });
     });
 
     test('should perform real content search across VFS files', async ({ page }) => {

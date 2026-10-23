@@ -232,9 +232,9 @@ export const AcpEmptyPane: React.FC<AcpEmptyPaneProps> = ({
                           </div>
                         ) : null}
 
-                        {projects.length > 0 && (
+                        {projects.length > 1 ? (
                           <div
-                            className={`acp-start-card-project-wrap ${projects.length < 2 ? 'is-disabled' : ''}`}
+                            className="acp-start-card-project-wrap"
                             onClick={(event) => event.stopPropagation()}
                             onPointerDown={(event) => event.stopPropagation()}
                           >
@@ -244,7 +244,7 @@ export const AcpEmptyPane: React.FC<AcpEmptyPaneProps> = ({
                             <span className="acp-start-card-project-label">
                               {selectedProject?.name ?? 'Select project'}
                             </span>
-                            {projects.length > 1 && <span className="acp-start-card-profile-arrow">▾</span>}
+                            <span className="acp-start-card-profile-arrow">▾</span>
                             <select
                               className="acp-start-card-project-select"
                               value={selectedProjectId}
@@ -252,7 +252,6 @@ export const AcpEmptyPane: React.FC<AcpEmptyPaneProps> = ({
                                 event.stopPropagation();
                                 onSelectProject(event.target.value);
                               }}
-                              disabled={projects.length < 2}
                               title={selectedProject?.root ?? 'Select the project for this agent'}
                               aria-label={`Project for ${group.baseName}`}
                             >
@@ -261,7 +260,15 @@ export const AcpEmptyPane: React.FC<AcpEmptyPaneProps> = ({
                               ))}
                             </select>
                           </div>
-                        )}
+                        ) : projects.length === 1 ? (
+                          // A single project has nothing to choose; a static label keeps clicks on the card.
+                          <div className="acp-start-card-profile-static">
+                            <svg className="acp-start-card-meta-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                            </svg>
+                            <span>{selectedProject?.name ?? 'Select project'}</span>
+                          </div>
+                        ) : null}
 
                         {onLoadSessions && onResumeSession && (
                           <button

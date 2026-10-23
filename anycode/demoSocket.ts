@@ -58,6 +58,14 @@ function generateDemoScrollContent(targetLines: number = 1000000): string {
 
 const SCROLL_DEMO_CONTENT = generateDemoScrollContent(1000000);
 
+// Every workspace event answers with this single fixed project rooted at the VFS root ('.'),
+// matching the relative VFS paths. Workspace mutations are no-ops in demo mode.
+const DEMO_WORKSPACE_STATE = {
+    projects: [{ id: 'demo-project', name: 'anycode-demo', root: '.' }],
+    active_project_id: 'demo-project',
+    recent_workspaces: [] as unknown[],
+};
+
 const DEMO_VFS: Record<string, VfsNode> = {
     '.': { path: '.', name: '.', is_dir: true },
     'src': { path: 'src', name: 'src', is_dir: true },
@@ -304,6 +312,13 @@ Object.entries(themeModules).forEach(([filePath, mod]) => {
     }
 });
 
+interface DemoRunningAgent {
+    id: string;
+    name: string;
+    session_id: string;
+    project_id: string | null;
+}
+
 export class DemoSocket {
     public connected: boolean = true;
     public active: boolean = true;
@@ -313,6 +328,7 @@ export class DemoSocket {
     private terminalBuffer: string = '';
     private terminalCurrentDir: string = '.';
     private agentNames: Map<string, string> = new Map();
+    private runningAgents: Map<string, DemoRunningAgent> = new Map();
 
     constructor() {
         // Trigger connect event on next tick
@@ -382,6 +398,16 @@ export class DemoSocket {
 
     private handleEvent(event: string, payload: any, callback: ((res: any) => void) | null): void {
         switch (event) {
+            case 'workspace:state':
+            case 'workspace:select-project':
+            case 'workspace:add-project':
+            case 'workspace:remove-project':
+            case 'workspace:remove-recent':
+            case 'workspace:close': {
+                callback?.({ success: true, ...DEMO_WORKSPACE_STATE });
+                break;
+            }
+
             case 'dir:list': {
                 const reqPath = (payload?.path || '.').replace(/^\.\//, '');
                 const normPath = reqPath === '' ? '.' : reqPath;
@@ -986,6 +1012,12 @@ export class DemoSocket {
                 this.agentNames.set(agentId, agentName);
 
                 const sessionId = payload?.resume_session_id || `session-${agentId}`;
+                this.runningAgents.set(agentId, {
+                    id: agentId,
+                    name: agentName,
+                    session_id: sessionId,
+                    project_id: payload?.project_id ?? null,
+                });
                 callback?.({
                     status: 'ok',
                     success: true,
@@ -1240,10 +1272,20 @@ export class DemoSocket {
                 break;
             }
 
-            case 'acp:stop':
+            case 'acp:stop': {
+                this.runningAgents.delete(payload?.agent_id);
+                callback?.({ status: 'ok', success: true });
+                break;
+            }
+
+            case 'acp:reconnect': {
+                // Like the backend: report running agents so the client keeps their sessions.
+                callback?.({ status: 'ok', success: true, agents: [...this.runningAgents.values()] });
+                break;
+            }
+
             case 'acp:cancel':
             case 'acp:undo':
-            case 'acp:reconnect':
             case 'acp:set_model':
             case 'acp:set_reasoning': {
                 callback?.({ status: 'ok', success: true });
