@@ -1,7 +1,7 @@
 import type { MouseEvent as ReactMouseEvent } from 'react';
 import { Icons } from '../Icons';
 import { FileIcon } from '../FileIcon';
-import { AgentIcon } from '../agent/AgentIcon';
+import { AcpAvatar } from '../agent/AcpAvatar';
 
 type ToolbarTabProps = {
     active: boolean;
@@ -9,6 +9,8 @@ type ToolbarTabProps = {
     badge?: string;
     title?: string;
     variant?: 'terminal' | 'agent';
+    agentId?: string;
+    isWorking?: boolean;
     filePath?: string;
     fileIconsStyle?: 'colored' | 'monochrome' | 'disabled';
     pinned?: boolean;
@@ -31,6 +33,8 @@ export const ToolbarTab = ({
     badge,
     title,
     variant,
+    agentId,
+    isWorking,
     filePath,
     fileIconsStyle = 'colored',
     pinned,
@@ -50,6 +54,7 @@ export const ToolbarTab = ({
         'tab',
         variant === 'terminal' ? 'tab-terminal' : '',
         variant === 'agent' ? 'tab-agent' : '',
+        isWorking ? 'is-working' : '',
         active ? 'active' : '',
         pinned ? 'tab-pinned' : '',
         dragging ? 'tab-dragging' : '',
@@ -93,7 +98,13 @@ export const ToolbarTab = ({
                         isLoading ? (
                             <span className="tab-loading-spinner" title="Starting..." />
                         ) : (
-                            <AgentIcon name={label} size={16} className="tab-agent-icon" />
+                            <AcpAvatar
+                                type="agent"
+                                agentId={agentId}
+                                agentTitle={label}
+                                size={16}
+                                className="tab-agent-avatar"
+                            />
                         )
                     )}
                     {variant === 'terminal' && (

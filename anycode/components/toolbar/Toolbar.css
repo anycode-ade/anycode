@@ -36,6 +36,7 @@
 
 .tab-file-icon,
 .tab-agent-icon,
+.tab-agent-avatar,
 .tab-terminal-icon {
     width: 16px;
     height: 16px;
@@ -122,6 +123,7 @@
 
 .tab:not(.tab-pinned) .tab-icon-container:hover .tab-file-icon,
 .tab:not(.tab-pinned) .tab-icon-container:hover .tab-agent-icon,
+.tab:not(.tab-pinned) .tab-icon-container:hover .tab-agent-avatar,
 .tab:not(.tab-pinned) .tab-icon-container:hover .tab-terminal-icon {
     display: none;
 }
@@ -208,12 +210,55 @@
     color: var(--theme-tab-active-foreground, #d8f0ff);
 }
 
+.tab-agent-avatar.acp-avatar {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    border: none;
+    background: none;
+    box-sizing: border-box;
+}
+
+.tab-agent-avatar .acp-avatar-image {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    display: block;
+}
+
 .tab-agent {
     color: var(--theme-tab-foreground, #9fd5a9);
 }
 
 .tab-agent.active {
     color: var(--theme-tab-active-foreground, #d9f5de);
+}
+
+.tab-agent.is-working.active {
+    border-bottom-color: #65d68a;
+}
+
+.tab-agent.is-working:not(.active) {
+    color: color-mix(in srgb, #65d68a 85%, var(--theme-tab-foreground, #9fd5a9));
+}
+
+/* While the agent works, its avatar breathes with a soft pulse in the toolbar */
+.tab-agent.is-working .tab-agent-avatar {
+    border-radius: 50%;
+    animation: tab-agent-avatar-breathe 1.8s ease-in-out infinite;
+    will-change: transform, box-shadow;
+}
+
+@keyframes tab-agent-avatar-breathe {
+    0%, 100% {
+        transform: scale(0.92);
+        box-shadow: 0 0 0 0 color-mix(in srgb, #65d68a 0%, transparent);
+    }
+    50% {
+        transform: scale(1.12);
+        box-shadow: 0 0 8px 2px color-mix(in srgb, #65d68a 65%, transparent);
+    }
 }
 
 .toolbar button:focus {

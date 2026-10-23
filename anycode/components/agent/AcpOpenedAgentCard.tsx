@@ -133,8 +133,8 @@ export const AcpOpenedAgentCard: React.FC<AcpOpenedAgentCardProps> = ({
       </button>
 
       <div className="acp-pane-opened-body">
-        <div className="acp-start-card-icon-box acp-pane-opened-icon-box">
-          <AcpAvatar type="agent" agentId={session.agentId} agentTitle={baseName} size={18} />
+        <div className={`acp-pane-opened-icon-box ${isWorking ? 'is-working' : ''}`}>
+          <AcpAvatar type="agent" agentId={session.agentId} agentTitle={baseName} size={20} />
         </div>
 
         <div className="acp-pane-opened-content">
@@ -202,17 +202,9 @@ export const AcpOpenedAgentCard: React.FC<AcpOpenedAgentCardProps> = ({
                   aria-hidden={!hasUnread}
                 >
                   <span className="acp-pane-opened-unread-dot" />
-                  <span>{unreadCount > 1 ? `${unreadCount} new` : 'New'}</span>
+                  <span>{unreadCount} new</span>
                 </span>
-                {isWorking && (
-                  <span className="acp-pane-opened-working" title="Agent is working...">
-                    <span className="acp-pane-opened-working-dots" aria-hidden="true">
-                      <span />
-                      <span />
-                      <span />
-                    </span>
-                  </span>
-                )}
+
               </>
             )}
           </div>

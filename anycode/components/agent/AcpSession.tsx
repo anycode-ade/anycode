@@ -1016,7 +1016,6 @@ const AcpSessionComponent: React.FC<AcpSessionProps> = ({
               isConnected={isConnected && !authRequired}
               isStarting={isStarting}
               isProcessing={isProcessing}
-              showProcessingDots={!autoScrollEnabled}
               queue={queue}
               onUpdateQueueItem={onUpdateQueueItem ? (itemId, prompt) => onUpdateQueueItem(agentId, itemId, prompt) : undefined}
               onRemoveQueueItem={onRemoveQueueItem ? (itemId) => onRemoveQueueItem(agentId, itemId) : undefined}

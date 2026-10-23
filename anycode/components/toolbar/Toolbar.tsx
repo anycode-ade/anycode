@@ -577,7 +577,9 @@ export const Toolbar = ({
                                 badge={accountName}
                                 title={fullName}
                                 variant="agent"
+                                agentId={session.agentId}
                                 isLoading={session.isStarting}
+                                isWorking={Boolean(session.isProcessing)}
                                 pinned={pinnedAgentIds.includes(session.agentId)}
                                 onUnpin={() => togglePinAgent(session.agentId)}
                                 onSelect={() => onSelectAgent(session.agentId)}

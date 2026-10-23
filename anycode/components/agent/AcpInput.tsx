@@ -1057,19 +1057,7 @@ const AcpInputComponent: React.FC<AcpInputProps> = ({
           aria-label="Cancel prompt"
           title="Cancel prompt"
         >
-          {showProcessingDots && !canSubmit && (
-            <span className="acp-stop-prompt-dots" aria-hidden="true">
-              <span>.</span>
-              <span>.</span>
-              <span>.</span>
-            </span>
-          )}
-          <span
-            className={`acp-stop-prompt-icon${showProcessingDots && !canSubmit ? ' acp-stop-prompt-icon-hover' : ' acp-stop-prompt-icon-visible'}`}
-            aria-hidden="true"
-          >
-            <AcpIcons.Cancel />
-          </span>
+          <AcpIcons.Cancel />
         </button>
       )}
       <button
