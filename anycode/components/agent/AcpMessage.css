@@ -621,9 +621,7 @@
 .acp-tool-call-toggle-main {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    flex: 1;
+    gap: 10px;
     min-width: 0;
 }
 
@@ -653,6 +651,7 @@
     white-space: nowrap;
     font-family: var(--editor-font-family, "JetBrains Mono", monospace);
     font-size: 0.86em;
+    flex-shrink: 0;
 }
 
 .acp-tool-call-diff {
