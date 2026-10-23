@@ -4,6 +4,13 @@ import { LayoutPanelApiContext } from '../components/layout/Layout';
 
 const sessionScrollCache = new Map<string, number>();
 
+export function hasPersistedScroll(id: string, persist: 'session' | 'local' = 'session'): boolean {
+    if (persist === 'local') {
+        return localStorage.getItem(`scroll:${id}`) !== null;
+    }
+    return sessionScrollCache.has(id);
+}
+
 export function usePersistedScroll<T extends HTMLElement>(
     id: string,
     persist: 'session' | 'local' = 'session',
@@ -26,16 +33,29 @@ export function usePersistedScroll<T extends HTMLElement>(
                 if (val !== undefined) savedScroll = val;
             }
 
-            if (savedScroll !== null && element.scrollHeight > element.clientHeight) {
-                element.classList.add('is-restoring-scroll');
-                element.scrollTop = savedScroll;
-                
-                requestAnimationFrame(() => {
+            if (savedScroll === null || savedScroll <= 0) return;
+
+            let attempts = 0;
+            const maxAttempts = 5;
+
+            const applyScroll = () => {
+                if (!element) return;
+                if (element.scrollHeight > element.clientHeight) {
+                    element.classList.add('is-restoring-scroll');
+                    element.scrollTop = savedScroll!;
+                    
                     requestAnimationFrame(() => {
-                        element.classList.remove('is-restoring-scroll');
+                        requestAnimationFrame(() => {
+                            element.classList.remove('is-restoring-scroll');
+                        });
                     });
-                });
-            }
+                } else if (attempts < maxAttempts) {
+                    attempts++;
+                    requestAnimationFrame(applyScroll);
+                }
+            };
+
+            applyScroll();
         };
 
         // Restore scroll on mount/dependency change
@@ -49,6 +69,11 @@ export function usePersistedScroll<T extends HTMLElement>(
 
             // Also ignore if Dockview panel is marked as hidden
             if (panel && !panel.isVisible) {
+                return;
+            }
+
+            // Also ignore while actively restoring scroll
+            if (element.classList.contains('is-restoring-scroll')) {
                 return;
             }
 

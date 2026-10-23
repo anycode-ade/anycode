@@ -19,7 +19,7 @@ import { AcpMessages } from './AcpMessages';
 import { AcpIcons } from './AcpIcons';
 import { AgentIcon } from './AgentIcon';
 import { loadItem, saveItem } from '../../storage';
-import { usePersistedScroll } from '../../hooks/usePersistedScroll';
+import { usePersistedScroll, hasPersistedScroll } from '../../hooks/usePersistedScroll';
 import { selectionQuoteStore } from '../../features/agents/selectionQuoteStore';
 import { useEvent } from '../../hooks/useEvent';
 
@@ -60,9 +60,10 @@ const useAutoScroll = (messages: AcpMessage[], isProcessing: boolean, agentId: s
   const wasProcessingRef = useRef(isProcessing);
   const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
 
-  const checkIfScrolledToBottom = (element: HTMLElement): boolean => (
-    element.scrollHeight - element.scrollTop - element.clientHeight <= 48
-  );
+  const checkIfScrolledToBottom = (element: HTMLElement): boolean => {
+    if (element.clientHeight === 0) return false;
+    return element.scrollHeight - element.scrollTop - element.clientHeight <= 48;
+  };
 
   const setAutoScroll = (enabled: boolean) => {
     autoScrollEnabledRef.current = enabled;
@@ -200,6 +201,9 @@ const useAutoScroll = (messages: AcpMessage[], isProcessing: boolean, agentId: s
     };
 
     const handleScroll = () => {
+      if (contentElement.clientHeight === 0 || contentElement.clientWidth === 0) {
+        return;
+      }
       const currentScrollTop = contentElement.scrollTop;
       const delta = currentScrollTop - lastScrollTopRef.current;
       const scrollDirection = delta < -1 ? 'up' : delta > 1 ? 'down' : 'none';
@@ -255,7 +259,7 @@ const useAutoScroll = (messages: AcpMessage[], isProcessing: boolean, agentId: s
     prevAgentIdRef.current = agentId;
     isInitialSettleRef.current = true;
 
-    if (contentRef.current) {
+    if (contentRef.current && !hasPersistedScroll('agent-session-' + agentId)) {
       scrollToBottom('auto');
     }
   }, [agentId]);

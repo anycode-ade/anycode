@@ -196,6 +196,12 @@ const AcpInputComponent: React.FC<AcpInputProps> = ({
 
   const autoResizeTextarea = React.useCallback((el: HTMLTextAreaElement | null) => {
     if (!el) return;
+    // An empty textarea is one row. Its placeholder would otherwise count toward scrollHeight and wrap at narrow widths.
+    if (!el.value) {
+      el.style.height = '24px';
+      el.style.overflowY = 'hidden';
+      return;
+    }
     el.style.height = 'auto';
     const isSingleLine = !el.value.includes('\n') && el.scrollHeight <= 28;
     const nextHeight = isSingleLine ? 24 : Math.min(Math.max(el.scrollHeight, 24), 160);

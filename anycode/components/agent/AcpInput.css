@@ -715,11 +715,6 @@
         right: 12px;
         bottom: 12px;
     }
-
-    .acp-input textarea,
-    .acp-input-preview-text {
-        font-size: max(16px, var(--interface-font-size, 16px));
-    }
 }
 
 /* Recording Panel Styles */

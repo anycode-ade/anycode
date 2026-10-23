@@ -219,7 +219,11 @@ const projectRawUpdate = (rawMessage: AcpRawUpdateMessage): AcpMessage[] => {
             session_id: sessionId,
             name: title,
             title,
-            command: asString(rawInput?.cmd) ?? asString(rawInput?.command) ?? title,
+            command: asString(rawInput?.cmd)
+                ?? asString(rawInput?.command)
+                ?? asString(rawInput?.CommandLine)
+                ?? asString(getAnyField(payload, "command"))
+                ?? (title.toLowerCase().startsWith("running ") ? undefined : title),
             arguments: payload,
             kind: asString(getAnyField(payload, 'kind', 'tool_kind')),
             status: normalizeToolStatus(getAnyField(payload, 'status')),
@@ -234,15 +238,17 @@ const projectRawUpdate = (rawMessage: AcpRawUpdateMessage): AcpMessage[] => {
         return [call];
     }
 
-    if ((kind === 'tool_call_update') && payload) {
-        const id = asString(getAnyField(payload, 'tool_call_id', 'toolCallId', 'id')) ?? '';
-        if (!id) return [];
+    if ((kind === 'tool_call_update' || kind === 'tool_result' || kind === 'tool_call_result') && payload) {
         const fields = asRecord(getAnyField(payload, 'fields'));
+        const id = asString(getAnyField(payload, 'tool_call_id', 'toolCallId', 'id'))
+            ?? asString(getAnyField(fields, 'tool_call_id', 'toolCallId', 'id'))
+            ?? '';
+        if (!id) return [];
         const status = normalizeToolStatus(getAnyField(fields, 'status') ?? getAnyField(payload, 'status'));
-        const basePayload = fields ?? payload;
-        const withId = { tool_call_id: id, session_id: sessionId, ...basePayload };
+        const mergedPayload = fields ? { ...payload, ...fields } : payload;
+        const withId = { ...mergedPayload, tool_call_id: id, session_id: sessionId };
 
-        if (status === 'completed') {
+        if (status === 'completed' || kind === 'tool_result' || kind === 'tool_call_result') {
             const result: AcpToolResultMessage = {
                 role: 'tool_result',
                 id,
@@ -250,7 +256,6 @@ const projectRawUpdate = (rawMessage: AcpRawUpdateMessage): AcpMessage[] => {
             };
             return [result];
         }
-
 
         const update: AcpToolUpdateMessage = {
             role: 'tool_update',

@@ -426,8 +426,10 @@ impl AcpClientImpl {
 
         let is_tool_event = kind == "tool_call"
             || kind == "tool_call_update"
+            || kind == "tool_result"
             || kind == "toolCall"
-            || kind == "toolCallUpdate";
+            || kind == "toolCallUpdate"
+            || kind == "toolResult";
         if !is_tool_event {
             return;
         }
@@ -452,7 +454,7 @@ impl AcpClientImpl {
         let command = target_map
             .get("rawInput")
             .or_else(|| target_map.get("raw_input"))
-            .and_then(|i| i.get("cmd").or_else(|| i.get("command")))
+            .and_then(|i| i.get("cmd").or_else(|| i.get("command")).or_else(|| i.get("CommandLine")))
             .and_then(Value::as_str)
             .map(|s| s.to_string());
 

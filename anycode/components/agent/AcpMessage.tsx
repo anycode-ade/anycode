@@ -43,24 +43,160 @@ interface AcpMessageProps {
   animateEnter?: boolean;
 }
 
+const formatToolCallLabel = (diffPaths: string[], fallbackLabel: string): string => {
+  if (diffPaths.length === 0) {
+    return fallbackLabel;
+  }
+
+  if (diffPaths.length === 1) {
+    return getFileName(diffPaths[0]);
+  }
+
+  const visibleNames = diffPaths.slice(0, 2).map(getFileName);
+  const hiddenCount = diffPaths.length - visibleNames.length;
+  return hiddenCount > 0
+    ? `${visibleNames.join(", ")} +${hiddenCount}`
+    : visibleNames.join(", ");
+};
+
+const getToolCallLabel = (
+  message: AcpToolCallMessage,
+  diffPaths: string[],
+  kind?: string,
+): string => {
+  if (diffPaths.length > 0) {
+    return formatToolCallLabel(diffPaths, "");
+  }
+
+  const rawInput = (message.raw_input ?? message.arguments) as Record<string, unknown> | undefined;
+
+  // 1. Human-readable action or summary provided by agent (standard across MCP / ACP tools)
+  const summaryCandidates = [
+    rawInput?.toolSummary,
+    rawInput?.toolAction,
+    rawInput?.summary,
+    rawInput?.description,
+  ];
+  for (const candidate of summaryCandidates) {
+    if (typeof candidate === "string" && candidate.trim()) {
+      return candidate.trim();
+    }
+  }
+
+  // 2. Real terminal / shell command (cmd, command, CommandLine)
+  const commandCandidates = [
+    rawInput?.cmd,
+    rawInput?.command,
+    rawInput?.CommandLine,
+    message.command,
+  ];
+  for (const cmd of commandCandidates) {
+    if (typeof cmd === "string" && cmd.trim()) {
+      const trimmed = cmd.trim();
+      if (!/^running\s+/i.test(trimmed) && trimmed !== message.name) {
+        return trimmed;
+      }
+    }
+  }
+
+  // 3. File path referenced in locations or input arguments
+  const pathCandidates = [
+    message.locations?.[0]?.path,
+    rawInput?.absolute_path,
+    rawInput?.AbsolutePath,
+    rawInput?.target_file,
+    rawInput?.path,
+    rawInput?.filePath,
+    rawInput?.file_path,
+    rawInput?.DirectoryPath,
+    rawInput?.directory_path,
+    rawInput?.SearchPath,
+    rawInput?.search_path,
+  ];
+  for (const p of pathCandidates) {
+    if (typeof p === "string" && p.trim()) {
+      const fileName = getFileName(p.trim());
+      if (fileName) {
+        const verb = kind === "read" ? "Read" : kind === "search" ? "Search" : null;
+        return verb ? `${verb} ${fileName}` : fileName;
+      }
+    }
+  }
+
+  // 4. URL
+  const urlCandidate = rawInput?.url ?? rawInput?.Url;
+  if (typeof urlCandidate === "string" && urlCandidate.trim()) {
+    try {
+      const parsed = new URL(urlCandidate.trim());
+      return parsed.hostname + (parsed.pathname !== "/" ? parsed.pathname : "");
+    } catch {
+      return urlCandidate.trim();
+    }
+  }
+
+  // 5. Query / search pattern
+  const queryCandidate = rawInput?.Query ?? rawInput?.query ?? rawInput?.Pattern ?? rawInput?.pattern;
+  if (typeof queryCandidate === "string" && queryCandidate.trim()) {
+    return `Search "${queryCandidate.trim()}"`;
+  }
+
+  // 6. Fallback to title / name, cleaning up generic "Running <tool>" prefix
+  const rawTitle = message.title?.trim() || message.name?.trim() || "tool";
+  if (/^running\s+/i.test(rawTitle)) {
+    return rawTitle.replace(/^running\s+/i, "");
+  }
+
+  return rawTitle;
+};
+
+const getToolInputDetails = (message: AcpToolCallMessage) => {
+  const rawInput = (message.raw_input ?? message.arguments) as Record<string, unknown> | undefined;
+  if (!rawInput || typeof rawInput !== "object") return null;
+
+  const filePath = (
+    message.locations?.[0]?.path ??
+    rawInput.absolute_path ??
+    rawInput.AbsolutePath ??
+    rawInput.target_file ??
+    rawInput.path ??
+    rawInput.filePath ??
+    rawInput.file_path ??
+    rawInput.DirectoryPath ??
+    rawInput.directory_path ??
+    rawInput.SearchPath ??
+    rawInput.search_path
+  ) as string | undefined;
+
+  const startLine = (rawInput.start_line ?? rawInput.StartLine) as number | undefined;
+  const endLine = (rawInput.end_line ?? rawInput.EndLine) as number | undefined;
+
+  const cleanInput: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(rawInput)) {
+    if (["toolSummary", "toolAction", "summary", "description", "prompt"].includes(key)) continue;
+    cleanInput[key] = value;
+  }
+
+  return { filePath, startLine, endLine, cleanInput };
+};
+
 const ToolCallMessage: React.FC<{
   message: AcpToolCallMessage;
   toolResult?: AcpToolResultMessage;
   toolUpdates?: AcpToolUpdateMessage[];
   isExpanded: boolean;
   onToggle: () => void;
+  onOpenFile?: (path: string, line?: number, column?: number) => void;
   onOpenFileDiff?: (path: string, line?: number, column?: number) => void;
   onGetToolOutput?: (toolId: string, sessionId?: string) => Promise<string | null>;
-}> = ({ message, toolResult, toolUpdates, isExpanded, onToggle, onOpenFileDiff, onGetToolOutput }) => {
+}> = ({ message, toolResult, toolUpdates, isExpanded, onToggle, onOpenFile, onOpenFileDiff, onGetToolOutput }) => {
 
 
-  const displayCommand = message.command?.trim() || message.name;
   const toolCallView = React.useMemo(
     () => getToolCallView(message, toolUpdates, toolResult),
     [message, toolResult, toolUpdates],
   );
   const diffFileNames = getToolCallFileNames(toolCallView.diffs);
-  const toggleLabel = formatToolCallLabel(diffFileNames, displayCommand);
+  const toggleLabel = getToolCallLabel(message, diffFileNames, toolCallView.kind);
   const toggleStats = getToolCallStats(toolCallView.diffs);
   const isEditCall = toolCallView.kind === 'edit' || toolCallView.diffs.length > 0;
 
@@ -89,12 +225,41 @@ const ToolCallMessage: React.FC<{
 
         {isExpanded && (
           <div className="acp-tool-call-expanded">
-            {message.command && (
+            {message.command ? (
               <div className="acp-tool-call-section">
                 <div className="acp-tool-call-label">Command:</div>
                 <pre className="acp-tool-call-command">{message.command}</pre>
               </div>
-            )}
+            ) : (() => {
+              const inputDetails = getToolInputDetails(message);
+              if (!inputDetails) return null;
+              const { filePath, startLine, endLine, cleanInput } = inputDetails;
+              const hasCleanKeys = Object.keys(cleanInput).length > 0;
+              if (!filePath && !hasCleanKeys) return null;
+
+              return (
+                <div className="acp-tool-call-section">
+                  <div className="acp-tool-call-label">Input:</div>
+                  {filePath && (
+                    <div style={{ marginBottom: hasCleanKeys ? "6px" : undefined }}>
+                      <button
+                        type="button"
+                        className="acp-tool-call-diff-link"
+                        onClick={() => onOpenFile?.(filePath, startLine)}
+                        title={`Open ${filePath}`}
+                      >
+                        {getFileName(filePath)}{startLine ? `:${startLine}${endLine ? `-${endLine}` : ""}` : ""}
+                      </button>
+                    </div>
+                  )}
+                  {hasCleanKeys && (
+                    <pre className="acp-tool-result-content">
+                      {JSON.stringify(cleanInput, null, 2)}
+                    </pre>
+                  )}
+                </div>
+              );
+            })()}
 
             {!isEditCall && toolUpdates && toolUpdates.length > 0 && (
               <div className="acp-tool-call-section">
@@ -152,7 +317,12 @@ const ToolCallMessage: React.FC<{
                   onGetToolOutput={onGetToolOutput}
                 />
               </div>
-            ) : null}
+            ) : (
+              <div className="acp-tool-call-section">
+                <div className="acp-tool-call-label">Status:</div>
+                <div className="acp-tool-result-status">{message.status || "running"}</div>
+              </div>
+            )}
             <button
               type="button"
               className="acp-tool-call-bottom-toggle"
@@ -263,13 +433,20 @@ const extractToolResultDetails = (result: unknown): ToolResultDetailsView | null
     getMaybeString(rawInput?.description) ??
     getMaybeString(metadata?.description);
   const output =
-    getMaybeString(rawOutput) ??
     getMaybeString(rawOutputRecord?.formatted_output) ??
+    getMaybeString(resultRecord.formatted_output) ??
+    getMaybeString(fields?.formatted_output) ??
+    getMaybeString(rawOutput) ??
     getMaybeString(rawOutputRecord?.stdout) ??
     getMaybeString(rawOutputRecord?.aggregated_output) ??
     getMaybeString(rawOutputRecord?.output) ??
+    getMaybeString(rawOutputRecord?.result) ??
+    getMaybeString(rawOutputRecord?.text) ??
+    getMaybeString(resultRecord.output) ??
+    getMaybeString(resultRecord.result) ??
     getMaybeString(metadata?.output) ??
-    getMaybeString(metadata?.stderr);
+    getMaybeString(metadata?.stderr) ??
+    (rawOutput && typeof rawOutput === 'object' ? JSON.stringify(rawOutput, null, 2) : undefined);
   const errorOutput = getMaybeString(rawOutputRecord?.stderr) ?? getMaybeString(metadata?.stderr);
 
   const toolId =
@@ -308,10 +485,16 @@ const extractToolResultDetails = (result: unknown): ToolResultDetailsView | null
             fields?.is_truncated || fields?.isTruncated ||
             rawOutputRecord?.is_truncated || rawOutputRecord?.isTruncated);
 
-  const content = resultRecord.content ?? fields?.content;
+  const content = resultRecord.content ?? fields?.content ?? rawOutputRecord?.content;
   const contentText = Array.isArray(content)
     ? content
-      .map((item: unknown) => getMaybeString(asRecord(getField(item, 'content'))?.text))
+      .map((item: unknown) => {
+        if (typeof item === 'string') return item;
+        const itemRecord = asRecord(item);
+        return getMaybeString(itemRecord?.text)
+          ?? getMaybeString(asRecord(itemRecord?.content)?.text)
+          ?? (itemRecord?.text !== undefined ? String(itemRecord.text) : undefined);
+      })
       .filter((text): text is string => typeof text === 'string' && text.length > 0)
       .join('')
     : undefined;
@@ -448,6 +631,28 @@ const ToolResultDetails: React.FC<ToolResultDetailsProps> = ({
     errorOutput.length > 0 &&
     errorOutput.trim() !== normalizedOutput;
 
+  const hasAnySection = Boolean(
+    (title || (status && status !== "completed")) ||
+    (command || description) ||
+    shouldShowContent ||
+    shouldShowOutput ||
+    shouldShowError,
+  );
+
+  if (!hasAnySection) {
+    if (getToolResultImages(result).length > 0) {
+      return null;
+    }
+    const fallbackText = typeof result === "string"
+      ? result
+      : JSON.stringify(result, null, 2);
+    return (
+      <pre className="acp-tool-result-content">
+        {fallbackText}
+      </pre>
+    );
+  }
+
   return (
     <div className="acp-tool-result-details">
       {(title || (status && status !== 'completed')) && (
@@ -549,21 +754,7 @@ const getLanguageFromPath = (path?: string): string => {
   return normalizeFenceLanguage(extension ?? 'text');
 };
 
-const formatToolCallLabel = (diffPaths: string[], fallbackLabel: string): string => {
-  if (diffPaths.length === 0) {
-    return fallbackLabel;
-  }
 
-  if (diffPaths.length === 1) {
-    return getFileName(diffPaths[0]);
-  }
-
-  const visibleNames = diffPaths.slice(0, 2).map(getFileName);
-  const hiddenCount = diffPaths.length - visibleNames.length;
-  return hiddenCount > 0
-    ? `${visibleNames.join(', ')} +${hiddenCount}`
-    : visibleNames.join(', ');
-};
 
 const getToolCallStats = (diffs: AcpDiffContent[]) => {
   if (diffs.length === 0) {
@@ -1634,6 +1825,7 @@ const AcpMessageComponent: React.FC<AcpMessageProps> = ({
             toolUpdates={toolUpdates}
             isExpanded={isExpanded}
             onToggle={onToggle}
+            onOpenFile={onOpenFile}
             onOpenFileDiff={onOpenFileDiff}
             onGetToolOutput={onGetToolOutput}
           />

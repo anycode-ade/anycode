@@ -88,7 +88,7 @@
     /* Center the avatar on the first text line without leaving the row (small avatars only). */
     margin-top: max(0px, calc((var(--acp-message-line-height, 24px) - var(--acp-chat-avatar-size, 24px)) / 2));
     position: sticky;
-    top: 0px;
+    top: 4px;
     z-index: 2;
     transition: width 0.15s ease, height 0.15s ease, flex-basis 0.15s ease;
 }

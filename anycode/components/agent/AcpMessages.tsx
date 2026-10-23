@@ -65,11 +65,17 @@ type TurnItem =
 
 // Estimated height of a turn, including its bottom margin, until it has been measured once.
 const ESTIMATED_TURN_HEIGHT = 240;
+// Minimum possible height for a rendered turn. A turn can never be 0px; 0px means it is hidden (display: none).
+const MIN_TURN_HEIGHT = 40;
 // Turns mounted beyond the viewport edges, so small scrolls don't mount and unmount them.
 const WINDOW_OVERSCAN_PX = 1200;
 
+// Module-level cache so turn heights survive unmounting (e.g. switching between agent sessions)
+const globalTurnHeightsCache = new Map<string, Map<string, number>>();
+
 // Index of the last turn whose top edge is at or above y.
 const turnAt = (offsets: Float64Array, y: number, count: number) => {
+  if (y <= 0 || count <= 0) return 0;
   let low = 0;
   let high = count - 1;
   while (low < high) {
@@ -387,7 +393,28 @@ const AcpMessagesComponent: React.FC<AcpMessagesProps> = ({
   // Turns are virtualized: only those near the viewport are mounted, the rest are spacers. A turn's
   // height is measured once it mounts and cached by its key, so the cache survives unmounting.
   const turnCount = groupedItems.length;
-  const turnHeightsRef = useRef(new Map<string, number>());
+  const turnHeightsRef = useRef<Map<string, number>>(null as any);
+  if (!turnHeightsRef.current) {
+    const cacheKey = agentId || '__default__';
+    let map = globalTurnHeightsCache.get(cacheKey);
+    if (!map) {
+      map = new Map();
+      globalTurnHeightsCache.set(cacheKey, map);
+    }
+    turnHeightsRef.current = map;
+  }
+
+  useEffect(() => {
+    const cacheKey = agentId || '__default__';
+    let map = globalTurnHeightsCache.get(cacheKey);
+    if (!map) {
+      map = new Map();
+      globalTurnHeightsCache.set(cacheKey, map);
+    }
+    turnHeightsRef.current = map;
+    setHeightsVersion((v) => v + 1);
+  }, [agentId]);
+
   const [heightsVersion, setHeightsVersion] = useState(0);
   const [turnRange, setTurnRange] = useState({ start: 0, end: 0 });
   const layoutRef = useRef({ offsets: new Float64Array(1), count: 0, indexByKey: new Map<string, number>() });
@@ -400,7 +427,11 @@ const AcpMessagesComponent: React.FC<AcpMessagesProps> = ({
   const turnOffsets = useMemo(() => {
     const offsets = new Float64Array(turnCount + 1);
     for (let i = 0; i < turnCount; i += 1) {
-      offsets[i + 1] = offsets[i] + (turnHeightsRef.current.get(groupedItems[i].key) ?? ESTIMATED_TURN_HEIGHT);
+      const cached = turnHeightsRef.current.get(groupedItems[i].key);
+      const height = (cached !== undefined && cached >= MIN_TURN_HEIGHT)
+        ? cached
+        : ESTIMATED_TURN_HEIGHT;
+      offsets[i + 1] = offsets[i] + height;
     }
     return offsets;
   }, [groupedItems, turnCount, heightsVersion]);
@@ -409,6 +440,7 @@ const AcpMessagesComponent: React.FC<AcpMessagesProps> = ({
     const scroller = scrollerRef.current;
     const { offsets, count, indexByKey } = layoutRef.current;
     if (!scroller || count === 0) return;
+    if (scroller.clientHeight === 0 || scroller.clientWidth === 0) return;
     const viewport = turnWindowFor(offsets, count, scroller.scrollTop, scroller.clientHeight);
     const selected = selectedTurnSpan(indexByKey);
     const next = selected
@@ -417,39 +449,21 @@ const AcpMessagesComponent: React.FC<AcpMessagesProps> = ({
     setTurnRange((current) => (current.start === next.start && current.end === next.end ? current : next));
   }, [scrollerRef]);
 
-  useLayoutEffect(() => {
-    const indexByKey = new Map(groupedItems.map((item, index) => [item.key, index]));
-    layoutRef.current = { offsets: turnOffsets, count: turnCount, indexByKey };
-    updateTurnRange();
-  }, [groupedItems, turnOffsets, turnCount, updateTurnRange]);
-
-  useEffect(() => {
-    const scroller = scrollerRef.current;
-    if (!scroller) return;
-    const resizeObserver = new ResizeObserver(() => updateTurnRange());
-    resizeObserver.observe(scroller);
-    scroller.addEventListener('scroll', updateTurnRange, { passive: true });
-    // Dragging a selection past the mounted turns changes it without any scroll event.
-    document.addEventListener('selectionchange', updateTurnRange);
-    return () => {
-      scroller.removeEventListener('scroll', updateTurnRange);
-      document.removeEventListener('selectionchange', updateTurnRange);
-      resizeObserver.disconnect();
-    };
-  }, [scrollerRef, updateTurnRange]);
-
   // Measures rows, stores their heights, and offsets the scroll position for changes above the viewport.
   // Returns true when any height changed.
   const measureRows = useCallback((rows: HTMLElement[]) => {
     const scroller = scrollerRef.current;
-    if (!scroller) return false;
+    if (!scroller || scroller.clientHeight === 0 || scroller.clientWidth === 0) return false;
     const viewportTop = scroller.getBoundingClientRect().top;
     let changed = false;
     let scrollCompensation = 0;
     for (const row of rows) {
+      if (!row.isConnected || row.offsetParent === null) continue;
       const key = row.dataset.turnKey ?? '';
-      const previous = turnHeightsRef.current.get(key) ?? ESTIMATED_TURN_HEIGHT;
+      if (!key) continue;
       const next = getBoxHeight(row);
+      if (next < MIN_TURN_HEIGHT) continue;
+      const previous = turnHeightsRef.current.get(key) ?? ESTIMATED_TURN_HEIGHT;
       if (next === previous) continue;
       turnHeightsRef.current.set(key, next);
       changed = true;
@@ -466,18 +480,53 @@ const AcpMessagesComponent: React.FC<AcpMessagesProps> = ({
     return changed;
   }, [scrollerRef, onScrollPositionSet]);
 
+  useLayoutEffect(() => {
+    const indexByKey = new Map(groupedItems.map((item, index) => [item.key, index]));
+    layoutRef.current = { offsets: turnOffsets, count: turnCount, indexByKey };
+    updateTurnRange();
+  }, [groupedItems, turnOffsets, turnCount, updateTurnRange]);
+
+  useEffect(() => {
+    const scroller = scrollerRef.current;
+    if (!scroller) return;
+    let prevHeight = scroller.clientHeight;
+    const resizeObserver = new ResizeObserver(() => {
+      const currentHeight = scroller.clientHeight;
+      if (currentHeight > 0) {
+        updateTurnRange();
+        if (prevHeight === 0) {
+          const rows = Array.from(scroller.querySelectorAll<HTMLElement>('[data-turn-key]'));
+          if (measureRows(rows)) {
+            setHeightsVersion((v) => v + 1);
+          }
+        }
+      }
+      prevHeight = currentHeight;
+    });
+    resizeObserver.observe(scroller);
+    scroller.addEventListener('scroll', updateTurnRange, { passive: true });
+    // Dragging a selection past the mounted turns changes it without any scroll event.
+    document.addEventListener('selectionchange', updateTurnRange);
+    return () => {
+      scroller.removeEventListener('scroll', updateTurnRange);
+      document.removeEventListener('selectionchange', updateTurnRange);
+      resizeObserver.disconnect();
+    };
+  }, [scrollerRef, updateTurnRange, measureRows]);
+
   // Height changes outside a React commit (images, fonts, resizes) are caught by the ResizeObserver.
   useLayoutEffect(() => {
     const scroller = scrollerRef.current;
     if (!scroller) return;
     const observer = new ResizeObserver((entries) => {
+      if (scroller.clientHeight === 0 || scroller.clientWidth === 0) return;
       const rows: HTMLElement[] = [];
       for (const entry of entries) {
         const row = entry.target as HTMLElement;
-        if (row.isConnected) rows.push(row);
-        else observer.unobserve(row);
+        if (row.isConnected && row.offsetParent !== null) rows.push(row);
+        else if (!row.isConnected) observer.unobserve(row);
       }
-      if (measureRows(rows)) flushSync(() => setHeightsVersion((version) => version + 1));
+      if (rows.length > 0 && measureRows(rows)) flushSync(() => setHeightsVersion((version) => version + 1));
     });
     rowObserverRef.current = observer;
     return () => observer.disconnect();
@@ -487,7 +536,7 @@ const AcpMessagesComponent: React.FC<AcpMessagesProps> = ({
   // scroll compensation for rows above the viewport doesn't lag one frame behind the new layout.
   useLayoutEffect(() => {
     const scroller = scrollerRef.current;
-    if (!scroller) return;
+    if (!scroller || scroller.clientHeight === 0 || scroller.clientWidth === 0) return;
     const rows = Array.from(scroller.querySelectorAll<HTMLElement>('[data-turn-key]'));
     rows.forEach((row) => rowObserverRef.current?.observe(row));
     if (measureRows(rows)) setHeightsVersion((version) => version + 1);
