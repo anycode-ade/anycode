@@ -86,6 +86,24 @@ const turnWindowFor = (offsets: Float64Array, count: number, scrollTop: number, 
   end: Math.min(count, turnAt(offsets, scrollTop + viewportHeight + WINDOW_OVERSCAN_PX, count) + 1),
 });
 
+// Turns [start, end) holding either end of the browser selection, or null when nothing is selected in a turn.
+// The browser drops selected nodes that unmount, so every turn between the two ends must stay mounted.
+const selectedTurnSpan = (indexByKey: Map<string, number>) => {
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return null;
+  let first = Infinity;
+  let last = -1;
+  for (const node of [selection.anchorNode, selection.focusNode]) {
+    const element = node instanceof Element ? node : node?.parentElement;
+    const key = element?.closest<HTMLElement>('[data-turn-key]')?.dataset.turnKey;
+    const index = key === undefined ? undefined : indexByKey.get(key);
+    if (index === undefined) continue;
+    first = Math.min(first, index);
+    last = Math.max(last, index);
+  }
+  return last < 0 ? null : { start: first, end: last + 1 };
+};
+
 const getBoxHeight = (element: HTMLElement) =>
   element.offsetHeight + (parseFloat(getComputedStyle(element).marginBottom) || 0);
 
@@ -372,7 +390,7 @@ const AcpMessagesComponent: React.FC<AcpMessagesProps> = ({
   const turnHeightsRef = useRef(new Map<string, number>());
   const [heightsVersion, setHeightsVersion] = useState(0);
   const [turnRange, setTurnRange] = useState({ start: 0, end: 0 });
-  const layoutRef = useRef({ offsets: new Float64Array(1), count: 0 });
+  const layoutRef = useRef({ offsets: new Float64Array(1), count: 0, indexByKey: new Map<string, number>() });
   const rowObserverRef = useRef<ResizeObserver | null>(null);
   const seenTurnKeysRef = useRef(new Set<string>());
   // A user's work-group toggle lives here, not in the group, so it survives the group unmounting.
@@ -389,16 +407,21 @@ const AcpMessagesComponent: React.FC<AcpMessagesProps> = ({
 
   const updateTurnRange = useCallback(() => {
     const scroller = scrollerRef.current;
-    const { offsets, count } = layoutRef.current;
+    const { offsets, count, indexByKey } = layoutRef.current;
     if (!scroller || count === 0) return;
-    const next = turnWindowFor(offsets, count, scroller.scrollTop, scroller.clientHeight);
+    const viewport = turnWindowFor(offsets, count, scroller.scrollTop, scroller.clientHeight);
+    const selected = selectedTurnSpan(indexByKey);
+    const next = selected
+      ? { start: Math.min(viewport.start, selected.start), end: Math.max(viewport.end, selected.end) }
+      : viewport;
     setTurnRange((current) => (current.start === next.start && current.end === next.end ? current : next));
   }, [scrollerRef]);
 
   useLayoutEffect(() => {
-    layoutRef.current = { offsets: turnOffsets, count: turnCount };
+    const indexByKey = new Map(groupedItems.map((item, index) => [item.key, index]));
+    layoutRef.current = { offsets: turnOffsets, count: turnCount, indexByKey };
     updateTurnRange();
-  }, [turnOffsets, turnCount, updateTurnRange]);
+  }, [groupedItems, turnOffsets, turnCount, updateTurnRange]);
 
   useEffect(() => {
     const scroller = scrollerRef.current;
@@ -406,8 +429,11 @@ const AcpMessagesComponent: React.FC<AcpMessagesProps> = ({
     const resizeObserver = new ResizeObserver(() => updateTurnRange());
     resizeObserver.observe(scroller);
     scroller.addEventListener('scroll', updateTurnRange, { passive: true });
+    // Dragging a selection past the mounted turns changes it without any scroll event.
+    document.addEventListener('selectionchange', updateTurnRange);
     return () => {
       scroller.removeEventListener('scroll', updateTurnRange);
+      document.removeEventListener('selectionchange', updateTurnRange);
       resizeObserver.disconnect();
     };
   }, [scrollerRef, updateTurnRange]);
