@@ -64,6 +64,8 @@ const toMultibufferFiles = (files: ChangedFile[]): MultibufferFile[] => files.ma
 const pathBelongsToProject = (path: string, root: string) => {
     const normalizedPath = normalizePath(path);
     const normalizedRoot = normalizePath(root).replace(/\/+$/, '');
+    // A relative root ('.') is the VFS root, so every relative path belongs to it.
+    if (normalizedRoot === '.') return !/^([A-Za-z]:)?\//.test(normalizedPath);
     return normalizedPath === normalizedRoot || normalizedPath.startsWith(`${normalizedRoot}/`);
 };
 
@@ -709,9 +711,12 @@ const App: React.FC<AppProps> = ({ initialWorkspace }) => {
         workspaceState.projects.flatMap((project) => (
             git.changedFilesByProject[project.id] || []
         ).map((file) => {
+            const projectRoot = project.root.replace(/[\\/]+$/, '');
+            const relativePath = file.path.replace(/^[\\/]+/, '');
+            // Relative root '.' is the VFS root: keep paths as the Files panel names them (no './' prefix).
             const path = /^[A-Za-z]:[\\/]|^\//.test(file.path)
                 ? file.path
-                : `${project.root.replace(/[\\/]+$/, '')}/${file.path.replace(/^[\\/]+/, '')}`;
+                : (projectRoot === '.' ? relativePath : `${projectRoot}/${relativePath}`);
             return {
                 ...file,
                 path: normalizePath(path),

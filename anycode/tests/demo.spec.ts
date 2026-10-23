@@ -122,11 +122,10 @@ test.describe('Anycode Live Demo Mode E2E Tests', () => {
         await expect(readme).toBeVisible({ timeout: 10000 });
         await readme.click();
 
-        const editor = page.locator('.anycode-editor, canvas, .dockview-panel-body').first();
-        if (await editor.isVisible({ timeout: 5000 }).catch(() => false)) {
-            await editor.click();
-            await page.keyboard.type('test typing');
-        }
+        const editor = page.locator('.anyeditor .code').first();
+        await expect(editor).toBeVisible({ timeout: 10000 });
+        await editor.click();
+        await page.keyboard.type('test typing');
     });
 
     test('should track edited files in Changes panel and remove them when reverted', async ({ page }) => {
@@ -134,33 +133,30 @@ test.describe('Anycode Live Demo Mode E2E Tests', () => {
         await expect(readme).toBeVisible({ timeout: 10000 });
         await readme.click();
 
-        const editor = page.locator('.anycode-editor, canvas, .dockview-panel-body').first();
-        if (await editor.isVisible({ timeout: 5000 }).catch(() => false)) {
-            await editor.click();
-            await page.keyboard.type('123');
+        const editor = page.locator('.anyeditor .code').first();
+        await expect(editor).toBeVisible({ timeout: 10000 });
+        await editor.click();
+        await page.keyboard.type('123');
 
-            const changesTab = page.getByText('CHANGES').or(page.getByText('Changes')).first();
-            if (await changesTab.isVisible({ timeout: 5000 }).catch(() => false)) {
-                await changesTab.click();
+        const changesTab = page.getByRole('tab', { name: 'Changes' });
+        await changesTab.click();
 
-                // Assert 1: README.md must appear in the Changes list
-                const changedFile = page.locator('.changes-list').getByText('README.md').first();
-                await expect(changedFile).toBeVisible({ timeout: 10000 });
+        // Assert 1: README.md must appear in the Changes list
+        const changedFile = page.locator('.changes-list').getByText('README.md').first();
+        await expect(changedFile).toBeVisible({ timeout: 10000 });
 
-                // Delete '123' via backspaces to restore original content
-                await editor.click();
-                await page.keyboard.press('Backspace');
-                await page.keyboard.press('Backspace');
-                await page.keyboard.press('Backspace');
+        // Delete '123' via backspaces to restore original content
+        await editor.click();
+        await page.keyboard.press('Backspace');
+        await page.keyboard.press('Backspace');
+        await page.keyboard.press('Backspace');
 
-                // Switch back to Changes tab
-                await changesTab.click();
+        // Switch back to Changes tab
+        await changesTab.click();
 
-                // Assert 2: README.md must NOT be in Changes list and 'No changes' message must appear
-                await expect(page.getByText('No changes')).toBeVisible({ timeout: 10000 });
-                await expect(changedFile).not.toBeVisible();
-            }
-        }
+        // Assert 2: README.md must NOT be in Changes list and 'No changes' message must appear
+        await expect(page.getByText('No changes')).toBeVisible({ timeout: 10000 });
+        await expect(changedFile).not.toBeVisible();
     });
 
     test('should allow creating a new branch from branch select in Changes panel', async ({ page }) => {
@@ -253,23 +249,22 @@ test.describe('Anycode Live Demo Mode E2E Tests', () => {
         await expect(readme).toBeVisible({ timeout: 10000 });
         await readme.click();
 
-        const editor = page.locator('.anycode-editor, canvas, .dockview-panel-body').first();
-        if (await editor.isVisible({ timeout: 5000 }).catch(() => false)) {
-            await editor.click();
-            await page.keyboard.press('Control+Space');
+        const editor = page.locator('.anyeditor .code').first();
+        await expect(editor).toBeVisible({ timeout: 10000 });
+        await editor.click();
+        await page.keyboard.press('Control+Space');
 
-            // Assert completion popup box container is visible in DOM
-            const completionBox = page.locator('.completion-box').first();
-            await expect(completionBox).toBeVisible({ timeout: 10000 });
+        // Assert completion popup box container is visible in DOM
+        const completionBox = page.locator('.completion-box').first();
+        await expect(completionBox).toBeVisible({ timeout: 10000 });
 
-            // Assert completion popup contains items and is not empty!
-            const completionItems = page.locator('.completion-item');
-            const itemCount = await completionItems.count();
-            expect(itemCount).toBeGreaterThan(0);
+        // Assert completion popup contains items and is not empty!
+        const completionItems = page.locator('.completion-item');
+        const itemCount = await completionItems.count();
+        expect(itemCount).toBeGreaterThan(0);
 
-            const firstItemText = await completionItems.first().innerText();
-            expect(firstItemText.trim().length).toBeGreaterThan(0);
-        }
+        const firstItemText = await completionItems.first().innerText();
+        expect(firstItemText.trim().length).toBeGreaterThan(0);
     });
 
     test('should trigger LSP references and render peek view panel with item list matching dataset count and valid code preview', async ({ page }) => {
@@ -277,30 +272,29 @@ test.describe('Anycode Live Demo Mode E2E Tests', () => {
         await expect(readme).toBeVisible({ timeout: 10000 });
         await readme.click();
 
-        const editor = page.locator('.anycode-editor, canvas, .dockview-panel-body').first();
-        if (await editor.isVisible({ timeout: 5000 }).catch(() => false)) {
-            await editor.click();
-            await page.keyboard.press('Shift+F12');
+        const editor = page.locator('.anyeditor .code').first();
+        await expect(editor).toBeVisible({ timeout: 10000 });
+        await editor.click();
+        await page.keyboard.press('F11');
 
-            // Assert 1: References peek view widget container is rendered
-            const peekWidget = page.locator('.reference-zone-widget, .references-peek-container').first();
-            await expect(peekWidget).toBeVisible({ timeout: 10000 });
+        // Assert 1: References peek view widget container is rendered
+        const peekWidget = page.locator('.references-peek');
+        await expect(peekWidget).toBeVisible({ timeout: 10000 });
 
-            // Assert 2: Exact item count of .references-peek-item-select matches response items (2)
-            const peekItems = page.locator('.references-peek-item-select');
-            await expect(peekItems).toHaveCount(2, { timeout: 10000 });
+        // Assert 2: Exact item count of .references-peek-item-select matches response items (2)
+        const peekItems = page.locator('.references-peek-item-select');
+        await expect(peekItems).toHaveCount(2, { timeout: 10000 });
 
-            // Assert 3: "Preview unavailable" text is NOT present in DOM
-            await expect(page.getByText('Preview unavailable')).not.toBeVisible();
+        // Assert 3: "Preview unavailable" text is NOT present in DOM
+        await expect(page.getByText('Preview unavailable')).not.toBeVisible();
 
-            // Assert 4: References preview code area is rendered
-            await expect(page.locator('.references-peek-preview')).toBeVisible({ timeout: 10000 });
+        // Assert 4: References preview code area is rendered
+        await expect(page.locator('.references-peek-preview')).toBeVisible({ timeout: 10000 });
 
-            // Assert 5: Clicking the 2nd item updates selection
-            const secondItem = peekItems.nth(1);
-            await secondItem.click();
-            await expect(secondItem).toHaveClass(/is-selected/);
-        }
+        // Assert 5: Clicking the 2nd item updates selection
+        const secondItem = peekItems.nth(1);
+        await secondItem.click();
+        await expect(secondItem).toHaveClass(/is-selected/);
     });
 
     test('should trigger LSP definition and jump to symbol definition without errors', async ({ page }) => {
@@ -308,12 +302,11 @@ test.describe('Anycode Live Demo Mode E2E Tests', () => {
         await expect(readme).toBeVisible({ timeout: 10000 });
         await readme.click();
 
-        const editor = page.locator('.anycode-editor, canvas, .dockview-panel-body').first();
-        if (await editor.isVisible({ timeout: 5000 }).catch(() => false)) {
-            await editor.click();
-            await page.keyboard.press('F12');
-            await expect(page.locator('body')).toBeVisible();
-        }
+        const editor = page.locator('.anyeditor .code').first();
+        await expect(editor).toBeVisible({ timeout: 10000 });
+        await editor.click();
+        await page.keyboard.press('F12');
+        await expect(page.locator('body')).toBeVisible();
     });
 
     test('should render interactive terminal banner and prompt in demo mode', async ({ page }) => {
@@ -407,6 +400,8 @@ test.describe('Anycode Live Demo Mode E2E Tests', () => {
 
         // Reload page and verify terminal restores previous output from snapshot
         await page.reload();
+        // Layout restore is async after reload; wait for the restored Terminal tab before reusing it.
+        await expect(page.getByRole('tab', { name: /^Terminal$/i }).first()).toBeVisible({ timeout: 10000 });
         await openTerminalPanel(page);
         await expect(page.locator('.wterm').getByText('developer').first()).toBeVisible({ timeout: 10000 });
     });

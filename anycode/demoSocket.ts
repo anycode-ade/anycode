@@ -58,11 +58,19 @@ function generateDemoScrollContent(targetLines: number = 1000000): string {
 
 const SCROLL_DEMO_CONTENT = generateDemoScrollContent(1000000);
 
+// Same channel the backend uses for terminal output: terminal:data:<session>:<name>.
+function terminalDataChannel(payload: any): string {
+    const name = payload?.name || payload?.terminal_id || 'terminal-1';
+    return `terminal:data:${payload?.session}:${name}`;
+}
+
+const DEMO_PROJECT_ID = 'demo-project';
+
 // Every workspace event answers with this single fixed project rooted at the VFS root ('.'),
 // matching the relative VFS paths. Workspace mutations are no-ops in demo mode.
 const DEMO_WORKSPACE_STATE = {
-    projects: [{ id: 'demo-project', name: 'anycode-demo', root: '.' }],
-    active_project_id: 'demo-project',
+    projects: [{ id: DEMO_PROJECT_ID, name: 'anycode-demo', root: '.' }],
+    active_project_id: DEMO_PROJECT_ID,
     recent_workspaces: [] as unknown[],
 };
 
@@ -244,7 +252,8 @@ const notifyGitChange = (socket: DemoSocket, targetPath: string) => {
     } else if (original === undefined) {
         DEMO_CHANGED_FILES.set(targetPath, { path: targetPath, status: 'added', staged: false });
     } else {
-        const isModified = node.code ? (node.code.getVersionId() > 0) : (node.content !== original);
+        // Compare content, not Code.versionId: the version only grows, so reverting edits would stay "modified".
+        const isModified = getNodeContent(node) !== original;
         if (isModified) {
             const existing = DEMO_CHANGED_FILES.get(targetPath);
             DEMO_CHANGED_FILES.set(targetPath, {
@@ -258,8 +267,10 @@ const notifyGitChange = (socket: DemoSocket, targetPath: string) => {
     }
 
     const changedItem = DEMO_CHANGED_FILES.get(targetPath);
+    // The backend stamps project_id on every git:update; the Changes panel only reads per-project git state.
     const gitUpdatePayload = {
         kind: 'patch',
+        project_id: DEMO_PROJECT_ID,
         branch: demoCurrentBranch,
         files: changedItem
             ? [{ path: targetPath, status: changedItem.status, staged: changedItem.staged }]
@@ -581,6 +592,7 @@ export class DemoSocket {
             case 'git:status': {
                 callback?.({
                     success: true,
+                    project_id: DEMO_PROJECT_ID,
                     branch: demoCurrentBranch,
                     files: Array.from(DEMO_CHANGED_FILES.values()),
                 });
@@ -600,7 +612,7 @@ export class DemoSocket {
                 if (target && demoBranches.includes(target)) {
                     demoCurrentBranch = target;
                     callback?.({ success: true });
-                    this.emitLocal('git:update', { kind: 'full', branch: demoCurrentBranch, files: Array.from(DEMO_CHANGED_FILES.values()) });
+                    this.emitLocal('git:update', { kind: 'full', project_id: DEMO_PROJECT_ID, branch: demoCurrentBranch, files: Array.from(DEMO_CHANGED_FILES.values()) });
                 } else {
                     callback?.({ success: false, error: 'Branch not found' });
                 }
@@ -615,7 +627,7 @@ export class DemoSocket {
                     }
                     demoCurrentBranch = newBranch;
                     callback?.({ success: true });
-                    this.emitLocal('git:update', { kind: 'full', branch: demoCurrentBranch, files: Array.from(DEMO_CHANGED_FILES.values()) });
+                    this.emitLocal('git:update', { kind: 'full', project_id: DEMO_PROJECT_ID, branch: demoCurrentBranch, files: Array.from(DEMO_CHANGED_FILES.values()) });
                 } else {
                     callback?.({ success: false, error: 'Branch name cannot be empty' });
                 }
@@ -766,7 +778,7 @@ export class DemoSocket {
                     }
                 });
                 DEMO_CHANGED_FILES.clear();
-                this.emitLocal('git:update', { kind: 'full', branch: 'main', files: [] });
+                this.emitLocal('git:update', { kind: 'full', project_id: DEMO_PROJECT_ID, branch: 'main', files: [] });
                 callback?.({ success: true });
                 break;
             }
@@ -810,22 +822,16 @@ export class DemoSocket {
                 const promptPath = this.terminalCurrentDir === '.' ? 'anycode-demo' : `anycode-demo/${this.terminalCurrentDir}`;
                 const banner = `\r\n\x1b[1;32mWelcome to Anycode Live Demo Terminal!\x1b[0m\r\n\x1b[33mNote: This is an in-memory VFS sandbox, not a real OS filesystem.\x1b[0m\r\n\x1b[90m(For real bash/zsh PTY processes, download and run Anycode locally)\x1b[0m\r\n\r\n\x1b[1;34m${promptPath}\x1b[0m $ `;
 
-                setTimeout(() => {
-                    this.emitLocal(`terminal:data:${termName}`, banner);
-                    this.emitLocal('terminal:data', { terminal_id: termName, data: banner });
-                }, 50);
+                const channel = terminalDataChannel(payload);
+                setTimeout(() => this.emitLocal(channel, banner), 50);
                 break;
             }
 
             case 'terminal:input': {
-                const termName = payload?.name || payload?.terminal_id || 'terminal-1';
                 const inputData = payload?.input ?? payload?.data ?? '';
-                const channel = `terminal:data:${termName}`;
+                const channel = terminalDataChannel(payload);
 
-                const emitData = (str: string) => {
-                    this.emitLocal(channel, str);
-                    this.emitLocal('terminal:data', { terminal_id: termName, data: str });
-                };
+                const emitData = (str: string) => this.emitLocal(channel, str);
 
                 if (inputData === '\r' || inputData === '\n') {
                     const cmd = this.terminalBuffer.trim();
