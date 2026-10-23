@@ -38,7 +38,8 @@ export const AcpWorkGroup: React.FC<AcpWorkGroupProps> = ({
     previousIsLatestRef.current = isLatest;
   }, [isLatest, isSearchMatch, onExpansionChange, searchActive]);
 
-  if ((isLatest && !searchActive) || messageCount <= 1) {
+  // The active group shows its header already expanded; it collapses once it becomes historical.
+  if (messageCount <= 1) {
     return <>{children}</>;
   }
 

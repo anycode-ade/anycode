@@ -8,6 +8,8 @@ export interface AcpQueueProps {
   onUpdateItem: (itemId: string, prompt: string) => void;
   onRemoveItem: (itemId: string) => void;
   onMoveItem: (itemId: string, direction: 'up' | 'down') => void;
+  onSendNow?: (itemId: string) => void;
+  isPaused?: boolean;
 }
 
 const QueueIcon: React.FC = () => (
@@ -28,11 +30,20 @@ const EditIcon: React.FC = () => (
   </svg>
 );
 
+const SendNowIcon: React.FC = () => (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M5 12h14" />
+    <path d="M13 6l6 6-6 6" />
+  </svg>
+);
+
 export const AcpQueue: React.FC<AcpQueueProps> = ({
   queue,
   onUpdateItem,
   onRemoveItem,
   onMoveItem,
+  onSendNow,
+  isPaused = false,
 }) => {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editText, setEditText] = useState('');
@@ -71,7 +82,7 @@ export const AcpQueue: React.FC<AcpQueueProps> = ({
             <span className="acp-queue-badge">{queue.length}</span>
           </h4>
         </div>
-        <span className="acp-queue-hint">Auto-executes next</span>
+        <span className="acp-queue-hint">{isPaused ? 'Paused: send an item to run it' : 'Auto-executes next'}</span>
       </div>
 
       <div className="acp-queue-list">
@@ -139,6 +150,17 @@ export const AcpQueue: React.FC<AcpQueueProps> = ({
               </div>
 
               <div className="acp-queue-card-actions">
+                {onSendNow && (
+                  <button
+                    type="button"
+                    className="acp-queue-icon-btn"
+                    onClick={() => onSendNow(item.id)}
+                    title="Send now (interrupts the current answer)"
+                    aria-label="Send queued prompt now"
+                  >
+                    <SendNowIcon />
+                  </button>
+                )}
                 <button
                   type="button"
                   className="acp-queue-icon-btn"

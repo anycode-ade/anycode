@@ -1013,7 +1013,8 @@ export class DemoSocket {
 
             case 'acp:queue:update':
             case 'acp:queue:remove':
-            case 'acp:queue:move': {
+            case 'acp:queue:move':
+            case 'acp:queue:send_now': {
                 callback?.({ success: true });
                 break;
             }

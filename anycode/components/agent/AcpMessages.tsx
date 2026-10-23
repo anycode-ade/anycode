@@ -7,7 +7,7 @@ import {
   AcpUserMessage,
   type AgentPromptTemplate,
 } from '../../types';
-import { AcpMessage } from './AcpMessage';
+import { AcpMessage, getToolResultImages, type ToolResultImage } from './AcpMessage';
 import { AcpWorkGroup } from './AcpWorkGroup';
 import { AcpEmptyTemplates } from './AcpEmptyTemplates';
 import { AcpAvatar } from './AcpAvatar';
@@ -50,6 +50,46 @@ const AcpTurn: React.FC<AcpTurnProps> = ({ animateEnter, className, children, ..
       {children}
     </div>
   );
+};
+
+type WorkEntry = { index: number; message: AcpMessageType };
+
+type WorkSegment =
+  | { type: 'tools'; messages: WorkEntry[] }
+  | { type: 'images'; toolCallId: string; images: ToolResultImage[] }
+  | { type: 'message'; index: number; message: AcpMessageType };
+
+const isToolMessage = (message: AcpMessageType) =>
+  message.role === 'tool_call' || message.role === 'tool_result' || message.role === 'tool_update';
+
+// Only consecutive tool messages collapse into a work group. Other agent messages stay
+// visible, and a tool's images are placed after its work group as their own segment.
+const splitIntoSegments = (
+  entries: WorkEntry[],
+  toolResultsById: Map<string, { message: AcpToolResultMessage; index: number }>,
+): WorkSegment[] => {
+  const segments: WorkSegment[] = [];
+  for (const entry of entries) {
+    const { index, message } = entry;
+    if (!isToolMessage(message)) {
+      segments.push({ type: 'message', index, message });
+      continue;
+    }
+    const last = segments[segments.length - 1];
+    if (last?.type === 'tools') {
+      last.messages.push(entry);
+    } else {
+      segments.push({ type: 'tools', messages: [entry] });
+    }
+    if (message.role === 'tool_call') {
+      const resultEntry = toolResultsById.get(message.id);
+      const images = resultEntry && resultEntry.index > index ? getToolResultImages(resultEntry.message.result) : [];
+      if (images.length > 0) {
+        segments.push({ type: 'images', toolCallId: message.id, images });
+      }
+    }
+  }
+  return segments;
 };
 
 const AcpMessagesComponent: React.FC<AcpMessagesProps> = ({
@@ -145,7 +185,7 @@ const AcpMessagesComponent: React.FC<AcpMessagesProps> = ({
   const groupedItems = useMemo(() => {
     const items: Array<
       | { type: 'message'; index: number; message: AcpMessageType }
-      | { type: 'group'; messages: Array<{ index: number; message: AcpMessageType }>; isLatest: boolean }
+      | { type: 'group'; messages: WorkEntry[]; isLatest: boolean }
     > = [];
 
     let currentGroup: Array<{ index: number; message: AcpMessageType }> | null = null;
@@ -222,7 +262,7 @@ const AcpMessagesComponent: React.FC<AcpMessagesProps> = ({
     return (
       <div
         key={index}
-        className={`acp-message-search-target${index === activeSearchMessageIndex ? ' acp-search-current-hit' : ''}`}
+        className="acp-message-search-target"
         data-message-index={index}
       >
         <AcpMessage
@@ -246,6 +286,47 @@ const AcpMessagesComponent: React.FC<AcpMessagesProps> = ({
     );
   };
 
+  const renderTurnContent = (entries: WorkEntry[], isLatest: boolean) => {
+    const segments = splitIntoSegments(entries, toolResultsById);
+    return segments.map((segment, segmentIndex) => {
+      if (segment.type === 'tools') {
+        return (
+          <AcpWorkGroup
+            key={`work-${segment.messages[0].index}`}
+            isLatest={isLatest && segmentIndex === segments.length - 1}
+            messageCount={segment.messages.filter(({ message }) => message.role === 'tool_call').length}
+            searchActive={activeSearchMessageIndex !== undefined}
+            isSearchMatch={segment.messages.some(({ index }) => index === activeSearchMessageIndex)}
+            onExpansionChange={onWorkGroupExpansionChange}
+          >
+            {segment.messages.map((m) => renderMessage(m.message, m.index))}
+          </AcpWorkGroup>
+        );
+      }
+      if (segment.type === 'images') {
+        return (
+          <div key={`images-${segment.toolCallId}`} className="acp-message acp-message-assistant">
+            <div className="acp-message-content">
+              {segment.images.map((image, imageIndex) => (
+                <img
+                  key={imageIndex}
+                  className="acp-tool-result-image"
+                  src={`data:${image.mimeType};base64,${image.data}`}
+                  alt="Tool result image"
+                />
+              ))}
+            </div>
+          </div>
+        );
+      }
+      return (
+        <React.Fragment key={`message-${segment.index}`}>
+          {renderMessage(segment.message, segment.index)}
+        </React.Fragment>
+      );
+    });
+  };
+
   // Early return must come after all hooks: messages can go from empty to non-empty on the same instance.
   if (messages.length === 0) {
     return (
@@ -254,6 +335,7 @@ const AcpMessagesComponent: React.FC<AcpMessagesProps> = ({
           <AcpEmptyTemplates
             onSelectTemplate={onSelectTemplate}
             onOpenSettings={onOpenSettings}
+            agentId={agentId}
             agentTitle={agentTitle}
             agentAuthors={agentAuthors}
           />
@@ -305,19 +387,7 @@ const AcpMessagesComponent: React.FC<AcpMessagesProps> = ({
                 />
               </div>
               <div className="acp-turn-content">
-                {item.messages.length <= 1 ? (
-                  item.messages.map((m) => renderMessage(m.message, m.index))
-                ) : (
-                  <AcpWorkGroup
-                    isLatest={item.isLatest}
-                    messageCount={item.messages.length}
-                    searchActive={activeSearchMessageIndex !== undefined}
-                    isSearchMatch={item.messages.some(({ index }) => index === activeSearchMessageIndex)}
-                    onExpansionChange={onWorkGroupExpansionChange}
-                  >
-                    {item.messages.map((m) => renderMessage(m.message, m.index))}
-                  </AcpWorkGroup>
-                )}
+                {renderTurnContent(item.messages, item.isLatest)}
               </div>
             </AcpTurn>
           );

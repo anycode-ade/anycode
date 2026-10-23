@@ -701,9 +701,12 @@ const ChangesPanelImpl: React.FC<ChangesPanelProps> = ({
                             )}
                         </select>
                         <span className="changes-project-select-chevron" aria-hidden="true">
-                            <Icons.ChevronDown />
+                            <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                                <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+                            </svg>
                         </span>
                     </label>
+                    <div className="changes-branch-group">
                     <span className="changes-branch-icon"><Icons.Git /></span>
                     {isCreatingBranch ? (
                         <div className="changes-new-branch-container">
@@ -766,6 +769,7 @@ const ChangesPanelImpl: React.FC<ChangesPanelProps> = ({
                             )}
                         </select>
                     )}
+                    </div>
                 </div>
                 {!isCreatingBranch && (
                     <div className="changes-actions-right">

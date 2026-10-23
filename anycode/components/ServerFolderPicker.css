@@ -27,7 +27,7 @@
     display: flex;
     align-items: center;
     gap: 12px;
-    padding: 14px 18px;
+    padding: 14px 4px;
 }
 
 .server-folder-header {
@@ -50,8 +50,7 @@
 .server-folder-path button,
 .server-folder-actions button {
     color: inherit;
-    background: var(--button-bg, #303236);
-    border: 1px solid var(--border-color, #45474b);
+    background: transparent;
     border-radius: 5px;
     padding: 6px 10px;
     cursor: pointer;
@@ -167,8 +166,7 @@
 
 .server-folder-actions .primary {
     color: #fff;
-    background: #2563eb;
-    border-color: #2563eb;
+    background: transparent;
 }
 
 .server-folder-dialog button:disabled {

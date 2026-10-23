@@ -78,6 +78,20 @@ type ReviewSession = {
 };
 
 const ACTIVE_PROJECT_SESSION_KEY = 'anycode.activeProjectId';
+const SEARCH_PROJECT_SESSION_KEY = 'anycode.searchProjectId';
+const CHANGES_PROJECT_SESSION_KEY = 'anycode.changesProjectId';
+const HISTORY_PROJECT_SESSION_KEY = 'anycode.historyProjectId';
+
+/** Project selection for a panel, restored from sessionStorage so it survives a page reload. */
+function usePanelProjectId(storageKey: string) {
+    const [projectId, setProjectIdState] = useState<string | null>(() => sessionStorage.getItem(storageKey));
+    const setProjectId = useCallback((next: string | null) => {
+        setProjectIdState(next);
+        if (next) sessionStorage.setItem(storageKey, next);
+        else sessionStorage.removeItem(storageKey);
+    }, [storageKey]);
+    return [projectId, setProjectId] as const;
+}
 
 interface AppProps {
     /** Active workspace path reported by the backend; null shows the Welcome screen. */
@@ -94,9 +108,9 @@ const App: React.FC<AppProps> = ({ initialWorkspace }) => {
         active_project_id: null,
         recent_workspaces: [],
     });
-    const [changesProjectId, setChangesProjectId] = useState<string | null>(null);
-    const [historyProjectId, setHistoryProjectId] = useState<string | null>(null);
-    const [searchProjectId, setSearchProjectId] = useState<string | null>(null);
+    const [changesProjectId, setChangesProjectId] = usePanelProjectId(CHANGES_PROJECT_SESSION_KEY);
+    const [historyProjectId, setHistoryProjectId] = usePanelProjectId(HISTORY_PROJECT_SESSION_KEY);
+    const [searchProjectId, setSearchProjectId] = usePanelProjectId(SEARCH_PROJECT_SESSION_KEY);
     const [folderPicker, setFolderPicker] = useState<{ anchor: HTMLElement | null } | null>(null);
     const [warpDirection, setWarpDirection] = useState<'closing' | null>(null);
     const isWarping = warpDirection !== null;
@@ -109,9 +123,11 @@ const App: React.FC<AppProps> = ({ initialWorkspace }) => {
             ?? workspaceState.projects[0]?.id
             ?? null;
     const isWorkspaceOpen = workspaceState.projects.length > 0 || Boolean(workspacePath);
+    // Projects load asynchronously after a reload; don't drop a restored selection while the list is empty.
     useEffect(() => {
         if (
             changesProjectId
+            && workspaceState.projects.length > 0
             && !workspaceState.projects.some((project) => project.id === changesProjectId)
         ) {
             setChangesProjectId(null);
@@ -120,6 +136,7 @@ const App: React.FC<AppProps> = ({ initialWorkspace }) => {
     useEffect(() => {
         if (
             historyProjectId
+            && workspaceState.projects.length > 0
             && !workspaceState.projects.some((project) => project.id === historyProjectId)
         ) {
             setHistoryProjectId(null);

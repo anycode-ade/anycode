@@ -97,6 +97,7 @@ interface AcpInputProps {
   onUpdateQueueItem?: (itemId: string, prompt: string) => void;
   onRemoveQueueItem?: (itemId: string) => void;
   onMoveQueueItem?: (itemId: string, direction: 'up' | 'down') => void;
+  onSendQueueItemNow?: (itemId: string) => void;
   modelSelector?: Omit<AcpModelSelectorMessage, 'role'>;
   reasoningSelector?: Omit<AcpReasoningSelectorMessage, 'role'>;
   contextUsage?: Omit<AcpContextUsageMessage, 'role'>;
@@ -124,6 +125,7 @@ const AcpInputComponent: React.FC<AcpInputProps> = ({
   onUpdateQueueItem,
   onRemoveQueueItem,
   onMoveQueueItem,
+  onSendQueueItemNow,
   modelSelector,
   reasoningSelector,
   contextUsage,
@@ -863,6 +865,8 @@ const AcpInputComponent: React.FC<AcpInputProps> = ({
       setBlocks([{ id: newInitialId, type: 'text', text: '' }]);
       setFocusedBlockId(newInitialId);
       onChange('');
+      // The new text block is a fresh textarea (its key changed), so the old one that had focus is unmounted.
+      requestAnimationFrame(() => textareaRefs.current.get(newInitialId)?.focus());
     }
   }, [canSubmit, blocks, onSend, attachments, onChange]);
 
@@ -1101,6 +1105,8 @@ const AcpInputComponent: React.FC<AcpInputProps> = ({
             onUpdateItem={onUpdateQueueItem}
             onRemoveItem={onRemoveQueueItem}
             onMoveItem={onMoveQueueItem}
+            onSendNow={onSendQueueItemNow}
+            isPaused={!isProcessing}
           />
         )}
         {isSlashActive && filteredCommands.length > 0 && (

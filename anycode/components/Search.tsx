@@ -839,68 +839,56 @@ const Search = ({ id, wsRef, isConnected, projects, projectId, onProjectChange, 
                     title={`Search... (Enter to search, Shift+Enter for newline)`}
                     placeholder={`Search...`}
                 />
-                <div className="search-input-controls">
-                    <label className="search-project-selector" title="Select project">
-                        <Icons.Folder size={14} />
-                        <select
-                            className="search-project-select"
-                            value={projectId ?? ''}
-                            onChange={(event) => onProjectChange(event.target.value)}
-                            disabled={projects.length === 0}
-                            aria-label="Project"
-                        >
-                            {projects.length === 0 ? (
-                                <option value="">No project selected</option>
-                            ) : (
-                                projects.map((project) => (
-                                    <option key={project.id} value={project.id}>
-                                        {project.name}
-                                    </option>
-                                ))
-                            )}
-                        </select>
-                        <span className="search-project-select-chevron" aria-hidden="true">
-                            <Icons.ChevronDown />
-                        </span>
-                    </label>
-                    <div className="search-mode-toggle" role="tablist" aria-label="Search mode">
-                        <button
-                            type="button"
-                            className={`search-mode-button ${searchMode === "content" ? "active" : ""}`}
-                            onClick={() => setMode("content")}
-                            role="tab"
-                            aria-selected={searchMode === "content"}
-                        >
-                            <span className="search-mode-label-long">Content</span>
-                            <span className="search-mode-label-short">C</span>
-                        </button>
-                        <button
-                            type="button"
-                            className={`search-mode-button ${searchMode === "files" ? "active" : ""}`}
-                            onClick={() => setMode("files")}
-                            role="tab"
-                            aria-selected={searchMode === "files"}
-                        >
-                            <span className="search-mode-label-long">Files</span>
-                            <span className="search-mode-label-short">F</span>
-                        </button>
-                    </div>
-                </div>
-            </div>
-
-            <div className="search-summary">
-                {hasQuery ? (
-                    <span className="search-summary-text">
-                        {searchMode === "content"
-                            ? `${totalMatches} matches · ${totalFiles} files · ${elapsedMs} ms`
-                            : `${totalFileNameMatches} files · ${elapsedMs} ms`}
-                    </span>
-                ) : (
-                    <span className="search-summary-text search-summary-text-empty"></span>
-                )}
             </div>
 
             <div className="search-actions-row">
+                <label className="search-project-selector" title="Select project">
+                    <Icons.Folder size={14} />
+                    <select
+                        className="search-project-select"
+                        value={projectId ?? ''}
+                        onChange={(event) => onProjectChange(event.target.value)}
+                        disabled={projects.length === 0}
+                        aria-label="Project"
+                    >
+                        {projects.length === 0 ? (
+                            <option value="">No project selected</option>
+                        ) : (
+                            projects.map((project) => (
+                                <option key={project.id} value={project.id}>
+                                    {project.name}
+                                </option>
+                            ))
+                        )}
+                    </select>
+                    <span className="search-project-select-chevron" aria-hidden="true">
+                        <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                            <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                    </span>
+                </label>
+                <div className="search-mode-toggle" role="tablist" aria-label="Search mode">
+                    <button
+                        type="button"
+                        className={`search-mode-button ${searchMode === "content" ? "active" : ""}`}
+                        onClick={() => setMode("content")}
+                        role="tab"
+                        aria-selected={searchMode === "content"}
+                    >
+                        <span className="search-mode-label-long">Content</span>
+                        <span className="search-mode-label-short">C</span>
+                    </button>
+                    <button
+                        type="button"
+                        className={`search-mode-button ${searchMode === "files" ? "active" : ""}`}
+                        onClick={() => setMode("files")}
+                        role="tab"
+                        aria-selected={searchMode === "files"}
+                    >
+                        <span className="search-mode-label-long">Files</span>
+                        <span className="search-mode-label-short">F</span>
+                    </button>
+                </div>
                 <div className="search-actions-group">
                 {searchMode === "content" && searchEnded && matchItems.length > 0 && (
                     <>
@@ -968,14 +956,14 @@ const Search = ({ id, wsRef, isConnected, projects, projectId, onProjectChange, 
                         <span className="search-loading"><span>.</span><span>.</span><span>.</span></span>
                     </>
                 )}
-                {searchMode === "content" && <button
+                {searchMode === "content" && results.length > 0 && <button
                     className="search-button"
                     onClick={handleExpandAll}
                     title="Expand all files"
                 >
                     <Icons.ChevronDown />
                 </button>}
-                {searchMode === "content" && <button
+                {searchMode === "content" && results.length > 0 && <button
                     className="search-button"
                     onClick={handleCollapseAll}
                     title="Collapse all files"
@@ -983,6 +971,18 @@ const Search = ({ id, wsRef, isConnected, projects, projectId, onProjectChange, 
                     <Icons.ChevronUp />
                 </button>}
                 </div>
+            </div>
+
+            <div className="search-summary">
+                {hasQuery ? (
+                    <span className="search-summary-text">
+                        {searchMode === "content"
+                            ? `${totalMatches} matches · ${totalFiles} files · ${elapsedMs} ms`
+                            : `${totalFileNameMatches} files · ${elapsedMs} ms`}
+                    </span>
+                ) : (
+                    <span className="search-summary-text search-summary-text-empty"></span>
+                )}
             </div>
 
             <div
@@ -1022,9 +1022,11 @@ const Search = ({ id, wsRef, isConnected, projects, projectId, onProjectChange, 
                                 ))}
                             </div>
                         </div>
-                    ) : (
-                        <div className="no-results">{filesSearchError ?? (filesSearchEnded ? "No results found" : "Searching...")}</div>
-                    )
+                    ) : filesSearchError ? (
+                        <div className="no-results">{filesSearchError}</div>
+                    ) : !filesSearchEnded ? (
+                        <div className="no-results">Searching...</div>
+                    ) : null
                 ) : results.length > 0 ? (
                     <div
                         className="search-virtual-spacer"
@@ -1069,9 +1071,7 @@ const Search = ({ id, wsRef, isConnected, projects, projectId, onProjectChange, 
                             })}
                         </div>
                     </div>
-                ) : (
-                    <div className="no-results">No results found</div>
-                )}
+                ) : null}
             </div>
         </div>
     );

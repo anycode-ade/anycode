@@ -1,5 +1,5 @@
 import React from 'react';
-import ReactMarkdown from 'react-markdown';
+import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkBreaks from 'remark-breaks';
 import remarkGfm from 'remark-gfm';
 import { diffLines } from 'diff';
@@ -208,6 +208,27 @@ type ToolResultDetailsView = {
   isTruncated?: boolean;
 };
 
+export interface ToolResultImage {
+  mimeType: string;
+  data: string;
+}
+
+// Images are shown in the chat feed, not inside the collapsed tool-call details.
+export const getToolResultImages = (result: unknown): ToolResultImage[] => {
+  const resultRecord = asRecord(result);
+  const content = resultRecord?.content ?? asRecord(resultRecord?.fields)?.content;
+  if (!Array.isArray(content)) {
+    return [];
+  }
+  return content.flatMap((item: unknown) => {
+    const block = asRecord(getField(item, 'content')) ?? asRecord(item);
+    if (block?.type !== 'image' || typeof block.data !== 'string') {
+      return [];
+    }
+    return [{ mimeType: getMaybeString(block.mimeType) ?? 'image/png', data: block.data }];
+  });
+};
+
 const extractToolResultDetails = (result: unknown): ToolResultDetailsView | null => {
   if (typeof result === 'string') {
     return { output: result };
@@ -294,7 +315,6 @@ const extractToolResultDetails = (result: unknown): ToolResultDetailsView | null
       .filter((text): text is string => typeof text === 'string' && text.length > 0)
       .join('')
     : undefined;
-
   const hasParsed = Boolean(
     title ||
     status ||
@@ -397,7 +417,10 @@ const ToolResultDetails: React.FC<ToolResultDetailsProps> = ({
   }, [effectiveToolId]);
 
   if (!details) {
-
+    // Image-only results would otherwise dump base64 as JSON; the feed renders the image.
+    if (getToolResultImages(result).length > 0) {
+      return null;
+    }
     return (
       <pre className="acp-tool-result-content">
         {JSON.stringify(result, null, 2)}
@@ -987,9 +1010,6 @@ const MarkdownPreBlock: React.FC<React.ComponentProps<'pre'>> = ({ children, ...
   return <pre {...props}>{children}</pre>;
 };
 
-// Words before this window are never wrapped, which keeps per-render DOM work bounded on long replies.
-const FADE_WORD_WINDOW = 80;
-
 type HastNode = {
   type: string;
   value?: string;
@@ -1055,9 +1075,10 @@ const rehypeFadeInWords = (options: FadeInWordsOptions) => (tree: HastNode) => {
     mountedWords = options.fadeAllWords ? 0 : totalWords;
     options.mountedWordCount.current = mountedWords;
   }
-  const firstFadingWord = Math.max(mountedWords, totalWords - FADE_WORD_WINDOW);
-  if (firstFadingWord >= totalWords) return;
-  fadeWordsIn(tree, { wordIndex: 0, firstFadingWord });
+  // Wrapping only grows as text streams in. A sliding window would unwrap the oldest words on
+  // every update, shifting sibling indexes so React re-creates the DOM and replays the fade.
+  if (mountedWords >= totalWords) return;
+  fadeWordsIn(tree, { wordIndex: 0, firstFadingWord: mountedWords });
 };
 
 const MarkdownTextBlock: React.FC<{
@@ -1070,23 +1091,29 @@ const MarkdownTextBlock: React.FC<{
   onOpenFileDiff?: (path: string, line?: number, column?: number) => void;
 }> = ({ content, fadeInWords = false, fadeAllWords = false, onOpenFile, onOpenFileDiff }) => {
   const mountedWordCount = React.useRef<number | null>(null);
+  // Read by the link component below. `components` must keep its identity: a new component
+  // type on every render remounts links and their word spans, replaying the fade-in animation
+  // on each parent update (e.g. typing in the input).
+  const openHandlers = React.useRef({ onOpenFile, onOpenFileDiff });
+  openHandlers.current = { onOpenFile, onOpenFileDiff };
+  const components = React.useMemo<Components>(() => ({
+    a: ({ node: _node, ...props }) => (
+      <MarkdownLink
+        {...props}
+        onOpenFile={openHandlers.current.onOpenFile}
+        onOpenFileDiff={openHandlers.current.onOpenFileDiff}
+      />
+    ),
+    code: MarkdownInlineCode,
+    pre: MarkdownPreBlock,
+    img: ({ node: _node, ...props }) => <MarkdownImage {...props} />,
+  }), []);
 
   return (
     <ReactMarkdown
       remarkPlugins={[remarkGfm, remarkBreaks]}
       rehypePlugins={fadeInWords ? [[rehypeFadeInWords, { mountedWordCount, fadeAllWords }]] : []}
-      components={{
-        a: ({ node: _node, ...props }) => (
-          <MarkdownLink
-            {...props}
-            onOpenFile={onOpenFile}
-            onOpenFileDiff={onOpenFileDiff}
-          />
-        ),
-        code: MarkdownInlineCode,
-        pre: MarkdownPreBlock,
-        img: ({ node: _node, ...props }) => <MarkdownImage {...props} />,
-      }}
+      components={components}
     >
       {content}
     </ReactMarkdown>

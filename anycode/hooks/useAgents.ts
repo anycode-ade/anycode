@@ -1339,9 +1339,22 @@ export const useAgents = ({
                 const newSessions = new Map(prev);
                 const existing = newSessions.get(agentId);
                 if (!existing) return newSessions;
-                newSessions.set(agentId, { ...existing, isProcessing: false, queue: [] });
+                newSessions.set(agentId, { ...existing, isProcessing: false });
                 return newSessions;
             });
+        });
+    }, [wsRef, isConnected]);
+
+    const sendQueuedPromptNow = useCallback((agentId: string, itemId: string) => {
+        if (!wsRef.current || !isConnected) return;
+
+        wsRef.current.emit('acp:queue:send_now', {
+            agent_id: agentId,
+            item_id: itemId,
+        }, (response: any) => {
+            if (!response.success) {
+                console.error('Failed to send queued prompt now: item not found');
+            }
         });
     }, [wsRef, isConnected]);
 
@@ -1457,6 +1470,7 @@ export const useAgents = ({
         updateQueuedPrompt,
         removeQueuedPrompt,
         moveQueuedPrompt,
+        sendQueuedPromptNow,
         undoPrompt,
         setSessionModel,
         setSessionReasoning,

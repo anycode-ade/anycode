@@ -11,6 +11,7 @@ import { AcpIcons } from './AcpIcons';
 import { AgentIcon } from './AgentIcon';
 import { AvatarCropModal } from '../AvatarCropModal';
 import { UserProfileSettings } from '../UserProfileSettings';
+import { useChatFullWidth } from '../../hooks/useChatFullWidth';
 
 interface AcpSettingsProps {
   agents: AcpAgent[];
@@ -37,6 +38,7 @@ export const AcpSettings: React.FC<AcpSettingsProps> = ({
   const [sessionsByAgent, setSessionsByAgent] = useState<Record<string, AcpSessionSummary[]>>({});
   const [loadingSessions, setLoadingSessions] = useState<Record<string, boolean>>({});
   const [editingAvatarAgentIndex, setEditingAvatarAgentIndex] = useState<number | null>(null);
+  const { fullWidth: chatFullWidth, setFullWidth: setChatFullWidth } = useChatFullWidth();
 
   // Check if there are any changes
   const hasChanges = useMemo(() => {
@@ -384,6 +386,29 @@ export const AcpSettings: React.FC<AcpSettingsProps> = ({
             <h4>User Profile</h4>
           </div>
           <UserProfileSettings />
+        </div>
+
+        <div className="agent-settings-item">
+          <div className="agent-settings-item-header">
+            <h4>Chat</h4>
+          </div>
+          <div className="settings-option">
+            <div className="settings-option-info">
+              <span className="settings-option-label">Full width rows</span>
+              <span className="settings-option-desc">
+                Chat messages use the whole panel width. When off, they are limited to a centered column.
+              </span>
+            </div>
+            <button
+              type="button"
+              className={`settings-toggle-switch ${chatFullWidth ? 'active' : ''}`}
+              aria-label="Full width rows"
+              aria-pressed={chatFullWidth}
+              onClick={() => setChatFullWidth(!chatFullWidth)}
+            >
+              <span className="settings-toggle-knob" />
+            </button>
+          </div>
         </div>
 
         {agents.length === 0 ? (

@@ -772,12 +772,8 @@
     appearance: none;
     -webkit-appearance: none;
     box-sizing: border-box;
-    border: 1px solid color-mix(in srgb, var(--theme-border, #4a4a4a) 70%, transparent);
-    background: color-mix(
-        in srgb,
-        var(--background-color, #242424) 95%,
-        var(--theme-foreground, #ffffff) 5%
-    );
+    border: none;
+    background: transparent;
     color: var(--theme-tab-foreground, #a0a0a0);
     font-size: 0.86em;
     font-weight: inherit;
@@ -789,7 +785,6 @@
     justify-content: center;
     gap: 6px;
     transition: all 0.2s ease;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
 }
 
 .acp-pane-settings-btn:hover {
@@ -799,11 +794,6 @@
         var(--background-color, #242424)
     );
     color: var(--theme-foreground, #ffffff);
-    border-color: color-mix(
-        in srgb,
-        var(--theme-accent-background, #007acc) 40%,
-        var(--theme-border, #4a4a4a)
-    );
     transform: translateY(-1px);
     box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15);
 }
@@ -843,7 +833,9 @@
     margin-top: 16px;
     padding-top: 4px;
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: center;
     align-items: center;
     gap: 8px;
     width: 100%;

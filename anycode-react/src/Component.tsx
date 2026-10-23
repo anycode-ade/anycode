@@ -20,21 +20,21 @@ export default function AnycodeEditorReact({ id, editorState, forceUpdateTrigger
 
         if (editorState.hasScroll()) {
             editorState.onAttach();
-            let focus = editorState.requestedFocus();
+            const focus = editorState.requestedFocus();
 
             if (focus) {
                 let { line, column } = editorState.getCursor();
                 if (line !== undefined && column !== undefined) {
-                    editorState.requestFocus(line, column);
+                    editorState.requestFocus(line, column, focus.center);
                 }
             }
         } else {
             editorState.render();
-            let focus = editorState.requestedFocus();
+            const focus = editorState.requestedFocus();
             if (focus) {
                 let { line, column } = editorState.getCursor();
                 if (line !== undefined && column !== undefined) {
-                    editorState.requestFocus(line, column);
+                    editorState.requestFocus(line, column, focus.center);
                     editorState.renderCursorOrSelection();
                 }
             }

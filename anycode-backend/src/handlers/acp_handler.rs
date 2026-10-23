@@ -887,6 +887,26 @@ pub async fn handle_acp_queue_move(
     ack.send(&json!({ "success": success })).ok();
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct AcpQueueSendNowRequest {
+    pub agent_id: String,
+    pub item_id: String,
+}
+
+pub async fn handle_acp_queue_send_now(
+    Data(request): Data<AcpQueueSendNowRequest>,
+    ack: AckSender,
+    state: State<AppState>,
+) {
+    info!("handle_acp_queue_send_now {:?}", request);
+    let AcpQueueSendNowRequest { agent_id, item_id } = request;
+    let acp_manager = state.acp_manager.lock().await;
+    let success = acp_manager
+        .send_agent_queued_prompt_now(&agent_id, &item_id)
+        .await;
+    ack.send(&json!({ "success": success })).ok();
+}
+
 pub fn agents_config_path() -> std::path::PathBuf {
     dirs::data_dir()
         .or_else(dirs::home_dir)

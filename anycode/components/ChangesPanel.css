@@ -21,6 +21,7 @@
 
 .changes-header {
     display: flex;
+    flex-wrap: wrap;
     min-width: 0;
     overflow: hidden;
     align-items: center;
@@ -33,6 +34,7 @@
     display: flex;
     align-items: center;
     flex: 0 0 auto;
+    margin-left: auto;
 }
 
 .changes-push-status {
@@ -86,11 +88,20 @@
 
 .changes-title {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     min-width: 0;
     overflow: hidden;
     gap: 6px;
     flex: 1 1 auto;
+}
+
+.changes-branch-group {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    flex: 0 1 auto;
 }
 
 .changes-branch-icon {
@@ -148,10 +159,9 @@
 .changes-project-selector {
     display: inline-flex;
     align-items: center;
-    gap: 3px;
-    flex: 0 1 auto;
+    gap: 6px;
+    flex: 0 0 auto;
     min-width: 0;
-    max-width: 48%;
     color: var(--theme-tab-foreground, #888);
     cursor: pointer;
 }
@@ -161,8 +171,7 @@
 }
 
 .changes-project-select {
-    flex: 0 1 auto;
-    max-width: min(140px, 100%);
+    flex: 0 0 auto;
     padding: 0;
 }
 
@@ -172,7 +181,6 @@
     flex: 0 0 auto;
     width: 12px;
     height: 12px;
-    margin-left: -3px;
     pointer-events: none;
 }
 
@@ -629,7 +637,6 @@
     color: var(--theme-accent-foreground, #fff) !important;
 }
 
-.changes-item.active .changes-filename,
 .changes-item.active .changes-revert-btn,
 .changes-item.active .changes-stage-toggle-btn,
 .changes-item.active .changes-stat-added,

@@ -21,6 +21,7 @@ import { AgentIcon } from './AgentIcon';
 import { loadItem, saveItem } from '../../storage';
 import { usePersistedScroll } from '../../hooks/usePersistedScroll';
 import { selectionQuoteStore } from '../../features/agents/selectionQuoteStore';
+import { useEvent } from '../../hooks/useEvent';
 
 const ACP_INPUT_DRAFTS_STORAGE_KEY = 'acpInputDrafts';
 const EMPTY_ARRAY: any[] = [];
@@ -68,14 +69,15 @@ const useAutoScroll = (messages: AcpMessage[], isProcessing: boolean, agentId: s
     setAutoScrollEnabled((prev) => (prev === enabled ? prev : enabled));
   };
 
-  const stopFollowBottom = () => {
+  const stopFollowBottom = useCallback(() => {
     if (followBottomRafRef.current !== null) {
       cancelAnimationFrame(followBottomRafRef.current);
       followBottomRafRef.current = null;
     }
-  };
+  }, []);
 
-  const disableAutoScrollImmediately = () => {
+  // Stable identity: it is passed down to memoized message rows, which re-render when it changes.
+  const disableAutoScrollImmediately = useCallback(() => {
     autoScrollEnabledRef.current = false;
     stopFollowBottom();
     setAutoScrollEnabled((prev) => (prev ? false : prev));
@@ -84,7 +86,7 @@ const useAutoScroll = (messages: AcpMessage[], isProcessing: boolean, agentId: s
       clearTimeout(autoScrollScrollbarTimerRef.current);
       autoScrollScrollbarTimerRef.current = null;
     }
-  };
+  }, [contentRef, stopFollowBottom]);
 
   const hideScrollbarDuringAutoScroll = () => {
     const element = contentRef.current;
@@ -147,8 +149,11 @@ const useAutoScroll = (messages: AcpMessage[], isProcessing: boolean, agentId: s
     const contentElement = contentRef.current;
     if (!contentElement) return;
 
+    // Scrolling up only counts as user intent when there is content above to scroll to.
+    const canScrollUp = () => contentElement.scrollTop > 0;
+
     const noteUserScrollIntent = (event: WheelEvent) => {
-      if (event.deltaY < 0) {
+      if (event.deltaY < 0 && canScrollUp()) {
         userScrollUpIntentRef.current = true;
         disableAutoScrollImmediately();
       }
@@ -164,7 +169,7 @@ const useAutoScroll = (messages: AcpMessage[], isProcessing: boolean, agentId: s
       const previousY = lastTouchYRef.current;
       lastTouchYRef.current = currentY ?? null;
 
-      if (currentY !== undefined && previousY !== null && currentY > previousY) {
+      if (currentY !== undefined && previousY !== null && currentY > previousY && canScrollUp()) {
         userScrollUpIntentRef.current = true;
         disableAutoScrollImmediately();
       }
@@ -188,6 +193,7 @@ const useAutoScroll = (messages: AcpMessage[], isProcessing: boolean, agentId: s
         event.key === 'PageUp' ||
         event.key === 'Home'
       ) {
+        if (!canScrollUp()) return;
         userScrollUpIntentRef.current = true;
         disableAutoScrollImmediately();
       }
@@ -203,16 +209,19 @@ const useAutoScroll = (messages: AcpMessage[], isProcessing: boolean, agentId: s
         pointerScrollStartRef.current !== null &&
         currentScrollTop < pointerScrollStartRef.current - 1;
 
+      // Any user-initiated upward scroll pauses follow, even a few px from the bottom.
+      // Unexplained upward movement (e.g. content shrinking) only counts away from the bottom.
       if (
         !isProgrammaticScrollRef.current &&
-        !isAtBottom &&
         scrollDirection === 'up' &&
-        (userScrollUpIntentRef.current || pointerDraggedUp || delta < -1)
+        (userScrollUpIntentRef.current || pointerDraggedUp || (delta < -1 && !isAtBottom))
       ) {
         disableAutoScrollImmediately();
       }
 
-      if (isAtBottom) {
+      // Follow resumes only on a real downward move that ends at the bottom. Sub-pixel moves
+      // ('none', e.g. a trackpad nudge up) must not re-enable follow, or the button flickers.
+      if (isAtBottom && scrollDirection === 'down') {
         setAutoScroll(true);
       }
 
@@ -366,6 +375,7 @@ interface AcpSessionProps {
   onUpdateQueueItem?: (agentId: string, itemId: string, prompt: string) => void;
   onRemoveQueueItem?: (agentId: string, itemId: string) => void;
   onMoveQueueItem?: (agentId: string, itemId: string, direction: 'up' | 'down') => void;
+  onSendQueueItemNow?: (agentId: string, itemId: string) => void;
   modelSelector?: Omit<AcpModelSelectorMessage, 'role'>;
   reasoningSelector?: Omit<AcpReasoningSelectorMessage, 'role'>;
   contextUsage?: Omit<AcpContextUsageMessage, 'role'>;
@@ -407,6 +417,7 @@ const AcpSessionComponent: React.FC<AcpSessionProps> = ({
   onUpdateQueueItem,
   onRemoveQueueItem,
   onMoveQueueItem,
+  onSendQueueItemNow,
   modelSelector,
   reasoningSelector,
   contextUsage,
@@ -695,7 +706,8 @@ const AcpSessionComponent: React.FC<AcpSessionProps> = ({
     }
   }, [agentId, enableAutoScroll, inputValue, isConnected, isStarting, onSendPrompt]);
 
-  const handleSelectTemplate = useCallback((template: AgentPromptTemplate, sendImmediately = true) => {
+  // useEvent keeps the identity stable; handleSend changes on every keystroke (it reads the draft).
+  const handleSelectTemplate = useEvent((template: AgentPromptTemplate, sendImmediately = true) => {
     const promptText = (template.text || template.prompt || template.label || template.title || '').trim();
     if (!promptText) return;
     if (sendImmediately && isConnected && !isStarting && !isProcessing) {
@@ -703,7 +715,7 @@ const AcpSessionComponent: React.FC<AcpSessionProps> = ({
     } else {
       handleInputChange(promptText);
     }
-  }, [handleInputChange, handleSend, isConnected, isStarting, isProcessing]);
+  });
 
   const handleCheckMessagesSelection = useCallback(() => {
     const sel = window.getSelection();
@@ -980,6 +992,7 @@ const AcpSessionComponent: React.FC<AcpSessionProps> = ({
               onUpdateQueueItem={onUpdateQueueItem ? (itemId, prompt) => onUpdateQueueItem(agentId, itemId, prompt) : undefined}
               onRemoveQueueItem={onRemoveQueueItem ? (itemId) => onRemoveQueueItem(agentId, itemId) : undefined}
               onMoveQueueItem={onMoveQueueItem ? (itemId, dir) => onMoveQueueItem(agentId, itemId, dir) : undefined}
+              onSendQueueItemNow={onSendQueueItemNow ? (itemId) => onSendQueueItemNow(agentId, itemId) : undefined}
               modelSelector={modelSelector}
               reasoningSelector={reasoningSelector}
               contextUsage={contextUsage}

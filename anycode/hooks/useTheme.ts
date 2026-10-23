@@ -179,7 +179,8 @@ export const useTheme = ({ wsRef, isConnected }: UseThemeParams) => {
         const getHighlightColorSafe = (key: string, fallback: string) => (theme.highlight && theme.highlight[key]) || fallback;
 
         const gitModified = getHighlightColorSafe('modified', getThemeColorSafe('base.yellow', isLight ? '#b08800' : '#e5c07b'));
-        const gitAdded = getHighlightColorSafe('created', getThemeColorSafe('base.green', isLight ? '#1a8c3d' : '#34a853'));
+        // Fixed added-green for all themes; themes' `created` highlight is blue in many of them.
+        const gitAdded = '#47c770';
         const gitDeleted = getHighlightColorSafe('deleted', getThemeColorSafe('base.red', isLight ? '#c72933' : '#ea4335'));
         const gitRenamed = getHighlightColorSafe('renamed', getThemeColorSafe('base.blue', isLight ? '#0969da' : '#8ab4f8'));
         const gitConflict = getHighlightColorSafe('conflict', getThemeColorSafe('base.yellow', isLight ? '#d97706' : '#ff9800'));

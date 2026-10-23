@@ -51,6 +51,7 @@ pub async fn handle_connect(socket: SocketRef, state: State<AppState>) {
     socket.on("acp:queue:update", handle_acp_queue_update);
     socket.on("acp:queue:remove", handle_acp_queue_remove);
     socket.on("acp:queue:move", handle_acp_queue_move);
+    socket.on("acp:queue:send_now", handle_acp_queue_send_now);
     socket.on("acp:stop", handle_acp_stop);
     socket.on("acp:stop_all", handle_acp_stop_all);
     socket.on("acp:cancel", handle_acp_cancel);

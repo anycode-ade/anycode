@@ -142,6 +142,54 @@ async fn test_idle_prompt_does_not_broadcast_queue_update_but_busy_does() {
 }
 
 #[tokio::test]
+async fn test_cancel_prompt_keeps_queued_prompts_and_does_not_start_them() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let (fs_tx, _fs_rx) = tokio::sync::mpsc::channel(1);
+    let mut agent = crate::acp::AcpAgent::new_with_project_root(
+        "test-agent".to_string(),
+        "Test Agent".to_string(),
+        temp_dir.path().to_path_buf(),
+        fs_tx,
+        None,
+    );
+    let mut cancel_rx = agent.init_cancel_sender_for_test();
+
+    agent.enqueue_prompt("Wrong folder".to_string(), vec![]).await;
+    agent.enqueue_prompt("Queued after mistake".to_string(), vec![]).await;
+
+    agent.cancel_prompt().await.unwrap();
+
+    let queue = agent.get_queue().await;
+    assert_eq!(queue.len(), 2, "Stop must keep queued prompts");
+    assert!(agent.is_queue_paused(), "queued prompts must wait after Stop");
+    assert!(cancel_rx.try_recv().is_ok(), "cancel signal should reach the prompt loop");
+}
+
+#[tokio::test]
+async fn test_send_queued_prompt_now_moves_item_to_front_and_resumes_queue() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let (fs_tx, _fs_rx) = tokio::sync::mpsc::channel(1);
+    let agent = crate::acp::AcpAgent::new_with_project_root(
+        "test-agent".to_string(),
+        "Test Agent".to_string(),
+        temp_dir.path().to_path_buf(),
+        fs_tx,
+        None,
+    );
+
+    let first = agent.enqueue_prompt("first".to_string(), vec![]).await;
+    let second = agent.enqueue_prompt("second".to_string(), vec![]).await;
+    agent.set_queue_paused_for_test(true);
+
+    assert!(agent.send_queued_prompt_now(&second).await);
+
+    let ids: Vec<String> = agent.get_queue().await.into_iter().map(|item| item.id).collect();
+    assert_eq!(ids, vec![second, first]);
+    assert!(!agent.is_queue_paused(), "send-now resumes the queue");
+    assert!(!agent.send_queued_prompt_now("missing").await);
+}
+
+#[tokio::test]
 async fn test_agent_message_forwarding_cancels_previous_token() {
     let (diagnostic_tx, _diagnostic_rx) = tokio::sync::mpsc::channel(1);
     let (acp_fs_tx, _acp_fs_rx) = tokio::sync::mpsc::channel(1);

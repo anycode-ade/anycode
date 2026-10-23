@@ -128,6 +128,7 @@ export class AnycodeEditor {
     private hoverPoint: Point | null = null;
 
     private needFocus = false;
+    private needFocusCenter = false;
     private cursorActive = true;
 
     private search: Search = new Search();
@@ -650,6 +651,7 @@ export class AnycodeEditor {
 
     public requestFocus(line: number, column: number, center: boolean = false): void {
         this.needFocus = true;
+        this.needFocusCenter = center;
         this.cursor = this.code.clampPoint({ row: line, column });
         if (!this.readOnly) {
             this.codeContent.focus();
@@ -661,10 +663,11 @@ export class AnycodeEditor {
         this.renderer.renderCursorOrSelection(this.getEditorState());
     }
 
-    public requestedFocus(): boolean {
-        const needed = this.needFocus;
+    /** Returns the pending focus request (with its center flag) and clears it. */
+    public requestedFocus(): { center: boolean } | null {
+        if (!this.needFocus) return null;
         this.needFocus = false;
-        return needed;
+        return { center: this.needFocusCenter };
     }
 
     public setRunButtonLines(lines: number[]) {

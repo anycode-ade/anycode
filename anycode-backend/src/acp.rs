@@ -739,6 +739,9 @@ pub struct AcpAgent {
     project_root: PathBuf,
     queue: Arc<tokio::sync::Mutex<Vec<AcpQueuedMessage>>>,
     queue_notify: Arc<Notify>,
+    /// Set by Stop. While set, queued prompts wait until the user sends one explicitly.
+    /// Written only while holding the `queue` lock.
+    queue_paused: Arc<AtomicBool>,
     pub acp_db: Option<Arc<crate::acp_db::AcpDb>>,
 }
 
@@ -776,6 +779,7 @@ impl AcpAgent {
             project_root,
             queue: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             queue_notify: Arc::new(Notify::new()),
+            queue_paused: Arc::new(AtomicBool::new(false)),
             acp_db,
         }
     }
@@ -793,6 +797,13 @@ impl AcpAgent {
     pub fn init_message_sender_for_test(&mut self) -> broadcast::Receiver<AcpMessage> {
         let (tx, rx) = broadcast::channel(100);
         self.message_sender = Some(tx);
+        rx
+    }
+
+    #[cfg(test)]
+    pub fn init_cancel_sender_for_test(&mut self) -> mpsc::Receiver<()> {
+        let (tx, rx) = mpsc::channel::<()>(10);
+        self.cancel_sender = Arc::new(tokio::sync::Mutex::new(Some(tx)));
         rx
     }
 
@@ -840,6 +851,7 @@ impl AcpAgent {
         let fs_sender_clone = self.fs_sender.clone();
         let queue_clone = self.queue.clone();
         let queue_notify_clone = self.queue_notify.clone();
+        let queue_paused_clone = self.queue_paused.clone();
         let history_manager_clone = self.history_manager.clone();
         let acp_db_clone = self.acp_db.clone();
         let project_root_clone = self.project_root.clone();
@@ -857,6 +869,7 @@ impl AcpAgent {
                             history_manager_clone,
                             queue_clone,
                             queue_notify_clone,
+                            queue_paused_clone,
                             message_sender_clone,
                             fs_sender_clone,
                             stdin,
@@ -999,6 +1012,7 @@ impl AcpAgent {
         history_manager: Arc<RwLock<AcpHistoryManager>>,
         queue: Arc<tokio::sync::Mutex<Vec<AcpQueuedMessage>>>,
         queue_notify: Arc<Notify>,
+        queue_paused: Arc<AtomicBool>,
         message_sender: broadcast::Sender<AcpMessage>,
         fs_sender: mpsc::Sender<AcpFsCommand>,
         stdin: tokio::process::ChildStdin,
@@ -1227,6 +1241,7 @@ impl AcpAgent {
                     history_manager,
                     queue,
                     queue_notify,
+                    queue_paused,
                     bootstrap.session_id,
                     bootstrap.prompt_capabilities,
                     &mut config_rx,
@@ -1597,6 +1612,7 @@ impl AcpAgent {
         history_manager: Arc<RwLock<AcpHistoryManager>>,
         queue: Arc<tokio::sync::Mutex<Vec<AcpQueuedMessage>>>,
         queue_notify: Arc<Notify>,
+        queue_paused: Arc<AtomicBool>,
         session_id: acp::SessionId,
         prompt_capabilities: acp::PromptCapabilities,
         config_rx: &mut mpsc::Receiver<PendingConfigUpdate>,
@@ -1608,10 +1624,14 @@ impl AcpAgent {
         );
 
         loop {
+            // Cancel signals only matter while a turn is in flight. Anything still buffered
+            // here is stale, so drop it before the next queued prompt can start.
+            while cancel_rx.try_recv().is_ok() {}
+
             // First check if there is an item in the queue to process
             let next_prompt = {
                 let mut q = queue.lock().await;
-                if !q.is_empty() {
+                if !q.is_empty() && !queue_paused.load(Ordering::SeqCst) {
                     is_processing.store(true, Ordering::SeqCst);
                     Some(q.remove(0))
                 } else {
@@ -1678,11 +1698,9 @@ impl AcpAgent {
                     );
                 }
 
-                // Drain any stale cancel signals before processing prompt
-                while cancel_rx.try_recv().is_ok() {}
-
-                // Handle prompt with cancellation support
-                let was_cancelled = Self::handle_prompt_with_cancellation(
+                // Handle prompt with cancellation support. Stop already dropped the prompts queued
+                // before it (see cancel_prompt), so prompts sent after Stop are not cleared here.
+                Self::handle_prompt_with_cancellation(
                     conn,
                     agent_id,
                     message_sender,
@@ -1695,22 +1713,8 @@ impl AcpAgent {
                 )
                 .await;
 
-                if was_cancelled {
-                    // If user cancelled, clear the rest of the queue so subsequent prompts do not execute automatically
-                    let mut q = queue.lock().await;
-                    info!(
-                        "Prompt was cancelled for agent {}, clearing {} remaining queued prompts",
-                        agent_id,
-                        q.len()
-                    );
-                    q.clear();
-                    let _ = message_sender.send(AcpMessage::QueueUpdate(AcpQueueUpdate {
-                        queue: Vec::new(),
-                    }));
-                }
-
                 // Only emit processing = false when queue is completely drained
-                let has_more = !queue.lock().await.is_empty();
+                let has_more = !queue.lock().await.is_empty() && !queue_paused.load(Ordering::SeqCst);
                 if !has_more {
                     is_processing.store(false, Ordering::SeqCst);
 
@@ -1719,9 +1723,6 @@ impl AcpAgent {
                         is_processing: false,
                     }));
                 }
-
-                // Drain any remaining cancel signals before processing next prompt
-                while cancel_rx.try_recv().is_ok() {}
 
                 tokio::task::yield_now().await;
                 continue;
@@ -1767,9 +1768,13 @@ impl AcpAgent {
         attachments: Vec<AcpPromptAttachment>,
         prompt_capabilities: &acp::PromptCapabilities,
         cancel_rx: &mut mpsc::Receiver<()>,
-    ) -> bool {
-        // Drain any stale cancel signals before sending prompt
-        while cancel_rx.try_recv().is_ok() {}
+    ) {
+        // Stop pressed after the turn started but before the request was sent cancels this
+        // turn. Do not send the prompt at all.
+        if cancel_rx.try_recv().is_ok() {
+            info!("Prompt cancelled before it was sent to agent {}", agent_id);
+            return;
+        }
 
         let blocks = Self::prepare_prompt_blocks(prompt, attachments, prompt_capabilities);
         let prompt_request = acp::PromptRequest::new(session_id.clone(), blocks);
@@ -1826,8 +1831,6 @@ impl AcpAgent {
                 }
             }
         }
-
-        cancel_sent
     }
 
     fn prepare_prompt_blocks(
@@ -2141,9 +2144,14 @@ impl AcpAgent {
 
         let (current_queue, should_broadcast) = {
             let mut q = self.queue.lock().await;
+            if q.is_empty() {
+                // Nothing is held back, so this prompt runs like any other.
+                self.queue_paused.store(false, Ordering::SeqCst);
+            }
             q.push(item);
             let is_busy = self.is_processing.load(Ordering::SeqCst);
-            let should_broadcast = is_busy || q.len() > 1;
+            let is_paused = self.queue_paused.load(Ordering::SeqCst);
+            let should_broadcast = is_busy || q.len() > 1 || is_paused;
             (q.clone(), should_broadcast)
         };
 
@@ -2248,6 +2256,36 @@ impl AcpAgent {
         moved
     }
 
+    /// Moves a queued prompt to the front and sends it now, interrupting a running turn.
+    /// Also resumes a queue paused by Stop. Returns false if the item is not queued.
+    pub async fn send_queued_prompt_now(&self, item_id: &str) -> bool {
+        let (current_queue, is_busy) = {
+            let mut q = self.queue.lock().await;
+            let Some(index) = q.iter().position(|item| item.id == item_id) else {
+                return false;
+            };
+            let item = q.remove(index);
+            q.insert(0, item);
+            self.queue_paused.store(false, Ordering::SeqCst);
+            (q.clone(), self.is_processing.load(Ordering::SeqCst))
+        };
+
+        if let Some(sender) = &self.message_sender {
+            let _ = sender.send(AcpMessage::QueueUpdate(AcpQueueUpdate {
+                queue: current_queue,
+            }));
+        }
+
+        if is_busy {
+            // The cancelled turn ends, then the prompt loop starts the front item.
+            if let Some(cancel_tx) = self.cancel_sender.lock().await.as_ref() {
+                let _ = cancel_tx.send(()).await;
+            }
+        }
+        self.queue_notify.notify_one();
+        true
+    }
+
     pub async fn clear_queue(&self) {
         let current_queue = {
             let mut q = self.queue.lock().await;
@@ -2259,6 +2297,15 @@ impl AcpAgent {
                 queue: current_queue,
             }));
         }
+    }
+
+    pub fn is_queue_paused(&self) -> bool {
+        self.queue_paused.load(Ordering::SeqCst)
+    }
+
+    #[cfg(test)]
+    pub fn set_queue_paused_for_test(&self, paused: bool) {
+        self.queue_paused.store(paused, Ordering::SeqCst);
     }
 
     /// Restore project to state before a specific prompt was processed
@@ -2285,6 +2332,13 @@ impl AcpAgent {
             Some(tx) => tx,
             None => return Err(anyhow!("Cancel sender not initialized")),
         };
+
+        // Stop stops the running turn only. Queued prompts stay in the queue and do not start
+        // until the user sends one of them with the send-now action.
+        {
+            let _q = self.queue.lock().await;
+            self.queue_paused.store(true, Ordering::SeqCst);
+        }
 
         // Send cancel signal to agent
         cancel_tx.send(()).await?;
@@ -2570,6 +2624,14 @@ impl AcpManager {
     ) -> bool {
         if let Some(agent) = self.agents.get(agent_id) {
             agent.move_queued_prompt(item_id, direction).await
+        } else {
+            false
+        }
+    }
+
+    pub async fn send_agent_queued_prompt_now(&self, agent_id: &str, item_id: &str) -> bool {
+        if let Some(agent) = self.agents.get(agent_id) {
+            agent.send_queued_prompt_now(item_id).await
         } else {
             false
         }
