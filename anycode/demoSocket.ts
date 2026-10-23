@@ -1,5 +1,6 @@
 // demoSocket.ts - In-memory Mock Socket for Anycode Live Demo
 import { Code } from 'anycode-base';
+import { DEMO_RESUME_SESSION_ID, buildDemoResumeHistory } from './demoSessionHistory';
 
 type EventHandler = (...args: any[]) => void;
 
@@ -1030,6 +1031,12 @@ export class DemoSocket {
                     agent_id: agentId,
                     session_id: sessionId,
                 });
+                if (payload?.resume_session_id === DEMO_RESUME_SESSION_ID) {
+                    // Like the backend: a resumed session replays its stored history after the start ack.
+                    setTimeout(() => {
+                        this.emitLocal('acp:history', { agent_id: agentId, history: buildDemoResumeHistory() });
+                    }, 0);
+                }
                 break;
             }
 

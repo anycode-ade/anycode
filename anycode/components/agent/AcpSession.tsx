@@ -337,12 +337,19 @@ const useAutoScroll = (messages: AcpMessage[], isProcessing: boolean, agentId: s
     contentRef.current?.classList.remove('acp-messages-auto-scrolling');
   }, []);
 
+  // Every scrollTop write that isn't the user's (scrollToBottom, followBottom, row measurement) must move
+  // the baseline too. The scroll handler reads movement against it, and an unsynced move looks like a scroll up.
+  const syncScrollBaseline = useCallback(() => {
+    lastScrollTopRef.current = contentRef.current?.scrollTop ?? 0;
+  }, [contentRef]);
+
   return {
     contentRef,
     innerRef,
     autoScrollEnabled,
     enableAutoScroll,
     disableAutoScroll: disableAutoScrollImmediately,
+    syncScrollBaseline,
   };
 };
 
@@ -467,6 +474,7 @@ const AcpSessionComponent: React.FC<AcpSessionProps> = ({
     autoScrollEnabled,
     enableAutoScroll,
     disableAutoScroll,
+    syncScrollBaseline,
   } = useAutoScroll(messages, isProcessing, agentId);
 
   // Pulses the scroll-to-bottom button while the working agent avatar is scrolled out of view.
@@ -973,6 +981,7 @@ const AcpSessionComponent: React.FC<AcpSessionProps> = ({
                 expandedThoughts={searchExpandedThoughts}
                 activeSearchMessageIndex={activeSearchMessageIndex}
                 scrollerRef={contentRef}
+                onScrollPositionSet={syncScrollBaseline}
                 onWorkGroupExpansionChange={handleWorkGroupExpansionChange}
                 onUserMessageToggle={disableAutoScroll}
                 onToggleToolCall={handleToggleToolCall}

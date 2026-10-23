@@ -37,6 +37,8 @@ interface AcpMessagesProps {
   agentWorking?: boolean;
   onGetToolOutput?: (toolId: string, sessionId?: string) => Promise<string | null>;
   scrollerRef: React.RefObject<HTMLDivElement | null>;
+  // Called after this component moves scrollTop itself, so the scroll handler doesn't read the move as the user's.
+  onScrollPositionSet: () => void;
 }
 
 
@@ -148,6 +150,7 @@ const AcpMessagesComponent: React.FC<AcpMessagesProps> = ({
   agentWorking,
   onGetToolOutput,
   scrollerRef,
+  onScrollPositionSet,
 }) => {
   const hasRenderedRef = useRef(false);
   useEffect(() => {
@@ -430,9 +433,12 @@ const AcpMessagesComponent: React.FC<AcpMessagesProps> = ({
         scrollCompensation += next - previous;
       }
     }
-    if (scrollCompensation !== 0) scroller.scrollTop += scrollCompensation;
+    if (scrollCompensation !== 0) {
+      scroller.scrollTop += scrollCompensation;
+      onScrollPositionSet();
+    }
     return changed;
-  }, [scrollerRef]);
+  }, [scrollerRef, onScrollPositionSet]);
 
   // Height changes outside a React commit (images, fonts, resizes) are caught by the ResizeObserver.
   useLayoutEffect(() => {
@@ -482,8 +488,9 @@ const AcpMessagesComponent: React.FC<AcpMessagesProps> = ({
     if (scroller.querySelector(`[data-turn-key="${activeSearchTurnKey}"]`)) return;
     const scrollTop = Math.max(0, offsets[activeSearchTurn] - scroller.clientHeight / 2);
     scroller.scrollTop = scrollTop;
+    onScrollPositionSet();
     setTurnRange(turnWindowFor(offsets, count, scrollTop, scroller.clientHeight));
-  }, [activeSearchMessageIndex, activeSearchTurn, activeSearchTurnKey, scrollerRef]);
+  }, [activeSearchMessageIndex, activeSearchTurn, activeSearchTurnKey, scrollerRef, onScrollPositionSet]);
 
   // Only turns created after the list has rendered fade in. Turns that merely re-mount on scroll don't.
   useEffect(() => {
