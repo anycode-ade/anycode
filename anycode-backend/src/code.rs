@@ -4,7 +4,7 @@ use crate::utils::{self};
 use ropey::Rope;
 use serde::{Deserialize, Serialize};
 use std::fs::File;
-use std::io::{BufReader, BufWriter};
+use std::io::BufReader;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -152,68 +152,25 @@ impl Code {
         }
 
         let path = std::path::Path::new(&self.abs_path);
-        if let Some(parent) = path.parent() {
-            if !parent.exists() {
-                std::fs::create_dir_all(parent)?;
-            }
-        }
-
         let parent = path.parent().unwrap_or_else(|| std::path::Path::new("."));
 
-        // Attempt atomic save via a temporary file in the same directory to avoid partial writes
-        // and handle Windows transient sharing violations with retry backoff.
-        let atomic_result = (|| -> std::io::Result<()> {
-            let mut temp_file = tempfile::Builder::new()
-                .prefix(".anycode_")
-                .suffix(".anycode_tmp")
-                .tempfile_in(parent)?;
+        let mut temp = tempfile::Builder::new()
+            .prefix(".anycode_")
+            .suffix(".anycode_tmp")
+            .tempfile_in(parent)?;
 
-            {
-                let mut writer = BufWriter::new(&mut temp_file);
-                use std::io::Write;
-                if self.has_bom {
-                    writer.write_all(b"\xef\xbb\xbf")?;
-                }
-                self.text.write_to(&mut writer)?;
-                writer.flush()?;
-            }
-
-            if let Ok(metadata) = std::fs::metadata(path) {
-                let _ = temp_file.as_file().set_permissions(metadata.permissions());
-            }
-
-            let mut attempts = 0;
-            loop {
-                match temp_file.persist(path) {
-                    Ok(_) => return Ok(()),
-                    Err(err) => {
-                        attempts += 1;
-                        if attempts >= 5 {
-                            return Err(err.error);
-                        }
-                        std::thread::sleep(std::time::Duration::from_millis(15 * attempts as u64));
-                        temp_file = err.file;
-                    }
-                }
-            }
-        })();
-
-        // Fallback to direct write if atomic tempfile creation/persistence fails
-        if atomic_result.is_err() {
-            let file = File::create(&self.abs_path)?;
-            let mut writer = BufWriter::new(file);
-            use std::io::Write;
-            if self.has_bom {
-                writer.write_all(b"\xef\xbb\xbf")?;
-            }
-            self.text.write_to(&mut writer)?;
-            writer.flush()?;
-            drop(writer);
+        use std::io::Write;
+        if self.has_bom {
+            temp.write_all(b"\xef\xbb\xbf")?;
         }
+        self.text.write_to(&mut temp)?;
+        temp.flush()?;
+
+        temp.persist(path).map_err(|e| e.error)?;
 
         self.changed = false;
         self.self_updated = true;
-        self.file_meta = FileMeta::query(std::path::Path::new(&self.abs_path));
+        self.file_meta = FileMeta::query(path);
         Ok(())
     }
 
