@@ -384,12 +384,6 @@
     gap: 2px;
     padding: 2px;
     border-radius: 8px;
-    background: color-mix(
-        in srgb,
-        var(--theme-tab-background, var(--theme-background, var(--background-color, #1e1e1e))) 90%,
-        #000000 10%
-    );
-    border: 1px solid color-mix(in srgb, var(--theme-border, #4a4a4a) 45%, transparent);
     max-width: 100%;
 }
 

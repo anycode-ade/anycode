@@ -657,8 +657,22 @@ export class Renderer {
             effectiveWordLines,
             (line: number) => this.getVisualIndexForLine(line),
             (visualIndex: number) => this.getLineForVisualRow(visualIndex),
-            totalVisualRows
+            totalVisualRows,
+            (hunkId: number) => this.getHunkVisualRange(hunkId)
         );
+    }
+
+    public getHunkVisualRange(hunkId: number): { startRow: number; endRow: number } | null {
+        if (!this.visualSegments) return null;
+        let startRow = Infinity;
+        let endRow = -Infinity;
+        for (const seg of this.visualSegments) {
+            if (seg.kind === 'ghost' && seg.hunkId === hunkId) {
+                startRow = Math.min(startRow, seg.startVisualIndex);
+                endRow = Math.max(endRow, seg.startVisualIndex + seg.ghostCount - 1);
+            }
+        }
+        return startRow !== Infinity ? { startRow, endRow } : null;
     }
 
     public clearExpandedDiffRanges(): void {
@@ -1021,9 +1035,13 @@ export class Renderer {
         visualIndex: number,
         state: EditorState
     ): RowElements {
-        const { settings } = state;
-        const originalNodes = state.originalCode?.getLineNodes(originalLineIndex);
-        const originalText = state.originalCode?.line(originalLineIndex) ?? "";
+        const { settings, originalCode } = state;
+        const originalNodes = originalCode?.getLineNodes(originalLineIndex);
+        const originalText = originalCode?.line(originalLineIndex) ?? "";
+        const multibufferCode = originalCode as (Code & {
+            getMultibufferLineNumber?: (line: number) => number | null;
+        }) | undefined;
+        const displayLineNumber = multibufferCode?.getMultibufferLineNumber?.(originalLineIndex);
         const ghostRow: GhostRow = {
             kind: "ghost",
             hunkId,
@@ -1031,7 +1049,7 @@ export class Renderer {
             originalLineIndex,
         };
         const elements = this.diffRenderer.createGhostRowElements(
-            ghostRow, settings, originalText, originalNodes, state.wordHighlight
+            ghostRow, settings, originalText, originalNodes, state.wordHighlight, displayLineNumber
         );
         return this.applyVisualIndex(elements, visualIndex);
     }

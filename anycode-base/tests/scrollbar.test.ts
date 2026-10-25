@@ -76,7 +76,15 @@ function createMockElement(tag: string = 'div'): any {
         },
         replaceChildren(...items: any[]) {
             children.length = 0;
-            items.forEach(i => this.appendChild(i));
+            for (const item of items) {
+                if (item.tagName === 'FRAGMENT') {
+                    while (item.children.length > 0) {
+                        this.appendChild(item.children.shift());
+                    }
+                } else {
+                    this.appendChild(item);
+                }
+            }
         },
         get children() {
             return children;
@@ -230,5 +238,114 @@ describe('ScrollbarMarkersRenderer', () => {
         // sliderPosition = INSET + 670 = 672
         expect(thumb.style.transform).toBe('translateY(672px)');
         expect(thumb.style.height).toBe('126px');
+    });
+
+    it('renders deleted diff markers with correct class and visual range', () => {
+        const renderer = new ScrollbarMarkersRenderer(
+            container,
+            () => {},
+            () => {},
+            () => {},
+            true,
+            wrapper
+        );
+
+        const diffModel = {
+            hasChanges: () => true,
+            getHunks: () => [
+                {
+                    hunkId: 0,
+                    startLine: 10,
+                    lineCount: 0,
+                    changeType: 'deleted' as const,
+                },
+            ],
+        };
+
+        const mockState: Partial<EditorState> = {
+            code: new Code('a\n'.repeat(99) + 'a', 'test.ts', 'typescript'),
+            settings: { lineHeight: 20, buffer: 5 },
+            search: new Search(),
+            errorLines: new Map(),
+            scrollbarMarkersEnabled: true,
+            diffs: diffModel as any,
+        };
+
+        // Render with hunk visual range (ghost rows 9..14, count = 6)
+        renderer.render(
+            mockState as EditorState,
+            false,
+            [],
+            (l) => l,
+            (v) => v,
+            106,
+            (hunkId) => hunkId === 0 ? { startRow: 9, endRow: 14 } : null
+        );
+
+        const diffLayer = (renderer as any).diffLayer;
+        expect(diffLayer.children.length).toBe(1);
+        const marker = diffLayer.children[0];
+        expect(marker.className).toBe('smrd deleted');
+        expect(marker.style.top).toBe(`${(9 / 106) * 100}%`);
+        expect(marker.style.height).toBe(`${(6 / 106) * 100}%`);
+    });
+
+    it('renders both deleted and modified markers for replaced lines in modified hunk', () => {
+        const renderer = new ScrollbarMarkersRenderer(
+            container,
+            () => {},
+            () => {},
+            () => {},
+            true,
+            wrapper
+        );
+
+        const diffModel = {
+            hasChanges: () => true,
+            getHunks: () => [
+                {
+                    hunkId: 1,
+                    startLine: 186,
+                    lineCount: 5,
+                    changeType: 'modified' as const,
+                    oldLineNumbers: [181, 182, 183, 184, 185, 186],
+                },
+            ],
+        };
+
+        const mockState: Partial<EditorState> = {
+            code: new Code('a\n'.repeat(270) + 'a', 'test.ts', 'typescript'),
+            settings: { lineHeight: 20, buffer: 5 },
+            search: new Search(),
+            errorLines: new Map(),
+            scrollbarMarkersEnabled: true,
+            diffs: diffModel as any,
+        };
+
+        // Render with hunk visual range:
+        // Ghost rows for hunkId 1: 181..186 (count 6)
+        // Real modified lines: 187..191 (count 5)
+        renderer.render(
+            mockState as EditorState,
+            false,
+            [],
+            (l) => l + 6, // offset by 6 ghost rows
+            (v) => v,
+            277,
+            (hunkId) => hunkId === 1 ? { startRow: 181, endRow: 186 } : null
+        );
+
+        const diffLayer = (renderer as any).diffLayer;
+        expect(diffLayer.children.length).toBe(2);
+
+        const deletedMarker = diffLayer.children[0];
+        expect(deletedMarker.className).toBe('smrd deleted');
+        expect(deletedMarker.style.top).toBe(`${(181 / 277) * 100}%`);
+        expect(deletedMarker.style.height).toBe(`${(6 / 277) * 100}%`);
+
+        const modifiedMarker = diffLayer.children[1];
+        expect(modifiedMarker.className).toBe('smrd modified');
+        expect(modifiedMarker.style.top).toBe(`${((185 + 6) / 277) * 100}%`);
+        expect(modifiedMarker.style.height).toBe(`${(5 / 277) * 100}%`);
     });
 });

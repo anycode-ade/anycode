@@ -135,8 +135,9 @@ export class DiffRenderer {
         originalText: string,
         originalNodes?: HighlighedNode[],
         wordHighlight?: WordHighlight | null,
+        displayLineNumber?: number | null,
     ): GhostLine {
-        const { hunkId } = ghostRow;
+        const { hunkId, originalLineIndex } = ghostRow;
         
         const ghostLine = this.createDeletedGhostLine(
             originalText,
@@ -145,13 +146,15 @@ export class DiffRenderer {
             originalNodes,
             wordHighlight
         ) as HTMLDivElement & GhostElement & { originalLineIndex: number };
-        ghostLine.originalLineIndex = ghostRow.originalLineIndex;
+        ghostLine.originalLineIndex = originalLineIndex;
 
-        const emptyGutter = document.createElement('div') as HTMLDivElement & GhostElement;
-        emptyGutter.className = `${CSS_CLASS.GUTTER} ${CSS_CLASS.LINE_DELETED_GHOST}`;
-        emptyGutter.isGhost = true;
-        emptyGutter.hunkId = hunkId;
-        emptyGutter.textContent = '';
+        const effectiveLineNumber = displayLineNumber !== undefined ? displayLineNumber : originalLineIndex;
+        const ghostGutter = document.createElement('div') as HTMLDivElement & GhostElement & GutterElement;
+        ghostGutter.className = `${CSS_CLASS.GUTTER} ${CSS_CLASS.LINE_DELETED_GHOST}`;
+        ghostGutter.isGhost = true;
+        ghostGutter.hunkId = hunkId;
+        ghostGutter.lineNumber = originalLineIndex;
+        ghostGutter.textContent = effectiveLineNumber !== null ? (effectiveLineNumber + 1).toString() : '';
 
         const emptyButton = document.createElement('div') as HTMLDivElement & GhostElement;
         emptyButton.className = `${CSS_CLASS.BUTTONS} ${CSS_CLASS.LINE_DELETED_GHOST}`;
@@ -163,7 +166,7 @@ export class DiffRenderer {
         emptyFold.isGhost = true;
         emptyFold.hunkId = hunkId;
 
-        return { code: ghostLine, gutter: emptyGutter, btn: emptyButton, fold: emptyFold };
+        return { code: ghostLine, gutter: ghostGutter, btn: emptyButton, fold: emptyFold };
     }
 
     public clearAllGhostLines(): void {

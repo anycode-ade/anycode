@@ -278,7 +278,7 @@
   background: var(--diff-added-gutter, #47c770);
 }
 
-.anyeditor .smrd.deleted {
+.smrd.deleted {
   background: var(--diff-deleted-gutter, #eb5261);
 }
 

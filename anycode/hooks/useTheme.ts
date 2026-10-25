@@ -34,6 +34,11 @@ const parseRgb = (color: string): [number, number, number] | null => {
     return null;
 };
 
+const toRgba = (color: string, alpha: number): string => {
+    const rgb = parseRgb(color);
+    return rgb ? `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${alpha})` : color;
+};
+
 const getRelativeLuminance = ([r, g, b]: [number, number, number]): number => {
     const [rs, gs, bs] = [r / 255, g / 255, b / 255].map((v) =>
         v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4)
@@ -178,34 +183,27 @@ export const useTheme = ({ wsRef, isConnected }: UseThemeParams) => {
         const getThemeColorSafe = (key: string, fallback: string) => (theme.colors && theme.colors[key]) || fallback;
         const getHighlightColorSafe = (key: string, fallback: string) => (theme.highlight && theme.highlight[key]) || fallback;
 
-        const gitModified = getHighlightColorSafe('modified', getThemeColorSafe('base.yellow', isLight ? '#b08800' : '#e5c07b'));
-        // Fixed added-green for all themes; themes' `created` highlight is blue in many of them.
-        const gitAdded = '#47c770';
-        const gitDeleted = getHighlightColorSafe('deleted', getThemeColorSafe('base.red', isLight ? '#c72933' : '#ea4335'));
-        const gitRenamed = getHighlightColorSafe('renamed', getThemeColorSafe('base.blue', isLight ? '#0969da' : '#8ab4f8'));
-        const gitConflict = getHighlightColorSafe('conflict', getThemeColorSafe('base.yellow', isLight ? '#d97706' : '#ff9800'));
+        const added = getHighlightColorSafe('created', getThemeColorSafe('base.green', isLight ? '#1a8c3d' : '#47c770'));
+        const deleted = getHighlightColorSafe('deleted', getThemeColorSafe('base.red', isLight ? '#c72933' : '#eb5261'));
+        const modified = getHighlightColorSafe('modified', getThemeColorSafe('base.yellow', isLight ? '#0969da' : '#ffc799'));
+        const renamed = getHighlightColorSafe('renamed', getThemeColorSafe('base.blue', isLight ? '#0969da' : '#8ab4f8'));
+        const conflict = getHighlightColorSafe('conflict', getThemeColorSafe('base.yellow', isLight ? '#d97706' : '#ff9800'));
 
-        root.style.setProperty('--theme-git-modified', gitModified);
-        root.style.setProperty('--theme-git-added-strong', gitAdded);
-        root.style.setProperty('--theme-git-removed-strong', gitDeleted);
-        root.style.setProperty('--theme-git-renamed', gitRenamed);
-        root.style.setProperty('--theme-git-conflict', gitConflict);
+        const addedBg = getHighlightColorSafe('created.background', toRgba(added, isLight ? 0.60 : 0.15));
+        const deletedBg = getHighlightColorSafe('deleted.background', toRgba(deleted, isLight ? 0.60 : 0.15));
 
-        if (isLight) {
-            root.style.setProperty('--diff-added-bg', 'rgba(184, 240, 194, 0.62)');
-            root.style.setProperty('--diff-added-gutter', '#1a8c3d');
-            root.style.setProperty('--diff-added-word-highlight', 'rgba(92, 199, 112, 0.52)');
-            root.style.setProperty('--diff-deleted-bg', 'rgba(250, 199, 204, 0.62)');
-            root.style.setProperty('--diff-deleted-gutter', '#c72933');
-            root.style.setProperty('--diff-deleted-word-highlight', 'rgba(235, 97, 107, 0.50)');
-        } else {
-            root.style.setProperty('--diff-added-bg', 'rgba(51, 115, 64, 0.28)');
-            root.style.setProperty('--diff-added-gutter', '#47c770');
-            root.style.setProperty('--diff-added-word-highlight', 'rgba(64, 166, 89, 0.48)');
-            root.style.setProperty('--diff-deleted-bg', 'rgba(122, 46, 56, 0.28)');
-            root.style.setProperty('--diff-deleted-gutter', '#eb5261');
-            root.style.setProperty('--diff-deleted-word-highlight', 'rgba(199, 51, 66, 0.48)');
-        }
+        root.style.setProperty('--diff-added-gutter', added);
+        root.style.setProperty('--diff-added-bg', addedBg);
+        root.style.setProperty('--diff-deleted-gutter', deleted);
+        root.style.setProperty('--diff-deleted-bg', deletedBg);
+
+        root.style.setProperty('--theme-git-added', added);
+        root.style.setProperty('--theme-git-added-strong', added);
+        root.style.setProperty('--theme-git-removed', deleted);
+        root.style.setProperty('--theme-git-removed-strong', deleted);
+        root.style.setProperty('--theme-git-modified', modified);
+        root.style.setProperty('--theme-git-renamed', renamed);
+        root.style.setProperty('--theme-git-conflict', conflict);
 
         root.style.setProperty('--background-color', uiBackground);
         root.style.setProperty('--foreground-color', uiForeground);

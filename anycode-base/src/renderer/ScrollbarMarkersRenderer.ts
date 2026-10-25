@@ -164,6 +164,7 @@ export class ScrollbarMarkersRenderer {
 
     private getVisualIndexCallback?: (line: number) => number;
     private getLineIndexCallback?: (visualIndex: number) => number;
+    private getHunkVisualRangeCallback?: (hunkId: number) => { startRow: number; endRow: number } | null;
 
     public render(
         state: EditorState | null,
@@ -171,7 +172,8 @@ export class ScrollbarMarkersRenderer {
         wordLines: number[] = this.wordLines,
         getVisualIndex?: (line: number) => number,
         getLineIndex?: (visualIndex: number) => number,
-        totalVisualRowsOverride?: number
+        totalVisualRowsOverride?: number,
+        getHunkVisualRange?: (hunkId: number) => { startRow: number; endRow: number } | null
     ) {
         if (!this.enabled) return;
 
@@ -179,6 +181,7 @@ export class ScrollbarMarkersRenderer {
         this.includeSearch = includeSearch;
         this.getVisualIndexCallback = getVisualIndex;
         this.getLineIndexCallback = getLineIndex;
+        this.getHunkVisualRangeCallback = getHunkVisualRange;
         const rightOffset = this.getScrollbarOffset();
 
         if (!state) {
@@ -478,28 +481,49 @@ export class ScrollbarMarkersRenderer {
     private getDiffRanges(state: EditorState): DiffRange[] {
         if (!state.diffs || !state.diffs.hasChanges()) return [];
 
-        const rangesByHunk = new Map<number, DiffRange>();
+        const ranges: DiffRange[] = [];
         const hunks = state.diffs.getHunks();
         const totalLines = state.code.linesLength();
 
         for (const hunk of hunks) {
-            const rawStart = Math.max(0, Math.min(totalLines - 1, hunk.startLine - 1));
-            const rawEnd = hunk.changeType === 'deleted'
-                ? rawStart
-                : Math.max(rawStart, Math.min(totalLines - 1, hunk.startLine + Math.max(1, hunk.lineCount) - 2));
+            // 1. Deleted ghost lines for this hunk (both pure deletions and modified replacements)
+            const ghostRange = this.getHunkVisualRangeCallback?.(hunk.hunkId);
+            if (ghostRange) {
+                ranges.push({
+                    startRow: ghostRange.startRow,
+                    endRow: ghostRange.endRow,
+                    targetLine: hunk.startLine - 1,
+                    type: 'deleted',
+                });
+            } else if (hunk.changeType === 'deleted') {
+                const rawStart = Math.max(0, Math.min(totalLines - 1, hunk.startLine - 1));
+                const startRow = this.getVisualRowForLine(rawStart);
+                ranges.push({
+                    startRow,
+                    endRow: startRow,
+                    targetLine: rawStart,
+                    type: 'deleted',
+                });
+            }
 
-            const startRow = this.getVisualRowForLine(rawStart);
-            const endRow = this.getVisualRowForLine(rawEnd);
+            // 2. Added/modified real lines for this hunk
+            if (hunk.lineCount > 0) {
+                const rawStart = Math.max(0, Math.min(totalLines - 1, hunk.startLine - 1));
+                const rawEnd = Math.max(rawStart, Math.min(totalLines - 1, hunk.startLine + hunk.lineCount - 2));
 
-            rangesByHunk.set(hunk.hunkId, {
-                startRow,
-                endRow,
-                targetLine: rawStart,
-                type: hunk.changeType,
-            });
+                const startRow = this.getVisualRowForLine(rawStart);
+                const endRow = this.getVisualRowForLine(rawEnd);
+
+                ranges.push({
+                    startRow,
+                    endRow,
+                    targetLine: rawStart,
+                    type: hunk.changeType,
+                });
+            }
         }
 
-        return Array.from(rangesByHunk.values());
+        return ranges;
     }
 
     private getErrorLines(state: EditorState): number[] {
