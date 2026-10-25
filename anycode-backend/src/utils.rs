@@ -33,6 +33,8 @@ pub const DEFAULT_IGNORE_DIRS: &[&str] = &[
 ];
 
 pub const DEFAULT_IGNORE_FILES: &[&str] = &[
+    // Anycode temporary atomic save files
+    "*.anycode_tmp",
     // System files
     ".DS_Store",
     "Thumbs.db",

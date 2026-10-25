@@ -151,15 +151,65 @@ impl Code {
             return Ok(());
         }
 
-        let file = File::create(&self.abs_path)?;
-        let mut writer = BufWriter::new(file);
-        use std::io::Write;
-        if self.has_bom {
-            writer.write_all(b"\xef\xbb\xbf")?;
+        let path = std::path::Path::new(&self.abs_path);
+        if let Some(parent) = path.parent() {
+            if !parent.exists() {
+                std::fs::create_dir_all(parent)?;
+            }
         }
-        self.text.write_to(&mut writer)?;
-        writer.flush()?;
-        drop(writer);
+
+        let parent = path.parent().unwrap_or_else(|| std::path::Path::new("."));
+
+        // Attempt atomic save via a temporary file in the same directory to avoid partial writes
+        // and handle Windows transient sharing violations with retry backoff.
+        let atomic_result = (|| -> std::io::Result<()> {
+            let mut temp_file = tempfile::Builder::new()
+                .prefix(".anycode_")
+                .suffix(".anycode_tmp")
+                .tempfile_in(parent)?;
+
+            {
+                let mut writer = BufWriter::new(&mut temp_file);
+                use std::io::Write;
+                if self.has_bom {
+                    writer.write_all(b"\xef\xbb\xbf")?;
+                }
+                self.text.write_to(&mut writer)?;
+                writer.flush()?;
+            }
+
+            if let Ok(metadata) = std::fs::metadata(path) {
+                let _ = temp_file.as_file().set_permissions(metadata.permissions());
+            }
+
+            let mut attempts = 0;
+            loop {
+                match temp_file.persist(path) {
+                    Ok(_) => return Ok(()),
+                    Err(err) => {
+                        attempts += 1;
+                        if attempts >= 5 {
+                            return Err(err.error);
+                        }
+                        std::thread::sleep(std::time::Duration::from_millis(15 * attempts as u64));
+                        temp_file = err.file;
+                    }
+                }
+            }
+        })();
+
+        // Fallback to direct write if atomic tempfile creation/persistence fails
+        if atomic_result.is_err() {
+            let file = File::create(&self.abs_path)?;
+            let mut writer = BufWriter::new(file);
+            use std::io::Write;
+            if self.has_bom {
+                writer.write_all(b"\xef\xbb\xbf")?;
+            }
+            self.text.write_to(&mut writer)?;
+            writer.flush()?;
+            drop(writer);
+        }
 
         self.changed = false;
         self.self_updated = true;
@@ -420,6 +470,29 @@ mod code_undo_tests {
             saved_text,
             "\u{feff}<ItemGroup>\n  <PackageReference Include=\"Google.Protobuf\" Version=\"3.30.2\" />\n</ItemGroup>\n"
         );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_atomic_save_leaves_no_temp_files() -> std::io::Result<()> {
+        let temp_dir = tempfile::tempdir()?;
+        let file_path = temp_dir.path().join("atomic_test.txt");
+        std::fs::write(&file_path, "initial content")?;
+
+        let config = Config::default();
+        let mut code = Code::from_file(file_path.to_str().unwrap(), &config)?;
+        code.insert_text(" updated", 15);
+        code.save_file()?;
+
+        assert_eq!(std::fs::read_to_string(&file_path)?, "initial content updated");
+
+        // Verify no leftover .anycode_tmp files in parent dir
+        let temp_files: Vec<_> = std::fs::read_dir(temp_dir.path())?
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_name().to_string_lossy().contains(".anycode_tmp"))
+            .collect();
+        assert!(temp_files.is_empty(), "No temporary atomic files should remain");
 
         Ok(())
     }
