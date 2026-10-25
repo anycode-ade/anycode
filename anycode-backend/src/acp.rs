@@ -155,6 +155,7 @@ struct AcpClientImpl {
     /// Channel to send file operations to the ACP filesystem background task
     fs_sender: Option<mpsc::Sender<AcpFsCommand>>,
     acp_db: Option<Arc<crate::acp_db::AcpDb>>,
+    terminal_manager: Arc<crate::acp_terminal::AcpTerminalManager>,
 }
 
 impl AcpClientImpl {
@@ -316,13 +317,15 @@ impl AcpClientImpl {
 
     async fn create_terminal(
         &self,
-        _args: acp::CreateTerminalRequest,
+        args: acp::CreateTerminalRequest,
     ) -> acp::Result<acp::CreateTerminalResponse> {
         info!(
-            "create_terminal called for agent {}: {:?}",
-            self.agent_id, _args
+            "create_terminal called for agent {}: command='{}', args={:?}",
+            self.agent_id, args.command, args.args
         );
-        Err(acp::Error::method_not_found())
+        self.terminal_manager
+            .create_terminal(args, &self.project_root)
+            .await
     }
 
     fn resolve_project_path(&self, path: &std::path::Path) -> PathBuf {
@@ -335,46 +338,30 @@ impl AcpClientImpl {
 
     async fn terminal_output(
         &self,
-        _args: acp::TerminalOutputRequest,
+        args: acp::TerminalOutputRequest,
     ) -> acp::Result<acp::TerminalOutputResponse> {
-        info!(
-            "terminal_output called for agent {}: {:?}",
-            self.agent_id, _args
-        );
-        Err(acp::Error::method_not_found())
+        self.terminal_manager.terminal_output(args).await
     }
 
     async fn release_terminal(
         &self,
-        _args: acp::ReleaseTerminalRequest,
+        args: acp::ReleaseTerminalRequest,
     ) -> acp::Result<acp::ReleaseTerminalResponse> {
-        info!(
-            "release_terminal called for agent {}: {:?}",
-            self.agent_id, _args
-        );
-        Err(acp::Error::method_not_found())
+        self.terminal_manager.release_terminal(args).await
     }
 
     async fn wait_for_terminal_exit(
         &self,
-        _args: acp::WaitForTerminalExitRequest,
+        args: acp::WaitForTerminalExitRequest,
     ) -> acp::Result<acp::WaitForTerminalExitResponse> {
-        info!(
-            "wait_for_terminal_exit called for agent {}: {:?}",
-            self.agent_id, _args
-        );
-        Err(acp::Error::method_not_found())
+        self.terminal_manager.wait_for_terminal_exit(args).await
     }
 
     async fn kill_terminal_command(
         &self,
-        _args: acp::KillTerminalRequest,
+        args: acp::KillTerminalRequest,
     ) -> acp::Result<acp::KillTerminalResponse> {
-        info!(
-            "kill_terminal_command called for agent {}: {:?}",
-            self.agent_id, _args
-        );
-        Err(acp::Error::method_not_found())
+        self.terminal_manager.kill_terminal_command(args).await
     }
 
     async fn session_notification(&self, args: acp::SessionNotification) -> acp::Result<()> {
@@ -626,6 +613,11 @@ impl AcpClientImpl {
                 if let Some(Value::String(previous_text)) =
                     raw_update.update.pointer_mut("/content/text")
                 {
+                    if previous_text.ends_with("context canceled")
+                        && chunk_text.chars().next().is_some_and(|c| c.is_ascii_uppercase())
+                    {
+                        previous_text.push_str(": ");
+                    }
                     previous_text.push_str(chunk_text);
                     return true;
                 }
@@ -745,6 +737,7 @@ pub struct AcpAgent {
     /// Written only while holding the `queue` lock.
     queue_paused: Arc<AtomicBool>,
     pub acp_db: Option<Arc<crate::acp_db::AcpDb>>,
+    pub terminal_manager: Arc<crate::acp_terminal::AcpTerminalManager>,
 }
 
 impl AcpAgent {
@@ -760,6 +753,8 @@ impl AcpAgent {
         if let Err(e) = history_manager.init() {
             error!("Failed to initialize history manager: {}", e);
         }
+
+        let terminal_manager = Arc::new(crate::acp_terminal::AcpTerminalManager::new());
 
         Self {
             agent_id,
@@ -783,6 +778,7 @@ impl AcpAgent {
             queue_notify: Arc::new(Notify::new()),
             queue_paused: Arc::new(AtomicBool::new(false)),
             acp_db,
+            terminal_manager,
         }
     }
 
@@ -857,6 +853,7 @@ impl AcpAgent {
         let history_manager_clone = self.history_manager.clone();
         let acp_db_clone = self.acp_db.clone();
         let project_root_clone = self.project_root.clone();
+        let terminal_manager_clone = self.terminal_manager.clone();
 
         let local_set_handle = tokio::task::spawn_blocking(move || {
             tokio::runtime::Handle::current().block_on(async {
@@ -884,6 +881,7 @@ impl AcpAgent {
                             resume_session_id,
                             acp_db_clone,
                             project_root_clone,
+                            terminal_manager_clone,
                         )
                         .await;
                     })
@@ -1027,6 +1025,7 @@ impl AcpAgent {
         resume_session_id: Option<String>,
         acp_db: Option<Arc<crate::acp_db::AcpDb>>,
         project_root: PathBuf,
+        terminal_manager: Arc<crate::acp_terminal::AcpTerminalManager>,
     ) {
         // Clone history before moving client_impl
         let history_for_prompt = history.clone();
@@ -1039,6 +1038,7 @@ impl AcpAgent {
             project_root: project_root.clone(),
             fs_sender: Some(fs_sender),
             acp_db,
+            terminal_manager: terminal_manager.clone(),
         });
 
         // Read stderr for debugging
@@ -1248,6 +1248,7 @@ impl AcpAgent {
                     bootstrap.prompt_capabilities,
                     &mut config_rx,
                     &mut cancel_rx,
+                    terminal_manager,
                 )
                 .await;
                 Ok(())
@@ -1298,14 +1299,16 @@ impl AcpAgent {
             .read_text_file(true)
             .write_text_file(true);
 
-        let client_capabilities = acp::ClientCapabilities::new().fs(fs_capabilities);
+        let client_capabilities = acp::ClientCapabilities::new()
+            .fs(fs_capabilities)
+            .terminal(true);
 
         let init_message = acp::InitializeRequest::new(ProtocolVersion::V1)
             .client_info(client_info)
             .client_capabilities(client_capabilities);
 
         info!(
-            "Initializing ACP agent {} with capabilities: fs.readTextFile=true, fs.writeTextFile=true",
+            "Initializing ACP agent {} with capabilities: fs.readTextFile=true, fs.writeTextFile=true, terminal=true",
             agent_id
         );
 
@@ -1619,6 +1622,7 @@ impl AcpAgent {
         prompt_capabilities: acp::PromptCapabilities,
         config_rx: &mut mpsc::Receiver<PendingConfigUpdate>,
         cancel_rx: &mut mpsc::Receiver<()>,
+        terminal_manager: Arc<crate::acp_terminal::AcpTerminalManager>,
     ) {
         info!(
             "Starting prompt handling loop for agent {} with session {}",
@@ -1712,6 +1716,7 @@ impl AcpAgent {
                     queued_item.attachments,
                     &prompt_capabilities,
                     cancel_rx,
+                    &terminal_manager,
                 )
                 .await;
 
@@ -1770,6 +1775,7 @@ impl AcpAgent {
         attachments: Vec<AcpPromptAttachment>,
         prompt_capabilities: &acp::PromptCapabilities,
         cancel_rx: &mut mpsc::Receiver<()>,
+        terminal_manager: &Arc<crate::acp_terminal::AcpTerminalManager>,
     ) {
         // Stop pressed after the turn started but before the request was sent cancels this
         // turn. Do not send the prompt at all.
@@ -1823,6 +1829,8 @@ impl AcpAgent {
                     if !cancel_sent {
                         cancel_sent = true;
                         info!("Cancelling current prompt for agent {}", agent_id);
+                        // Kill any active terminal commands for this session immediately
+                        terminal_manager.kill_all_for_session(session_id.0.as_ref()).await;
                         // Send cancel notification to agent via ACP protocol
                         if let Err(e) = conn_for_cancel
                             .send_notification(acp::CancelNotification::new(session_id.clone()))
@@ -1830,6 +1838,10 @@ impl AcpAgent {
                             error!("Failed to send cancel notification for agent {}: {}", agent_id, e);
                         }
                     }
+                }
+                _ = tokio::time::sleep(tokio::time::Duration::from_secs(4)), if cancel_sent => {
+                    warn!("Agent {} prompt turn timed out 4s after cancel notification; breaking loop", agent_id);
+                    break;
                 }
             }
         }
@@ -2100,6 +2112,7 @@ impl AcpAgent {
 
     pub async fn stop(&mut self) {
         self.ready.store(false, Ordering::SeqCst);
+        self.terminal_manager.kill_all().await;
         self.clear_queue().await;
         if let Some(shutdown_tx) = self.shutdown_sender.take() {
             let _ = shutdown_tx.send(()).await;
@@ -2334,6 +2347,12 @@ impl AcpAgent {
             Some(tx) => tx,
             None => return Err(anyhow!("Cancel sender not initialized")),
         };
+
+        if let Some(ref session_id) = self.session_id {
+            self.terminal_manager.kill_all_for_session(session_id.0.as_ref()).await;
+        } else {
+            self.terminal_manager.kill_all().await;
+        }
 
         // Stop stops the running turn only. Queued prompts stay in the queue and do not start
         // until the user sends one of them with the send-now action.

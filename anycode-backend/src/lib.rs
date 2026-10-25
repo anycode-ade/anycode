@@ -12,6 +12,7 @@ pub mod acp_db;
 pub mod acp_fs;
 pub mod acp_history;
 pub mod acp_registry;
+pub mod acp_terminal;
 pub mod app_state;
 pub mod background_tasks;
 pub mod code;

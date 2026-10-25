@@ -20,21 +20,31 @@
 }
 
 .acp-pane-empty-actions {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(min(420px, 100%), 420px));
+    display: flex;
+    flex-wrap: wrap;
     justify-content: center;
     gap: 8px;
     width: 100%;
+    max-width: 848px;
     margin: 6px auto 14px;
 }
 
+.acp-pane-empty-actions > .acp-start-card {
+    width: min(420px, 100%);
+}
+
 .acp-pane-opened-agents-list {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(min(420px, 100%), 420px));
+    display: flex;
+    flex-wrap: wrap;
     justify-content: center;
     gap: 8px;
     width: 100%;
+    max-width: 848px;
     margin: 6px auto 14px;
+}
+
+.acp-pane-opened-agents-list > .acp-pane-opened-agent-item {
+    width: min(420px, 100%);
 }
 
 /* Horizontal Modern Agent Start Card (Compact) */
@@ -51,7 +61,6 @@
         var(--theme-tab-background, var(--theme-background, var(--background-color, #242424))) 94%,
         var(--theme-foreground, #ffffff) 6%
     );
-    border: 1px solid color-mix(in srgb, var(--theme-border, #4a4a4a) 45%, transparent);
     color: var(--theme-foreground, #f0f0f0);
     cursor: pointer;
     user-select: none;
@@ -321,6 +330,18 @@
     width: 100%;
 }
 
+.acp-pane-opened-agents-header {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 8px;
+}
+
+.acp-pane-opened-agents-header .acp-pane-opened-agents-title {
+    margin-bottom: 0;
+}
+
 .acp-pane-opened-agents-title,
 .acp-pane-start-agents-title {
     color: var(--theme-foreground, #f0f0f0);
@@ -332,6 +353,88 @@
     text-align: center;
 }
 
+.acp-pane-project-filter {
+    display: inline-flex;
+    align-items: center;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 2px;
+    padding: 2px;
+    border-radius: 8px;
+    background: color-mix(
+        in srgb,
+        var(--theme-tab-background, var(--theme-background, var(--background-color, #1e1e1e))) 90%,
+        #000000 10%
+    );
+    border: 1px solid color-mix(in srgb, var(--theme-border, #4a4a4a) 45%, transparent);
+    max-width: 100%;
+}
+
+.acp-pane-project-filter-btn {
+    appearance: none;
+    -webkit-appearance: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 9px;
+    border-radius: 6px;
+    border: none;
+    background: transparent;
+    color: var(--theme-muted-foreground, #9aa0a6);
+    font-family: inherit;
+    font-size: 11px;
+    font-weight: 500;
+    line-height: 1.3;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    user-select: none;
+    max-width: 180px;
+}
+
+.acp-pane-project-filter-btn:hover {
+    color: var(--theme-foreground, #ffffff);
+    background: color-mix(in srgb, var(--theme-foreground, #ffffff) 6%, transparent);
+}
+
+.acp-pane-project-filter-btn.is-active {
+    background: color-mix(
+        in srgb,
+        var(--theme-accent-background, #007acc) 20%,
+        var(--theme-tab-background, #2a2a2a)
+    );
+    color: var(--theme-foreground, #ffffff);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.acp-pane-project-filter-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.acp-pane-project-filter-count {
+    font-size: 10px;
+    font-weight: 600;
+    opacity: 0.65;
+    padding: 0 4px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--theme-foreground, #ffffff) 10%, transparent);
+    line-height: 1.35;
+}
+
+.acp-pane-project-filter-btn.is-active .acp-pane-project-filter-count {
+    opacity: 0.95;
+    background: color-mix(in srgb, var(--theme-accent-background, #007acc) 35%, transparent);
+}
+
+.acp-pane-opened-empty-filter {
+    font-size: 11.5px;
+    font-weight: 400;
+    color: var(--theme-muted-foreground, #8e959e);
+    padding: 14px 12px;
+    margin: 4px auto 12px;
+}
+
 .acp-pane-opened-agent-item {
     position: relative;
     box-sizing: border-box;
@@ -339,7 +442,6 @@
     flex-direction: column;
     align-items: stretch;
     width: 100%;
-    border: 1px solid color-mix(in srgb, var(--theme-accent-background, #007acc) 38%, var(--theme-border, #4a4a4a));
     background: color-mix(
         in srgb,
         var(--theme-accent-background, #007acc) 8%,

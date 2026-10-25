@@ -8,11 +8,18 @@
     font-family: var(--interface-font-family);
     font-size: var(--interface-font-size, 14px);
     font-weight: var(--interface-font-weight, 700);
+    outline: none !important;
 }
 
 /* Chrome makes scrollable containers focusable; don't draw the focus ring around the whole message list. */
-.acp-messages:focus {
-    outline: none;
+.acp-messages:focus,
+.acp-messages:focus-visible,
+.acp-messages:focus-within,
+.acp-messages-inner:focus,
+.acp-messages-inner:focus-visible,
+.acp-messages-inner:focus-within {
+    outline: none !important;
+    box-shadow: none !important;
 }
 
 .acp-messages.acp-messages-auto-scrolling {

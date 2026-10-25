@@ -273,6 +273,8 @@
     border-radius: 6px;
     background: var(--assistant-message-bg, #2a2a2a);
     overflow: hidden;
+    --editor-font-size: 12px;
+    --editor-font-weight: 500;
 }
 
 .acp-code-content {
@@ -369,13 +371,21 @@
     overflow: visible !important;
     overflow-y: visible !important;
     background: transparent;
+    font-size: 12px !important;
 }
 
-.acp-code .anyeditor .code {
+.acp-code .anyeditor .code,
+.acp-code .anyeditor .code .line {
     height: auto !important;
     min-height: 0 !important;
     overflow: visible !important;
     contain: none !important;
+    font-size: 12px !important;
+    font-weight: 500;
+}
+
+.acp-code .anyeditor .gutter .ln {
+    font-size: 11px !important;
 }
 
 .acp-code .anyeditor-wrapper .smr {
@@ -654,6 +664,24 @@
     flex-shrink: 0;
 }
 
+.acp-tool-call-exit-badge {
+    font-size: 11px;
+    padding: 0 5px;
+    border-radius: 3px;
+    font-weight: 500;
+    line-height: 1.3;
+}
+
+.acp-tool-call-exit-badge.is-success {
+    color: var(--text-color-secondary, #888);
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.acp-tool-call-exit-badge.is-error {
+    color: #f87171;
+    background: rgba(239, 68, 68, 0.12);
+}
+
 .acp-tool-call-diff {
     display: flex;
     flex-direction: column;
@@ -842,6 +870,70 @@
     text-overflow: ellipsis;
     word-break: normal;
     display: block;
+    margin: 0;
+}
+
+.acp-tool-command-container {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    width: 100%;
+}
+
+.acp-tool-command-cwd {
+    font-size: 0.76em;
+    font-family: var(--editor-font-family, monospace);
+    color: var(--text-color-secondary, #888);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.acp-tool-command-cwd-label {
+    opacity: 0.7;
+    margin-right: 4px;
+}
+
+.acp-tool-command-bar {
+    position: relative;
+    display: flex;
+    align-items: center;
+    background: rgba(0, 0, 0, 0.25);
+    border: 1px solid var(--border-color, rgba(255, 255, 255, 0.1));
+    border-radius: 6px;
+    padding: 6px 10px;
+}
+
+.acp-tool-command-bar .acp-tool-call-command,
+.acp-tool-command-bar .acp-tool-result-content {
+    background: transparent;
+    padding: 0;
+    margin: 0;
+    font-size: 0.85em;
+    color: var(--foreground-color, #f0f0f0);
+}
+
+.acp-tool-exit-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.82em;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-family: var(--editor-font-family, monospace);
+    width: fit-content;
+}
+
+.acp-tool-exit-badge.exit-success {
+    background: rgba(34, 197, 94, 0.12);
+    color: #4ade80;
+    border: 1px solid rgba(34, 197, 94, 0.3);
+}
+
+.acp-tool-exit-badge.exit-failure {
+    background: rgba(239, 68, 68, 0.12);
+    color: #f87171;
+    border: 1px solid rgba(239, 68, 68, 0.3);
 }
 
 .acp-tool-call-toggle {

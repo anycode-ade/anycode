@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { type AcpAgent, type AcpSession, type AcpSessionSummary } from '../../types';
 import { parseAgentDisplayName, resolveAgentDisplay } from '../../agents';
 import { AgentIcon } from './AgentIcon';
@@ -43,7 +43,48 @@ export const AcpEmptyPane: React.FC<AcpEmptyPaneProps> = ({
   const openedSessions = agents.filter((item) => item.isActive || item.isStarting);
   const [selectedProfiles, setSelectedProfiles] = useState<Record<string, string>>(() => loadSelectedProfiles());
   const [activeSessionsAgent, setActiveSessionsAgent] = useState<{ agent: AcpAgent; baseName: string } | null>(null);
+  const [openedProjectFilter, setOpenedProjectFilter] = useState<string>('all');
   const selectedProject = projects.find((project) => project.id === selectedProjectId);
+
+  const openedProjectOptions = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const s of openedSessions) {
+      const pid = s.projectId || '__none__';
+      counts.set(pid, (counts.get(pid) ?? 0) + 1);
+    }
+
+    const opts: { id: string; name: string; count: number; title?: string }[] = [];
+    for (const proj of projects) {
+      const count = counts.get(proj.id) ?? 0;
+      if (count > 0 || projects.length > 1) {
+        opts.push({ id: proj.id, name: proj.name, count, title: proj.root });
+      }
+      counts.delete(proj.id);
+    }
+
+    for (const [pid, count] of counts.entries()) {
+      opts.push({
+        id: pid,
+        name: pid === '__none__' ? 'No project' : 'Other',
+        count,
+      });
+    }
+
+    return opts;
+  }, [openedSessions, projects]);
+
+  const showProjectFilter = openedProjectOptions.length > 1;
+
+  useEffect(() => {
+    if (openedProjectFilter !== 'all' && !openedProjectOptions.some((o) => o.id === openedProjectFilter)) {
+      setOpenedProjectFilter('all');
+    }
+  }, [openedProjectFilter, openedProjectOptions]);
+
+  const filteredOpenedSessions = useMemo(() => {
+    if (openedProjectFilter === 'all') return openedSessions;
+    return openedSessions.filter((s) => (s.projectId || '__none__') === openedProjectFilter);
+  }, [openedSessions, openedProjectFilter]);
 
   const startAgent = (agent: AcpAgent) => {
     if (!selectedProjectId) return;
@@ -77,19 +118,55 @@ export const AcpEmptyPane: React.FC<AcpEmptyPaneProps> = ({
     <div className="acp-pane-empty">
       {openedSessions.length > 0 && (
         <div className="acp-pane-opened-agents">
-          <div className="acp-pane-opened-agents-title">Opened agents</div>
-          <div className="acp-pane-opened-agents-list">
-            {openedSessions.map((openedSession) => (
-              <AcpOpenedAgentCard
-                key={openedSession.agentId}
-                session={openedSession}
-                availableAgents={availableAgents}
-                projects={projects}
-                onSelectAgent={onSelectAgent}
-                onCloseAgent={onCloseAgent}
-              />
-            ))}
+          <div className="acp-pane-opened-agents-header">
+            <div className="acp-pane-opened-agents-title">Opened agents</div>
+            {showProjectFilter && (
+              <div className="acp-pane-project-filter" role="tablist" aria-label="Filter opened agents by project">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={openedProjectFilter === 'all'}
+                  className={`acp-pane-project-filter-btn ${openedProjectFilter === 'all' ? 'is-active' : ''}`}
+                  onClick={() => setOpenedProjectFilter('all')}
+                >
+                  <span>All</span>
+                  <span className="acp-pane-project-filter-count">{openedSessions.length}</span>
+                </button>
+                {openedProjectOptions.map((opt) => (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={openedProjectFilter === opt.id}
+                    className={`acp-pane-project-filter-btn ${openedProjectFilter === opt.id ? 'is-active' : ''}`}
+                    onClick={() => setOpenedProjectFilter(opt.id)}
+                    title={opt.title ?? opt.name}
+                  >
+                    <span className="acp-pane-project-filter-label">{opt.name}</span>
+                    <span className="acp-pane-project-filter-count">{opt.count}</span>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
+          {filteredOpenedSessions.length > 0 ? (
+            <div className="acp-pane-opened-agents-list">
+              {filteredOpenedSessions.map((openedSession) => (
+                <AcpOpenedAgentCard
+                  key={openedSession.agentId}
+                  session={openedSession}
+                  availableAgents={availableAgents}
+                  projects={projects}
+                  onSelectAgent={onSelectAgent}
+                  onCloseAgent={onCloseAgent}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="acp-pane-opened-empty-filter">
+              No opened agents in this project
+            </div>
+          )}
         </div>
       )}
       {availableAgents.length > 0 ? (

@@ -9,16 +9,16 @@ use crate::handlers::{
     terminal_handler::*, theme_handler::*, workspace_handler::*,
 };
 
-pub async fn handle_connect(socket: SocketRef, state: State<AppState>) {
-    info!("Socket.IO connected: {:?} {:?}", socket.ns(), socket.id);
+pub async fn setup_socket(socket: &SocketRef, state: &AppState) {
+    let sid = socket.id.as_str().to_string();
     let default_project_id = state.workspace.lock().await.default_project_id();
-    state
-        .socket2data
-        .lock()
-        .await
-        .entry(socket.id.as_str().to_string())
-        .or_default()
-        .active_project_id = default_project_id;
+    {
+        let mut sockets = state.socket2data.lock().await;
+        if sockets.contains_key(&sid) {
+            return;
+        }
+        sockets.entry(sid).or_default().active_project_id = default_project_id;
+    }
 
     socket.on("file:open", handle_file_open);
     socket.on("dir:list", handle_dir_list);
@@ -101,7 +101,12 @@ pub async fn handle_connect(socket: SocketRef, state: State<AppState>) {
     socket.on("workspace:close", handle_workspace_close);
     socket.on("theme:list", handle_theme_list);
     socket.on("theme:get", handle_theme_get);
-    socket.on_disconnect(handle_disconnect)
+    socket.on_disconnect(handle_disconnect);
+}
+
+pub async fn handle_connect(socket: SocketRef, state: State<AppState>) {
+    info!("Socket.IO connected: {:?} {:?}", socket.ns(), socket.id);
+    setup_socket(&socket, &state).await;
 }
 
 pub async fn handle_disconnect(socket: SocketRef, state: State<AppState>) {

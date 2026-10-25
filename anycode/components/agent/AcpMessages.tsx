@@ -8,7 +8,8 @@ import {
   AcpUserMessage,
   type AgentPromptTemplate,
 } from '../../types';
-import { AcpMessage, getToolResultImages, type ToolResultImage } from './AcpMessage';
+import { AcpMessage } from './AcpMessage';
+import { getToolResultImages, type ToolResultImage } from './acpToolUtils';
 import { AcpWorkGroup } from './AcpWorkGroup';
 import { AcpEmptyTemplates } from './AcpEmptyTemplates';
 import { AcpAvatar } from './AcpAvatar';
@@ -334,6 +335,7 @@ const AcpMessagesComponent: React.FC<AcpMessagesProps> = ({
           onUserMessageToggle={onUserMessageToggle}
           onGetToolOutput={onGetToolOutput}
           animateEnter={animateEnter}
+          isProcessing={agentWorking}
           onUndo={
             message.role === 'user' && onUndoMessage
               ? () => onUndoMessage(message)

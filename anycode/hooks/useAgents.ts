@@ -87,6 +87,10 @@ const normalizeVariantKind = (kind: string): string => {
     return k.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase();
 };
 
+const normalizeMessageContent = (text: string): string => {
+    return text.replace(/context canceled([A-Z])/gi, 'Context canceled: $1');
+};
+
 const contentBlockToMessages = (
     content: unknown,
     textRole: 'user' | 'assistant' | 'thought',
@@ -96,8 +100,9 @@ const contentBlockToMessages = (
 
     const contentType = asString(contentRecord.type)?.toLowerCase();
     if (contentType === 'text') {
-        const text = asString(contentRecord.text);
-        if (!text) return [];
+        const rawText = asString(contentRecord.text);
+        if (!rawText) return [];
+        const text = normalizeMessageContent(rawText);
         if (textRole === 'user') {
             return [{ role: 'user', content: text, is_chunk: true } satisfies AcpUserMessage];
         }
@@ -130,8 +135,9 @@ const contentBlockToMessages = (
     }
 
     if ('Text' in contentRecord) {
-        const text = asString(asRecord(contentRecord.Text)?.text);
-        if (!text) return [];
+        const rawText = asString(asRecord(contentRecord.Text)?.text);
+        if (!rawText) return [];
+        const text = normalizeMessageContent(rawText);
         if (textRole === 'user') {
             return [{ role: 'user', content: text, is_chunk: true } satisfies AcpUserMessage];
         }
@@ -222,8 +228,7 @@ const projectRawUpdate = (rawMessage: AcpRawUpdateMessage): AcpMessage[] => {
             command: asString(rawInput?.cmd)
                 ?? asString(rawInput?.command)
                 ?? asString(rawInput?.CommandLine)
-                ?? asString(getAnyField(payload, "command"))
-                ?? (title.toLowerCase().startsWith("running ") ? undefined : title),
+                ?? asString(getAnyField(payload, "command")),
             arguments: payload,
             kind: asString(getAnyField(payload, 'kind', 'tool_kind')),
             status: normalizeToolStatus(getAnyField(payload, 'status')),
@@ -489,9 +494,13 @@ export const useAgents = ({
                     && last.role === item.role
                     && (last.role === 'user' || last.role === 'assistant' || last.role === 'thought')
                 ) {
+                    let nextContent = item.content;
+                    if (last.content.endsWith('context canceled') && /^[A-Z]/.test(nextContent)) {
+                        nextContent = ': ' + nextContent;
+                    }
                     merged[merged.length - 1] = {
                         ...last,
-                        content: last.content + item.content,
+                        content: normalizeMessageContent(last.content + nextContent),
                     };
                     continue;
                 }
@@ -527,15 +536,34 @@ export const useAgents = ({
     const handleAcpMessageImmediate = useCallback((data: { agent_id: string; item: AcpMessage }) => {
         if (data.item.role === 'prompt_state') {
             const promptState = data.item as AcpPromptStateMessage;
-            updateSession(data.agent_id, (existing) => existing ? {
-                ...existing,
-                isProcessing: promptState.is_processing,
-            } : {
-                agentId: data.agent_id,
-                agentName: '',
-                messages: [],
-                isActive: true,
-                isProcessing: promptState.is_processing,
+            updateSession(data.agent_id, (existing) => {
+                if (!existing) {
+                    return {
+                        agentId: data.agent_id,
+                        agentName: '',
+                        messages: [],
+                        isActive: true,
+                        isProcessing: promptState.is_processing,
+                    };
+                }
+                const isProcessing = promptState.is_processing;
+                const messages = !isProcessing
+                    ? existing.messages.map((msg) => {
+                        if (msg.role === 'tool_call') {
+                            const tc = msg as AcpToolCallMessage;
+                            if (!tc.status || tc.status === 'in_progress' || tc.status === 'pending') {
+                                return { ...tc, status: 'canceled' as const };
+                            }
+                        }
+                        return msg;
+                    })
+                    : existing.messages;
+
+                return {
+                    ...existing,
+                    messages,
+                    isProcessing,
+                };
             });
             return;
         }
@@ -1344,7 +1372,16 @@ export const useAgents = ({
                 const newSessions = new Map(prev);
                 const existing = newSessions.get(agentId);
                 if (!existing) return newSessions;
-                newSessions.set(agentId, { ...existing, isProcessing: false });
+                const updatedMessages = existing.messages.map((msg) => {
+                    if (msg.role === 'tool_call') {
+                        const tc = msg as AcpToolCallMessage;
+                        if (!tc.status || tc.status === 'in_progress' || tc.status === 'pending') {
+                            return { ...tc, status: 'canceled' as const };
+                        }
+                    }
+                    return msg;
+                });
+                newSessions.set(agentId, { ...existing, messages: updatedMessages, isProcessing: false });
                 return newSessions;
             });
         });
