@@ -1,5 +1,6 @@
 import { CSS_CLASS } from "./constants";
-import { Code, Change, Position, Operation, type FoldRange, WordHighlight, areWordHighlightsEqual, type Point } from "./code";
+import { Code, Change, Position, type FoldRange, WordHighlight, areWordHighlightsEqual, type Point } from "./code";
+import { applyEditsKeepingPoints } from "./remoteEdits";
 import { Renderer } from './renderer/Renderer';
 import { getPosFromMouse } from './mouse';
 import { Selection, hasDiagnosticSelection, pointsEqual, getSelection } from "./selection";
@@ -2056,12 +2057,14 @@ export class AnycodeEditor {
 
         this.code.tx();
         this.code.setStateBefore(this.cursor, this.selection || undefined);
-        for (const edit of change.edits) {
-            if (edit.operation === Operation.Insert) {
-                this.code.insert(edit.text, edit.start);
-            } else if (edit.operation === Operation.Remove) {
-                this.code.remove(edit.start, edit.text.length);
-            }
+        // Remote edits shift the text under the caret and selection: keep them on the same characters.
+        const selection = this.selection;
+        const points = selection ? [this.cursor, selection.anchor, selection.cursor] : [this.cursor];
+        const [cursor, anchor, selectionCursor] = applyEditsKeepingPoints(this.code, change.edits, points);
+        this.cursor = cursor;
+        if (selection) {
+            selection.anchor = anchor;
+            selection.cursor = selectionCursor;
         }
         this.code.setStateAfter(this.cursor, this.selection || undefined);
         this.code.commit();
