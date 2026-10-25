@@ -1,6 +1,9 @@
-[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-
 # anycode
+
+[![Release](https://img.shields.io/github/v/release/anycode-ade/anycode?style=flat-square&color=3388ff)](https://github.com/anycode-ade/anycode/releases)
+[![Build](https://img.shields.io/github/actions/workflow/status/anycode-ade/anycode/test-build.yml?branch=main&style=flat-square)](https://github.com/anycode-ade/anycode/actions/workflows/test-build.yml)
+[![Tests](https://img.shields.io/badge/tests-400%2B%20passing-brightgreen?style=flat-square)](https://github.com/anycode-ade/anycode/actions)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg?style=flat-square)](LICENSE)
 
 **anycode** is a web platform where people and agents build together. Run it locally or remotely and work from any device you want: desktop, laptop, mobile, or even VR. Use any agent, including Codex, Claude Code, OpenCode, as well as local models.
 
