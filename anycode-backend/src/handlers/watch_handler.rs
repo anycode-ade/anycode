@@ -383,7 +383,7 @@ async fn handle_file_modification(
         let mut f2c = file2code.lock().await;
 
         let current_file_meta = FileMeta::query(path);
-        let new_text = tokio::fs::read_to_string(path)
+        let raw_text = tokio::fs::read_to_string(path)
             .await
             .map_err(|e| anyhow::anyhow!("Failed to read file {:?}: {}", path, e))?;
         let code = match f2c.get_mut(path_str) {
@@ -399,6 +399,14 @@ async fn handle_file_modification(
                 }
             }
         };
+
+        // Strip UTF-8 BOM if present on disk so in-memory representation matches frontend
+        let (new_text, has_bom) = if let Some(stripped) = raw_text.strip_prefix('\u{feff}') {
+            (stripped, true)
+        } else {
+            (raw_text.as_str(), false)
+        };
+        code.has_bom = has_bom;
 
         // If current mtime and size match our last save, this event was triggered
         // by Anycode's own save. Ignore it.
@@ -417,7 +425,7 @@ async fn handle_file_modification(
             return Ok(());
         }
 
-        let edits = compute_text_edits(&old_text, &new_text);
+        let edits = compute_text_edits(&old_text, new_text);
         if edits.is_empty() {
             code.self_updated = false;
             code.file_meta = current_file_meta;

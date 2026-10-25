@@ -48,6 +48,7 @@ pub struct Code {
     pub change: Change,
     pub self_updated: bool,
     pub file_meta: Option<FileMeta>,
+    pub has_bom: bool,
 }
 
 impl Code {
@@ -63,6 +64,7 @@ impl Code {
             change: Change::new(),
             self_updated: false,
             file_meta: None,
+            has_bom: false,
         }
     }
 
@@ -72,9 +74,15 @@ impl Code {
 
     #[allow(dead_code)]
     pub fn from_str(text: &str) -> Self {
+        let (content, has_bom) = if let Some(stripped) = text.strip_prefix('\u{feff}') {
+            (stripped, true)
+        } else {
+            (text, false)
+        };
         let mut code = Self::new();
+        code.has_bom = has_bom;
         code.applying_history = false;
-        code.insert_text(text, 0);
+        code.insert_text(content, 0);
         code.applying_history = true;
         code
     }
@@ -96,8 +104,17 @@ impl Code {
     }
 
     pub fn from_file(path: &str, conf: &Config) -> std::io::Result<Self> {
-        let file = File::open(path)?;
-        let text = Rope::from_reader(BufReader::new(file))?;
+        let mut file = File::open(path)?;
+        use std::io::{Read, Seek, SeekFrom};
+        let mut bom = [0u8; 3];
+        let mut has_bom = false;
+        let text = if file.read_exact(&mut bom).is_ok() && bom == [0xEF, 0xBB, 0xBF] {
+            has_bom = true;
+            Rope::from_reader(BufReader::new(file))?
+        } else {
+            file.seek(SeekFrom::Start(0))?;
+            Rope::from_reader(BufReader::new(file))?
+        };
         let abs_path =
             utils::abs_file(path).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
         let file_name = utils::get_file_name(path);
@@ -125,6 +142,7 @@ impl Code {
             change: Change::new(),
             self_updated: false,
             file_meta,
+            has_bom,
         })
     }
 
@@ -135,8 +153,11 @@ impl Code {
 
         let file = File::create(&self.abs_path)?;
         let mut writer = BufWriter::new(file);
-        self.text.write_to(&mut writer)?;
         use std::io::Write;
+        if self.has_bom {
+            writer.write_all(b"\xef\xbb\xbf")?;
+        }
+        self.text.write_to(&mut writer)?;
         writer.flush()?;
         drop(writer);
 
@@ -349,5 +370,57 @@ mod code_undo_tests {
 
         let batch = code.redo_change();
         assert!(batch.is_none());
+    }
+
+    #[test]
+    fn test_code_from_str_with_bom() {
+        let text_with_bom = "\u{feff}<Project Sdk=\"Microsoft.NET.Sdk\">";
+        let code = Code::from_str(text_with_bom);
+        assert!(code.has_bom);
+        assert_eq!(code.get_content(), "<Project Sdk=\"Microsoft.NET.Sdk\">");
+        assert_eq!(code.text.len_chars(), 33);
+    }
+
+    #[test]
+    fn test_code_from_file_with_bom_and_save() -> std::io::Result<()> {
+        let temp_dir = tempfile::tempdir()?;
+        let file_path = temp_dir.path().join("Project.csproj");
+        let initial_content = b"\xef\xbb\xbf<ItemGroup>\n  <PackageReference Include=\"Google.Protobuf\" />\n</ItemGroup>\n";
+        std::fs::write(&file_path, initial_content)?;
+
+        let config = Config::default();
+        let mut code = Code::from_file(file_path.to_str().unwrap(), &config)?;
+        assert!(code.has_bom, "Code must detect UTF-8 BOM");
+
+        // The text must NOT contain the BOM character
+        assert_eq!(
+            code.get_content(),
+            "<ItemGroup>\n  <PackageReference Include=\"Google.Protobuf\" />\n</ItemGroup>\n"
+        );
+
+        // Edit at frontend coordinates (e.g. inserting Version attribute)
+        // Find offset of ' />' in content without BOM
+        let content = code.get_content();
+        let offset = content.find(" />").unwrap();
+        assert_eq!(offset, 57);
+
+        code.insert_text(" Version=\"3.30.2\"", offset);
+        code.save_file()?;
+
+        // Verify the saved file on disk starts with BOM bytes and has correct content
+        let saved_bytes = std::fs::read(&file_path)?;
+        assert_eq!(
+            &saved_bytes[..3],
+            b"\xef\xbb\xbf",
+            "Saved file must preserve BOM bytes on disk"
+        );
+
+        let saved_text = std::str::from_utf8(&saved_bytes).unwrap();
+        assert_eq!(
+            saved_text,
+            "\u{feff}<ItemGroup>\n  <PackageReference Include=\"Google.Protobuf\" Version=\"3.30.2\" />\n</ItemGroup>\n"
+        );
+
+        Ok(())
     }
 }

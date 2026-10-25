@@ -32,7 +32,6 @@ pub struct GitFileStatus {
     pub removed: usize,
 }
 
-
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct GitStatus {
     pub files: Vec<GitFileStatus>,
@@ -326,7 +325,8 @@ fn search_history_walk_page(
             Some(commit) => {
                 batch.push(commit.clone());
                 commits.push(commit);
-                if batch.len() >= 25 || last_batch.elapsed() >= std::time::Duration::from_millis(100)
+                if batch.len() >= 25
+                    || last_batch.elapsed() >= std::time::Duration::from_millis(100)
                 {
                     if let Some(batches) = batches {
                         let _ = batches.send(std::mem::take(&mut batch));
@@ -576,7 +576,11 @@ impl GitManager {
             });
         };
         let requested_path = Path::new(path);
-        let absolute_path = if requested_path.is_absolute() { requested_path.to_path_buf() } else { root.join(requested_path) };
+        let absolute_path = if requested_path.is_absolute() {
+            requested_path.to_path_buf()
+        } else {
+            root.join(requested_path)
+        };
         let normalized_path = absolute_path.canonicalize().unwrap_or(absolute_path);
         let Ok(relative_path) = normalized_path.strip_prefix(&root) else {
             return Ok(GitHistoryPage {
@@ -603,7 +607,10 @@ impl GitManager {
             .output()
             .context("Failed to read Git file history")?;
         if !output.status.success() {
-            anyhow::bail!("Git file history failed: {}", String::from_utf8_lossy(&output.stderr));
+            anyhow::bail!(
+                "Git file history failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
         }
         let matching = String::from_utf8_lossy(&output.stdout)
             .split('\u{1e}')
@@ -1116,7 +1123,11 @@ impl GitManager {
         };
 
         let blob = repo.find_blob(entry.id())?;
-        let content = std::str::from_utf8(blob.content())?.to_string();
+        let raw_content = std::str::from_utf8(blob.content())?;
+        let content = raw_content
+            .strip_prefix('\u{feff}')
+            .unwrap_or(raw_content)
+            .to_string();
 
         info!(
             "Got original content for {}: {} bytes",
@@ -1459,7 +1470,6 @@ impl GitManager {
         info!("Git fetch completed successfully");
         Ok(())
     }
-
 
     /// Revert file to HEAD or delete if untracked
     pub fn revert(&self, path: &str) -> Result<()> {
