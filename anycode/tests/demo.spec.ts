@@ -607,7 +607,7 @@ test.describe('Anycode Live Demo Mode E2E Tests', () => {
         await expect(acpCodeElement).toBeVisible({ timeout: 10000 });
 
         // Assert 4: Code block diff snippet is rendered in response message
-        await expect(page.locator('.acp-message-content code, pre').getByText(/def greet/i).first()).toBeVisible({ timeout: 10000 });
+        await expect(page.locator('.acp-message-content :is(.acp-code, .code, code, pre)').getByText(/def greet/i).first()).toBeVisible({ timeout: 10000 });
 
         // Assert 5: Markdown code blocks expose a copy action and acknowledge the copy
         const markdownCode = page.locator('.acp-message-markdown').last();

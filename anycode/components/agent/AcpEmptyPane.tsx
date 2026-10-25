@@ -1,7 +1,8 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { type AcpAgent, type AcpSession, type AcpSessionSummary } from '../../types';
-import { parseAgentDisplayName, resolveAgentDisplay } from '../../agents';
+import { parseAgentDisplayName, resolveAgentDisplay, getAgentAvatar } from '../../agents';
 import { AgentIcon } from './AgentIcon';
+import { AcpAvatar } from './AcpAvatar';
 import { Icons } from '../Icons';
 import { loadSelectedProfiles, saveSelectedProfiles } from '../../storage';
 import { AcpOpenedAgentCard } from './AcpOpenedAgentCard';
@@ -240,12 +241,13 @@ export const AcpEmptyPane: React.FC<AcpEmptyPaneProps> = ({
                     }}
                     title={selectedProjectId ? `Start ${group.baseName} in ${selectedProject?.name ?? 'selected project'}` : 'Select a project before starting an agent'}
                   >
-                    <div className="acp-start-card-icon-box">
-                      <AgentIcon
-                        name={group.baseName}
-                        id={group.defaultAgent.id}
+                    <div className={`acp-start-card-icon-box ${selectedAgent.avatar || getAgentAvatar(selectedAgent.id, group.baseName) ? 'has-avatar' : ''}`}>
+                      <AcpAvatar
+                        type="agent"
+                        agentId={selectedAgent.id}
+                        agentTitle={group.baseName}
+                        avatar={selectedAgent.avatar}
                         size={18}
-                        className="acp-start-card-icon"
                       />
                     </div>
 

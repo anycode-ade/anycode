@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import type { AcpAgent, AcpSessionSummary } from '../../types';
 import { AgentIcon } from './AgentIcon';
+import { AcpAvatar } from './AcpAvatar';
 import { AcpIcons } from './AcpIcons';
 import './AcpSessionsView.css';
 
@@ -165,7 +166,13 @@ export const AcpSessionsView: React.FC<AcpSessionsViewProps> = ({
     <div className="acp-sessions-view-container">
       <div className="acp-sessions-view-header">
         <div className="acp-sessions-view-title-wrap">
-          <AgentIcon name={baseName} id={agent.id} size={18} className="acp-sessions-view-icon" />
+          <AcpAvatar
+            type="agent"
+            agentId={agent.id}
+            agentTitle={baseName}
+            avatar={agent.avatar}
+            size={18}
+          />
           <h3 className="acp-sessions-view-title">
             {baseName} Sessions
           </h3>

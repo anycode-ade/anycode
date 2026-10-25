@@ -32,21 +32,21 @@ export const AcpAvatar: React.FC<AcpAvatarProps> = ({
 
   useEffect(() => {
     if (type !== 'agent') return;
-    if (avatar) {
-      setAgentAvatar(avatar);
-      return;
-    }
-    setAgentAvatar(getAgentAvatar(agentId, agentTitle));
-    const unsubscribe = subscribeAgents(() => {
-      setAgentAvatar(getAgentAvatar(agentId, agentTitle));
-    });
-    return unsubscribe;
+    const sync = () => {
+      setAgentAvatar(avatar || getAgentAvatar(agentId, agentTitle));
+    };
+    sync();
+    return subscribeAgents(sync);
   }, [type, agentId, agentTitle, avatar]);
+
+  const effectiveAvatar = avatar || agentAvatar;
+  const agentLabel = agentTitle || 'Agent';
+  const hasImage = Boolean(type === 'user' ? userAvatar : effectiveAvatar);
 
   if (type === 'user') {
     const titleText = userName ? `You (${userName})` : 'You';
     return (
-      <div className={`acp-avatar acp-avatar-user ${className}`} title={titleText} aria-label={titleText}>
+      <div className={`acp-avatar acp-avatar-user ${hasImage ? 'has-image' : 'has-icon'} ${className}`} title={titleText} aria-label={titleText}>
         {userAvatar ? (
           <img src={userAvatar} alt={titleText} className="acp-avatar-image" />
         ) : (
@@ -56,12 +56,9 @@ export const AcpAvatar: React.FC<AcpAvatarProps> = ({
     );
   }
 
-  const effectiveAvatar = avatar || agentAvatar;
-  const agentLabel = agentTitle || 'Agent';
-
   return (
     <div
-      className={`acp-avatar acp-avatar-agent ${className}`}
+      className={`acp-avatar acp-avatar-agent ${hasImage ? 'has-image' : 'has-icon'} ${className}`}
       title={agentLabel}
       aria-label={agentLabel}
     >

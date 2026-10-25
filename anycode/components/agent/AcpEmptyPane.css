@@ -95,10 +95,33 @@
     justify-content: center;
     flex-shrink: 0;
     transition: transform 0.2s ease;
+    overflow: hidden;
 }
 
 .acp-start-card:hover .acp-start-card-icon-box {
     transform: scale(1.05);
+}
+
+.acp-start-card-icon-box:has(.acp-avatar-image),
+.acp-start-card-icon-box:has(img),
+.acp-start-card-icon-box.has-avatar {
+    background: transparent;
+    border-radius: 50%;
+}
+
+.acp-start-card-icon-box .acp-avatar {
+    width: 100%;
+    height: 100%;
+    border: none;
+    background: transparent;
+    border-radius: 50%;
+}
+
+.acp-start-card-icon-box .acp-avatar-image {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 50%;
 }
 
 .acp-start-card-icon {
@@ -523,6 +546,12 @@
     justify-content: center;
     flex-shrink: 0;
     border: none;
+}
+
+.acp-pane-opened-icon-box:has(.acp-avatar-image),
+.acp-pane-opened-icon-box:has(img),
+.acp-pane-opened-icon-box.has-avatar {
+    background: transparent;
 }
 
 .acp-pane-opened-icon-box .acp-avatar {

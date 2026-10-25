@@ -5,12 +5,14 @@ import {
   getRootAgentId,
   KNOWN_PROFILE_TEMPLATES,
   GENERIC_PROFILE_TEMPLATE,
+  getDefaultAgentAvatar,
+  subscribeAgents,
 } from '../../agents';
 import './AcpSettings.css';
 import { AcpIcons } from './AcpIcons';
 import { AgentIcon } from './AgentIcon';
 import { AvatarCropModal } from '../AvatarCropModal';
-import { UserProfileSettings } from '../UserProfileSettings';
+import { AvatarSettings } from '../AvatarSettings';
 
 const CHAT_FULL_WIDTH_KEY = 'anycode:chatFullWidth';
 const CHAT_FULL_WIDTH_EVENT = 'anycode:chat-full-width-change';
@@ -46,6 +48,17 @@ const saveChatFullWidth = (fullWidth: boolean) => {
   applyChatFullWidthStyle(fullWidth);
   window.dispatchEvent(new CustomEvent(CHAT_FULL_WIDTH_EVENT));
 };
+
+function getAgentAvatarTooltip(agent: AcpAgent, defaultAvatar: string | null): string {
+  if (agent.avatar) {
+    const profileSuffix = agent.profile ? ` (${agent.profile})` : '';
+    return `Custom avatar for ${agent.name}${profileSuffix} (click to customize or remove)`;
+  }
+  if (defaultAvatar) {
+    return 'Default agent avatar (click to set a custom avatar for this profile)';
+  }
+  return `Customize avatar for ${agent.name}`;
+}
 
 // Initial apply, so the setting takes effect before the chat panel is opened.
 if (typeof window !== 'undefined') {
@@ -98,6 +111,16 @@ export const AcpSettings: React.FC<AcpSettingsProps> = ({
   const [sessionsByAgent, setSessionsByAgent] = useState<Record<string, AcpSessionSummary[]>>({});
   const [loadingSessions, setLoadingSessions] = useState<Record<string, boolean>>({});
   const [editingAvatarAgentIndex, setEditingAvatarAgentIndex] = useState<number | null>(null);
+  const [defaultAvatar, setDefaultAvatar] = useState<string | null>(getDefaultAgentAvatar);
+  useEffect(() => {
+    const handler = () => setDefaultAvatar(getDefaultAgentAvatar());
+    const unsubscribe = subscribeAgents(handler);
+    window.addEventListener('storage', handler);
+    return () => {
+      unsubscribe();
+      window.removeEventListener('storage', handler);
+    };
+  }, []);
   const { fullWidth: chatFullWidth, setFullWidth: setChatFullWidth } = useChatFullWidth();
 
   // Check if there are any changes
@@ -335,6 +358,8 @@ export const AcpSettings: React.FC<AcpSettingsProps> = ({
       name: baseAgent.name,
       profile: trimmedName || undefined,
       description: cleanDescription,
+      avatar: undefined,
+      avatarOriginal: undefined,
       env: {
         ...(baseAgent.env || {}),
         ...envVar,
@@ -443,9 +468,9 @@ export const AcpSettings: React.FC<AcpSettingsProps> = ({
       <div className="agent-settings-content">
         <div className="agent-settings-item agent-settings-user-profile-item">
           <div className="agent-settings-item-header">
-            <h4>User Profile</h4>
+            <h4>Avatar</h4>
           </div>
-          <UserProfileSettings />
+          <AvatarSettings />
         </div>
 
         <div className="agent-settings-item">
@@ -482,9 +507,9 @@ export const AcpSettings: React.FC<AcpSettingsProps> = ({
                 <h4>Agent {index + 1}</h4>
                 <div className="agent-settings-item-actions">
                   <div
-                    className="agent-settings-header-avatar"
+                    className={`agent-settings-header-avatar ${agent.avatar ? 'has-custom-avatar' : ''}`}
                     onClick={() => setEditingAvatarAgentIndex(index)}
-                    title={`Customize avatar for ${agent.name}`}
+                    title={getAgentAvatarTooltip(agent, defaultAvatar)}
                     role="button"
                     tabIndex={0}
                     onKeyDown={(e) => {
@@ -496,6 +521,8 @@ export const AcpSettings: React.FC<AcpSettingsProps> = ({
                   >
                     {agent.avatar ? (
                       <img src={agent.avatar} alt={agent.name} className="agent-settings-header-avatar-img" />
+                    ) : defaultAvatar ? (
+                      <img src={defaultAvatar} alt={agent.name} className="agent-settings-header-avatar-img" />
                     ) : (
                       <div className="agent-settings-header-avatar-placeholder">
                         <AgentIcon name={agent.name} id={agent.id} size={18} />
@@ -643,10 +670,9 @@ export const AcpSettings: React.FC<AcpSettingsProps> = ({
         <AvatarCropModal
           isOpen={true}
           onClose={() => setEditingAvatarAgentIndex(null)}
-          title={`Avatar: ${agents[editingAvatarAgentIndex].name || 'Agent'}`}
+          title={`Custom Avatar: ${agents[editingAvatarAgentIndex].name || 'Agent'}${agents[editingAvatarAgentIndex].profile ? ` (${agents[editingAvatarAgentIndex].profile})` : ''}`}
           currentAvatar={agents[editingAvatarAgentIndex].avatar || null}
           currentOriginal={agents[editingAvatarAgentIndex].avatarOriginal || null}
-          hideSizeSelector={true}
           onSave={handleSaveAgentAvatar}
         />
       )}

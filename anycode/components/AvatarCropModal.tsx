@@ -1,11 +1,6 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { Icons } from './Icons';
-import {
-  prepareSourceImage,
-  CHAT_AVATAR_SIZES,
-  CHAT_AVATAR_SIZE_KEYS,
-  type ChatAvatarSize,
-} from '../hooks/useUserProfile';
+import { prepareSourceImage } from '../hooks/useUserProfile';
 import './AvatarCropModal.css';
 
 export interface AvatarCropModalProps {
@@ -14,12 +9,9 @@ export interface AvatarCropModalProps {
   title?: string;
   currentAvatar: string | null;
   currentOriginal?: string | null;
-  chatAvatarSize?: ChatAvatarSize;
-  hideSizeSelector?: boolean;
   onSave: (
     croppedAvatarDataUrl: string | null,
-    originalDataUrl: string | null,
-    newSize?: ChatAvatarSize
+    originalDataUrl: string | null
   ) => void;
 }
 
@@ -50,8 +42,6 @@ export const AvatarCropModal: React.FC<AvatarCropModalProps> = ({
   title,
   currentAvatar,
   currentOriginal = null,
-  chatAvatarSize = 'medium',
-  hideSizeSelector = false,
   onSave,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -60,7 +50,6 @@ export const AvatarCropModal: React.FC<AvatarCropModalProps> = ({
 
   const [imageSrc, setImageSrc] = useState<string | null>(null);
   const [loadedImage, setLoadedImage] = useState<HTMLImageElement | null>(null);
-  const [selectedSize, setSelectedSize] = useState<ChatAvatarSize>(chatAvatarSize);
   const [zoom, setZoom] = useState(1.0);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [rotation, setRotation] = useState(0);
@@ -89,7 +78,6 @@ export const AvatarCropModal: React.FC<AvatarCropModalProps> = ({
     const initialSrc = currentOriginal || currentAvatar || null;
     setImageSrc(initialSrc);
     setLoadedImage(null);
-    setSelectedSize(chatAvatarSize);
     setZoom(1.0);
     setPan({ x: 0, y: 0 });
     setRotation(0);
@@ -98,7 +86,7 @@ export const AvatarCropModal: React.FC<AvatarCropModalProps> = ({
     setUrlError(null);
     setIsDragOver(false);
     dragCounterRef.current = 0;
-  }, [isOpen, currentAvatar, currentOriginal, chatAvatarSize]);
+  }, [isOpen, currentAvatar, currentOriginal]);
 
   // Load image when imageSrc changes
   useEffect(() => {
@@ -591,9 +579,9 @@ export const AvatarCropModal: React.FC<AvatarCropModalProps> = ({
   }, [isOpen]);
 
   const handleSave = () => {
-    // If no image is set, remove avatar and save selected size
+    // If no image is set, remove avatar
     if (!imageSrc) {
-      onSave(null, null, selectedSize);
+      onSave(null, null);
       onClose();
       return;
     }
@@ -601,7 +589,7 @@ export const AvatarCropModal: React.FC<AvatarCropModalProps> = ({
     const img = loadedImage;
     if (!img || img.naturalWidth === 0) {
       // Direct external URL or still loading
-      onSave(imageSrc, imageSrc, selectedSize);
+      onSave(imageSrc, imageSrc);
       onClose();
       return;
     }
@@ -612,7 +600,7 @@ export const AvatarCropModal: React.FC<AvatarCropModalProps> = ({
 
     const outCtx = outCanvas.getContext('2d');
     if (!outCtx) {
-      onSave(imageSrc, imageSrc, selectedSize);
+      onSave(imageSrc, imageSrc);
       onClose();
       return;
     }
@@ -643,10 +631,10 @@ export const AvatarCropModal: React.FC<AvatarCropModalProps> = ({
 
     try {
       const croppedDataUrl = outCanvas.toDataURL('image/png', 0.95);
-      onSave(croppedDataUrl, imageSrc, selectedSize);
+      onSave(croppedDataUrl, imageSrc);
     } catch (err) {
       console.warn('Canvas tainted by external URL, saving URL directly:', err);
-      onSave(imageSrc, imageSrc, selectedSize);
+      onSave(imageSrc, imageSrc);
     }
     onClose();
   };
@@ -871,33 +859,6 @@ export const AvatarCropModal: React.FC<AvatarCropModalProps> = ({
           )}
 
           {urlError && <div className="user-profile-url-error">{urlError}</div>}
-
-          {/* Chat Size Selector */}
-          {!hideSizeSelector && (
-            <div className="avatar-crop-size-section">
-              <span className="user-profile-size-caption">Chat size:</span>
-              <div className="user-profile-size-segmented" role="radiogroup" aria-label="Chat avatar size">
-                {CHAT_AVATAR_SIZE_KEYS.map((sizeKey) => {
-                  const cfg = CHAT_AVATAR_SIZES[sizeKey];
-                  const isSelected = selectedSize === sizeKey;
-                  return (
-                    <button
-                      key={sizeKey}
-                      type="button"
-                      className={`user-profile-size-pill ${isSelected ? 'active' : ''}`}
-                      onClick={() => setSelectedSize(sizeKey)}
-                      title={`${cfg.label} (${cfg.px}px)`}
-                      role="radio"
-                      aria-checked={isSelected}
-                    >
-                      {cfg.shortLabel}
-                    </button>
-                  );
-                })}
-              </div>
-              <span className="user-profile-size-badge">{CHAT_AVATAR_SIZES[selectedSize].px}px</span>
-            </div>
-          )}
         </div>
 
         <div className="avatar-crop-footer">

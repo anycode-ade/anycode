@@ -208,8 +208,8 @@ export const Icons = {
       <line x1="12.5" y1="15.5" x2="16.5" y2="15.5" stroke="currentColor" strokeWidth="2" />
     </svg>
   ),
-  Agent: () => (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+  Agent: ({ size = 16 }: { size?: number } = {}) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275Z" />
       <path d="m5 3 1 2.5L8.5 6 6 7 5 9.5 4 7 1.5 6 4 5z" opacity="0.75" fill="currentColor" stroke="none" />
       <path d="m19 17 1 2.5 2.5.5-2.5 1-1 2.5-1-2.5-2.5-1 2.5-1z" opacity="0.75" fill="currentColor" stroke="none" />
@@ -274,6 +274,11 @@ export const Icons = {
   CloseSmall: ({ size = 12 }: { size?: number }) => (
     <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
       <path d="M4 4L12 12M12 4L4 12" />
+    </svg>
+  ),
+  Edit: ({ size = 12 }: { size?: number } = {}) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
     </svg>
   ),
 };

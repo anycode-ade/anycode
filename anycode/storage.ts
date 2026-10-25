@@ -118,3 +118,23 @@ export function loadReadMessageCounts(): Record<string, number> {
 export function saveReadMessageCounts(counts: Record<string, number>): void {
     saveItem('acpReadMessageCounts', counts);
 }
+export function loadDefaultAgentAvatar(): string | null {
+    return loadItem<string>('acpDefaultAgentAvatar');
+}
+export function saveDefaultAgentAvatar(avatar: string | null): void {
+    if (avatar) {
+        saveItem('acpDefaultAgentAvatar', avatar);
+    } else {
+        localStorage.removeItem('acpDefaultAgentAvatar');
+    }
+}
+export function loadDefaultAgentAvatarOriginal(): string | null {
+    return loadItem<string>('acpDefaultAgentAvatarOriginal');
+}
+export function saveDefaultAgentAvatarOriginal(original: string | null): void {
+    if (original) {
+        saveItem('acpDefaultAgentAvatarOriginal', original);
+    } else {
+        localStorage.removeItem('acpDefaultAgentAvatarOriginal');
+    }
+}

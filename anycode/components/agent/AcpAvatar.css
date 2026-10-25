@@ -15,6 +15,12 @@
   transition: width 0.15s ease, height 0.15s ease;
 }
 
+.acp-avatar.has-image,
+.acp-avatar:has(.acp-avatar-image) {
+  background: transparent;
+  border-color: transparent;
+}
+
 .acp-avatar-user {
   color: var(--theme-foreground, #ececec);
   opacity: 0.85;

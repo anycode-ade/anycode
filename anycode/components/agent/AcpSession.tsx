@@ -18,6 +18,7 @@ import { AcpInput } from './AcpInput';
 import { AcpMessages } from './AcpMessages';
 import { AcpIcons } from './AcpIcons';
 import { AgentIcon } from './AgentIcon';
+import { AcpAvatar } from './AcpAvatar';
 import { loadItem, saveItem } from '../../storage';
 import { usePersistedScroll, hasPersistedScroll } from '../../hooks/usePersistedScroll';
 import { selectionQuoteStore } from '../../features/agents/selectionQuoteStore';
@@ -945,7 +946,7 @@ const AcpSessionComponent: React.FC<AcpSessionProps> = ({
               <div className="acp-session-starting" role="status" aria-live="polite">
                 <div className="acp-session-starting-content">
                   <div className="acp-session-starting-icon-container">
-                    <AgentIcon name={title} id={agentId} size={44} className="acp-session-starting-icon" />
+                    <AcpAvatar type="agent" agentId={agentId} agentTitle={title} size={44} className="acp-session-starting-avatar" />
                   </div>
                   <div className="acp-session-starting-title">Starting {title}…</div>
                   <div className="acp-session-starting-status">Connecting to ACP server and preparing session</div>
@@ -961,7 +962,7 @@ const AcpSessionComponent: React.FC<AcpSessionProps> = ({
               <div className="acp-session-starting acp-session-error" role="alert">
                 <div className="acp-session-starting-content">
                   <div className="acp-session-starting-icon-container error">
-                    <AgentIcon name={title} id={agentId} size={42} className="acp-session-starting-icon" />
+                    <AcpAvatar type="agent" agentId={agentId} agentTitle={title} size={42} className="acp-session-starting-avatar" />
                   </div>
                   <div className="acp-session-starting-title">Failed to start {title}</div>
                   <div className="acp-session-starting-status error-message">{startError}</div>

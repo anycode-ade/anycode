@@ -1,5 +1,14 @@
 import { AcpAgent, ResolvedAgentPreset } from './types';
-import { loadAgents, saveAgents, loadDefaultAgentId, saveDefaultAgentId } from './storage';
+import {
+    loadAgents,
+    saveAgents,
+    loadDefaultAgentId,
+    saveDefaultAgentId,
+    loadDefaultAgentAvatar,
+    saveDefaultAgentAvatar,
+    loadDefaultAgentAvatarOriginal,
+    saveDefaultAgentAvatarOriginal,
+} from './storage';
 import { IS_DEMO_MODE } from './constants';
 
 // Default configuration of agents in code
@@ -177,7 +186,7 @@ const agentListeners = new Set<() => void>();
 export function subscribeAgents(listener: () => void): () => void {
     agentListeners.add(listener);
     const onStorage = (e: StorageEvent) => {
-        if (e.key === 'acpAgents') {
+        if (e.key === 'acpAgents' || e.key === 'acpDefaultAgentAvatar') {
             clearAgentsCache();
             try { listener(); } catch {}
         }
@@ -191,6 +200,32 @@ export function subscribeAgents(listener: () => void): () => void {
             window.removeEventListener('storage', onStorage);
         }
     };
+}
+
+export function getDefaultAgentAvatar(): string | null {
+    return loadDefaultAgentAvatar();
+}
+
+export function getDefaultAgentAvatarOriginal(): string | null {
+    return loadDefaultAgentAvatarOriginal();
+}
+
+export function setDefaultAgentAvatar(avatar: string | null, original?: string | null): void {
+    saveDefaultAgentAvatar(avatar);
+    if (original !== undefined) {
+        saveDefaultAgentAvatarOriginal(original);
+    }
+    clearAgentsCache();
+    agentListeners.forEach(listener => {
+        try {
+            listener();
+        } catch (e) {
+            console.error('Agent listener error:', e);
+        }
+    });
+    if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('anycode:agents-updated', { detail: { agents: getAllAgents(), defaultAgentId: getDefaultAgentId() } }));
+    }
 }
 
 export function onAgentsUpdated(callback: AgentsSyncCallback | null): void {
@@ -428,7 +463,8 @@ export function resolveAgentDisplay(
 }
 
 export function getAgentAvatar(agentId?: string, agentTitle?: string): string | null {
-    if (!agentId && !agentTitle) return null;
+    const defaultAvatar = getDefaultAgentAvatar();
+    if (!agentId && !agentTitle) return defaultAvatar;
     const agents = getAllAgents();
 
     // 1. Exact match by agent id
@@ -476,6 +512,11 @@ export function getAgentAvatar(agentId?: string, agentTitle?: string): string | 
             const found = agents.find(a => a.id === rootId);
             if (found?.avatar) return found.avatar;
         }
+    }
+
+    // 6. Default agent avatar fallback
+    if (defaultAvatar) {
+        return defaultAvatar;
     }
 
     return null;

@@ -384,6 +384,20 @@
     border-radius: 10px;
 }
 
+.acp-session-starting-avatar {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    border: none;
+    background: transparent;
+}
+
+.acp-session-starting-avatar .acp-avatar-image {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+}
+
 .acp-session-starting-title {
     font-size: 16px;
     font-weight: 600;

@@ -1,6 +1,6 @@
 import React from 'react';
 import type { AcpAgent, AcpSession } from '../../types';
-import { resolveAgentDisplay } from '../../agents';
+import { resolveAgentDisplay, getAgentAvatar } from '../../agents';
 import { Icons } from '../Icons';
 import { AcpAvatar } from './AcpAvatar';
 import { AcpIcons } from './AcpIcons';
@@ -51,6 +51,7 @@ export const AcpOpenedAgentCard: React.FC<AcpOpenedAgentCardProps> = ({
   const hasUnread = unreadCount > 0 && messages.length > 0;
   const isStarting = Boolean(session.isStarting);
   const isWorking = Boolean(session.isProcessing);
+  const hasAvatar = Boolean(session.avatar || getAgentAvatar(session.agentId, baseName));
   const displaySessionId = session.sessionId;
 
   const [isCopied, setIsCopied] = React.useState(false);
@@ -133,7 +134,7 @@ export const AcpOpenedAgentCard: React.FC<AcpOpenedAgentCardProps> = ({
       </button>
 
       <div className="acp-pane-opened-body">
-        <div className={`acp-pane-opened-icon-box ${isWorking ? 'is-working' : ''}`}>
+        <div className={`acp-pane-opened-icon-box ${hasAvatar ? 'has-avatar' : ''} ${isWorking ? 'is-working' : ''}`}>
           <AcpAvatar type="agent" agentId={session.agentId} agentTitle={baseName} size={20} />
         </div>
 

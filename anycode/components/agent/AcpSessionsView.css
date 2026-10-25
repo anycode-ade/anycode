@@ -24,6 +24,12 @@
   min-width: 0;
 }
 
+.acp-sessions-view-title-wrap .acp-avatar {
+  border-radius: 50%;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
 .acp-sessions-view-icon {
   flex-shrink: 0;
 }
