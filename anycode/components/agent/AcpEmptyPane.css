@@ -21,20 +21,30 @@
 
 .acp-pane-empty-actions {
     display: flex;
-    flex-direction: column;
-    align-items: center;
+    flex-wrap: wrap;
+    justify-content: center;
     gap: 8px;
-    width: min(420px, 100%);
+    width: 100%;
+    max-width: 848px;
     margin: 6px auto 14px;
+}
+
+.acp-pane-empty-actions > .acp-start-card {
+    width: min(420px, 100%);
 }
 
 .acp-pane-opened-agents-list {
     display: flex;
-    flex-direction: column;
-    align-items: center;
+    flex-wrap: wrap;
+    justify-content: center;
     gap: 8px;
-    width: min(420px, 100%);
+    width: 100%;
+    max-width: 848px;
     margin: 6px auto 14px;
+}
+
+.acp-pane-opened-agents-list > .acp-pane-opened-agent-item {
+    width: min(420px, 100%);
 }
 
 /* Horizontal Modern Agent Start Card (Compact) */
@@ -51,7 +61,6 @@
         var(--theme-tab-background, var(--theme-background, var(--background-color, #242424))) 94%,
         var(--theme-foreground, #ffffff) 6%
     );
-    border: 1px solid color-mix(in srgb, var(--theme-border, #4a4a4a) 45%, transparent);
     color: var(--theme-foreground, #f0f0f0);
     cursor: pointer;
     user-select: none;
@@ -77,11 +86,10 @@
 }
 
 .acp-start-card-icon-box {
-    width: 32px;
-    height: 32px;
-    border-radius: 8px;
+    width: 40px;
+    height: 40px;
+    border-radius: 9px;
     background: color-mix(in srgb, var(--theme-accent-background, #3186ff) 18%, #161c28);
-    border: 1px solid color-mix(in srgb, var(--theme-accent-background, #3186ff) 32%, transparent);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -198,6 +206,52 @@
     padding: 4px 8px;
 }
 
+.acp-start-card-project-wrap {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--theme-muted-foreground, #9aa0a6);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    user-select: none;
+}
+
+.acp-start-card-project-wrap:hover {
+    background: color-mix(in srgb, var(--theme-foreground, #ffffff) 10%, transparent);
+    color: var(--theme-foreground, #ffffff);
+}
+
+.acp-start-card-project-label {
+    max-width: 120px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 11px;
+    font-weight: 500;
+}
+
+.acp-start-card-project-select {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    cursor: pointer;
+    font-size: 16px;
+}
+
+.acp-start-card-project-select option {
+    background: var(--background-color, #242424);
+    color: var(--theme-foreground, #f0f0f0);
+    font-size: 13px;
+    padding: 4px 8px;
+}
+
 .acp-start-card-profile-label {
     font-size: 11px;
     font-weight: 500;
@@ -271,6 +325,23 @@
     padding: 6px 0 0;
 }
 
+.acp-pane-opened-agents,
+.acp-pane-start-agents-wide {
+    width: 100%;
+}
+
+.acp-pane-opened-agents-header {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 8px;
+}
+
+.acp-pane-opened-agents-header .acp-pane-opened-agents-title {
+    margin-bottom: 0;
+}
+
 .acp-pane-opened-agents-title,
 .acp-pane-start-agents-title {
     color: var(--theme-foreground, #f0f0f0);
@@ -282,6 +353,88 @@
     text-align: center;
 }
 
+.acp-pane-project-filter {
+    display: inline-flex;
+    align-items: center;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 2px;
+    padding: 2px;
+    border-radius: 8px;
+    background: color-mix(
+        in srgb,
+        var(--theme-tab-background, var(--theme-background, var(--background-color, #1e1e1e))) 90%,
+        #000000 10%
+    );
+    border: 1px solid color-mix(in srgb, var(--theme-border, #4a4a4a) 45%, transparent);
+    max-width: 100%;
+}
+
+.acp-pane-project-filter-btn {
+    appearance: none;
+    -webkit-appearance: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 9px;
+    border-radius: 6px;
+    border: none;
+    background: transparent;
+    color: var(--theme-muted-foreground, #9aa0a6);
+    font-family: inherit;
+    font-size: 11px;
+    font-weight: 500;
+    line-height: 1.3;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    user-select: none;
+    max-width: 180px;
+}
+
+.acp-pane-project-filter-btn:hover {
+    color: var(--theme-foreground, #ffffff);
+    background: color-mix(in srgb, var(--theme-foreground, #ffffff) 6%, transparent);
+}
+
+.acp-pane-project-filter-btn.is-active {
+    background: color-mix(
+        in srgb,
+        var(--theme-accent-background, #007acc) 20%,
+        var(--theme-tab-background, #2a2a2a)
+    );
+    color: var(--theme-foreground, #ffffff);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.acp-pane-project-filter-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.acp-pane-project-filter-count {
+    font-size: 10px;
+    font-weight: 600;
+    opacity: 0.65;
+    padding: 0 4px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--theme-foreground, #ffffff) 10%, transparent);
+    line-height: 1.35;
+}
+
+.acp-pane-project-filter-btn.is-active .acp-pane-project-filter-count {
+    opacity: 0.95;
+    background: color-mix(in srgb, var(--theme-accent-background, #007acc) 35%, transparent);
+}
+
+.acp-pane-opened-empty-filter {
+    font-size: 11.5px;
+    font-weight: 400;
+    color: var(--theme-muted-foreground, #8e959e);
+    padding: 14px 12px;
+    margin: 4px auto 12px;
+}
+
 .acp-pane-opened-agent-item {
     position: relative;
     box-sizing: border-box;
@@ -289,7 +442,6 @@
     flex-direction: column;
     align-items: stretch;
     width: 100%;
-    border: 1px solid color-mix(in srgb, var(--theme-accent-background, #007acc) 38%, var(--theme-border, #4a4a4a));
     background: color-mix(
         in srgb,
         var(--theme-accent-background, #007acc) 8%,
@@ -305,7 +457,7 @@
     text-align: left;
     user-select: none;
     -webkit-user-select: none;
-    max-height: 80px;
+    max-height: 112px;
     transition: all 0.22s cubic-bezier(0.4, 0, 0.2, 1);
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
     isolation: isolate;
@@ -351,6 +503,47 @@
     transition: opacity 0.18s ease, transform 0.2s ease, max-height 0.22s cubic-bezier(0.4, 0, 0.2, 1), padding 0.22s cubic-bezier(0.4, 0, 0.2, 1), margin 0.22s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.18s ease;
 }
 
+.acp-pane-opened-body {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    min-width: 0;
+}
+
+/* Custom agent avatar fills a round circular box */
+.acp-pane-opened-icon-box {
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    overflow: hidden;
+    background: color-mix(in srgb, var(--theme-accent-background, #3186ff) 16%, #161c28);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    border: none;
+}
+
+.acp-pane-opened-icon-box .acp-avatar {
+    width: 100%;
+    height: 100%;
+    border: none;
+    background: none;
+    border-radius: 50%;
+}
+
+.acp-pane-opened-icon-box .acp-avatar-image {
+    border-radius: 50%;
+}
+
+.acp-pane-opened-content {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-width: 0;
+}
+
 .acp-pane-opened-header {
     box-sizing: border-box;
     display: flex;
@@ -359,7 +552,8 @@
     gap: 8px;
     width: 100%;
     min-height: 20px;
-    padding: 0;
+    /* Keep the title clear of the hover-only close button in the top-right corner. */
+    padding: 0 24px 0 0;
 }
 
 .acp-pane-opened-identity {
@@ -369,6 +563,43 @@
     gap: 6px;
     min-width: 0;
     max-width: 100%;
+}
+
+.acp-pane-opened-context-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-width: 0;
+    width: 100%;
+    margin-top: 3px;
+    font-size: 10.5px;
+}
+
+.acp-pane-opened-context-item {
+    box-sizing: border-box;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+    max-width: 48%;
+    padding: 1px 6px;
+    color: var(--theme-muted-foreground, #b1bac4);
+}
+
+.acp-pane-opened-context-item svg {
+    flex-shrink: 0;
+    opacity: 0.8;
+}
+
+.acp-pane-opened-context-item span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.acp-pane-opened-profile {
+    color: var(--theme-accent-background, #64afff);
 }
 
 .acp-pane-close-button {
@@ -413,14 +644,8 @@
     color: var(--theme-foreground, #ffffff);
 }
 
-.acp-pane-opened-account {
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--theme-accent-background, #64afff);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 140px;
+.acp-pane-opened-project {
+    color: var(--theme-muted-foreground, #b1bac4);
 }
 
 .acp-pane-opened-info-row {
@@ -438,8 +663,7 @@
 .acp-pane-opened-tools,
 .acp-pane-opened-queued,
 .acp-pane-opened-session-id,
-.acp-pane-opened-starting,
-.acp-pane-opened-working {
+.acp-pane-opened-starting {
     animation: acp-pane-item-enter 0.22s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
@@ -528,51 +752,22 @@
     to { transform: rotate(360deg); }
 }
 
-.acp-pane-opened-working {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0;
-    background: transparent;
-    border: none;
-    flex-shrink: 0;
-}
-
-.acp-pane-opened-working-dots {
-    display: inline-flex;
-    align-items: center;
-    gap: 3px;
-    line-height: 1;
-}
-
-.acp-pane-opened-working-dots span {
-    display: inline-block;
-    width: 4px;
-    height: 4px;
+/* While the agent works, its avatar breathes with a soft glowing pulse */
+.acp-pane-opened-icon-box.is-working,
+.acp-pane-opened-agent-item.is-working .acp-pane-opened-icon-box {
     border-radius: 50%;
-    background-color: #65d68a;
-    opacity: 0.35;
-    animation: acp-pane-working-dot 1.2s ease-in-out infinite;
+    animation: acp-card-avatar-breathe 2s ease-in-out infinite;
+    will-change: transform, box-shadow;
 }
 
-.acp-pane-opened-working-dots span:nth-child(2) {
-    background-color: #7ab7ff;
-    animation-delay: 0.15s;
-}
-
-.acp-pane-opened-working-dots span:nth-child(3) {
-    background-color: #c084fc;
-    animation-delay: 0.3s;
-}
-
-@keyframes acp-pane-working-dot {
+@keyframes acp-card-avatar-breathe {
     0%, 100% {
-        opacity: 0.3;
-        transform: scale(0.85);
+        transform: scale(0.96);
+        box-shadow: 0 0 0 0 color-mix(in srgb, #65d68a 0%, transparent);
     }
     50% {
-        opacity: 1;
-        transform: scale(1.25);
+        transform: scale(1.04);
+        box-shadow: 0 0 12px 2px color-mix(in srgb, #65d68a 45%, transparent);
     }
 }
 
@@ -607,19 +802,19 @@
     color: var(--theme-accent-background, #7ec8ff);
     font-weight: 600;
     font-size: 11px;
-    border: 1px solid transparent;
+    border: none;
     overflow: hidden;
     white-space: nowrap;
     transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .acp-pane-opened-unread-badge.is-visible {
-    padding: 1px 6px;
+    padding: 1px 7px;
     max-width: 80px;
     opacity: 1;
     transform: scale(1);
     pointer-events: auto;
-    border-color: color-mix(in srgb, var(--theme-accent-background, #007acc) 45%, transparent);
+    border: none;
     animation: acp-pane-unread-pulse 2s ease-in-out infinite;
 }
 
@@ -646,12 +841,8 @@
     appearance: none;
     -webkit-appearance: none;
     box-sizing: border-box;
-    border: 1px solid color-mix(in srgb, var(--theme-border, #4a4a4a) 70%, transparent);
-    background: color-mix(
-        in srgb,
-        var(--background-color, #242424) 95%,
-        var(--theme-foreground, #ffffff) 5%
-    );
+    border: none;
+    background: transparent;
     color: var(--theme-tab-foreground, #a0a0a0);
     font-size: 0.86em;
     font-weight: inherit;
@@ -663,7 +854,6 @@
     justify-content: center;
     gap: 6px;
     transition: all 0.2s ease;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
 }
 
 .acp-pane-settings-btn:hover {
@@ -673,11 +863,6 @@
         var(--background-color, #242424)
     );
     color: var(--theme-foreground, #ffffff);
-    border-color: color-mix(
-        in srgb,
-        var(--theme-accent-background, #007acc) 40%,
-        var(--theme-border, #4a4a4a)
-    );
     transform: translateY(-1px);
     box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15);
 }
@@ -717,7 +902,9 @@
     margin-top: 16px;
     padding-top: 4px;
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: center;
     align-items: center;
     gap: 8px;
     width: 100%;

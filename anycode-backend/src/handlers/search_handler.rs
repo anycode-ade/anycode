@@ -1,6 +1,6 @@
 use crate::app_state::{AppState, SocketData};
 use crate::search::{FileSearchResult, global_search};
-use crate::utils::{format_path, is_ignored_path, relative_to_current_dir};
+use crate::utils::{format_path, is_ignored_path};
 use serde::{Deserialize, Serialize};
 use serde_json::{self, json};
 use socketioxide::extract::{Data, SocketRef, State};
@@ -16,10 +16,13 @@ const FILES_SEARCH_RESULT_BATCH_INTERVAL: Duration = Duration::from_millis(100);
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct SearchRequest {
     pub pattern: String,
+    #[serde(default)]
+    pub project_id: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
 struct SearchResultsBatch {
+    project_id: String,
     results: Vec<FileSearchResult>,
 }
 
@@ -27,6 +30,8 @@ struct SearchResultsBatch {
 pub struct FilesSearchRequest {
     pub query: String,
     pub request_id: Option<String>,
+    #[serde(default)]
+    pub project_id: Option<String>,
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -34,6 +39,7 @@ struct FilesSearchResult {
     name: String,
     path: String,
     display_path: String,
+    project_id: String,
     #[serde(rename = "type")]
     kind: &'static str,
 }
@@ -95,7 +101,9 @@ fn search_files_by_name(
     query: String,
     cancel: CancellationToken,
     result_tx: mpsc::Sender<FilesSearchResult>,
+    project_id: String,
 ) {
+    let root_for_display = root_path.clone();
     let mut dirs = vec![root_path];
 
     while let Some(dir) = dirs.pop() {
@@ -129,9 +137,9 @@ fn search_files_by_name(
                 None => continue,
             };
 
-            let display_path = relative_to_current_dir(&path)
+            let display_path = path.strip_prefix(&root_for_display)
                 .map(|p| p.to_string_lossy().to_string())
-                .unwrap_or_else(|| path.to_string_lossy().to_string());
+                .unwrap_or_else(|_| path.to_string_lossy().to_string());
 
             if file_name_matches_query(name, &display_path, &query)
                 && result_tx
@@ -139,6 +147,7 @@ fn search_files_by_name(
                         name: name.to_string(),
                         path: format_path(&path.to_string_lossy()),
                         display_path: format_path(&display_path),
+                        project_id: project_id.clone(),
                         kind: "file",
                     })
                     .is_err()
@@ -155,6 +164,29 @@ pub async fn handle_search(
     state: State<AppState>,
 ) {
     info!("Received handle_search {}", search_request.pattern);
+
+    let project_id = match search_request.project_id.as_deref() {
+        Some(project_id) => project_id.to_string(),
+        None => match state.active_project_id(socket.id.as_str()).await {
+            Some(project_id) => project_id,
+            None => {
+                let _ = socket.emit("search:error", &json!({
+                    "error": "No project selected",
+                    "message": "Choose a project before searching"
+                }));
+                return;
+            }
+        },
+    };
+    let project = state.workspace.lock().await.get(&project_id);
+    let Some(project) = project else {
+        let _ = socket.emit("search:error", &json!({
+            "error": "Project unavailable",
+            "message": "The selected project is no longer part of this workspace"
+        }));
+        return;
+    };
+    let root_path = PathBuf::from(&project.info.root);
 
     let sid = socket.id.as_str();
     let mut sockets_data = state.socket2data.lock().await;
@@ -174,10 +206,9 @@ pub async fn handle_search(
     // Save the cancel in the socket data
     data.search_cancel = Some(cancel.clone());
     data.search_pattern = Some(search_request.pattern.clone());
+    data.search_project_id = Some(project_id.clone());
     data.search_last_file_result = None;
 
-    // Prepare search, get the current directory and create channel to collect results
-    let current_dir = std::env::current_dir().unwrap();
     let (result_tx, mut result_rx) = mpsc::channel::<FileSearchResult>(1000);
     let socket_clone = socket.clone();
 
@@ -185,8 +216,7 @@ pub async fn handle_search(
 
     // Start the search in the background
     tokio::spawn(async move {
-        let search_result =
-            global_search(&current_dir, &search_request.pattern, cancel, result_tx).await;
+        let search_result = global_search(&root_path, &search_request.pattern, cancel, result_tx).await;
 
         if let Err(err) = search_result {
             let _ = socket_clone.emit(
@@ -221,7 +251,10 @@ pub async fn handle_search(
                 _ = batch_interval.tick() => {
                     if !batch.is_empty() {
                         let results = std::mem::take(&mut batch);
-                        let _ = socket.emit("search:results", &SearchResultsBatch { results });
+                        let _ = socket.emit("search:results", &SearchResultsBatch {
+                            project_id: project_id.clone(),
+                            results,
+                        });
                     }
                 }
             }
@@ -229,14 +262,18 @@ pub async fn handle_search(
 
         if !batch.is_empty() {
             let results = std::mem::take(&mut batch);
-            let _ = socket.emit("search:results", &SearchResultsBatch { results });
+            let _ = socket.emit("search:results", &SearchResultsBatch {
+                project_id: project_id.clone(),
+                results,
+            });
         }
 
         let _ = socket.emit(
             "search:end",
             &json!({
                 "elapsed": start.elapsed().as_millis(),
-                "matches": matches
+                "matches": matches,
+                "project_id": project_id
             }),
         );
     });
@@ -269,6 +306,27 @@ pub async fn handle_files_search(
 ) {
     info!("Received search:files:start: {:?}", request);
 
+    let project_id = match request.project_id.as_deref() {
+        Some(project_id) => project_id.to_string(),
+        None => match state.active_project_id(socket.id.as_str()).await {
+            Some(project_id) => project_id,
+            None => {
+                let _ = socket.emit("search:files:error", &json!({
+                    "message": "Choose a project before searching files"
+                }));
+                return;
+            }
+        },
+    };
+    let project = state.workspace.lock().await.get(&project_id);
+    let Some(project) = project else {
+        let _ = socket.emit("search:files:error", &json!({
+            "message": "The selected project is no longer part of this workspace"
+        }));
+        return;
+    };
+    let root_path = PathBuf::from(&project.info.root);
+
     let sid = socket.id.as_str();
     let mut sockets_data = state.socket2data.lock().await;
     let data = sockets_data
@@ -297,18 +355,23 @@ pub async fn handle_files_search(
         return;
     }
 
-    let root_path = crate::utils::current_dir();
-
     let (result_tx, mut result_rx) = mpsc::channel::<FilesSearchResult>(1000);
     let search_cancel = cancel.clone();
     let socket_for_search = socket.clone();
     let query_for_search = query.clone();
     let query_for_events = query.clone();
     let request_id_for_events = request.request_id.clone();
+    let project_id_for_events = project_id.clone();
     let start = std::time::Instant::now();
 
     tokio::task::spawn_blocking(move || {
-        search_files_by_name(root_path, query_for_search, search_cancel, result_tx);
+        search_files_by_name(
+            root_path,
+            query_for_search,
+            search_cancel,
+            result_tx,
+            project_id,
+        );
     });
 
     tokio::spawn(async move {
@@ -337,6 +400,7 @@ pub async fn handle_files_search(
                             &json!({
                                 "query": query_for_events.clone(),
                                 "request_id": request_id_for_events.clone(),
+                                "project_id": project_id_for_events.clone(),
                                 "results": results,
                             }),
                         );
@@ -352,6 +416,7 @@ pub async fn handle_files_search(
                 &json!({
                     "query": query_for_events.clone(),
                     "request_id": request_id_for_events.clone(),
+                    "project_id": project_id_for_events.clone(),
                     "results": results,
                 }),
             );
@@ -362,6 +427,7 @@ pub async fn handle_files_search(
             &json!({
                 "query": query_for_events.clone(),
                 "request_id": request_id_for_events.clone(),
+                "project_id": project_id_for_events,
                 "elapsed": start.elapsed().as_millis(),
                 "matches": matches,
             }),

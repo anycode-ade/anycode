@@ -1,7 +1,7 @@
 import React from 'react';
 import './AcpInput.css';
 import { AcpIcons } from './AcpIcons';
-import { AgentIcon } from './AgentIcon';
+import { AcpAvatar } from './AcpAvatar';
 import { FileIcon } from '../FileIcon';
 import { getFileName, getParentPath, normalizePath } from '../../utils';
 import {
@@ -11,6 +11,7 @@ import {
   type SelectionQuote,
   type InputBlock,
 } from '../../features/agents/selectionQuoteStore';
+import { parseAgentDisplayName } from '../../agents';
 import type {
   AcpAvailableCommand,
   AcpContextUsageMessage,
@@ -85,6 +86,8 @@ interface AcpInputProps {
   onSend: (attachments?: AcpPromptAttachment[], promptOverride?: string) => void;
   onCancel: () => void;
   agentLabel?: string;
+  projectName?: string;
+  projectPath?: string;
   onCloseAgent?: () => void;
   isConnected: boolean;
   isStarting?: boolean;
@@ -94,6 +97,7 @@ interface AcpInputProps {
   onUpdateQueueItem?: (itemId: string, prompt: string) => void;
   onRemoveQueueItem?: (itemId: string) => void;
   onMoveQueueItem?: (itemId: string, direction: 'up' | 'down') => void;
+  onSendQueueItemNow?: (itemId: string) => void;
   modelSelector?: Omit<AcpModelSelectorMessage, 'role'>;
   reasoningSelector?: Omit<AcpReasoningSelectorMessage, 'role'>;
   contextUsage?: Omit<AcpContextUsageMessage, 'role'>;
@@ -111,6 +115,8 @@ const AcpInputComponent: React.FC<AcpInputProps> = ({
   onSend,
   onCancel,
   agentLabel,
+  projectName,
+  projectPath,
   isConnected,
   isStarting = false,
   isProcessing = false,
@@ -119,6 +125,7 @@ const AcpInputComponent: React.FC<AcpInputProps> = ({
   onUpdateQueueItem,
   onRemoveQueueItem,
   onMoveQueueItem,
+  onSendQueueItemNow,
   modelSelector,
   reasoningSelector,
   contextUsage,
@@ -145,8 +152,8 @@ const AcpInputComponent: React.FC<AcpInputProps> = ({
   // Sync external value when no quotes exist
   React.useEffect(() => {
     setBlocks((prev) => {
-      const hasQuotes = prev.some((b) => b.type === 'quote');
-      if (hasQuotes) return prev;
+      const hasRichBlocks = prev.some((b) => b.type !== 'text');
+      if (hasRichBlocks) return prev;
       if (prev.length === 1 && prev[0].type === 'text' && prev[0].text === value) {
         return prev;
       }
@@ -189,8 +196,15 @@ const AcpInputComponent: React.FC<AcpInputProps> = ({
 
   const autoResizeTextarea = React.useCallback((el: HTMLTextAreaElement | null) => {
     if (!el) return;
+    // An empty textarea is one row. Its placeholder would otherwise count toward scrollHeight and wrap at narrow widths.
+    if (!el.value) {
+      el.style.height = '24px';
+      el.style.overflowY = 'hidden';
+      return;
+    }
     el.style.height = 'auto';
-    const nextHeight = Math.min(Math.max(el.scrollHeight, 24), 160);
+    const isSingleLine = !el.value.includes('\n') && el.scrollHeight <= 28;
+    const nextHeight = isSingleLine ? 24 : Math.min(Math.max(el.scrollHeight, 24), 160);
     el.style.height = `${nextHeight}px`;
     el.style.overflowY = el.scrollHeight > 160 ? 'auto' : 'hidden';
   }, []);
@@ -216,8 +230,8 @@ const AcpInputComponent: React.FC<AcpInputProps> = ({
         b.id === blockId && b.type === 'text' ? { ...b, text: newText } : b,
       );
       setBlocks(next);
-      const hasQuotes = next.some((b) => b.type === 'quote');
-      if (!hasQuotes) {
+      const hasRichBlocks = next.some((b) => b.type !== 'text');
+      if (!hasRichBlocks) {
         onChange(newText);
       }
     },
@@ -281,21 +295,21 @@ const AcpInputComponent: React.FC<AcpInputProps> = ({
     });
   }, [globalQuote, focusedBlockId, autoResizeTextarea]);
 
-  const handleRemoveQuote = React.useCallback(
-    (quoteBlockId: string) => {
+  const handleRemoveBlock = React.useCallback(
+    (blockId: string) => {
       const prev = blocksRef.current;
-      const quoteIdx = prev.findIndex((b) => b.id === quoteBlockId);
-      if (quoteIdx === -1) return;
+      const removedIdx = prev.findIndex((b) => b.id === blockId);
+      if (removedIdx === -1) return;
 
       const next = [...prev];
-      next.splice(quoteIdx, 1);
+      next.splice(removedIdx, 1);
 
       let focusedId: string | null = null;
       let finalBlocks: InputBlock[] = next;
       let textToEmit: string | null = null;
 
-      const prevBlock = next[quoteIdx - 1];
-      const nextBlock = next[quoteIdx];
+      const prevBlock = next[removedIdx - 1];
+      const nextBlock = next[removedIdx];
 
       if (prevBlock && prevBlock.type === 'text' && nextBlock && nextBlock.type === 'text') {
         let mergedText = '';
@@ -305,7 +319,7 @@ const AcpInputComponent: React.FC<AcpInputProps> = ({
           mergedText = prevBlock.text.trim() || nextBlock.text.trim();
         }
         prevBlock.text = mergedText;
-        next.splice(quoteIdx, 1);
+        next.splice(removedIdx, 1);
         focusedId = prevBlock.id;
         requestAnimationFrame(() => {
           const el = textareaRefs.current.get(prevBlock.id);
@@ -328,8 +342,8 @@ const AcpInputComponent: React.FC<AcpInputProps> = ({
         textToEmit = '';
         finalBlocks = [{ id: fallbackTextId, type: 'text', text: '' }];
       } else {
-        const remainingQuotes = next.some((b) => b.type === 'quote');
-        if (!remainingQuotes) {
+        const remainingRich = next.some((b) => b.type !== 'text');
+        if (!remainingRich) {
           const singleText = next
             .filter((b): b is { id: string; type: 'text'; text: string } => b.type === 'text')
             .map((b) => b.text.trim())
@@ -813,28 +827,52 @@ const AcpInputComponent: React.FC<AcpInputProps> = ({
     const files = Array.from(fileList).slice(0, 10);
     const parsed = (await Promise.all(files.map(toAttachment))).filter((a): a is AcpPromptAttachment => a !== null);
     if (parsed.length === 0) return;
-    setAttachments((prev) => {
-      const merged = [...prev, ...parsed];
-      return merged.slice(0, 10);
-    });
-  }, [toAttachment]);
+    const imageAttachments = parsed.filter((a) => a.mime_type.startsWith('image/'));
+    const fileAttachments = parsed.filter((a) => !a.mime_type.startsWith('image/'));
+    if (imageAttachments.length > 0) {
+      const imageBlocks: InputBlock[] = imageAttachments.map((attachment, i) => ({
+        id: `image-${Date.now()}-${i}`,
+        type: 'image',
+        attachment,
+      }));
+      const trailingTextId = `text-${Date.now()}`;
+      setBlocks((prev) => {
+        const focusIdx = prev.findIndex((b) => b.id === focusedBlockId);
+        const insertAt = focusIdx >= 0 ? focusIdx + 1 : prev.length;
+        const next = [...prev];
+        next.splice(insertAt, 0, ...imageBlocks, { id: trailingTextId, type: 'text', text: '' });
+        return next;
+      });
+      setFocusedBlockId(trailingTextId);
+      requestAnimationFrame(() => textareaRefs.current.get(trailingTextId)?.focus());
+    }
+    if (fileAttachments.length > 0) {
+      setAttachments((prev) => [...prev, ...fileAttachments].slice(0, 10));
+    }
+  }, [toAttachment, focusedBlockId]);
+
+  const agentDisplay = agentLabel ? parseAgentDisplayName(agentLabel) : null;
 
   const hasText = blocks.some((b) => b.type === 'text' && b.text.trim().length > 0);
   const hasQuotes = blocks.some((b) => b.type === 'quote');
+  const hasImages = blocks.some((b) => b.type === 'image');
   const canSubmit =
-    (hasText || hasQuotes || attachments.length > 0) &&
+    (hasText || hasQuotes || hasImages || attachments.length > 0) &&
     isConnected &&
     !isStarting;
 
   const handleSend = React.useCallback(() => {
     if (canSubmit) {
       const finalPrompt = formatPromptBlocks(blocks);
-      onSend(attachments, finalPrompt);
+      const imageAttachments = blocks.flatMap((b) => (b.type === 'image' ? [b.attachment] : []));
+      onSend([...imageAttachments, ...attachments], finalPrompt);
       setAttachments([]);
       const newInitialId = `text-${Date.now()}`;
       setBlocks([{ id: newInitialId, type: 'text', text: '' }]);
       setFocusedBlockId(newInitialId);
       onChange('');
+      // The new text block is a fresh textarea (its key changed), so the old one that had focus is unmounted.
+      requestAnimationFrame(() => textareaRefs.current.get(newInitialId)?.focus());
     }
   }, [canSubmit, blocks, onSend, attachments, onChange]);
 
@@ -843,6 +881,10 @@ const AcpInputComponent: React.FC<AcpInputProps> = ({
     blockId: string,
     index: number,
   ) => {
+    // While an IME is composing (e.g. Russian keyboard on macOS), Enter confirms the composition
+    // and must not send: the browser would re-insert the committed text after the input is cleared.
+    if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+
     if (isAtActive) {
       if (allMentionItems.length > 0) {
         if (e.key === 'ArrowDown') {
@@ -907,9 +949,9 @@ const AcpInputComponent: React.FC<AcpInputProps> = ({
       const currentBlock = blocks.find((b) => b.id === blockId);
       if (currentBlock && currentBlock.type === 'text' && currentBlock.text === '' && index > 0) {
         const prevBlock = blocks[index - 1];
-        if (prevBlock && prevBlock.type === 'quote') {
+        if (prevBlock && prevBlock.type !== 'text') {
           e.preventDefault();
-          handleRemoveQuote(prevBlock.id);
+          handleRemoveBlock(prevBlock.id);
           return;
         }
       }
@@ -919,9 +961,9 @@ const AcpInputComponent: React.FC<AcpInputProps> = ({
       const currentBlock = blocks.find((b) => b.id === blockId);
       if (currentBlock && currentBlock.type === 'text' && currentBlock.text === '' && index > 0) {
         const prevBlock = blocks[index - 1];
-        if (prevBlock && prevBlock.type === 'quote') {
+        if (prevBlock && prevBlock.type !== 'text') {
           e.preventDefault();
-          handleRemoveQuote(prevBlock.id);
+          handleRemoveBlock(prevBlock.id);
           return;
         }
       }
@@ -1015,19 +1057,7 @@ const AcpInputComponent: React.FC<AcpInputProps> = ({
           aria-label="Cancel prompt"
           title="Cancel prompt"
         >
-          {showProcessingDots && !canSubmit && (
-            <span className="acp-stop-prompt-dots" aria-hidden="true">
-              <span>.</span>
-              <span>.</span>
-              <span>.</span>
-            </span>
-          )}
-          <span
-            className={`acp-stop-prompt-icon${showProcessingDots && !canSubmit ? ' acp-stop-prompt-icon-hover' : ' acp-stop-prompt-icon-visible'}`}
-            aria-hidden="true"
-          >
-            <AcpIcons.Cancel />
-          </span>
+          <AcpIcons.Cancel />
         </button>
       )}
       <button
@@ -1059,6 +1089,9 @@ const AcpInputComponent: React.FC<AcpInputProps> = ({
       onDragLeave={() => setIsDragOver(false)}
       onDrop={handleDrop}
     >
+      <div className="acp-input-turn-avatar">
+        <AcpAvatar type="user" />
+      </div>
       <div className="acp-input-full-container">
         {queue && queue.length > 0 && onUpdateQueueItem && onRemoveQueueItem && onMoveQueueItem && (
           <AcpQueue
@@ -1066,6 +1099,8 @@ const AcpInputComponent: React.FC<AcpInputProps> = ({
             onUpdateItem={onUpdateQueueItem}
             onRemoveItem={onRemoveQueueItem}
             onMoveItem={onMoveQueueItem}
+            onSendNow={onSendQueueItemNow}
+            isPaused={!isProcessing}
           />
         )}
         {isSlashActive && filteredCommands.length > 0 && (
@@ -1193,6 +1228,27 @@ const AcpInputComponent: React.FC<AcpInputProps> = ({
           ) : (
             <div className="acp-input-blocks-flow">
               {blocks.map((block, index) => {
+                if (block.type === 'image') {
+                  return (
+                    <div key={block.id} className="acp-input-block-image">
+                      <img
+                        src={`data:${block.attachment.mime_type};base64,${block.attachment.data_base64}`}
+                        alt={block.attachment.name}
+                        title={block.attachment.name}
+                      />
+                      <button
+                        type="button"
+                        className="acp-input-block-image-remove"
+                        onClick={() => handleRemoveBlock(block.id)}
+                        title="Remove image"
+                        aria-label={`Remove image ${block.attachment.name}`}
+                      >
+                        <AcpIcons.CloseSmall />
+                      </button>
+                    </div>
+                  );
+                }
+
                 if (block.type === 'quote') {
                   return (
                     <div key={block.id} className="acp-input-block-quote">
@@ -1211,7 +1267,7 @@ const AcpInputComponent: React.FC<AcpInputProps> = ({
                         <button
                           type="button"
                           className="acp-input-quote-badge-remove"
-                          onClick={() => handleRemoveQuote(block.id)}
+                          onClick={() => handleRemoveBlock(block.id)}
                           title="Remove quote"
                           aria-label={`Remove quote from ${block.quote.label}`}
                         >
@@ -1241,7 +1297,7 @@ const AcpInputComponent: React.FC<AcpInputProps> = ({
                 return (
                   <div
                     key={block.id}
-                    className={`acp-input-block-text-row ${isLastTextBlock ? 'is-last-row' : ''}`}
+                    className="acp-input-block-text-row"
                   >
                     <textarea
                       ref={(el) => {
@@ -1270,67 +1326,72 @@ const AcpInputComponent: React.FC<AcpInputProps> = ({
                       rows={MIN_ROWS}
                       disabled={!isConnected && !isStarting}
                     />
-                    {isLastTextBlock && renderActionSwitch()}
                   </div>
                 );
               })}
             </div>
           )}
           <div className="acp-input-controls-row">
-            {showStarButton && (
-              <button
-                type="button"
-                className={`acp-input-quote-star-btn ${isStarExiting ? 'acp-input-quote-star-exiting' : ''}`}
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={handleAddQuote}
-                title={lastQuoteRef.current ? `Quote selection (${lastQuoteRef.current.label}): "${lastQuoteRef.current.text.replace(/\s+/g, ' ').slice(0, 60)}"` : undefined}
-                aria-label="Quote selection"
-              >
-                <AcpIcons.Quote size={16} />
-              </button>
-            )}
-            {agentLabel && (
-              <div className="acp-input-agent-chip" title={agentLabel}>
-                <AgentIcon name={agentLabel} size={12} className="acp-input-agent-chip-icon" />
-                <span className="acp-input-agent-chip-label">{agentLabel}</span>
-              </div>
-            )}
-            {renderSelect('acp-model-select', 'model', modelSelector, onSelectModel)}
-            {renderSelect('acp-reasoning-select', 'thinking', reasoningSelector, onSelectReasoning)}
-            {contextUsage && (
-              <div
-                className="acp-input-context"
-                title={formatContextTitle(contextUsage.used, contextUsage.size)}
-              >
-                <div className="acp-input-context-value">
-                  {formatContextPercent(contextUsage.used, contextUsage.size)}
+            <div className="acp-input-controls-left">
+              {renderSelect('acp-model-select', 'model', modelSelector, onSelectModel)}
+              {renderSelect('acp-reasoning-select', 'thinking', reasoningSelector, onSelectReasoning)}
+              {contextUsage && (
+                <div
+                  className="acp-input-context"
+                  title={formatContextTitle(contextUsage.used, contextUsage.size)}
+                >
+                  <div className="acp-input-context-value">
+                    {formatContextPercent(contextUsage.used, contextUsage.size)}
+                  </div>
                 </div>
+              )}
+              <button
+                className="acp-input-toggle-btn"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={(!isConnected && !isStarting) || isProcessing || isRecording}
+                title="Attach files"
+              >
+                <AcpIcons.Add />
+              </button>
+              <button
+                className="acp-input-toggle-btn"
+                onClick={startRecording}
+                disabled={!isConnected || isProcessing || isRecording}
+                title="Record audio"
+              >
+                <AcpIcons.Mic />
+              </button>
+              {renderActionSwitch()}
+              {showStarButton && (
+                <button
+                  type="button"
+                  className={`acp-input-quote-star-btn ${isStarExiting ? 'acp-input-quote-star-exiting' : ''}`}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={handleAddQuote}
+                  title={lastQuoteRef.current ? `Quote selection (${lastQuoteRef.current.label}): "${lastQuoteRef.current.text.replace(/\s+/g, ' ').slice(0, 60)}"` : undefined}
+                  aria-label="Quote selection"
+                >
+                  <AcpIcons.Quote size={16} />
+                </button>
+              )}
+            </div>
+          </div>
+          <div className="acp-input-chips-row">
+            {agentDisplay && (
+              <div className="acp-input-agent-chip" title={agentLabel}>
+                <span className="acp-input-agent-chip-label">{agentDisplay.baseName}</span>
               </div>
             )}
-            <button
-              className="acp-input-toggle-btn"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={(!isConnected && !isStarting) || isProcessing || isRecording}
-              title="Attach files"
-            >
-              <AcpIcons.Add />
-            </button>
-            <button
-              className="acp-input-toggle-btn"
-              onClick={startRecording}
-              disabled={!isConnected || isProcessing || isRecording}
-              title="Record audio"
-            >
-              <AcpIcons.Mic />
-            </button>
-            <button
-              className="acp-input-toggle-btn acp-input-minimize-btn"
-              onClick={() => setIsMinimized(true)}
-              disabled={isRecording}
-              title="Minimize"
-            >
-              <AcpIcons.ChevronDown />
-            </button>
+            {agentDisplay?.accountName && (
+              <span className="acp-pane-opened-context-item acp-pane-opened-profile acp-input-profile-chip" title={`Profile: ${agentDisplay.accountName}`}>
+                <span>{agentDisplay.accountName}</span>
+              </span>
+            )}
+            {projectName && (
+              <span className="acp-pane-opened-context-item acp-pane-opened-project acp-input-project-chip" title={projectPath}>
+                <span>{projectName}</span>
+              </span>
+            )}
           </div>
         </div>
       </div>

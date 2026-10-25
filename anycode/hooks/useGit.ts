@@ -1,11 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Socket } from 'socket.io-client';
 import { GitActionState } from '../components/ChangesPanel';
-import type { ChangedFile } from '../components';
+import type { ChangedFile } from '../components/ChangesPanel';
+
+interface ProjectGitUiState {
+    gitAvailable: boolean | null;
+    branch: string;
+    branches: GitBranch[];
+    isSwitchingBranch: boolean;
+    pushStatus: { state: GitActionState; message?: string };
+}
 
 type UseGitParams = {
     wsRef: React.RefObject<Socket | null>;
     isConnected: boolean;
+    projectId?: string | null;
 };
 
 type GitPatchItem = {
@@ -20,6 +29,7 @@ type GitPatchItem = {
 
 type GitStatusFullUpdate = {
     kind?: 'full';
+    project_id?: string;
     files: ChangedFile[];
     branch: string;
     head_hash?: string;
@@ -27,6 +37,7 @@ type GitStatusFullUpdate = {
 
 type GitStatusPatchUpdate = {
     kind: 'patch';
+    project_id?: string;
     branch: string;
     head_hash?: string;
     files: GitPatchItem[];
@@ -113,16 +124,86 @@ const sortChangedFiles = (files: ChangedFile[]): ChangedFile[] => {
     });
 };
 
-export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
+const mergeProjectGitFiles = (previous: ChangedFile[], update: GitStatusUpdate): ChangedFile[] => {
+    if (update.kind !== 'patch') return sortChangedFiles(update.files || []);
+    const next = new Map(previous.map((file) => [file.path, file]));
+    for (const item of update.files || []) {
+        if (item.status === 'removed') {
+            next.delete(item.path);
+        } else {
+            next.set(item.path, {
+                path: item.path,
+                project_id: update.project_id,
+                status: item.status,
+                staged: item.staged,
+                unstaged: item.unstaged,
+                conflicted: item.conflicted,
+                added: item.added,
+                removed: item.removed,
+            });
+        }
+    }
+    return sortChangedFiles(Array.from(next.values()));
+};
+
+export const useGit = ({ wsRef, isConnected, projectId }: UseGitParams) => {
+    const activeProjectIdRef = useRef(projectId);
+    activeProjectIdRef.current = projectId;
     const [changedFiles, setChangedFiles] = useState<ChangedFile[]>([]);
+    const [changedFilesByProject, setChangedFilesByProject] = useState<Record<string, ChangedFile[]>>({});
+    const [gitUiByProject, setGitUiByProject] = useState<Record<string, ProjectGitUiState>>({});
     const [gitBranch, setGitBranch] = useState<string>('');
     const [branches, setBranches] = useState<GitBranch[]>([]);
     const [isSwitchingBranch, setIsSwitchingBranch] = useState(false);
     const [pushStatus, setPushStatus] = useState<{ state: GitActionState; message?: string }>({ state: GitActionState.Idle });
-    const showGitStatus = useCallback((state: GitActionState, message: string, timeout = 4000) => {
-        setPushStatus({ state, message });
-        if (state !== GitActionState.InProgress) window.setTimeout(() => setPushStatus({ state: GitActionState.Idle }), timeout);
+    const pushStatusTimersRef = useRef(new Map<string, number>());
+    const updateProjectGitUi = useCallback((
+        targetProjectId: string | undefined,
+        update: Partial<ProjectGitUiState>,
+    ) => {
+        if (!targetProjectId) return;
+        setGitUiByProject((previous) => ({
+            ...previous,
+            [targetProjectId]: {
+                gitAvailable: previous[targetProjectId]?.gitAvailable ?? null,
+                branch: previous[targetProjectId]?.branch ?? '',
+                branches: previous[targetProjectId]?.branches ?? [],
+                isSwitchingBranch: previous[targetProjectId]?.isSwitchingBranch ?? false,
+                pushStatus: previous[targetProjectId]?.pushStatus ?? { state: GitActionState.Idle },
+                ...update,
+            },
+        }));
+        if (activeProjectIdRef.current !== targetProjectId) return;
+        if (update.branch !== undefined) setGitBranch(update.branch);
+        if (update.branches !== undefined) setBranches(update.branches);
+        if (update.isSwitchingBranch !== undefined) setIsSwitchingBranch(update.isSwitchingBranch);
+        if (update.pushStatus !== undefined) setPushStatus(update.pushStatus);
     }, []);
+    const showGitStatus = useCallback((
+        targetProjectId: string | undefined,
+        state: GitActionState,
+        message: string,
+        timeout = 4000,
+    ) => {
+        const status = { state, message };
+        updateProjectGitUi(targetProjectId, { pushStatus: status });
+        if (!targetProjectId || activeProjectIdRef.current === targetProjectId) setPushStatus(status);
+
+        const timerKey = targetProjectId ?? '__active__';
+        const existingTimer = pushStatusTimersRef.current.get(timerKey);
+        if (existingTimer !== undefined) window.clearTimeout(existingTimer);
+        pushStatusTimersRef.current.delete(timerKey);
+        if (state !== GitActionState.InProgress) {
+            const timer = window.setTimeout(() => {
+                updateProjectGitUi(targetProjectId, { pushStatus: { state: GitActionState.Idle } });
+                if (!targetProjectId || activeProjectIdRef.current === targetProjectId) {
+                    setPushStatus({ state: GitActionState.Idle });
+                }
+                pushStatusTimersRef.current.delete(timerKey);
+            }, timeout);
+            pushStatusTimersRef.current.set(timerKey, timer);
+        }
+    }, [updateProjectGitUi]);
     const [historyCommits, setHistoryCommits] = useState<GitHistoryCommit[]>([]);
     const [historyFiles, setHistoryFiles] = useState<Record<string, GitHistoryFile[]>>({});
     const [historyHasMore, setHistoryHasMore] = useState(false);
@@ -130,15 +211,24 @@ export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
     const [isHistoryLoaded, setIsHistoryLoaded] = useState(false);
     const [historyPath, setHistoryPath] = useState<string | null>(null);
     const [historyFilesLoading, setHistoryFilesLoading] = useState<Record<string, boolean>>({});
+    const [historyProjectId, setHistoryProjectId] = useState<string | null>(projectId ?? null);
     const isHistoryLoadingRef = useRef(false);
     const historyFilesLoadingRef = useRef(new Set<string>());
     const historyCommitsRef = useRef<GitHistoryCommit[]>([]);
     const historySearchRef = useRef<{ mode: GitHistorySearchMode; query: string } | null>(null);
     const historyPathRef = useRef<string | null>(null);
+    const historyProjectIdRef = useRef<string | null>(projectId ?? null);
     const historyResetTimerRef = useRef<number | null>(null);
     const historyRequestIdRef = useRef(0);
     const activeHistorySearchRequestIdRef = useRef<number | null>(null);
     const gitHeadHashRef = useRef<string | undefined>(undefined);
+    const statusRequestGenerationRef = useRef(new Map<string, number>());
+    const removedProjectIdsRef = useRef(new Set<string>());
+
+    useEffect(() => () => {
+        for (const timer of pushStatusTimersRef.current.values()) window.clearTimeout(timer);
+        pushStatusTimersRef.current.clear();
+    }, []);
 
     const cancelHistorySearch = useCallback(() => {
         const requestId = activeHistorySearchRequestIdRef.current;
@@ -165,7 +255,35 @@ export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
         }
     }, [wsRef]);
 
-    const requestHistoryPage = useCallback((reset: boolean, search: { mode: GitHistorySearchMode; query: string } | null) => {
+    const requestHistoryPage = useCallback((
+        reset: boolean,
+        search: { mode: GitHistorySearchMode; query: string } | null,
+        targetProjectId = historyProjectIdRef.current ?? projectId,
+    ) => {
+        const projectChanged = targetProjectId !== historyProjectIdRef.current;
+        if (projectChanged && historySearchRef.current) {
+            const nextSearch = search;
+            cancelHistorySearch();
+            historySearchRef.current = nextSearch;
+        }
+        if (projectChanged) {
+            historyProjectIdRef.current = targetProjectId ?? null;
+            setHistoryProjectId(targetProjectId ?? null);
+            historyCommitsRef.current = [];
+            setHistoryCommits([]);
+            setHistoryFiles({});
+            setHistoryFilesLoading({});
+            historyFilesLoadingRef.current.clear();
+            setHistoryHasMore(false);
+            setIsHistoryLoaded(false);
+            isHistoryLoadingRef.current = false;
+            setIsHistoryLoading(false);
+            if (historyResetTimerRef.current !== null) {
+                window.clearTimeout(historyResetTimerRef.current);
+                historyResetTimerRef.current = null;
+            }
+        }
+        if (!targetProjectId) return;
         if (!wsRef.current || !isConnected || (!reset && isHistoryLoadingRef.current)) return;
         const offset = reset ? 0 : historyCommitsRef.current.length;
         if (!search && historySearchRef.current) {
@@ -186,13 +304,15 @@ export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
             }
             historyCommitsRef.current = [];
             setHistoryHasMore(false);
-            historyResetTimerRef.current = window.setTimeout(() => {
-                historyResetTimerRef.current = null;
-                if (requestId === historyRequestIdRef.current) {
-                    setHistoryCommits([]);
-                    setHistoryFiles({});
-                }
-            }, 180);
+            if (!projectChanged) {
+                historyResetTimerRef.current = window.setTimeout(() => {
+                    historyResetTimerRef.current = null;
+                    if (requestId === historyRequestIdRef.current) {
+                        setHistoryCommits([]);
+                        setHistoryFiles({});
+                    }
+                }, 180);
+            }
         }
         const event = search ? 'git:history-search' : 'git:history';
         const payload = search
@@ -202,10 +322,17 @@ export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
                 request_id: requestId,
                 offset,
                 limit: HISTORY_PAGE_SIZE,
+                project_id: targetProjectId,
             }
-            : { offset, limit: HISTORY_PAGE_SIZE, path: historyPathRef.current || undefined };
+            : {
+                offset,
+                limit: HISTORY_PAGE_SIZE,
+                path: historyPathRef.current || undefined,
+                project_id: targetProjectId,
+            };
         wsRef.current.emit(event, payload, (response: any) => {
-            if (requestId !== historyRequestIdRef.current) return;
+            if (requestId !== historyRequestIdRef.current
+                || historyProjectIdRef.current !== targetProjectId) return;
             if (search && response.request_id !== requestId) return;
             if (activeHistorySearchRequestIdRef.current === requestId) {
                 activeHistorySearchRequestIdRef.current = null;
@@ -230,7 +357,7 @@ export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
                 setHistoryHasMore(!!response.has_more);
             }
         });
-    }, [isConnected, wsRef]);
+    }, [cancelHistorySearch, isConnected, wsRef, projectId]);
 
     const handleHistorySearchResults = useCallback((data: { request_id?: number; commits?: GitHistoryCommit[] }) => {
         if (data.request_id !== historyRequestIdRef.current || !activeHistorySearchRequestIdRef.current) return;
@@ -241,79 +368,103 @@ export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
         setHistoryCommits(nextCommits);
     }, []);
 
-    const fetchHistory = useCallback((reset = true) => {
+    const fetchHistory = useCallback((reset = true, targetProjectId?: string | null) => {
         if (reset && historySearchRef.current) cancelHistorySearch();
         if (reset) historySearchRef.current = null;
-        requestHistoryPage(reset, null);
+        requestHistoryPage(reset, null, targetProjectId);
     }, [cancelHistorySearch, requestHistoryPage]);
 
-    const showFileHistory = useCallback((path: string) => {
+    const showFileHistory = useCallback((path: string, targetProjectId?: string | null) => {
         cancelHistorySearch();
         historySearchRef.current = null;
         historyPathRef.current = path;
         setHistoryPath(path);
-        requestHistoryPage(true, null);
+        requestHistoryPage(true, null, targetProjectId);
     }, [cancelHistorySearch, requestHistoryPage]);
 
-    const showRepositoryHistory = useCallback(() => {
+    const showRepositoryHistory = useCallback((
+        targetProjectId = historyProjectIdRef.current ?? projectId,
+    ) => {
+        cancelHistorySearch();
+        historySearchRef.current = null;
         historyPathRef.current = null;
         setHistoryPath(null);
-        requestHistoryPage(true, null);
-    }, [requestHistoryPage]);
+        requestHistoryPage(true, null, targetProjectId);
+    }, [cancelHistorySearch, projectId, requestHistoryPage]);
 
-    const searchHistory = useCallback((mode: GitHistorySearchMode, query: string) => {
+    const searchHistory = useCallback((
+        mode: GitHistorySearchMode,
+        query: string,
+        targetProjectId?: string | null,
+    ) => {
         const trimmedQuery = query.trim();
         if (!trimmedQuery) {
             cancelHistorySearch();
             historySearchRef.current = null;
-            requestHistoryPage(true, null);
+            requestHistoryPage(true, null, targetProjectId);
             return;
         }
         const search = { mode, query: trimmedQuery };
         historySearchRef.current = search;
-        requestHistoryPage(true, search);
+        requestHistoryPage(true, search, targetProjectId);
     }, [cancelHistorySearch, requestHistoryPage]);
 
-    const clearHistorySearch = useCallback(() => {
+    const clearHistorySearch = useCallback((targetProjectId?: string | null) => {
         cancelHistorySearch();
         historySearchRef.current = null;
-        requestHistoryPage(true, null);
+        requestHistoryPage(true, null, targetProjectId);
     }, [cancelHistorySearch, requestHistoryPage]);
 
-    const refreshHistory = useCallback(() => {
+    const refreshHistory = useCallback((targetProjectId?: string | null) => {
         const current = historySearchRef.current;
         if (!current) {
-            requestHistoryPage(true, null);
+            requestHistoryPage(true, null, targetProjectId);
             return;
         }
-        requestHistoryPage(true, current);
+        requestHistoryPage(true, current, targetProjectId);
     }, [requestHistoryPage]);
 
-    const loadMoreHistory = useCallback(() => {
-        requestHistoryPage(false, historySearchRef.current);
+    const loadMoreHistory = useCallback((targetProjectId?: string | null) => {
+        requestHistoryPage(false, historySearchRef.current, targetProjectId);
     }, [requestHistoryPage]);
 
-    const fetchHistoryFiles = useCallback((hash: string) => {
-        if (!wsRef.current || !isConnected || historyFiles[hash] || historyFilesLoadingRef.current.has(hash)) return;
-        historyFilesLoadingRef.current.add(hash);
+    const fetchHistoryFiles = useCallback((
+        hash: string,
+        targetProjectId = historyProjectIdRef.current ?? projectId,
+    ) => {
+        if (!targetProjectId || !wsRef.current || !isConnected
+            || historyFiles[hash]
+            || historyFilesLoadingRef.current.has(`${targetProjectId}:${hash}`)) return;
+        const requestKey = `${targetProjectId}:${hash}`;
+        historyFilesLoadingRef.current.add(requestKey);
         setHistoryFilesLoading((prev) => ({ ...prev, [hash]: true }));
-        wsRef.current.emit('git:history-files', { hash }, (response: any) => {
-            historyFilesLoadingRef.current.delete(hash);
+        wsRef.current.emit('git:history-files', { hash, project_id: targetProjectId }, (response: any) => {
+            historyFilesLoadingRef.current.delete(requestKey);
+            if (historyProjectIdRef.current !== targetProjectId) return;
             setHistoryFilesLoading((prev) => ({ ...prev, [hash]: false }));
             if (response.success) {
                 setHistoryFiles((prev) => ({ ...prev, [hash]: response.files || [] }));
             }
         });
-    }, [historyFiles, isConnected, wsRef]);
+    }, [historyFiles, isConnected, wsRef, projectId]);
 
-    const fetchHistoryFileContent = useCallback((hash: string, file: GitHistoryFile): Promise<GitHistoryFileContent | null> => (
+    const fetchHistoryFileContent = useCallback((
+        hash: string,
+        file: GitHistoryFile,
+        targetProjectId = historyProjectIdRef.current ?? projectId,
+    ): Promise<GitHistoryFileContent | null> => (
         new Promise((resolve) => {
-            if (!wsRef.current || !isConnected) return resolve(null);
+            if (!targetProjectId || !wsRef.current || !isConnected) return resolve(null);
             wsRef.current.emit('git:history-file', {
                 hash,
                 path: file.path,
                 old_path: file.old_path || undefined,
+                project_id: targetProjectId,
             }, (response: any) => {
+                if (historyProjectIdRef.current !== targetProjectId) {
+                    resolve(null);
+                    return;
+                }
                 if (!response.success) {
                     alert('Failed to open historical diff: ' + response.error);
                     resolve(null);
@@ -322,32 +473,73 @@ export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
                 resolve(response as GitHistoryFileContent);
             });
         })
-    ), [isConnected, wsRef]);
+    ), [isConnected, wsRef, projectId]);
 
-    const fetchGitStatus = useCallback(() => {
+    const fetchGitStatus = useCallback((targetProjectId = projectId) => {
         if (!wsRef.current || !isConnected) return;
+        if (targetProjectId && removedProjectIdsRef.current.has(targetProjectId)) return;
+        const requestedActiveProjectId = activeProjectIdRef.current;
+        const requestGeneration = targetProjectId
+            ? statusRequestGenerationRef.current.get(targetProjectId) ?? 0
+            : undefined;
 
-        wsRef.current.emit('git:status', {}, (response: any) => {
+        wsRef.current.emit('git:status', { project_id: targetProjectId }, (response: any) => {
+            if (targetProjectId && (
+                removedProjectIdsRef.current.has(targetProjectId)
+                || (statusRequestGenerationRef.current.get(targetProjectId) ?? 0) !== requestGeneration
+            )) return;
             if (response.success) {
-                setChangedFiles(sortChangedFiles(response.files || []));
-                setGitBranch(response.branch || '');
-                gitHeadHashRef.current = response.head_hash;
+                const responseProjectId = response.project_id ?? targetProjectId ?? undefined;
+                if (responseProjectId && removedProjectIdsRef.current.has(responseProjectId)) return;
+                const files: ChangedFile[] = sortChangedFiles(response.files || []).map((file) => ({
+                    ...file,
+                    project_id: responseProjectId,
+                }));
+                if (responseProjectId) {
+                    setChangedFilesByProject((previous) => ({ ...previous, [responseProjectId]: files }));
+                    updateProjectGitUi(responseProjectId, {
+                        gitAvailable: true,
+                        branch: response.branch || '',
+                    });
+                }
+                if (
+                    activeProjectIdRef.current === requestedActiveProjectId
+                    && (!responseProjectId || responseProjectId === activeProjectIdRef.current)
+                ) {
+                    setChangedFiles(files);
+                    setGitBranch(response.branch || '');
+                    gitHeadHashRef.current = response.head_hash;
+                }
             } else {
-                setChangedFiles([]);
-                setGitBranch('');
-                gitHeadHashRef.current = undefined;
+                if (targetProjectId && removedProjectIdsRef.current.has(targetProjectId)) return;
+                if (targetProjectId) {
+                    setChangedFilesByProject((previous) => ({ ...previous, [targetProjectId]: [] }));
+                    updateProjectGitUi(targetProjectId, {
+                        gitAvailable: false,
+                        branch: '',
+                        branches: [],
+                    });
+                }
+                if (
+                    activeProjectIdRef.current === requestedActiveProjectId
+                    && (!targetProjectId || targetProjectId === activeProjectIdRef.current)
+                ) {
+                    setChangedFiles([]);
+                    setGitBranch('');
+                    gitHeadHashRef.current = undefined;
+                }
             }
         });
-    }, [wsRef, isConnected]);
+    }, [wsRef, isConnected, projectId, updateProjectGitUi]);
 
-    const fetchOriginalFileContent = useCallback((path: string): Promise<string | null> => (
+    const fetchOriginalFileContent = useCallback((path: string, targetProjectId = projectId): Promise<string | null> => (
         new Promise((resolve) => {
             if (!wsRef.current || !isConnected) {
                 resolve(null);
                 return;
             }
 
-            wsRef.current.emit('git:file-original', { path }, (response: any) => {
+            wsRef.current.emit('git:file-original', { path, project_id: targetProjectId }, (response: any) => {
                 if (response?.success === false || typeof response?.content !== 'string') {
                     resolve(null);
                     return;
@@ -355,21 +547,47 @@ export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
                 resolve(response.content);
             });
         })
-    ), [isConnected, wsRef]);
+    ), [isConnected, wsRef, projectId]);
 
-    const fetchBranches = useCallback(() => {
+    const branchesRequestIdRef = useRef(new Map<string, number>());
+    const fetchBranches = useCallback((targetProjectId = projectId) => {
         if (!wsRef.current || !isConnected) return;
+        const requestKey = targetProjectId ?? '__active__';
+        const requestId = (branchesRequestIdRef.current.get(requestKey) ?? 0) + 1;
+        branchesRequestIdRef.current.set(requestKey, requestId);
 
-        wsRef.current.emit('git:branches', {}, (response: any) => {
+        wsRef.current.emit('git:branches', { project_id: targetProjectId }, (response: any) => {
+            if (requestId !== branchesRequestIdRef.current.get(requestKey)) return;
+            const nextBranches = response.success ? response.branches || [] : [];
+            updateProjectGitUi(targetProjectId ?? undefined, { branches: nextBranches });
             if (response.success) {
-                setBranches(response.branches || []);
-            } else {
+                if (!targetProjectId || activeProjectIdRef.current === targetProjectId) {
+                    setBranches(nextBranches);
+                }
+            } else if (!targetProjectId || activeProjectIdRef.current === targetProjectId) {
                 setBranches([]);
             }
         });
-    }, [wsRef, isConnected]);
+    }, [wsRef, isConnected, projectId, updateProjectGitUi]);
 
     const handleGitStatusUpdate = useCallback((data: GitStatusUpdate) => {
+        if (data.project_id && removedProjectIdsRef.current.has(data.project_id)) return;
+        if (data.project_id) {
+            setChangedFilesByProject((previous) => ({
+                ...previous,
+                [data.project_id!]: mergeProjectGitFiles(
+                    previous[data.project_id!] || [],
+                    data,
+                ),
+            }));
+            updateProjectGitUi(data.project_id, {
+                gitAvailable: true,
+                branch: data.branch || '',
+            });
+        }
+        const activeProjectId = activeProjectIdRef.current;
+        if (activeProjectId && data.project_id && data.project_id !== activeProjectId) return;
+
         if (data.kind === 'patch') {
             setGitBranch(data.branch || '');
             setChangedFiles((prev) => {
@@ -454,126 +672,142 @@ export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
             return prev;
         });
 
-        if (headChanged) {
-            refreshHistory();
+        const statusProjectId = data.project_id ?? activeProjectId;
+        if (headChanged && statusProjectId === historyProjectIdRef.current) {
+            refreshHistory(statusProjectId);
         }
-    }, [refreshHistory]);
+    }, [projectId, refreshHistory, updateProjectGitUi]);
 
-    const commit = useCallback((message: string): Promise<boolean> => {
+    const commit = useCallback((message: string, targetProjectId = projectId): Promise<boolean> => {
         return new Promise((resolve) => {
             if (!wsRef.current || !isConnected) {
                 resolve(false);
                 return;
             }
 
-            showGitStatus(GitActionState.InProgress, 'Committing…');
-            wsRef.current.emit('git:commit', { message }, (response: any) => {
+            showGitStatus(targetProjectId ?? undefined, GitActionState.InProgress, 'Committing…');
+            wsRef.current.emit('git:commit', { message, project_id: targetProjectId }, (response: any) => {
                 if (response.success) {
-                    showGitStatus(GitActionState.Success, 'Committed');
-                    fetchGitStatus();
-                    refreshHistory();
+                    showGitStatus(targetProjectId ?? undefined, GitActionState.Success, 'Committed');
+                    fetchGitStatus(targetProjectId);
+                    if (targetProjectId === historyProjectIdRef.current) refreshHistory(targetProjectId);
                     resolve(true);
                 } else {
-                    showGitStatus(GitActionState.Error, 'Commit failed: ' + response.error, 6000);
+                    showGitStatus(targetProjectId ?? undefined, GitActionState.Error, 'Commit failed: ' + response.error, 6000);
                     resolve(false);
                 }
             });
         });
-    }, [wsRef, isConnected, fetchGitStatus, refreshHistory, showGitStatus]);
+    }, [wsRef, isConnected, fetchGitStatus, refreshHistory, showGitStatus, projectId]);
 
-    const push = useCallback(() => {
-        if (!wsRef.current || !isConnected || pushStatus.state === GitActionState.InProgress) return;
+    const push = useCallback((targetProjectId = projectId) => {
+        const projectPushStatus = targetProjectId
+            ? gitUiByProject[targetProjectId]?.pushStatus
+            : pushStatus;
+        if (!wsRef.current || !isConnected || projectPushStatus?.state === GitActionState.InProgress) return;
 
-            showGitStatus(GitActionState.InProgress, 'Pushing…');
+        showGitStatus(targetProjectId ?? undefined, GitActionState.InProgress, 'Pushing…');
 
-        wsRef.current.emit('git:push', {}, (response: any) => {
+        wsRef.current.emit('git:push', { project_id: targetProjectId }, (response: any) => {
             if (response.success) {
                 showGitStatus(
+                    targetProjectId ?? undefined,
                     GitActionState.Success,
-                    response.status === 'up_to_date' ? 'Everything up-to-date' : `Pushed ${gitBranch || 'changes'}`,
+                    response.status === 'up_to_date'
+                        ? 'Everything up-to-date'
+                        : `Pushed ${gitUiByProject[targetProjectId ?? '']?.branch || gitBranch || 'changes'}`,
                 );
-                fetchGitStatus();
+                fetchGitStatus(targetProjectId);
             } else {
-                showGitStatus(GitActionState.Error, `Push failed: ${response.error}`, 6000);
+                showGitStatus(targetProjectId ?? undefined, GitActionState.Error, `Push failed: ${response.error}`, 6000);
             }
         });
-    }, [wsRef, isConnected, fetchGitStatus, gitBranch, pushStatus.state, showGitStatus]);
+    }, [wsRef, isConnected, fetchGitStatus, gitBranch, gitUiByProject, pushStatus, showGitStatus, projectId]);
 
-    const pull = useCallback(() => {
+    const pull = useCallback((targetProjectId = projectId) => {
         if (!wsRef.current || !isConnected) return;
 
-        if (pushStatus.state === GitActionState.InProgress) return;
-        showGitStatus(GitActionState.InProgress, 'Pulling…');
-        wsRef.current.emit('git:pull', {}, (response: any) => {
+        const projectPushStatus = targetProjectId
+            ? gitUiByProject[targetProjectId]?.pushStatus
+            : pushStatus;
+        if (projectPushStatus?.state === GitActionState.InProgress) return;
+        showGitStatus(targetProjectId ?? undefined, GitActionState.InProgress, 'Pulling…');
+        wsRef.current.emit('git:pull', { project_id: targetProjectId }, (response: any) => {
             if (response.success) {
                 const status = response.status;
 
                 if (status === 'up_to_date') {
-                    showGitStatus(GitActionState.Success, 'Already up to date');
+                    showGitStatus(targetProjectId ?? undefined, GitActionState.Success, 'Already up to date');
                 } else if (status === 'fast_forward') {
-                    showGitStatus(GitActionState.Success, 'Fast-forwarded');
+                    showGitStatus(targetProjectId ?? undefined, GitActionState.Success, 'Fast-forwarded');
                 } else if (status === 'merged') {
-                    showGitStatus(GitActionState.Success, 'Merged successfully');
+                    showGitStatus(targetProjectId ?? undefined, GitActionState.Success, 'Merged successfully');
                 } else if (status === 'conflict') {
                     const files = response.files || [];
                     showGitStatus(
+                        targetProjectId ?? undefined,
                         GitActionState.Error,
                         `Merge conflicts: ${files.join(', ')}. Resolve and commit.`,
                         8000,
                     );
                 }
 
-                fetchGitStatus();
-                if (status !== 'conflict') refreshHistory();
+                fetchGitStatus(targetProjectId);
+                if (status !== 'conflict' && targetProjectId === historyProjectIdRef.current) {
+                    refreshHistory(targetProjectId);
+                }
             } else {
-                showGitStatus(GitActionState.Error, 'Pull failed: ' + response.error, 6000);
+                showGitStatus(targetProjectId ?? undefined, GitActionState.Error, 'Pull failed: ' + response.error, 6000);
             }
         });
-    }, [wsRef, isConnected, fetchGitStatus, refreshHistory, pushStatus.state, showGitStatus]);
+    }, [wsRef, isConnected, fetchGitStatus, refreshHistory, pushStatus, gitUiByProject, showGitStatus, projectId]);
 
-    const fetchRemote = useCallback(() => {
+    const fetchRemote = useCallback((targetProjectId = projectId) => {
         if (!wsRef.current || !isConnected) return;
 
-        if (pushStatus.state === GitActionState.InProgress) return;
-        showGitStatus(GitActionState.InProgress, 'Fetching…');
-        wsRef.current.emit('git:fetch', {}, (response: any) => {
+        const projectPushStatus = targetProjectId
+            ? gitUiByProject[targetProjectId]?.pushStatus
+            : pushStatus;
+        if (projectPushStatus?.state === GitActionState.InProgress) return;
+        showGitStatus(targetProjectId ?? undefined, GitActionState.InProgress, 'Fetching…');
+        wsRef.current.emit('git:fetch', { project_id: targetProjectId }, (response: any) => {
             if (response.success) {
-                showGitStatus(GitActionState.Success, 'Fetched from origin');
-                fetchGitStatus();
-                refreshHistory();
+                showGitStatus(targetProjectId ?? undefined, GitActionState.Success, 'Fetched from origin');
+                fetchGitStatus(targetProjectId);
+                if (targetProjectId === historyProjectIdRef.current) refreshHistory(targetProjectId);
             } else {
-                showGitStatus(GitActionState.Error, 'Fetch failed: ' + response.error, 6000);
+                showGitStatus(targetProjectId ?? undefined, GitActionState.Error, 'Fetch failed: ' + response.error, 6000);
             }
         });
-    }, [wsRef, isConnected, fetchGitStatus, refreshHistory, pushStatus.state, showGitStatus]);
+    }, [wsRef, isConnected, fetchGitStatus, refreshHistory, pushStatus, gitUiByProject, showGitStatus, projectId]);
 
 
-    const revert = useCallback((path: string) => {
+    const revert = useCallback((path: string, targetProjectId = projectId) => {
         if (!wsRef.current || !isConnected) return;
 
-        wsRef.current.emit('git:revert', { path }, (response: any) => {
+        wsRef.current.emit('git:revert', { path, project_id: targetProjectId }, (response: any) => {
             if (response.success) {
-                fetchGitStatus();
+                fetchGitStatus(targetProjectId);
             } else {
                 alert('Revert failed: ' + response.error);
             }
         });
-    }, [wsRef, isConnected, fetchGitStatus]);
+    }, [wsRef, isConnected, fetchGitStatus, projectId]);
 
-    const checkoutBranch = useCallback((branch: string): Promise<boolean> => {
+    const checkoutBranch = useCallback((branch: string, targetProjectId = projectId): Promise<boolean> => {
         return new Promise((resolve) => {
-            if (!wsRef.current || !isConnected || !branch) {
+            if (!wsRef.current || !isConnected || !branch || !targetProjectId) {
                 resolve(false);
                 return;
             }
 
-            setIsSwitchingBranch(true);
-            wsRef.current.emit('git:checkout', { branch }, (response: any) => {
-                setIsSwitchingBranch(false);
+            updateProjectGitUi(targetProjectId, { isSwitchingBranch: true });
+            wsRef.current.emit('git:checkout', { branch, project_id: targetProjectId }, (response: any) => {
+                updateProjectGitUi(targetProjectId, { isSwitchingBranch: false });
                 if (response.success) {
-                    fetchGitStatus();
-                    fetchBranches();
-                    refreshHistory();
+                    fetchGitStatus(targetProjectId);
+                    fetchBranches(targetProjectId);
+                    if (targetProjectId === historyProjectIdRef.current) refreshHistory(targetProjectId);
                     resolve(true);
                 } else {
                     alert(response.error || 'Failed to change branch');
@@ -581,45 +815,45 @@ export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
                 }
             });
         });
-    }, [wsRef, isConnected, fetchGitStatus, fetchBranches, refreshHistory]);
+    }, [wsRef, isConnected, fetchGitStatus, fetchBranches, refreshHistory, projectId, updateProjectGitUi]);
 
-    const stage = useCallback((path: string) => {
+    const stage = useCallback((path: string, targetProjectId = projectId) => {
         if (!wsRef.current || !isConnected) return;
-        wsRef.current.emit('git:stage', { path }, (response: any) => {
+        wsRef.current.emit('git:stage', { path, project_id: targetProjectId }, (response: any) => {
             if (response.success) {
-                fetchGitStatus();
+                fetchGitStatus(targetProjectId);
             } else {
                 alert('Stage failed: ' + response.error);
             }
         });
-    }, [fetchGitStatus, isConnected, wsRef]);
+    }, [fetchGitStatus, isConnected, wsRef, projectId]);
 
-    const unstage = useCallback((path: string) => {
+    const unstage = useCallback((path: string, targetProjectId = projectId) => {
         if (!wsRef.current || !isConnected) return;
-        wsRef.current.emit('git:unstage', { path }, (response: any) => {
+        wsRef.current.emit('git:unstage', { path, project_id: targetProjectId }, (response: any) => {
             if (response.success) {
-                fetchGitStatus();
+                fetchGitStatus(targetProjectId);
             } else {
                 alert('Unstage failed: ' + response.error);
             }
         });
-    }, [fetchGitStatus, isConnected, wsRef]);
+    }, [fetchGitStatus, isConnected, wsRef, projectId]);
 
-    const createBranch = useCallback((branch: string): Promise<boolean> => {
+    const createBranch = useCallback((branch: string, targetProjectId = projectId): Promise<boolean> => {
         return new Promise((resolve) => {
             const trimmed = branch.trim();
-            if (!wsRef.current || !isConnected || !trimmed) {
+            if (!wsRef.current || !isConnected || !trimmed || !targetProjectId) {
                 resolve(false);
                 return;
             }
 
-            setIsSwitchingBranch(true);
-            wsRef.current.emit('git:create_branch', { branch: trimmed }, (response: any) => {
-                setIsSwitchingBranch(false);
+            updateProjectGitUi(targetProjectId, { isSwitchingBranch: true });
+            wsRef.current.emit('git:create_branch', { branch: trimmed, project_id: targetProjectId }, (response: any) => {
+                updateProjectGitUi(targetProjectId, { isSwitchingBranch: false });
                 if (response.success) {
-                    fetchGitStatus();
-                    fetchBranches();
-                    refreshHistory();
+                    fetchGitStatus(targetProjectId);
+                    fetchBranches(targetProjectId);
+                    if (targetProjectId === historyProjectIdRef.current) refreshHistory(targetProjectId);
                     resolve(true);
                 } else {
                     alert(response.error || 'Failed to create branch');
@@ -627,10 +861,96 @@ export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
                 }
             });
         });
-    }, [wsRef, isConnected, fetchGitStatus, fetchBranches, refreshHistory]);
+    }, [wsRef, isConnected, fetchGitStatus, fetchBranches, refreshHistory, projectId, updateProjectGitUi]);
+
+    const resetGitState = useCallback(() => {
+        cancelHistorySearch();
+        setChangedFiles([]);
+        setGitBranch('');
+        setBranches([]);
+        setPushStatus({ state: GitActionState.Idle });
+        setHistoryCommits([]);
+        setHistoryFiles({});
+        setHistoryHasMore(false);
+        setIsHistoryLoading(false);
+        setIsHistoryLoaded(false);
+        setHistoryPath(null);
+        setHistoryFilesLoading({});
+        isHistoryLoadingRef.current = false;
+        historyFilesLoadingRef.current.clear();
+        historyProjectIdRef.current = null;
+        setHistoryProjectId(null);
+        historyRequestIdRef.current += 1;
+        historyCommitsRef.current = [];
+        historySearchRef.current = null;
+        historyPathRef.current = null;
+        if (historyResetTimerRef.current !== null) {
+            window.clearTimeout(historyResetTimerRef.current);
+            historyResetTimerRef.current = null;
+        }
+        gitHeadHashRef.current = undefined;
+    }, [cancelHistorySearch]);
+
+    const restoreProjectStatus = useCallback((targetProjectId: string) => {
+        removedProjectIdsRef.current.delete(targetProjectId);
+        statusRequestGenerationRef.current.set(
+            targetProjectId,
+            (statusRequestGenerationRef.current.get(targetProjectId) ?? 0) + 1,
+        );
+    }, []);
+
+    const removeProjectStatus = useCallback((targetProjectId: string) => {
+        removedProjectIdsRef.current.add(targetProjectId);
+        statusRequestGenerationRef.current.set(
+            targetProjectId,
+            (statusRequestGenerationRef.current.get(targetProjectId) ?? 0) + 1,
+        );
+        if (historyProjectIdRef.current === targetProjectId) {
+            cancelHistorySearch();
+            historySearchRef.current = null;
+            historyProjectIdRef.current = null;
+            setHistoryProjectId(null);
+            historyCommitsRef.current = [];
+            setHistoryCommits([]);
+            setHistoryFiles({});
+            setHistoryHasMore(false);
+            setIsHistoryLoaded(false);
+            setHistoryPath(null);
+            historyPathRef.current = null;
+            setHistoryFilesLoading({});
+            historyFilesLoadingRef.current.clear();
+            if (historyResetTimerRef.current !== null) {
+                window.clearTimeout(historyResetTimerRef.current);
+                historyResetTimerRef.current = null;
+            }
+        }
+        setChangedFilesByProject((previous) => {
+            if (!(targetProjectId in previous)) return previous;
+            const next = { ...previous };
+            delete next[targetProjectId];
+            return next;
+        });
+        setGitUiByProject((previous) => {
+            if (!(targetProjectId in previous)) return previous;
+            const next = { ...previous };
+            delete next[targetProjectId];
+            return next;
+        });
+        const timer = pushStatusTimersRef.current.get(targetProjectId);
+        if (timer !== undefined) window.clearTimeout(timer);
+        pushStatusTimersRef.current.delete(targetProjectId);
+        if (activeProjectIdRef.current === targetProjectId) {
+            setGitBranch('');
+            setBranches([]);
+            setIsSwitchingBranch(false);
+            setPushStatus({ state: GitActionState.Idle });
+        }
+    }, [cancelHistorySearch]);
 
     return {
         changedFiles,
+        changedFilesByProject,
+        gitUiByProject,
         gitBranch,
         pushStatus,
         branches,
@@ -640,6 +960,7 @@ export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
         historyHasMore,
         isHistoryLoading,
         isHistoryLoaded,
+        historyProjectId,
         historyFilesLoading,
         historyPath,
         fetchGitStatus,
@@ -666,5 +987,8 @@ export const useGit = ({ wsRef, isConnected }: UseGitParams) => {
         createBranch,
         stage,
         unstage,
+        resetGitState,
+        restoreProjectStatus,
+        removeProjectStatus,
     };
 };

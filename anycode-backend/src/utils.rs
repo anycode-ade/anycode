@@ -190,6 +190,9 @@ pub fn is_search_ignored_dir(path: &std::path::Path) -> bool {
 
 pub fn abs_file(input: &str) -> anyhow::Result<String> {
     let srcdir = std::path::PathBuf::from(input);
+    if !srcdir.is_absolute() {
+        anyhow::bail!("Path must be resolved against a project root before use");
+    }
     match std::fs::canonicalize(&srcdir) {
         Ok(c) => {
             #[cfg(windows)]
@@ -232,19 +235,12 @@ pub fn format_path(path: &str) -> String {
 }
 
 /// Normalize a path for watcher comparisons without requiring the file to exist.
-///
-/// This resolves `.` and `..` segments and makes relative paths absolute against the
-/// current working directory, but does not follow symlinks.
+/// Watcher paths are absolute; relative paths remain relative rather than using a
+/// process-global working directory.
 pub fn normalize_watch_path(path: &Path) -> PathBuf {
-    let absolute = if path.is_absolute() {
-        path.to_path_buf()
-    } else {
-        current_dir().join(path)
-    };
-
     let mut normalized = PathBuf::new();
 
-    for component in absolute.components() {
+    for component in path.components() {
         match component {
             Component::Prefix(prefix) => normalized.push(prefix.as_os_str()),
             Component::RootDir => normalized.push(component.as_os_str()),
@@ -261,8 +257,16 @@ pub fn normalize_watch_path(path: &Path) -> PathBuf {
 
 pub fn file_name(input: &str) -> String {
     let path_buf = std::path::PathBuf::from(input);
-    let file_name = path_buf.file_name().unwrap().to_string_lossy().into_owned();
-    file_name
+    path_buf
+        .file_name()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| {
+            if input.is_empty() {
+                String::new()
+            } else {
+                input.to_string()
+            }
+        })
 }
 
 pub fn relative_path(input: &str) -> String {
@@ -300,22 +304,18 @@ pub fn current_dir() -> PathBuf {
 }
 
 pub fn get_file_name(input: &str) -> String {
-    let path_buf = std::path::PathBuf::from(input);
-    let file_name = path_buf.file_name().unwrap().to_string_lossy().into_owned();
-    file_name
+    file_name(input)
 }
 
 pub fn path_to_uri(path: &str) -> anyhow::Result<Uri> {
     let path_obj = std::path::Path::new(path);
+    if !path_obj.is_absolute() {
+        anyhow::bail!("LSP paths must be resolved against a project root");
+    }
     let canonical_path = path_obj
         .canonicalize()
         .unwrap_or_else(|_| path_obj.to_path_buf());
-
-    let absolute_path = if canonical_path.is_absolute() {
-        canonical_path
-    } else {
-        std::env::current_dir()?.join(canonical_path)
-    };
+    let absolute_path = canonical_path;
 
     let url = url::Url::from_file_path(&absolute_path)
         .map_err(|_| anyhow::anyhow!("Failed to convert path to Url: {:?}", absolute_path))?;
@@ -378,8 +378,8 @@ mod tests {
 
     #[test]
     fn test_path_to_uri_relative() {
-        let path = "src/utils.rs";
-        let uri = path_to_uri(path).unwrap();
+        let path = std::env::current_dir().unwrap().join("src/utils.rs");
+        let uri = path_to_uri(&path.to_string_lossy()).unwrap();
         assert!(uri.to_string().starts_with("file:///"));
         assert!(uri.to_string().ends_with("src/utils.rs"));
     }
@@ -406,5 +406,14 @@ mod tests {
         };
         let uri = path_to_uri(path).unwrap();
         assert!(uri.to_string().contains("file%23name%3F.ts"));
+    }
+
+    #[test]
+    fn test_file_name_root_and_edge_cases() {
+        assert_eq!(file_name("/"), "/");
+        assert_eq!(file_name(""), "");
+        assert_eq!(file_name("/a/b/c.txt"), "c.txt");
+        assert_eq!(file_name("/a/b/dir"), "dir");
+        assert_eq!(get_file_name("/"), "/");
     }
 }

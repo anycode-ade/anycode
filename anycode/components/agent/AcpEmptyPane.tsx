@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { type AcpAgent, type AcpSession, type AcpSessionSummary } from '../../types';
 import { parseAgentDisplayName, resolveAgentDisplay } from '../../agents';
 import { AgentIcon } from './AgentIcon';
@@ -6,24 +6,31 @@ import { Icons } from '../Icons';
 import { loadSelectedProfiles, saveSelectedProfiles } from '../../storage';
 import { AcpOpenedAgentCard } from './AcpOpenedAgentCard';
 import { AcpSessionsView } from './AcpSessionsView';
+import type { WorkspaceProject } from '../../workspace';
 import './AcpEmptyPane.css';
 
 export { parseAgentDisplayName };
 
 interface AcpEmptyPaneProps {
   agents: AcpSession[];
+  projects: WorkspaceProject[];
+  selectedProjectId: string;
+  onSelectProject: (projectId: string) => void;
   availableAgents: AcpAgent[];
   onSelectAgent: (agentId: string) => void;
   onCloseAgent: (agentId: string) => void;
-  onStartAgent: (agent: AcpAgent) => string | null | undefined;
+  onStartAgent: (agent: AcpAgent, projectId?: string) => string | null | undefined;
   onOpenSettings?: () => void;
   onOpenRegistry?: () => void;
-  onLoadSessions?: (agent: AcpAgent) => Promise<AcpSessionSummary[]>;
-  onResumeSession?: (agent: AcpAgent, sessionId: string) => void;
+  onLoadSessions?: (agent: AcpAgent, projectId?: string) => Promise<AcpSessionSummary[]>;
+  onResumeSession?: (agent: AcpAgent, sessionId: string, projectId?: string) => void;
 }
 
 export const AcpEmptyPane: React.FC<AcpEmptyPaneProps> = ({
   agents,
+  projects,
+  selectedProjectId,
+  onSelectProject,
   availableAgents,
   onSelectAgent,
   onCloseAgent,
@@ -36,6 +43,56 @@ export const AcpEmptyPane: React.FC<AcpEmptyPaneProps> = ({
   const openedSessions = agents.filter((item) => item.isActive || item.isStarting);
   const [selectedProfiles, setSelectedProfiles] = useState<Record<string, string>>(() => loadSelectedProfiles());
   const [activeSessionsAgent, setActiveSessionsAgent] = useState<{ agent: AcpAgent; baseName: string } | null>(null);
+  const [openedProjectFilter, setOpenedProjectFilter] = useState<string>('all');
+  const selectedProject = projects.find((project) => project.id === selectedProjectId);
+
+  const openedProjectOptions = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const s of openedSessions) {
+      const pid = s.projectId || '__none__';
+      counts.set(pid, (counts.get(pid) ?? 0) + 1);
+    }
+
+    const opts: { id: string; name: string; count: number; title?: string }[] = [];
+    for (const proj of projects) {
+      const count = counts.get(proj.id) ?? 0;
+      if (count > 0 || projects.length > 1) {
+        opts.push({ id: proj.id, name: proj.name, count, title: proj.root });
+      }
+      counts.delete(proj.id);
+    }
+
+    for (const [pid, count] of counts.entries()) {
+      opts.push({
+        id: pid,
+        name: pid === '__none__' ? 'No project' : 'Other',
+        count,
+      });
+    }
+
+    return opts;
+  }, [openedSessions, projects]);
+
+  const showProjectFilter = openedProjectOptions.length > 1;
+
+  useEffect(() => {
+    if (openedProjectFilter !== 'all' && !openedProjectOptions.some((o) => o.id === openedProjectFilter)) {
+      setOpenedProjectFilter('all');
+    }
+  }, [openedProjectFilter, openedProjectOptions]);
+
+  const filteredOpenedSessions = useMemo(() => {
+    if (openedProjectFilter === 'all') return openedSessions;
+    return openedSessions.filter((s) => (s.projectId || '__none__') === openedProjectFilter);
+  }, [openedSessions, openedProjectFilter]);
+
+  const startAgent = (agent: AcpAgent) => {
+    if (!selectedProjectId) return;
+    const startedAgentId = onStartAgent(agent, selectedProjectId);
+    if (startedAgentId) {
+      onSelectAgent(startedAgentId);
+    }
+  };
 
   const handleSelectProfile = (baseName: string, agentId: string) => {
     setSelectedProfiles((prev) => {
@@ -51,7 +108,7 @@ export const AcpEmptyPane: React.FC<AcpEmptyPaneProps> = ({
         agent={activeSessionsAgent.agent}
         baseName={activeSessionsAgent.baseName}
         onClose={() => setActiveSessionsAgent(null)}
-        onLoadSessions={onLoadSessions}
+        onLoadSessions={(agent) => onLoadSessions(agent, selectedProjectId)}
         onResumeSession={onResumeSession}
       />
     );
@@ -61,22 +118,59 @@ export const AcpEmptyPane: React.FC<AcpEmptyPaneProps> = ({
     <div className="acp-pane-empty">
       {openedSessions.length > 0 && (
         <div className="acp-pane-opened-agents">
-          <div className="acp-pane-opened-agents-title">Opened agents</div>
-          <div className="acp-pane-opened-agents-list">
-            {openedSessions.map((openedSession) => (
-              <AcpOpenedAgentCard
-                key={openedSession.agentId}
-                session={openedSession}
-                availableAgents={availableAgents}
-                onSelectAgent={onSelectAgent}
-                onCloseAgent={onCloseAgent}
-              />
-            ))}
+          <div className="acp-pane-opened-agents-header">
+            <div className="acp-pane-opened-agents-title">Opened agents</div>
+            {showProjectFilter && (
+              <div className="acp-pane-project-filter" role="tablist" aria-label="Filter opened agents by project">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={openedProjectFilter === 'all'}
+                  className={`acp-pane-project-filter-btn ${openedProjectFilter === 'all' ? 'is-active' : ''}`}
+                  onClick={() => setOpenedProjectFilter('all')}
+                >
+                  <span>All</span>
+                  <span className="acp-pane-project-filter-count">{openedSessions.length}</span>
+                </button>
+                {openedProjectOptions.map((opt) => (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={openedProjectFilter === opt.id}
+                    className={`acp-pane-project-filter-btn ${openedProjectFilter === opt.id ? 'is-active' : ''}`}
+                    onClick={() => setOpenedProjectFilter(opt.id)}
+                    title={opt.title ?? opt.name}
+                  >
+                    <span className="acp-pane-project-filter-label">{opt.name}</span>
+                    <span className="acp-pane-project-filter-count">{opt.count}</span>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
+          {filteredOpenedSessions.length > 0 ? (
+            <div className="acp-pane-opened-agents-list">
+              {filteredOpenedSessions.map((openedSession) => (
+                <AcpOpenedAgentCard
+                  key={openedSession.agentId}
+                  session={openedSession}
+                  availableAgents={availableAgents}
+                  projects={projects}
+                  onSelectAgent={onSelectAgent}
+                  onCloseAgent={onCloseAgent}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="acp-pane-opened-empty-filter">
+              No opened agents in this project
+            </div>
+          )}
         </div>
       )}
       {availableAgents.length > 0 ? (
-        <div className="acp-pane-start-agents">
+        <div className="acp-pane-start-agents acp-pane-start-agents-wide">
           <div className="acp-pane-start-agents-title">Start a new agent</div>
           <div className="acp-pane-empty-actions">
             {(() => {
@@ -132,24 +226,19 @@ export const AcpEmptyPane: React.FC<AcpEmptyPaneProps> = ({
                     className="acp-start-card"
                     onClick={(event) => {
                       event.stopPropagation();
-                      const startedAgentId = onStartAgent(selectedAgent);
-                      if (startedAgentId) {
-                        onSelectAgent(startedAgentId);
-                      }
+                      startAgent(selectedAgent);
                     }}
                     role="button"
                     tabIndex={0}
+                    aria-disabled={!selectedProjectId}
                     onKeyDown={(e) => {
                       if (e.target !== e.currentTarget) return;
                       if (e.key === 'Enter' || e.key === ' ') {
                         e.preventDefault();
-                        const startedAgentId = onStartAgent(selectedAgent);
-                        if (startedAgentId) {
-                          onSelectAgent(startedAgentId);
-                        }
+                        startAgent(selectedAgent);
                       }
                     }}
-                    title={`Start ${group.baseName}`}
+                    title={selectedProjectId ? `Start ${group.baseName} in ${selectedProject?.name ?? 'selected project'}` : 'Select a project before starting an agent'}
                   >
                     <div className="acp-start-card-icon-box">
                       <AgentIcon
@@ -217,6 +306,44 @@ export const AcpEmptyPane: React.FC<AcpEmptyPaneProps> = ({
                               <path d="M20 21a8 8 0 1 0-16 0" />
                             </svg>
                             <span>{group.profiles[0].profileName}</span>
+                          </div>
+                        ) : null}
+
+                        {projects.length > 1 ? (
+                          <div
+                            className="acp-start-card-project-wrap"
+                            onClick={(event) => event.stopPropagation()}
+                            onPointerDown={(event) => event.stopPropagation()}
+                          >
+                            <svg className="acp-start-card-meta-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                            </svg>
+                            <span className="acp-start-card-project-label">
+                              {selectedProject?.name ?? 'Select project'}
+                            </span>
+                            <span className="acp-start-card-profile-arrow">▾</span>
+                            <select
+                              className="acp-start-card-project-select"
+                              value={selectedProjectId}
+                              onChange={(event) => {
+                                event.stopPropagation();
+                                onSelectProject(event.target.value);
+                              }}
+                              title={selectedProject?.root ?? 'Select the project for this agent'}
+                              aria-label={`Project for ${group.baseName}`}
+                            >
+                              {projects.map((project) => (
+                                <option key={project.id} value={project.id}>{project.name}</option>
+                              ))}
+                            </select>
+                          </div>
+                        ) : projects.length === 1 ? (
+                          // A single project has nothing to choose; a static label keeps clicks on the card.
+                          <div className="acp-start-card-profile-static">
+                            <svg className="acp-start-card-meta-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                            </svg>
+                            <span>{selectedProject?.name ?? 'Select project'}</span>
                           </div>
                         ) : null}
 

@@ -72,7 +72,7 @@ init();
 - `getCursor(): { line: number, column: number }` - Get current cursor position
 - `setCursor(line: number, column: number): void` - Set cursor position
 - `requestFocus(line: number, column: number, center?: boolean): void` - Request focus at position
-- `requestedFocus(): boolean` - Check if focus was requested
+- `requestedFocus(): { center: boolean } | null` - Consume a pending focus request (returns its `center` flag, or `null`)
 
 **Scroll:**
 - `hasScroll(): boolean` - Check if editor has scroll position

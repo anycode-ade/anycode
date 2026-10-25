@@ -735,7 +735,7 @@ const addPanel = (
         component: 'layoutPanel',
         title: definition.title,
         params: { panelId, panelKey, content },
-        minimumWidth: panelId === 'agent' ? 200 : 0,
+        minimumWidth: 0,
         minimumHeight: panelId === 'agent' ? 200 : 0,
         position: getDefaultPanelPosition(api, panelId),
         //@ts-ignore
@@ -743,11 +743,9 @@ const addPanel = (
     });
     if (panelId === 'agent') {
         panel.group.api.setConstraints({
-            minimumWidth: 200,
+            minimumWidth: 0,
             minimumHeight: 200,
         });
-        // @ts-ignore
-        panel.group._snap = true;
     } else {
         panel.group.api.setConstraints(PANEL_CONSTRAINTS);
     }
@@ -1116,11 +1114,9 @@ export const Layout: React.FC<LayoutProps> = ({
 
             if (panelId === 'agent') {
                 panel.group.api.setConstraints({
-                    minimumWidth: 200,
+                    minimumWidth: 0,
                     minimumHeight: 200,
                 });
-                // @ts-ignore
-                panel.group._snap = true;
             } else {
                 panel.group.api.setConstraints(PANEL_CONSTRAINTS);
             }
@@ -1156,7 +1152,7 @@ export const Layout: React.FC<LayoutProps> = ({
                 panelKey: targetPanelKey,
                 content: resolvePanelContent(panelId, targetPanelKey),
             },
-            minimumWidth: panelId === 'agent' ? 200 : 0,
+            minimumWidth: 0,
             minimumHeight: panelId === 'agent' ? 200 : 0,
             position: {
                 referenceGroup: pickerPanel.group,
@@ -1167,11 +1163,9 @@ export const Layout: React.FC<LayoutProps> = ({
         });
         if (panelId === 'agent') {
             targetPanel.group.api.setConstraints({
-                minimumWidth: 200,
+                minimumWidth: 0,
                 minimumHeight: 200,
             });
-            // @ts-ignore
-            targetPanel.group._snap = true;
         } else {
             targetPanel.group.api.setConstraints(PANEL_CONSTRAINTS);
         }

@@ -83,17 +83,16 @@ pub async fn auth_middleware(
     TryData(auth): TryData<serde_json::Value>,
     state: socketioxide::extract::State<AppState>,
 ) -> Result<(), AuthError> {
-    if !state.is_auth_required() {
-        return Ok(());
+    if state.is_auth_required() {
+        let candidate = extract_token_from_socket(&socket, auth.as_ref().ok());
+        if !state.is_token_valid(candidate.as_deref()) {
+            tracing::warn!("Socket.IO connection rejected: invalid or missing access token");
+            return Err(AuthError("Unauthorized: invalid or missing token".to_string()));
+        }
     }
 
-    let candidate = extract_token_from_socket(&socket, auth.as_ref().ok());
-    if state.is_token_valid(candidate.as_deref()) {
-        Ok(())
-    } else {
-        tracing::warn!("Socket.IO connection rejected: invalid or missing access token");
-        Err(AuthError("Unauthorized: invalid or missing token".to_string()))
-    }
+    crate::handlers::connection_handler::setup_socket(&socket, &state).await;
+    Ok(())
 }
 
 #[cfg(test)]

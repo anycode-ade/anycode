@@ -102,15 +102,33 @@ pub async fn local_image_handler(
         return (StatusCode::BAD_REQUEST, "missing path").into_response();
     }
 
-    let workspace_root = crate::utils::current_dir();
-    let workspace_root = match fs::canonicalize(&workspace_root).await {
-        Ok(dir) => dir,
-        Err(_) => {
-            return (StatusCode::INTERNAL_SERVER_ERROR, "workspace unavailable").into_response();
+    let requested_path = PathBuf::from(path);
+    let project = if requested_path.is_absolute() {
+        state
+            .workspace
+            .lock()
+            .await
+            .find_project_for_path(&requested_path)
+    } else {
+        let default_project_id = state.workspace.lock().await.default_project_id();
+        match default_project_id {
+            Some(project_id) => state.workspace.lock().await.get(&project_id),
+            None => None,
         }
     };
+    let Some(project) = project else {
+        return (StatusCode::FORBIDDEN, "image is outside open projects").into_response();
+    };
+    let workspace_root = match fs::canonicalize(&project.info.root).await {
+        Ok(dir) => dir,
+        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "project unavailable").into_response(),
+    };
 
-    let requested_path = resolve_workspace_path(path, &workspace_root);
+    let requested_path = if requested_path.is_absolute() {
+        requested_path
+    } else {
+        resolve_workspace_path(path, &workspace_root)
+    };
     let canonical_path = match fs::canonicalize(&requested_path).await {
         Ok(path) => path,
         Err(_) => return (StatusCode::NOT_FOUND, "image not found").into_response(),

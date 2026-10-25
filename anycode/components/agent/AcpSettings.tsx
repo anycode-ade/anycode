@@ -8,7 +8,70 @@ import {
 } from '../../agents';
 import './AcpSettings.css';
 import { AcpIcons } from './AcpIcons';
-import { AgentTemplatesManager } from './AgentTemplatesManager';
+import { AgentIcon } from './AgentIcon';
+import { AvatarCropModal } from '../AvatarCropModal';
+import { UserProfileSettings } from '../UserProfileSettings';
+
+const CHAT_FULL_WIDTH_KEY = 'anycode:chatFullWidth';
+const CHAT_FULL_WIDTH_EVENT = 'anycode:chat-full-width-change';
+// Max width of the chat message column when full-width rows are turned off.
+const CHAT_CONSTRAINED_MAX_WIDTH = '800px';
+
+// Full width is the default, so existing users see no change.
+const getChatFullWidth = (): boolean => {
+  try {
+    return localStorage.getItem(CHAT_FULL_WIDTH_KEY) !== 'false';
+  } catch {
+    return true;
+  }
+};
+
+const applyChatFullWidthStyle = (fullWidth: boolean) => {
+  if (typeof document !== 'undefined' && document.documentElement) {
+    document.documentElement.style.setProperty(
+      '--acp-chat-max-width',
+      fullWidth ? 'none' : CHAT_CONSTRAINED_MAX_WIDTH,
+    );
+    // Lets CSS align non-message states (e.g. the starting screen) to the same column.
+    document.documentElement.dataset.chatFullWidth = String(fullWidth);
+  }
+};
+
+const saveChatFullWidth = (fullWidth: boolean) => {
+  try {
+    localStorage.setItem(CHAT_FULL_WIDTH_KEY, String(fullWidth));
+  } catch (error) {
+    console.error('Failed to save chat full width setting:', error);
+  }
+  applyChatFullWidthStyle(fullWidth);
+  window.dispatchEvent(new CustomEvent(CHAT_FULL_WIDTH_EVENT));
+};
+
+// Initial apply, so the setting takes effect before the chat panel is opened.
+if (typeof window !== 'undefined') {
+  applyChatFullWidthStyle(getChatFullWidth());
+}
+
+const useChatFullWidth = () => {
+  const [fullWidth, setFullWidthState] = useState<boolean>(getChatFullWidth);
+
+  useEffect(() => {
+    const handler = () => {
+      const next = getChatFullWidth();
+      setFullWidthState(next);
+      applyChatFullWidthStyle(next);
+    };
+
+    window.addEventListener(CHAT_FULL_WIDTH_EVENT, handler);
+    window.addEventListener('storage', handler);
+    return () => {
+      window.removeEventListener(CHAT_FULL_WIDTH_EVENT, handler);
+      window.removeEventListener('storage', handler);
+    };
+  }, []);
+
+  return { fullWidth, setFullWidth: saveChatFullWidth };
+};
 
 interface AcpSettingsProps {
   agents: AcpAgent[];
@@ -34,6 +97,8 @@ export const AcpSettings: React.FC<AcpSettingsProps> = ({
   const [expandedSessions, setExpandedSessions] = useState<Record<string, boolean>>({});
   const [sessionsByAgent, setSessionsByAgent] = useState<Record<string, AcpSessionSummary[]>>({});
   const [loadingSessions, setLoadingSessions] = useState<Record<string, boolean>>({});
+  const [editingAvatarAgentIndex, setEditingAvatarAgentIndex] = useState<number | null>(null);
+  const { fullWidth: chatFullWidth, setFullWidth: setChatFullWidth } = useChatFullWidth();
 
   // Check if there are any changes
   const hasChanges = useMemo(() => {
@@ -51,6 +116,8 @@ export const AcpSettings: React.FC<AcpSettingsProps> = ({
         agent.name !== initialAgent.name ||
         agent.profile !== initialAgent.profile ||
         agent.command !== initialAgent.command ||
+        agent.avatar !== initialAgent.avatar ||
+        agent.avatarOriginal !== initialAgent.avatarOriginal ||
         JSON.stringify(agent.args) !== JSON.stringify(initialAgent.args) ||
         JSON.stringify(agent.env) !== JSON.stringify(initialAgent.env)
       );
@@ -58,6 +125,39 @@ export const AcpSettings: React.FC<AcpSettingsProps> = ({
   }, [agents, defaultAgentId, initialAgents, initialDefaultAgentId]);
 
   const [envInputs, setEnvInputs] = useState<Record<string, string>>({});
+
+  const handleSaveAgentAvatar = (
+    croppedAvatar: string | null,
+    originalDataUrl: string | null
+  ) => {
+    if (editingAvatarAgentIndex === null) return;
+    const newAgents = [...agents];
+    newAgents[editingAvatarAgentIndex] = {
+      ...newAgents[editingAvatarAgentIndex],
+      avatar: croppedAvatar || undefined,
+      avatarOriginal: originalDataUrl || undefined,
+    };
+    setAgents(newAgents);
+    setEditingAvatarAgentIndex(null);
+
+    // Immediately persist and sync across chat and app
+    const validAgents = newAgents.filter(a => a.name.trim() !== '' && a.command.trim() !== '');
+    onSave(validAgents, defaultAgentId);
+  };
+
+  const handleRemoveAgentAvatar = (index: number) => {
+    const newAgents = [...agents];
+    newAgents[index] = {
+      ...newAgents[index],
+      avatar: undefined,
+      avatarOriginal: undefined,
+    };
+    setAgents(newAgents);
+
+    // Immediately persist and sync across chat and app
+    const validAgents = newAgents.filter(a => a.name.trim() !== '' && a.command.trim() !== '');
+    onSave(validAgents, defaultAgentId);
+  };
 
   // Update state when props change (e.g., when ensureDefaultAgents is called)
   useEffect(() => {
@@ -341,6 +441,36 @@ export const AcpSettings: React.FC<AcpSettingsProps> = ({
       </div>
 
       <div className="agent-settings-content">
+        <div className="agent-settings-item agent-settings-user-profile-item">
+          <div className="agent-settings-item-header">
+            <h4>User Profile</h4>
+          </div>
+          <UserProfileSettings />
+        </div>
+
+        <div className="agent-settings-item">
+          <div className="agent-settings-item-header">
+            <h4>Chat</h4>
+          </div>
+          <div className="settings-option">
+            <div className="settings-option-info">
+              <span className="settings-option-label">Full width rows</span>
+              <span className="settings-option-desc">
+                Chat messages use the whole panel width. When off, they are limited to a centered column.
+              </span>
+            </div>
+            <button
+              type="button"
+              className={`settings-toggle-switch ${chatFullWidth ? 'active' : ''}`}
+              aria-label="Full width rows"
+              aria-pressed={chatFullWidth}
+              onClick={() => setChatFullWidth(!chatFullWidth)}
+            >
+              <span className="settings-toggle-knob" />
+            </button>
+          </div>
+        </div>
+
         {agents.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '32px 16px', color: 'var(--theme-muted-foreground, #888)', fontSize: '0.9em' }}>
             No agents configured. Click &quot;Add agent&quot; below to create a custom agent.
@@ -351,6 +481,30 @@ export const AcpSettings: React.FC<AcpSettingsProps> = ({
               <div className="agent-settings-item-header">
                 <h4>Agent {index + 1}</h4>
                 <div className="agent-settings-item-actions">
+                  <div
+                    className="agent-settings-header-avatar"
+                    onClick={() => setEditingAvatarAgentIndex(index)}
+                    title={`Customize avatar for ${agent.name}`}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        setEditingAvatarAgentIndex(index);
+                      }
+                    }}
+                  >
+                    {agent.avatar ? (
+                      <img src={agent.avatar} alt={agent.name} className="agent-settings-header-avatar-img" />
+                    ) : (
+                      <div className="agent-settings-header-avatar-placeholder">
+                        <AgentIcon name={agent.name} id={agent.id} size={18} />
+                      </div>
+                    )}
+                    <div className="agent-settings-header-avatar-overlay">
+                      <span className="agent-settings-header-avatar-icon">✏️</span>
+                    </div>
+                  </div>
                   <button
                     className="agent-settings-sessions-btn"
                     onClick={() => handleAddProfile(agent)}
@@ -483,9 +637,19 @@ export const AcpSettings: React.FC<AcpSettingsProps> = ({
             Add agent
           </button>
         </div>
-
-        <AgentTemplatesManager />
       </div>
+
+      {editingAvatarAgentIndex !== null && agents[editingAvatarAgentIndex] && (
+        <AvatarCropModal
+          isOpen={true}
+          onClose={() => setEditingAvatarAgentIndex(null)}
+          title={`Avatar: ${agents[editingAvatarAgentIndex].name || 'Agent'}`}
+          currentAvatar={agents[editingAvatarAgentIndex].avatar || null}
+          currentOriginal={agents[editingAvatarAgentIndex].avatarOriginal || null}
+          hideSizeSelector={true}
+          onSave={handleSaveAgentAvatar}
+        />
+      )}
     </div>
   );
 };

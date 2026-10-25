@@ -8,6 +8,9 @@ interface AcpWorkGroupProps {
   searchActive?: boolean;
   isSearchMatch?: boolean;
   onExpansionChange?: () => void;
+  // The user's own choice from an earlier mount, applied when the group mounts again.
+  storedExpanded?: boolean;
+  onExpandedChange?: (expanded: boolean) => void;
   children: React.ReactNode;
 }
 
@@ -17,9 +20,11 @@ export const AcpWorkGroup: React.FC<AcpWorkGroupProps> = ({
   searchActive = false,
   isSearchMatch = false,
   onExpansionChange,
+  storedExpanded,
+  onExpandedChange,
   children,
 }) => {
-  const [isExpanded, setIsExpanded] = useState(isLatest);
+  const [isExpanded, setIsExpanded] = useState(storedExpanded ?? isLatest);
   const previousIsLatestRef = useRef(isLatest);
 
   useEffect(() => {
@@ -38,7 +43,8 @@ export const AcpWorkGroup: React.FC<AcpWorkGroupProps> = ({
     previousIsLatestRef.current = isLatest;
   }, [isLatest, isSearchMatch, onExpansionChange, searchActive]);
 
-  if (isLatest && !searchActive) {
+  // The active group shows its header already expanded; it collapses once it becomes historical.
+  if (messageCount <= 1) {
     return <>{children}</>;
   }
 
@@ -51,6 +57,7 @@ export const AcpWorkGroup: React.FC<AcpWorkGroupProps> = ({
         className="acp-work-group-header" 
         onClick={() => {
           setIsExpanded(!isExpanded);
+          onExpandedChange?.(!isExpanded);
           onExpansionChange?.();
         }}
       >

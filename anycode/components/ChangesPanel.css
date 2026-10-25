@@ -21,6 +21,7 @@
 
 .changes-header {
     display: flex;
+    flex-wrap: wrap;
     min-width: 0;
     overflow: hidden;
     align-items: center;
@@ -33,6 +34,7 @@
     display: flex;
     align-items: center;
     flex: 0 0 auto;
+    margin-left: auto;
 }
 
 .changes-push-status {
@@ -86,11 +88,20 @@
 
 .changes-title {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     min-width: 0;
     overflow: hidden;
     gap: 6px;
     flex: 1 1 auto;
+}
+
+.changes-branch-group {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    flex: 0 1 auto;
 }
 
 .changes-branch-icon {
@@ -143,6 +154,40 @@
 
 .changes-branch-select:hover:not(:disabled) {
     background-color: transparent;
+}
+
+.changes-project-selector {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex: 0 0 auto;
+    min-width: 0;
+    color: var(--theme-tab-foreground, #888);
+    cursor: pointer;
+}
+
+.changes-project-selector > svg {
+    flex: 0 0 auto;
+}
+
+.changes-project-select {
+    flex: 0 0 auto;
+    padding: 0;
+}
+
+.changes-project-select-chevron {
+    display: inline-flex;
+    align-items: center;
+    flex: 0 0 auto;
+    width: 12px;
+    height: 12px;
+    pointer-events: none;
+}
+
+.changes-project-select-chevron svg {
+    display: block;
+    width: 12px;
+    height: 12px;
 }
 
 .changes-new-branch-container {
@@ -592,7 +637,6 @@
     color: var(--theme-accent-foreground, #fff) !important;
 }
 
-.changes-item.active .changes-filename,
 .changes-item.active .changes-revert-btn,
 .changes-item.active .changes-stage-toggle-btn,
 .changes-item.active .changes-stat-added,

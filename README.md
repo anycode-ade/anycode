@@ -26,14 +26,69 @@
 
 The project consists of several packages:
 
-- **`anycode/`** - Main React frontend application
+- **`anycode/`** - Main React frontend application and Tauri desktop app
 - **`anycode-base/`** - Core editor library with tree-sitter support
 - **`anycode-react/`** - React wrapper for the editor
 - **`anycode-backend/`** - Rust backend for file system access
 - **`anycode-example/`** - Example application demonstrating anycode usage
 
 ## Installation
-### From releases
+
+### Desktop Application
+
+Download the prebuilt native installer for your operating system from [GitHub Releases](https://github.com/anycode-ade/anycode/releases).
+
+#### 🍏 macOS
+1. Download the `.dmg` matching your Mac architecture:
+   - **Apple Silicon** (M-series / ARM64): `anycode-desktop-macos-arm64.dmg`
+   - **Intel**: `anycode-desktop-macos-x64.dmg`
+2. Open the `.dmg` and drag `anycode.app` to your **Applications** folder.
+3. **First launch (Gatekeeper approval):**  
+   Because community builds are not notarized through Apple's paid program, macOS may show a *"cannot be opened because the developer cannot be verified"* warning.
+   - **Quick fix via Terminal:**
+     ```bash
+     xattr -cr /Applications/anycode.app
+     ```
+   - **Or via Finder:** Right-click (or Control-click) `anycode.app` in `/Applications`, click **Open**, then click **Open** in the confirmation prompt.
+
+---
+
+#### 🪟 Windows (10 / 11)
+1. Download `anycode-desktop-windows-x64-setup.exe`.
+2. Double-click the installer and follow the setup wizard.
+3. **Microsoft Defender SmartScreen prompt:**  
+   Windows Defender may show a blue prompt stating *"Windows protected your PC"*.
+   - Click **More info** (*Подробнее*).
+   - Click **Run anyway** (*Выполнить в любом случае*).
+   *(Anycode utilizes Microsoft Edge WebView2, which is already built into modern Windows 10/11).*
+
+---
+
+#### 🐧 Linux
+
+##### Option 1: Debian / Ubuntu / Mint / Pop!_OS (`.deb`)
+1. Download `anycode-desktop-linux-amd64.deb`.
+2. Install via terminal:
+   ```bash
+   sudo dpkg -i anycode-desktop-linux-amd64.deb
+   sudo apt-get install -f # ensures system webkit2gtk dependency is satisfied
+   ```
+   Or double-click the `.deb` file in your desktop file manager to install through the Software Center.
+
+##### Option 2: Arch / Fedora / Generic Linux (`.tar.gz`)
+1. Download `anycode-desktop-linux-x86_64.tar.gz`.
+2. Extract and run anywhere:
+   ```bash
+   tar -xzf anycode-desktop-linux-x86_64.tar.gz
+   ./anycode-desktop
+   ```
+3. *Requirement:* Ensure WebKitGTK is installed on your distribution:
+   - **Arch / Manjaro:** `sudo pacman -S webkit2gtk-4.1`
+   - **Fedora / RHEL:** `sudo dnf install webkit2gtk4.1`
+
+---
+
+### CLI & Server (From releases)
 
 #### macOS and Linux one-shot installer:
 ```bash
@@ -115,7 +170,10 @@ Prerequisites:
    cargo run --release
    ```
 
-5. **Open your browser** and navigate to the frontend URL
+5. **Run Desktop app in development:**
+   ```bash
+   pnpm --filter anycode tauri dev
+   ```
 
 ## Contributing
 

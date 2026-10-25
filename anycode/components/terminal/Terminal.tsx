@@ -9,11 +9,12 @@ import { copyTextToClipboard } from "../../utils";
 
 interface TerminalProps {
   name: string;
+  session: string;
   focusRequestToken: number | null;
-  onData: (name: string, data: string) => void;
-  onMessage: (name: string, callback: (data: string) => void) => (() => void);
-  onResize: (name: string, cols: number, rows: number) => void;
-  isTerminalClosing: (name: string) => boolean;
+  onData: (name: string, session: string, data: string) => void;
+  onMessage: (name: string, session: string, callback: (data: string) => void) => (() => void);
+  onResize: (name: string, session: string, cols: number, rows: number) => void;
+  isTerminalClosing: (name: string, session: string) => boolean;
   isConnected: boolean;
   onUploadFile: (file: File) => Promise<string | null>;
   fontConfig: FontConfig;
@@ -22,13 +23,22 @@ interface TerminalProps {
 const TERMINAL_DELAY_MS = 100;
 const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB
 const MAX_SNAPSHOT_CHARS = 200_000;
+const terminalStorageKey = (kind: "data" | "mouseMode", name: string, session: string) => (
+  session === "anycode"
+    ? `terminal:${kind}:${name}`
+    : `terminal:${kind}:${session}:${name}`
+);
 
 const applyTerminalTheme = (element: HTMLElement) => {
   const rootStyles = getComputedStyle(document.documentElement);
-  const background =
-    rootStyles.getPropertyValue("--background-color").trim() ||
-    rootStyles.getPropertyValue("--theme-background").trim() ||
-    "#242424";
+  const isDynamicBg = Boolean(
+    document.querySelector(".app-with-dynamic-bg, [data-dynamic-bg='global']")
+  );
+  const background = isDynamicBg
+    ? "transparent"
+    : rootStyles.getPropertyValue("--background-color").trim() ||
+      rootStyles.getPropertyValue("--theme-background").trim() ||
+      "#0a0a0a";
   const foreground =
     rootStyles.getPropertyValue("--foreground-color").trim() ||
     rootStyles.getPropertyValue("--theme-foreground").trim() ||
@@ -38,6 +48,7 @@ const applyTerminalTheme = (element: HTMLElement) => {
     "rgba(86, 156, 214, 0.3)";
 
   element.style.setProperty("--term-bg", background);
+  element.style.setProperty("--term-app-bg", background);
   element.style.setProperty("--term-fg", foreground);
   element.style.setProperty("--term-cursor", foreground);
   element.style.setProperty("--term-selection-bg", selectionBackground);
@@ -71,6 +82,7 @@ const syncTerminalBottomPad = (element: HTMLElement, terminal: WTerm) => {
 
 const Terminal: React.FC<TerminalProps> = ({
   name,
+  session,
   focusRequestToken,
   onData,
   onMessage,
@@ -185,7 +197,7 @@ const Terminal: React.FC<TerminalProps> = ({
 
     if (paths.length > 0) {
       const formattedPaths = paths.map((p) => `"${p}"`).join(" ");
-      onDataRef.current(name, formattedPaths);
+      onDataRef.current(name, session, formattedPaths);
     }
   };
 
@@ -227,7 +239,7 @@ const Terminal: React.FC<TerminalProps> = ({
 
     if (paths.length > 0) {
       const formattedPaths = paths.map((p) => `"${p}"`).join(" ");
-      onDataRef.current(name, formattedPaths);
+      onDataRef.current(name, session, formattedPaths);
     }
   };
 
@@ -249,14 +261,14 @@ const Terminal: React.FC<TerminalProps> = ({
   };
 
   const saveTerminalState = () => {
-    if (isTerminalClosingRef.current(name)) return;
+    if (isTerminalClosingRef.current(name, session)) return;
     try {
       const mouseTracking = wtermRef.current?.bridge?.mouseTracking?.();
       if (mouseTracking !== undefined) {
         mouseModeRef.current = mouseTracking !== 0;
       }
-      localStorage.setItem(`terminal:data:${name}`, savedSnapshotRef.current);
-      localStorage.setItem(`terminal:mouseMode:${name}`, mouseModeRef.current.toString());
+      localStorage.setItem(terminalStorageKey("data", name, session), savedSnapshotRef.current);
+      localStorage.setItem(terminalStorageKey("mouseMode", name, session), mouseModeRef.current.toString());
     } catch {
       // Ignore quota errors
     }
@@ -273,7 +285,7 @@ const Terminal: React.FC<TerminalProps> = ({
   };
 
   const restoreTerminalState = (terminal: WTerm) => {
-    const snapshot = savedSnapshotRef.current || localStorage.getItem(`terminal:data:${name}`) || "";
+    const snapshot = savedSnapshotRef.current || localStorage.getItem(terminalStorageKey("data", name, session)) || "";
     savedSnapshotRef.current = snapshot;
 
     isRestoringRef.current = true;
@@ -282,7 +294,7 @@ const Terminal: React.FC<TerminalProps> = ({
         terminal.write(snapshot);
       }
 
-      const savedMouseMode = localStorage.getItem(`terminal:mouseMode:${name}`);
+      const savedMouseMode = localStorage.getItem(terminalStorageKey("mouseMode", name, session));
       if (savedMouseMode === "true") {
         mouseModeRef.current = true;
         terminal.write("\x1b[?1000h\x1b[?1002h\x1b[?1003h\x1b[?1006h");
@@ -388,7 +400,7 @@ const Terminal: React.FC<TerminalProps> = ({
       queueSnapshotSave();
     };
 
-    cleanupMessage = onMessage(name, handler);
+    cleanupMessage = onMessage(name, session, handler);
 
     const themeObserver = new MutationObserver(() => {
       if (terminalRef.current) {
@@ -399,6 +411,13 @@ const Terminal: React.FC<TerminalProps> = ({
       attributes: true,
       attributeFilter: ["style", "class", "data-theme"],
     });
+    const appContainer = document.querySelector(".app-container");
+    if (appContainer) {
+      themeObserver.observe(appContainer, {
+        attributes: true,
+        attributeFilter: ["class", "data-dynamic-bg"],
+      });
+    }
     themeObserverRef.current = themeObserver;
 
     const onDocumentSelectionChange = () => {
@@ -421,13 +440,13 @@ const Terminal: React.FC<TerminalProps> = ({
           onData: (data) => {
             if (isRestoringRef.current) return;
             wasAtBottomRef.current = true;
-            onDataRef.current(name, data);
+            onDataRef.current(name, session, data);
           },
           onResize: (nextCols, nextRows) => {
             if (terminalRef.current) {
               syncTerminalBottomPad(terminalRef.current, terminal);
             }
-            onResizeRef.current(name, nextCols, nextRows);
+            onResizeRef.current(name, session, nextCols, nextRows);
           },
         });
         wtermRef.current = terminal;
@@ -456,7 +475,7 @@ const Terminal: React.FC<TerminalProps> = ({
             terminalRef.current.clientWidth > 0 && terminalRef.current.clientHeight > 0;
           restoreTerminalScroll(terminal, terminalRef.current);
         }
-        onResizeRef.current(name, terminal.cols, terminal.rows);
+        onResizeRef.current(name, session, terminal.cols, terminal.rows);
 
         requestAnimationFrame(() => {
           if (cancelled || wtermRef.current !== terminal) return;
@@ -531,9 +550,9 @@ const Terminal: React.FC<TerminalProps> = ({
       document.removeEventListener("selectionchange", onDocumentSelectionChange);
       if (cleanupMessage) cleanupMessage();
       clearSaveTimer();
-      if (isTerminalClosingRef.current(name)) {
-        localStorage.removeItem(`terminal:data:${name}`);
-        localStorage.removeItem(`terminal:mouseMode:${name}`);
+      if (isTerminalClosingRef.current(name, session)) {
+        localStorage.removeItem(terminalStorageKey("data", name, session));
+        localStorage.removeItem(terminalStorageKey("mouseMode", name, session));
       } else {
         saveTerminalState();
       }
@@ -556,7 +575,7 @@ const Terminal: React.FC<TerminalProps> = ({
       }
       isReadyRef.current = false;
     };
-  }, [isConnected, name, onMessage]);
+  }, [isConnected, name, session, onMessage]);
 
   useEffect(() => {
     if (!terminalRef.current) return;
@@ -600,6 +619,7 @@ const Terminal: React.FC<TerminalProps> = ({
 
   return (
     <div
+      className="terminal-wrapper"
       onKeyDownCapture={handleKeyDownCapture}
       onPasteCapture={handlePaste}
       onDragOverCapture={handleDragOver}
@@ -611,7 +631,6 @@ const Terminal: React.FC<TerminalProps> = ({
         height: "100%",
         padding: "6px 8px",
         boxSizing: "border-box",
-        backgroundColor: "var(--background-color, var(--theme-background, #242424))",
         color: "var(--foreground-color, var(--theme-foreground, #f0f0f0))",
         position: "relative",
       }}

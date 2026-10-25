@@ -3,14 +3,22 @@ use std::collections::HashSet;
 use socketioxide::extract::{SocketRef, State};
 use tracing::{error, info};
 
-use crate::app_state::{AppState, is_language_opened};
+use crate::app_state::AppState;
 use crate::handlers::{
     acp_handler::*, acp_registry_handler::*, git_handler::*, io_handler::*, lsp_handler::*, search_handler::*,
-    terminal_handler::*, theme_handler::*,
+    terminal_handler::*, theme_handler::*, workspace_handler::*,
 };
 
-pub async fn handle_connect(socket: SocketRef, _state: State<AppState>) {
-    info!("Socket.IO connected: {:?} {:?}", socket.ns(), socket.id);
+pub async fn setup_socket(socket: &SocketRef, state: &AppState) {
+    let sid = socket.id.as_str().to_string();
+    let default_project_id = state.workspace.lock().await.default_project_id();
+    {
+        let mut sockets = state.socket2data.lock().await;
+        if sockets.contains_key(&sid) {
+            return;
+        }
+        sockets.entry(sid).or_default().active_project_id = default_project_id;
+    }
 
     socket.on("file:open", handle_file_open);
     socket.on("dir:list", handle_dir_list);
@@ -43,7 +51,9 @@ pub async fn handle_connect(socket: SocketRef, _state: State<AppState>) {
     socket.on("acp:queue:update", handle_acp_queue_update);
     socket.on("acp:queue:remove", handle_acp_queue_remove);
     socket.on("acp:queue:move", handle_acp_queue_move);
+    socket.on("acp:queue:send_now", handle_acp_queue_send_now);
     socket.on("acp:stop", handle_acp_stop);
+    socket.on("acp:stop_all", handle_acp_stop_all);
     socket.on("acp:cancel", handle_acp_cancel);
     socket.on("acp:set_model", handle_acp_set_model);
     socket.on("acp:set_reasoning", handle_acp_set_reasoning);
@@ -82,9 +92,21 @@ pub async fn handle_connect(socket: SocketRef, _state: State<AppState>) {
     socket.on("git:stage", handle_git_stage);
     socket.on("git:unstage", handle_git_unstage);
 
+    socket.on("workspace:state", handle_workspace_state);
+    socket.on("workspace:browse", handle_workspace_browse);
+    socket.on("workspace:add-project", handle_workspace_add_project);
+    socket.on("workspace:remove-project", handle_workspace_remove_project);
+    socket.on("workspace:remove-recent", handle_workspace_remove_recent);
+    socket.on("workspace:select-project", handle_workspace_select_project);
+    socket.on("workspace:close", handle_workspace_close);
     socket.on("theme:list", handle_theme_list);
     socket.on("theme:get", handle_theme_get);
-    socket.on_disconnect(handle_disconnect)
+    socket.on_disconnect(handle_disconnect);
+}
+
+pub async fn handle_connect(socket: SocketRef, state: State<AppState>) {
+    info!("Socket.IO connected: {:?} {:?}", socket.ns(), socket.id);
+    setup_socket(&socket, &state).await;
 }
 
 pub async fn handle_disconnect(socket: SocketRef, state: State<AppState>) {
@@ -103,20 +125,14 @@ pub async fn handle_disconnect(socket: SocketRef, state: State<AppState>) {
                 if let Some(cancel) = socket_data.files_search_cancel.take() {
                     cancel.cancel();
                 }
+                for (_, token) in socket_data.acp_subscribers.drain() {
+                    token.cancel();
+                }
                 socket_data.cancel_git_history_search();
                 socket_data.opened_files
             }
             None => return,
         }
-    };
-
-    // Get languages for files opened by this socket
-    let languages = {
-        let f2c = state.file2code.lock().await;
-        opened_files
-            .iter()
-            .filter_map(|path| f2c.get(path).map(|code| code.lang.clone()))
-            .collect::<HashSet<_>>()
     };
 
     // Spawn a delayed task to clean up files and LSP servers (5-second grace period)
@@ -143,24 +159,55 @@ pub async fn handle_disconnect(socket: SocketRef, state: State<AppState>) {
                 .collect()
         };
 
-        // Close files (notify LSP didClose)
-        if !files_to_close.is_empty() {
-            let mut lsp_manager = state.lsp_manager.lock().await;
-            for (file_path, lang) in &files_to_close {
-                if let Some(lsp) = lsp_manager.get(lang).await {
-                    if let Err(e) = lsp.did_close(file_path) {
-                        error!("Failed to notify LSP didClose for {}: {:?}", file_path, e);
-                    }
+        // Close files using the LSP manager that owns each file's project root.
+        for (file_path, lang) in &files_to_close {
+            let lsp_manager = state.lsp_for_path(file_path).await;
+            let mut lsp_manager = lsp_manager.lock().await;
+            if let Some(lsp) = lsp_manager.get(lang).await {
+                if let Err(e) = lsp.did_close(file_path) {
+                    error!("Failed to notify LSP didClose for {}: {:?}", file_path, e);
                 }
             }
         }
 
-        // Stop LSP servers for languages that have no files opened by other active sockets
-        for lang in languages {
-            if !is_language_opened(&lang, &state).await {
-                info!("Lsp autoclose after grace period: '{}'", lang);
-                let mut lsp_manager = state.lsp_manager.lock().await;
-                lsp_manager.stop(&lang).await;
+        // Stop a language server only when that project has no remaining open files.
+        let mut project_languages = std::collections::HashMap::<String, HashSet<String>>::new();
+        for path in &opened_files {
+            let lang = state
+                .file2code
+                .lock()
+                .await
+                .get(path)
+                .map(|code| code.lang.clone());
+            let Some(lang) = lang else { continue };
+            if let Some(project) = state.project_for_path(path).await {
+                project_languages
+                    .entry(project.info.id)
+                    .or_default()
+                    .insert(lang);
+            }
+        }
+        for (project_id, languages) in project_languages {
+            let project = state.workspace.lock().await.get(&project_id);
+            let Some(project) = project else { continue };
+            for lang in languages {
+                let root = std::path::Path::new(&project.info.root);
+                let has_open_file = {
+                    let sockets_data = state.socket2data.lock().await;
+                    let opened: Vec<String> = sockets_data
+                        .values()
+                        .flat_map(|data| data.opened_files.iter().cloned())
+                        .collect();
+                    let f2c = state.file2code.lock().await;
+                    opened.iter().any(|path| {
+                        std::path::Path::new(path).starts_with(root)
+                            && f2c.get(path).is_some_and(|code| code.lang == lang)
+                    })
+                };
+                if !has_open_file {
+                    info!("Lsp autoclose after grace period: '{}' in {}", lang, project.info.root);
+                    project.lsp.lock().await.stop(&lang).await;
+                }
             }
         }
     });

@@ -33,11 +33,12 @@ import {
 import { loadReadMessageCounts, saveReadMessageCounts } from '../storage';
 import { toolOutputCache } from '../features/agents/toolOutputCache';
 
-const MESSAGE_FLUSH_MS = 100;
+const MESSAGE_FLUSH_MS = 25;
 
 type UseAgentsParams = {
     wsRef: React.RefObject<Socket | null>;
     isConnected: boolean;
+    projectId?: string | null;
     onAgentStarted?: () => void;
 };
 type PendingAcpEvent = { agent_id: string; item: AcpMessage };
@@ -86,6 +87,10 @@ const normalizeVariantKind = (kind: string): string => {
     return k.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase();
 };
 
+const normalizeMessageContent = (text: string): string => {
+    return text.replace(/context canceled([A-Z])/gi, 'Context canceled: $1');
+};
+
 const contentBlockToMessages = (
     content: unknown,
     textRole: 'user' | 'assistant' | 'thought',
@@ -95,8 +100,9 @@ const contentBlockToMessages = (
 
     const contentType = asString(contentRecord.type)?.toLowerCase();
     if (contentType === 'text') {
-        const text = asString(contentRecord.text);
-        if (!text) return [];
+        const rawText = asString(contentRecord.text);
+        if (!rawText) return [];
+        const text = normalizeMessageContent(rawText);
         if (textRole === 'user') {
             return [{ role: 'user', content: text, is_chunk: true } satisfies AcpUserMessage];
         }
@@ -129,8 +135,9 @@ const contentBlockToMessages = (
     }
 
     if ('Text' in contentRecord) {
-        const text = asString(asRecord(contentRecord.Text)?.text);
-        if (!text) return [];
+        const rawText = asString(asRecord(contentRecord.Text)?.text);
+        if (!rawText) return [];
+        const text = normalizeMessageContent(rawText);
         if (textRole === 'user') {
             return [{ role: 'user', content: text, is_chunk: true } satisfies AcpUserMessage];
         }
@@ -218,7 +225,10 @@ const projectRawUpdate = (rawMessage: AcpRawUpdateMessage): AcpMessage[] => {
             session_id: sessionId,
             name: title,
             title,
-            command: asString(rawInput?.cmd) ?? asString(rawInput?.command) ?? title,
+            command: asString(rawInput?.cmd)
+                ?? asString(rawInput?.command)
+                ?? asString(rawInput?.CommandLine)
+                ?? asString(getAnyField(payload, "command")),
             arguments: payload,
             kind: asString(getAnyField(payload, 'kind', 'tool_kind')),
             status: normalizeToolStatus(getAnyField(payload, 'status')),
@@ -233,15 +243,17 @@ const projectRawUpdate = (rawMessage: AcpRawUpdateMessage): AcpMessage[] => {
         return [call];
     }
 
-    if ((kind === 'tool_call_update') && payload) {
-        const id = asString(getAnyField(payload, 'tool_call_id', 'toolCallId', 'id')) ?? '';
-        if (!id) return [];
+    if ((kind === 'tool_call_update' || kind === 'tool_result' || kind === 'tool_call_result') && payload) {
         const fields = asRecord(getAnyField(payload, 'fields'));
+        const id = asString(getAnyField(payload, 'tool_call_id', 'toolCallId', 'id'))
+            ?? asString(getAnyField(fields, 'tool_call_id', 'toolCallId', 'id'))
+            ?? '';
+        if (!id) return [];
         const status = normalizeToolStatus(getAnyField(fields, 'status') ?? getAnyField(payload, 'status'));
-        const basePayload = fields ?? payload;
-        const withId = { tool_call_id: id, session_id: sessionId, ...basePayload };
+        const mergedPayload = fields ? { ...payload, ...fields } : payload;
+        const withId = { ...mergedPayload, tool_call_id: id, session_id: sessionId };
 
-        if (status === 'completed') {
+        if (status === 'completed' || kind === 'tool_result' || kind === 'tool_call_result') {
             const result: AcpToolResultMessage = {
                 role: 'tool_result',
                 id,
@@ -249,7 +261,6 @@ const projectRawUpdate = (rawMessage: AcpRawUpdateMessage): AcpMessage[] => {
             };
             return [result];
         }
-
 
         const update: AcpToolUpdateMessage = {
             role: 'tool_update',
@@ -313,6 +324,7 @@ export const mergeServerAndOptimisticQueue = (
 export const useAgents = ({
     wsRef,
     isConnected,
+    projectId,
     onAgentStarted,
 }: UseAgentsParams) => {
     const [acpSessions, setAcpSessions] = useState<Map<string, AcpSession>>(new Map());
@@ -451,6 +463,22 @@ export const useAgents = ({
             return newSessions;
         });
     }, []);
+
+    const removeProjectSessions = useCallback((projectId: string) => {
+        setAcpSessions((prev) => {
+            const next = new Map(prev);
+            for (const [agentId, session] of next) {
+                if (session.projectId === projectId) {
+                    closedAgentIdsRef.current.add(agentId);
+                    next.delete(agentId);
+                }
+            }
+            if (selectedAgentId && !next.has(selectedAgentId)) {
+                setSelectedAgentId(null);
+            }
+            return next;
+        });
+    }, [selectedAgentId]);
     
     const mergeChunkMessages = (messages: AcpMessage[]): AcpMessage[] => {
         const merged: AcpMessage[] = [];
@@ -466,9 +494,13 @@ export const useAgents = ({
                     && last.role === item.role
                     && (last.role === 'user' || last.role === 'assistant' || last.role === 'thought')
                 ) {
+                    let nextContent = item.content;
+                    if (last.content.endsWith('context canceled') && /^[A-Z]/.test(nextContent)) {
+                        nextContent = ': ' + nextContent;
+                    }
                     merged[merged.length - 1] = {
                         ...last,
-                        content: last.content + item.content,
+                        content: normalizeMessageContent(last.content + nextContent),
                     };
                     continue;
                 }
@@ -504,15 +536,34 @@ export const useAgents = ({
     const handleAcpMessageImmediate = useCallback((data: { agent_id: string; item: AcpMessage }) => {
         if (data.item.role === 'prompt_state') {
             const promptState = data.item as AcpPromptStateMessage;
-            updateSession(data.agent_id, (existing) => existing ? {
-                ...existing,
-                isProcessing: promptState.is_processing,
-            } : {
-                agentId: data.agent_id,
-                agentName: '',
-                messages: [],
-                isActive: true,
-                isProcessing: promptState.is_processing,
+            updateSession(data.agent_id, (existing) => {
+                if (!existing) {
+                    return {
+                        agentId: data.agent_id,
+                        agentName: '',
+                        messages: [],
+                        isActive: true,
+                        isProcessing: promptState.is_processing,
+                    };
+                }
+                const isProcessing = promptState.is_processing;
+                const messages = !isProcessing
+                    ? existing.messages.map((msg) => {
+                        if (msg.role === 'tool_call') {
+                            const tc = msg as AcpToolCallMessage;
+                            if (!tc.status || tc.status === 'in_progress' || tc.status === 'pending') {
+                                return { ...tc, status: 'canceled' as const };
+                            }
+                        }
+                        return msg;
+                    })
+                    : existing.messages;
+
+                return {
+                    ...existing,
+                    messages,
+                    isProcessing,
+                };
             });
             return;
         }
@@ -654,13 +705,14 @@ export const useAgents = ({
                     }
 
                     if (projectedItem.role === 'user') {
-                        const lastMessage = messages[messages.length - 1];
+                        const lastUser = messages.findLast((m): m is AcpUserMessage => m.role === 'user');
                         // send_prompt adds the complete user message before ACP
                         // echoes user_message_chunk for the live prompt.
-                        if (lastMessage?.role === 'user') {
-                            if (lastMessage.client_id && lastMessage.content === projectedItem.content) {
-                                messages[messages.length - 1] = {
-                                    ...lastMessage,
+                        if (lastUser && lastUser.content === projectedItem.content) {
+                            if (lastUser.client_id) {
+                                const idx = messages.lastIndexOf(lastUser);
+                                messages[idx] = {
+                                    ...lastUser,
                                     client_id: undefined,
                                 };
                             }
@@ -719,14 +771,35 @@ export const useAgents = ({
             }
 
             if (message.role === 'user') {
-                const lastMessage = existing.messages[existing.messages.length - 1];
-                if (lastMessage?.role === 'user' && lastMessage.client_id && lastMessage.content === message.content) {
-                    const updatedMessages = [...existing.messages];
-                    updatedMessages[updatedMessages.length - 1] = message;
-                    return {
-                        ...existing,
-                        messages: updatedMessages,
-                    };
+                // Check if there is an optimistic user message to reconcile
+                const optimisticIndex = existing.messages.findLastIndex(
+                    (m) => m.role === 'user' && Boolean((m as AcpUserMessage).client_id)
+                );
+                if (optimisticIndex !== -1) {
+                    const optimisticMessage = existing.messages[optimisticIndex] as AcpUserMessage;
+                    if (
+                        optimisticMessage.content === message.content
+                        || (message.client_id && optimisticMessage.client_id === message.client_id)
+                    ) {
+                        const updatedMessages = [...existing.messages];
+                        updatedMessages[optimisticIndex] = message;
+                        return {
+                            ...existing,
+                            messages: updatedMessages,
+                        };
+                    }
+                }
+
+                // If the most recent user message already has identical content, ignore duplicate echo
+                const lastUserMessage = existing.messages.findLast((m): m is AcpUserMessage => m.role === 'user');
+                if (lastUserMessage && lastUserMessage.content === message.content) {
+                    if (message.checkpoint_id && !lastUserMessage.checkpoint_id) {
+                        const idx = existing.messages.lastIndexOf(lastUserMessage);
+                        const updatedMessages = [...existing.messages];
+                        updatedMessages[idx] = { ...lastUserMessage, checkpoint_id: message.checkpoint_id };
+                        return { ...existing, messages: updatedMessages };
+                    }
+                    return existing;
                 }
             }
 
@@ -912,6 +985,7 @@ export const useAgents = ({
                         newSessions.set(agent.id, {
                             ...existing,
                             sessionId: agent.session_id ?? existing.sessionId,
+                            projectId: agent.project_id ?? existing.projectId,
                             isActive: true,
                             isProcessing: Boolean(agent.is_processing),
                             queue: agent.queue ?? existing.queue,
@@ -921,6 +995,7 @@ export const useAgents = ({
                             agentId: agent.id,
                             agentName: agent.name,
                             sessionId: agent.session_id,
+                            projectId: agent.project_id,
                             messages: [],
                             isActive: true,
                             isProcessing: Boolean(agent.is_processing),
@@ -957,8 +1032,9 @@ export const useAgents = ({
         });
     }, [wsRef, isConnected, selectedAgentId]);
 
-    const startAgent = useCallback((agent: AcpAgent | undefined, options?: { resumeSessionId?: string }) => {
+    const startAgent = useCallback((agent: AcpAgent | undefined, options?: { resumeSessionId?: string; projectId?: string }) => {
         if (!agent || !wsRef.current || !isConnected) return null;
+        const targetProjectId = options?.projectId ?? projectId ?? undefined;
 
         const { id, name, command, args, env, profile } = agent;
         const aid = generateAgentId(id);
@@ -973,6 +1049,7 @@ export const useAgents = ({
                 agentId: aid,
                 agentName: name,
                 agentConfigId: id,
+                projectId: targetProjectId,
                 profile,
                 messages: existing?.messages ?? [],
                 isActive: false,
@@ -991,6 +1068,7 @@ export const useAgents = ({
             args,
             env: env ?? {},
             resume_session_id: options?.resumeSessionId ?? null,
+            project_id: targetProjectId ?? null,
         }, (response: any) => {
             if (response.success) {
                 setAcpSessions((prev) => {
@@ -1001,6 +1079,7 @@ export const useAgents = ({
                         agentId: aid,
                         agentName: name,
                         agentConfigId: id,
+                        projectId: response.project_id ?? targetProjectId,
                         profile,
                         sessionId: response.session_id,
                         messages: existing?.messages ?? [],
@@ -1033,7 +1112,7 @@ export const useAgents = ({
             }
         });
         return aid;
-    }, [wsRef, isConnected, generateAgentId, onAgentStarted]);
+    }, [wsRef, isConnected, generateAgentId, onAgentStarted, projectId]);
 
     const authenticateAgent = useCallback((agentId: string, methodId: string) => {
         if (!wsRef.current || !isConnected) return;
@@ -1081,7 +1160,7 @@ export const useAgents = ({
         });
     }, [wsRef, isConnected]);
 
-    const fetchAvailableSessions = useCallback((agent: AcpAgent | undefined): Promise<AcpSessionSummary[]> => {
+    const fetchAvailableSessions = useCallback((agent: AcpAgent | undefined, targetProjectId?: string): Promise<AcpSessionSummary[]> => {
         return new Promise((resolve, reject) => {
             if (!agent || !wsRef.current || !isConnected) {
                 resolve([]);
@@ -1091,6 +1170,7 @@ export const useAgents = ({
             wsRef.current.emit('acp:sessions_list', {
                 command: agent.command,
                 args: agent.args,
+                project_id: targetProjectId ?? projectId,
             }, (response: any) => {
                 if (!response.success) {
                     reject(new Error(response.error || 'Failed to load ACP sessions'));
@@ -1100,6 +1180,7 @@ export const useAgents = ({
                 const sessions = (response.sessions || []).map((session: any) => ({
                     sessionId: session.session_id,
                     cwd: session.cwd,
+                    projectId: targetProjectId ?? projectId ?? undefined,
                     title: session.title ?? undefined,
                     updatedAt: session.updated_at ?? undefined,
                 })) as AcpSessionSummary[];
@@ -1107,11 +1188,11 @@ export const useAgents = ({
                 resolve(sessions);
             });
         });
-    }, [wsRef, isConnected]);
+    }, [wsRef, isConnected, projectId]);
 
-    const resumeSession = useCallback((agent: AcpAgent | undefined, sessionId: string): string | null => {
-        return startAgent(agent, { resumeSessionId: sessionId });
-    }, [startAgent]);
+    const resumeSession = useCallback((agent: AcpAgent | undefined, sessionId: string, targetProjectId?: string): string | null => {
+        return startAgent(agent, { resumeSessionId: sessionId, projectId: targetProjectId ?? projectId ?? undefined });
+    }, [startAgent, projectId]);
 
     const sendPrompt = useCallback((agentId: string, prompt: string, attachments: AcpPromptAttachment[] = []) => {
         if (!wsRef.current || !isConnected) return;
@@ -1291,9 +1372,31 @@ export const useAgents = ({
                 const newSessions = new Map(prev);
                 const existing = newSessions.get(agentId);
                 if (!existing) return newSessions;
-                newSessions.set(agentId, { ...existing, isProcessing: false, queue: [] });
+                const updatedMessages = existing.messages.map((msg) => {
+                    if (msg.role === 'tool_call') {
+                        const tc = msg as AcpToolCallMessage;
+                        if (!tc.status || tc.status === 'in_progress' || tc.status === 'pending') {
+                            return { ...tc, status: 'canceled' as const };
+                        }
+                    }
+                    return msg;
+                });
+                newSessions.set(agentId, { ...existing, messages: updatedMessages, isProcessing: false });
                 return newSessions;
             });
+        });
+    }, [wsRef, isConnected]);
+
+    const sendQueuedPromptNow = useCallback((agentId: string, itemId: string) => {
+        if (!wsRef.current || !isConnected) return;
+
+        wsRef.current.emit('acp:queue:send_now', {
+            agent_id: agentId,
+            item_id: itemId,
+        }, (response: any) => {
+            if (!response.success) {
+                console.error('Failed to send queued prompt now: item not found');
+            }
         });
     }, [wsRef, isConnected]);
 
@@ -1369,6 +1472,23 @@ export const useAgents = ({
     }, [wsRef, isConnected]);
 
 
+    const resetAgents = useCallback(() => {
+        if (wsRef.current && isConnected) {
+            wsRef.current.emit('acp:stop_all');
+        }
+        setAcpSessions(new Map());
+        acpSessionsRef.current = new Map();
+        setSelectedAgentId(null);
+        agentCounterRef.current.clear();
+        closedAgentIdsRef.current.clear();
+        pendingEventsRef.current = [];
+        toolOutputCache.clear();
+        if (flushTimerRef.current) {
+            clearTimeout(flushTimerRef.current);
+            flushTimerRef.current = null;
+        }
+    }, [wsRef, isConnected]);
+
     return {
         acpSessions,
         selectedAgentId,
@@ -1383,6 +1503,7 @@ export const useAgents = ({
         handleAcpHistory,
         handleAcpQueue,
         reconnectToAcpAgents,
+        resetAgents,
         startAgent,
         authenticateAgent,
         fetchAvailableSessions,
@@ -1391,12 +1512,14 @@ export const useAgents = ({
         updateQueuedPrompt,
         removeQueuedPrompt,
         moveQueuedPrompt,
+        sendQueuedPromptNow,
         undoPrompt,
         setSessionModel,
         setSessionReasoning,
         cancelPrompt,
         stopAgent,
         closeAgent,
+        removeProjectSessions,
         getToolOutput,
         markSessionAsRead,
     };

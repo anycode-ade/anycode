@@ -18,23 +18,26 @@
 .layout-root {
     width: 100%;
     height: 100%;
-    background: var(--background-color, #242424);
+    background: transparent !important;
 }
 
 .layout .dv-dockview,
 .layout .dv-grid-view,
 .layout .dv-branch-node,
 .layout .dv-root-wrapper {
-    background-color: var(--background-color, #242424) !important;
+    background-color: transparent !important;
+    background: transparent !important;
 }
 
+
+
 .layout.dockview-theme-dark {
-    --dv-group-view-background-color: var(--theme-background, var(--background-color, #242424));
-    --dv-tabs-and-actions-container-background-color: var(--theme-background, var(--background-color, #242424));
-    --dv-activegroup-visiblepanel-tab-background-color: var(--theme-tab-active-background, #2a2a2a);
-    --dv-activegroup-hiddenpanel-tab-background-color: var(--theme-tab-background, var(--theme-background, #242424));
-    --dv-inactivegroup-visiblepanel-tab-background-color: var(--theme-tab-active-background, #2a2a2a);
-    --dv-inactivegroup-hiddenpanel-tab-background-color: var(--theme-tab-background, var(--theme-background, #242424));
+    --dv-group-view-background-color: transparent;
+    --dv-tabs-and-actions-container-background-color: transparent;
+    --dv-activegroup-visiblepanel-tab-background-color: transparent;
+    --dv-activegroup-hiddenpanel-tab-background-color: transparent;
+    --dv-inactivegroup-visiblepanel-tab-background-color: transparent;
+    --dv-inactivegroup-hiddenpanel-tab-background-color: transparent;
     --dv-tab-divider-color: transparent;
     --dv-activegroup-visiblepanel-tab-color: var(--theme-tab-active-foreground, #f0f0f0);
     --dv-activegroup-hiddenpanel-tab-color: var(--theme-tab-foreground, #b2b2b2);
@@ -43,13 +46,23 @@
     --dv-separator-border: transparent;
     --dv-paneview-header-border-color: var(--theme-border, #3f3f3f);
     --dv-icon-hover-background-color: rgba(255, 255, 255, 0.08);
-    --dv-paneview-active-outline-color: transparent;
+    --dv-paneview-active-outline-color: transparent !important;
+    --dv-active-outline-color: transparent !important;
+}
+
+:root,
+.dockview-theme-dark,
+.dockview-theme-light,
+.layout {
+    --dv-paneview-active-outline-color: transparent !important;
+    --dv-active-outline-color: transparent !important;
 }
 
 .layout.dockview-theme-dark .dv-groupview,
 .layout.dockview-theme-dark .dv-groupview > .dv-content-container,
 .layout.dockview-theme-dark .dv-resize-container {
-    background-color: var(--background-color, #242424) !important;
+    background-color: transparent !important;
+    background: transparent !important;
 }
 
 .layout .dv-groupview {
@@ -61,18 +74,35 @@
 
 .layout .dv-groupview:focus,
 .layout .dv-groupview:focus-within,
+.layout .dv-groupview:focus-visible,
 .layout .dv-groupview.dv-active-group,
 .layout .dv-groupview.dv-active,
 .layout .dv-groupview.dv-focused,
 .layout .dv-groupview[class*='active'],
-.layout .dv-groupview[class*='focus'] {
+.layout .dv-groupview[class*='focus'],
+.layout .dv-content-container,
+.layout .dv-content-container:focus,
+.layout .dv-content-container:focus-visible,
+.layout .dv-content-container:focus-within,
+.layout .dv-view-container,
+.layout .dv-view-container:focus,
+.layout .dv-view-container:focus-visible,
+.layout .dv-view-container:focus-within,
+.layout-dock-panel,
+.layout-dock-panel:focus,
+.layout-dock-panel:focus-visible,
+.layout-dock-panel:focus-within {
     outline: none !important;
     box-shadow: none !important;
 }
 
 
-.layout.dockview-theme-dark .dv-groupview > .dv-tabs-and-actions-container {
-    background-color: var(--background-color, #242424) !important;
+.layout.dockview-theme-dark .dv-groupview > .dv-tabs-and-actions-container,
+.layout .dv-tabs-and-actions-container {
+    background-color: transparent !important;
+    background: transparent !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
     margin: 0 !important;
     user-select: none;
     -webkit-user-select: none;
@@ -85,7 +115,8 @@
 /* Dockview custom scrollbars in tab header are unstable under frequent relayout.
    Use native horizontal scrolling for tabs and reserve geometry for actions. */
 .layout .dv-tabs-and-actions-container .dv-scrollable {
-    background-color: var(--background-color, #242424) !important;
+    background-color: transparent !important;
+    background: transparent !important;
     flex: 1 1 auto;
     min-width: 0;
     width: 100%;
@@ -96,8 +127,10 @@
     display: none !important;
 }
 
-.layout.dockview-theme-dark .dv-groupview > .dv-tabs-and-actions-container .dv-tabs-container {
-    background-color: var(--background-color, #242424) !important;
+.layout.dockview-theme-dark .dv-groupview > .dv-tabs-and-actions-container .dv-tabs-container,
+.layout .dv-tabs-container {
+    background-color: transparent !important;
+    background: transparent !important;
     min-width: 0;
     flex: 1 1 auto;
     overflow-x: auto !important;
@@ -111,7 +144,8 @@
     display: none;
 }
 
-.layout .dv-tabs-and-actions-container .dv-right-actions-container {
+.layout .dv-tabs-and-actions-container .dv-right-actions-container,
+.layout .dv-right-actions-container {
     display: flex;
     flex-direction: row;
     justify-content: flex-end;
@@ -123,6 +157,8 @@
     z-index: 4;
     box-sizing: border-box;
     pointer-events: auto;
+    background: transparent !important;
+    background-color: transparent !important;
 }
 
 .layout .dv-tabs-and-actions-container .dv-right-actions-container::before {
@@ -132,11 +168,21 @@
     top: 0;
     bottom: 0;
     width: 14px;
+    background: transparent !important;
 }
 
+.layout .dv-tabs-and-actions-container .dv-void-container,
+.layout .dv-void-container {
+    background: transparent !important;
+    background-color: transparent !important;
+}
 
-.layout.dockview-theme-dark .dv-tab.dv-active-tab {
-    background-color: #2a2a2a00 !important;
+.layout.dockview-theme-dark .dv-tab,
+.layout .dv-tab,
+.layout.dockview-theme-dark .dv-tab.dv-active-tab,
+.layout .dv-tab.dv-active-tab {
+    background-color: transparent !important;
+    background: transparent !important;
     color: var(--theme-tab-active-foreground, #f0f0f0) !important;
 }
 
@@ -148,8 +194,10 @@
     font-weight: var(--interface-font-weight, 700) !important;
 }
 
-.layout.dockview-theme-dark .dv-tab.dv-inactive-tab {
-    background-color: var(--background-color, #242424) !important;
+.layout.dockview-theme-dark .dv-tab.dv-inactive-tab,
+.layout .dv-tab.dv-inactive-tab {
+    background-color: transparent !important;
+    background: transparent !important;
     color: var(--theme-tab-foreground, #a8a8a8) !important;
 }
 
@@ -272,11 +320,57 @@
     /*text-shadow: 0 0 6px rgba(255, 255, 255, 0.8);*/
 }
 
-.layout.dockview-theme-dark .dv-pane-container .dv-pane .dv-pane-header:focus:before,
-.layout.dockview-theme-dark .dv-pane-container .dv-pane .dv-pane-header:focus-within:before,
-.layout.dockview-theme-dark .dv-pane-container .dv-pane .dv-pane-body:focus:before,
-.layout.dockview-theme-dark .dv-pane-container .dv-pane .dv-pane-body:focus-within:before {
+.layout.dockview-theme-dark .dv-pane-container .dv-pane .dv-pane-header:focus::before,
+.layout.dockview-theme-dark .dv-pane-container .dv-pane .dv-pane-header:focus-within::before,
+.layout.dockview-theme-dark .dv-pane-container .dv-pane .dv-pane-body:focus::before,
+.layout.dockview-theme-dark .dv-pane-container .dv-pane .dv-pane-body:focus-within::before,
+.dv-pane-container .dv-pane .dv-pane-header:focus::before,
+.dv-pane-container .dv-pane .dv-pane-header:focus-within::before,
+.dv-pane-container .dv-pane .dv-pane-body:focus::before,
+.dv-pane-container .dv-pane .dv-pane-body:focus-within::before,
+.dv-pane-header:focus::before,
+.dv-pane-header:focus-within::before,
+.dv-pane-body:focus::before,
+.dv-pane-body:focus-within::before,
+.dv-pane:focus::before,
+.dv-pane:focus-within::before,
+.dv-groupview:focus::before,
+.dv-groupview:focus-within::before,
+.dv-groupview::before,
+.dv-pane-body::before {
+    display: none !important;
+    content: none !important;
+    outline: none !important;
     outline-color: transparent !important;
+    border: none !important;
+}
+
+.layout .dv-pane,
+.layout .dv-pane:focus,
+.layout .dv-pane:focus-visible,
+.layout .dv-pane:focus-within,
+.layout .dv-pane-body,
+.layout .dv-pane-body:focus,
+.layout .dv-pane-body:focus-visible,
+.layout .dv-pane-body:focus-within,
+.dv-dockview,
+.dv-dockview:focus,
+.dv-dockview:focus-visible,
+.dv-dockview:focus-within,
+.dv-groupview,
+.dv-groupview:focus,
+.dv-groupview:focus-visible,
+.dv-groupview:focus-within,
+.dv-content-container,
+.dv-content-container:focus,
+.dv-content-container:focus-visible,
+.dv-content-container:focus-within,
+.dv-pane-body,
+.dv-pane-body:focus,
+.dv-pane-body:focus-visible,
+.dv-pane-body:focus-within {
+    outline: none !important;
+    box-shadow: none !important;
 }
 
 .dv-groupview {
@@ -292,7 +386,7 @@
     flex-direction: column;
     box-sizing: border-box;
     overflow: hidden;
-    background-color: var(--background-color, #242424);
+    background-color: transparent !important;
 }
 
 .layout-header-actions {
@@ -307,7 +401,7 @@
 
 .layout-header-actions:hover,
 .layout-header-actions:focus-within {
-    background-color: var(--background-color, #242424);
+    background-color: transparent;
     width: max-content;
 }
 
@@ -321,7 +415,7 @@
 
 .layout .dv-tabs-and-actions-container .dv-right-actions-container:has(.layout-header-actions:hover),
 .layout .dv-tabs-and-actions-container .dv-right-actions-container:has(.layout-header-actions:focus-within) {
-    background-color: var(--background-color, #242424) !important;
+    background-color: transparent !important;
 }
 
 .layout-header-action-btn {
@@ -459,7 +553,6 @@
     align-items: center;
     justify-content: center;
     text-align: center;
-    background: var(--background-color, #242424);
     user-select: none;
     -webkit-user-select: none;
     overflow-y: auto;
@@ -584,16 +677,15 @@
     width: 100%;
     min-width: 0;
     overflow: hidden;
-    /*border-top: 1px solid var(--theme-border, #4a4a4a);*/
-    /*border-rad    ius: 8px;*/
-    background: var(--background-color, #242424);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
     box-sizing: border-box;
 }
 
 .dock-split {
     width: 100%;
     height: 100%;
-    background-color: var(--background-color, #242424);
+    background-color: transparent !important;
 }
 
 .dock-split-pane {

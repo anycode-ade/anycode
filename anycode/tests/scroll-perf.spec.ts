@@ -231,10 +231,9 @@ test.describe('1,000,000 Lines Virtual Scroll Performance Benchmark', () => {
         const dragDuration = Date.now() - dragStart;
         console.log(`⏱️  Scrollbar drag test completed in ${dragDuration} ms`);
 
-        // Wait a frame for expandBuffer
-        await page.waitForTimeout(50);
+        // expandBuffer runs after release; poll until at least as many lines are rendered as during the drag
+        await expect.poll(() => page.locator('.anyeditor .code .line').count()).toBeGreaterThanOrEqual(linesDuringDrag);
         const linesAfterRelease = await page.locator('.anyeditor .code .line').count();
         console.log(`📄 Lines rendered after drag release: ${linesAfterRelease}`);
-        expect(linesAfterRelease).toBeGreaterThanOrEqual(linesDuringDrag);
     });
 });

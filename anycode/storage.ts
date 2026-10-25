@@ -93,8 +93,9 @@ export function loadAcpSessions(): Map<string, AcpSession> {
     return new Map();
 }
 
-export function loadAgents(): AcpAgent[] {
-    return loadItem('acpAgents') ?? [];
+// null means nothing has been saved yet (first run).
+export function loadAgents(): AcpAgent[] | null {
+    return loadItem('acpAgents');
 }
 export function saveAgents(agents: AcpAgent[]): void {
     saveItem('acpAgents', agents);

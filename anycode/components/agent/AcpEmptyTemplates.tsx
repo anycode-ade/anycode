@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import type { AgentPromptTemplate } from '../../types';
 import { useAgentTemplates, agentTemplatesStore } from '../../features/agents/agentTemplatesStore';
-import { AgentIcon } from './AgentIcon';
+import { AcpAvatar } from './AcpAvatar';
 import { AcpIcons } from './AcpIcons';
 import { AgentTemplatesManager } from './AgentTemplatesManager';
 import { parseAgentDisplayName } from '../../agents';
@@ -10,6 +10,7 @@ import './AcpEmptyTemplates.css';
 interface AcpEmptyTemplatesProps {
   onSelectTemplate: (template: AgentPromptTemplate, sendImmediately?: boolean) => void;
   onOpenSettings?: () => void;
+  agentId?: string;
   agentTitle?: string;
   agentAuthors?: string[];
 }
@@ -17,6 +18,7 @@ interface AcpEmptyTemplatesProps {
 export const AcpEmptyTemplates: React.FC<AcpEmptyTemplatesProps> = ({
   onSelectTemplate,
   onOpenSettings,
+  agentId,
   agentTitle,
   agentAuthors,
 }) => {
@@ -49,21 +51,8 @@ export const AcpEmptyTemplates: React.FC<AcpEmptyTemplatesProps> = ({
   if (isCustomizing) {
     return (
       <div className="acp-empty-templates-wrapper is-customizing">
-        <div className="acp-empty-templates-customize-header">
-          <button
-            type="button"
-            className="acp-empty-templates-back-btn"
-            onClick={() => setIsCustomizing(false)}
-            title="Back to Quick Actions (Esc)"
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="15 18 9 12 15 6" />
-            </svg>
-            <span>Back to Quick Actions</span>
-          </button>
-        </div>
         <div className="acp-empty-templates-customize-body">
-          <AgentTemplatesManager embedded onClose={() => setIsCustomizing(false)} />
+          <AgentTemplatesManager embedded onBack={() => setIsCustomizing(false)} />
         </div>
       </div>
     );
@@ -74,7 +63,7 @@ export const AcpEmptyTemplates: React.FC<AcpEmptyTemplatesProps> = ({
       <div className="acp-empty-templates-header">
         <div className="acp-empty-templates-brand">
           <div className="acp-empty-templates-logo">
-            <AgentIcon name={baseName} size={28} />
+            <AcpAvatar type="agent" agentId={agentId} agentTitle={agentTitle} size={28} />
           </div>
           <div className="acp-empty-templates-meta">
             <div className="acp-empty-templates-title-line">
@@ -99,9 +88,9 @@ export const AcpEmptyTemplates: React.FC<AcpEmptyTemplatesProps> = ({
           className="acp-empty-templates-customize-btn"
           onClick={() => setIsCustomizing(true)}
           title="Customize templates"
+          aria-label="Customize templates"
         >
           <AcpIcons.Sliders size={14} />
-          <span>Customize</span>
         </button>
       </div>
 
@@ -121,12 +110,6 @@ export const AcpEmptyTemplates: React.FC<AcpEmptyTemplatesProps> = ({
                 title={hasExtendedPrompt ? `${promptText} (Shift+Click to edit)` : `${displayLabel} (Shift+Click to edit)`}
               >
                 <span className="acp-template-title">{displayLabel}</span>
-                <span className="acp-template-arrow" aria-hidden="true">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <line x1="5" y1="12" x2="19" y2="12" />
-                    <polyline points="12 5 19 12 12 19" />
-                  </svg>
-                </span>
               </button>
             );
           })}

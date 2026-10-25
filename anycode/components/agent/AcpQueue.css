@@ -34,10 +34,9 @@
 
 .acp-queue-title {
   font-size: 0.78em;
-  font-weight: 600;
-  color: var(--text-color, #ccc);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+  font-weight: 500;
+  color: var(--theme-muted-foreground, #999);
+  letter-spacing: 0.02em;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -47,17 +46,18 @@
 .acp-queue-icon {
   display: inline-flex;
   align-items: center;
-  color: var(--theme-accent, #6366f1);
+  color: var(--theme-muted-foreground, #999);
 }
 
 .acp-queue-badge {
-  font-size: 0.85em;
-  font-weight: 600;
-  padding: 1px 7px;
+  font-size: 0.9em;
+  font-weight: 500;
+  min-width: 18px;
+  padding: 0 6px;
   border-radius: 999px;
-  background: rgba(99, 102, 241, 0.16);
-  color: var(--theme-accent, #818cf8);
-  border: 1px solid rgba(99, 102, 241, 0.25);
+  text-align: center;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-color, #ccc);
 }
 
 .acp-queue-hint {
@@ -88,17 +88,21 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 12px;
-  background: rgba(0, 0, 0, 0.22);
-  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.08));
-  border-radius: 8px;
+  padding: 7px 6px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
   gap: 10px;
-  transition: all 140ms ease;
+  transition: background-color 120ms ease;
+}
+
+/* Rows are separated by hairlines instead of being boxed. */
+.acp-queue-card + .acp-queue-card {
+  border-top-color: var(--border-color, rgba(255, 255, 255, 0.08));
 }
 
 .acp-queue-card:hover {
-  background: rgba(0, 0, 0, 0.3);
-  border-color: rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.04);
 }
 
 .acp-queue-card-content {
@@ -111,7 +115,8 @@
 
 .acp-queue-card-index {
   font-size: 0.78em;
-  font-weight: 600;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
   color: var(--theme-muted-foreground, #666);
   flex-shrink: 0;
   margin-top: 1px;
@@ -124,7 +129,8 @@
 
 .acp-queue-card-text {
   font-size: 0.88em;
-  color: var(--text-color, #eee);
+  font-weight: 400;
+  color: var(--text-color, #ddd);
   overflow: hidden;
   text-overflow: ellipsis;
   display: -webkit-box;
@@ -159,14 +165,21 @@
   align-items: center;
   gap: 2px;
   flex-shrink: 0;
+  opacity: 0.45;
+  transition: opacity 120ms ease;
+}
+
+.acp-queue-card:hover .acp-queue-card-actions,
+.acp-queue-card:focus-within .acp-queue-card-actions {
+  opacity: 1;
 }
 
 .acp-queue-icon-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
+  width: 24px;
+  height: 24px;
   background: transparent;
   border: none;
   border-radius: 4px;
@@ -197,30 +210,26 @@
   flex-direction: column;
   align-items: stretch;
   padding: 10px 12px;
-  background: rgba(0, 0, 0, 0.32);
-  border-color: rgba(99, 102, 241, 0.45);
-  box-shadow: 0 0 0 1px rgba(99, 102, 241, 0.15);
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 8px;
+  border-color: var(--border-color, rgba(255, 255, 255, 0.12));
 }
 
 .acp-queue-edit-textarea {
   width: 100%;
-  padding: 8px 10px;
-  background: var(--input-bg, #1a1a1a);
-  border: 1px solid var(--border-color, #333);
-  border-radius: 6px;
-  color: var(--text-color, #ccc);
-  font-family: inherit;
-  font-size: 0.88em;
+  padding: 0;
+  background: transparent;
+  border: none;
+  color: var(--text-color, #fff);
+  -webkit-text-fill-color: var(--text-color, #fff);
+  font-family: var(--interface-font-family);
+  font-size: 0.93em;
   box-sizing: border-box;
   outline: none;
-  min-height: 60px;
+  min-height: 40px;
   max-height: 140px;
   resize: vertical;
   line-height: 1.4;
-}
-
-.acp-queue-edit-textarea:focus {
-  border-color: var(--theme-accent, #6366f1);
 }
 
 .acp-queue-edit-actions {
@@ -245,14 +254,13 @@
 }
 
 .acp-queue-edit-btn.primary {
-  background: rgba(99, 102, 241, 0.2);
-  border-color: rgba(99, 102, 241, 0.4);
+  background: rgba(255, 255, 255, 0.1);
+  border-color: var(--border-color, rgba(255, 255, 255, 0.12));
   color: var(--text-color, #f0f0f0);
 }
 
 .acp-queue-edit-btn.primary:hover:not(:disabled) {
-  background: rgba(99, 102, 241, 0.35);
-  border-color: rgba(99, 102, 241, 0.6);
+  background: rgba(255, 255, 255, 0.16);
 }
 
 .acp-queue-edit-btn.secondary {

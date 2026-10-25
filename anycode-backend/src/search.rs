@@ -1,4 +1,4 @@
-use crate::utils::{format_path, is_ignored_path, is_search_ignored_dir, relative_to_current_dir};
+use crate::utils::{format_path, is_ignored_path, is_search_ignored_dir};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -200,15 +200,16 @@ pub async fn search_file_result(
     path: &Path,
     pattern: &str,
     cancel: CancellationToken,
+    project_root: &Path,
 ) -> Option<FileSearchResult> {
     if is_ignored_path(path) {
         return None;
     }
 
     let file_path_str = path.to_string_lossy().to_string();
-    let display_path = relative_to_current_dir(path)
+    let display_path = path.strip_prefix(project_root)
         .map(|p| p.to_string_lossy().to_string())
-        .unwrap_or_else(|| file_path_str.clone());
+        .unwrap_or_else(|_| file_path_str.clone());
 
     if !path.exists() {
         return Some(FileSearchResult {
@@ -237,6 +238,7 @@ pub async fn global_search(
     result_tx: mpsc::Sender<FileSearchResult>,
 ) -> Result<()> {
     let files = collect_files_recursively(dir_path)?;
+    let display_root = dir_path.to_path_buf();
 
     let semaphore = Arc::new(Semaphore::new(8));
     let mut handles = Vec::new();
@@ -251,14 +253,15 @@ pub async fn global_search(
         let pattern = pattern.to_string();
         let cancel_token = cancel.clone();
         let result_tx = result_tx.clone();
+        let display_root = display_root.clone();
 
         let handle = tokio::spawn(async move {
             let _permit = permit;
 
             let file_path_str = path_buf.to_string_lossy().to_string();
-            let display_path = relative_to_current_dir(&path_buf)
+            let display_path = path_buf.strip_prefix(&display_root)
                 .map(|p| p.to_string_lossy().to_string())
-                .unwrap_or_else(|| file_path_str.clone());
+                .unwrap_or_else(|_| file_path_str.clone());
 
             let matches = match file_search(&file_path_str, &pattern, cancel_token.clone()).await {
                 Ok(m) => m,

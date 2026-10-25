@@ -6,10 +6,10 @@ import './AgentTemplatesManager.css';
 
 interface AgentTemplatesManagerProps {
   embedded?: boolean;
-  onClose?: () => void;
+  onBack?: () => void;
 }
 
-export const AgentTemplatesManager: React.FC<AgentTemplatesManagerProps> = ({ embedded = false, onClose }) => {
+export const AgentTemplatesManager: React.FC<AgentTemplatesManagerProps> = ({ embedded = false, onBack }) => {
   const templates = useAgentTemplates();
   const [isAdding, setIsAdding] = useState(false);
   const [newLabel, setNewLabel] = useState('');
@@ -93,32 +93,28 @@ export const AgentTemplatesManager: React.FC<AgentTemplatesManagerProps> = ({ em
           </p>
         </div>
         <div className="agent-templates-header-actions">
-          <button
-            type="button"
-            className="agent-templates-btn secondary"
-            onClick={() => agentTemplatesStore.resetToDefaults()}
-            title="Reset to default templates"
-          >
-            Reset Defaults
-          </button>
+          {onBack && (
+            <button
+              type="button"
+              className="acp-empty-templates-back-btn"
+              onClick={onBack}
+              title="Back to Quick Actions (Esc)"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="15 18 9 12 15 6" />
+              </svg>
+              <span>Back</span>
+            </button>
+          )}
           {!isAdding && (
             <button
               type="button"
-              className="agent-templates-btn primary"
+              className="agent-templates-btn primary agent-templates-btn-icon"
               onClick={handleStartAdd}
+              title="Add Template"
+              aria-label="Add Template"
             >
               <AcpIcons.Add />
-              Add Template
-            </button>
-          )}
-          {onClose && (
-            <button
-              type="button"
-              className="agent-templates-btn secondary"
-              onClick={onClose}
-              title="Finish customizing templates"
-            >
-              Done
             </button>
           )}
         </div>

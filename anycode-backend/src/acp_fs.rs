@@ -34,6 +34,7 @@ pub async fn run_acp_fs_loop(
     mut rx: mpsc::Receiver<AcpFsCommand>,
     file2code: Arc<Mutex<HashMap<String, Code>>>,
     lsp_manager: Arc<Mutex<LspManager>>,
+    workspace: Arc<Mutex<crate::workspace::WorkspaceManager>>,
     config: Config,
     io: Arc<SocketIo>,
 ) {
@@ -53,6 +54,7 @@ pub async fn run_acp_fs_loop(
                     &content,
                     &file2code,
                     &lsp_manager,
+                    &workspace,
                     &config,
                     &io,
                 )
@@ -79,6 +81,7 @@ async fn handle_write(
     content: &str,
     file2code: &Arc<Mutex<HashMap<String, Code>>>,
     lsp_manager: &Arc<Mutex<LspManager>>,
+    workspace: &Arc<Mutex<crate::workspace::WorkspaceManager>>,
     _config: &Config,
     io: &Arc<SocketIo>,
 ) -> Result<()> {
@@ -138,6 +141,12 @@ async fn handle_write(
 
         // LSP sync
         if !lsp_changes.is_empty() {
+            let project_lsp = workspace
+                .lock()
+                .await
+                .find_project_for_path(std::path::Path::new(&abs_path))
+                .map(|project| project.lsp);
+            let lsp_manager = project_lsp.unwrap_or_else(|| lsp_manager.clone());
             let mut lsp = lsp_manager.lock().await;
             if let Some(lsp) = lsp.get(&lang).await {
                 if let Err(e) = lsp.did_change(&abs_path, lsp_changes).await {

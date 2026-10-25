@@ -60,6 +60,12 @@
   isolation: isolate;
 }
 
+:root[data-dynamic-bg="global"] .anyeditor,
+[data-dynamic-bg="global"] .anyeditor,
+.app-with-dynamic-bg .anyeditor {
+  background: transparent !important;
+}
+
 .anyeditor::-webkit-scrollbar {
   display: none;
   width: 0;

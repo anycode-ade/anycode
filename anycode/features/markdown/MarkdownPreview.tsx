@@ -7,6 +7,8 @@ import type { FileState } from '../../types';
 import { Icons } from '../../components/Icons';
 import { copyTextToClipboard, normalizePath } from '../../utils';
 import { MermaidBlock } from './MermaidBlock';
+import { BACKEND_URL } from '../../constants';
+import { getToken } from '../../hooks/useSocket';
 import './MarkdownPreview.css';
 
 export type MarkdownPreviewProps = {
@@ -363,7 +365,9 @@ export const MarkdownPreview: React.FC<MarkdownPreviewProps> = ({
             return trimmed;
         }
         const resolved = resolvePath(trimmed);
-        return `/api/local-image?path=${encodeURIComponent(resolved)}`;
+        const token = getToken();
+        const tokenParam = token ? `&token=${encodeURIComponent(token)}` : '';
+        return `${BACKEND_URL}/api/local-image?path=${encodeURIComponent(resolved)}${tokenParam}`;
     };
 
     const handleLinkClick = (e: React.MouseEvent<HTMLAnchorElement>, href?: string) => {

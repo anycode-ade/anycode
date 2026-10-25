@@ -8,6 +8,12 @@ run-frontend:
 build-frontend:
     cd anycode && pnpm run build
 
+run-tauri:
+    pnpm --filter anycode tauri dev
+
+build-tauri:
+    pnpm --filter anycode tauri build
+
 run-backend:
     cargo run --manifest-path ./anycode-backend/Cargo.toml
 

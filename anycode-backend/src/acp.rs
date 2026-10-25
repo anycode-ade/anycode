@@ -151,9 +151,11 @@ struct AcpClientImpl {
     agent_id: String,
     message_sender: broadcast::Sender<AcpMessage>,
     history: Arc<tokio::sync::Mutex<Vec<AcpMessage>>>,
+    project_root: PathBuf,
     /// Channel to send file operations to the ACP filesystem background task
     fs_sender: Option<mpsc::Sender<AcpFsCommand>>,
     acp_db: Option<Arc<crate::acp_db::AcpDb>>,
+    terminal_manager: Arc<crate::acp_terminal::AcpTerminalManager>,
 }
 
 impl AcpClientImpl {
@@ -220,7 +222,7 @@ impl AcpClientImpl {
         let (resp_tx, resp_rx) = tokio::sync::oneshot::channel();
         let cmd = AcpFsCommand::WriteTextFile {
             agent_id: self.agent_id.clone(),
-            path: args.path.to_path_buf(),
+            path: self.resolve_project_path(args.path.as_ref()),
             content: args.content.clone(),
             resp: resp_tx,
         };
@@ -277,7 +279,7 @@ impl AcpClientImpl {
         let (resp_tx, resp_rx) = tokio::sync::oneshot::channel();
         let cmd = AcpFsCommand::ReadTextFile {
             agent_id: self.agent_id.clone(),
-            path: args.path.to_path_buf(),
+            path: self.resolve_project_path(args.path.as_ref()),
             resp: resp_tx,
         };
 
@@ -315,57 +317,51 @@ impl AcpClientImpl {
 
     async fn create_terminal(
         &self,
-        _args: acp::CreateTerminalRequest,
+        args: acp::CreateTerminalRequest,
     ) -> acp::Result<acp::CreateTerminalResponse> {
         info!(
-            "create_terminal called for agent {}: {:?}",
-            self.agent_id, _args
+            "create_terminal called for agent {}: command='{}', args={:?}",
+            self.agent_id, args.command, args.args
         );
-        Err(acp::Error::method_not_found())
+        self.terminal_manager
+            .create_terminal(args, &self.project_root)
+            .await
+    }
+
+    fn resolve_project_path(&self, path: &std::path::Path) -> PathBuf {
+        if path.is_absolute() {
+            path.to_path_buf()
+        } else {
+            self.project_root.join(path)
+        }
     }
 
     async fn terminal_output(
         &self,
-        _args: acp::TerminalOutputRequest,
+        args: acp::TerminalOutputRequest,
     ) -> acp::Result<acp::TerminalOutputResponse> {
-        info!(
-            "terminal_output called for agent {}: {:?}",
-            self.agent_id, _args
-        );
-        Err(acp::Error::method_not_found())
+        self.terminal_manager.terminal_output(args).await
     }
 
     async fn release_terminal(
         &self,
-        _args: acp::ReleaseTerminalRequest,
+        args: acp::ReleaseTerminalRequest,
     ) -> acp::Result<acp::ReleaseTerminalResponse> {
-        info!(
-            "release_terminal called for agent {}: {:?}",
-            self.agent_id, _args
-        );
-        Err(acp::Error::method_not_found())
+        self.terminal_manager.release_terminal(args).await
     }
 
     async fn wait_for_terminal_exit(
         &self,
-        _args: acp::WaitForTerminalExitRequest,
+        args: acp::WaitForTerminalExitRequest,
     ) -> acp::Result<acp::WaitForTerminalExitResponse> {
-        info!(
-            "wait_for_terminal_exit called for agent {}: {:?}",
-            self.agent_id, _args
-        );
-        Err(acp::Error::method_not_found())
+        self.terminal_manager.wait_for_terminal_exit(args).await
     }
 
     async fn kill_terminal_command(
         &self,
-        _args: acp::KillTerminalRequest,
+        args: acp::KillTerminalRequest,
     ) -> acp::Result<acp::KillTerminalResponse> {
-        info!(
-            "kill_terminal_command called for agent {}: {:?}",
-            self.agent_id, _args
-        );
-        Err(acp::Error::method_not_found())
+        self.terminal_manager.kill_terminal_command(args).await
     }
 
     async fn session_notification(&self, args: acp::SessionNotification) -> acp::Result<()> {
@@ -417,8 +413,10 @@ impl AcpClientImpl {
 
         let is_tool_event = kind == "tool_call"
             || kind == "tool_call_update"
+            || kind == "tool_result"
             || kind == "toolCall"
-            || kind == "toolCallUpdate";
+            || kind == "toolCallUpdate"
+            || kind == "toolResult";
         if !is_tool_event {
             return;
         }
@@ -443,7 +441,7 @@ impl AcpClientImpl {
         let command = target_map
             .get("rawInput")
             .or_else(|| target_map.get("raw_input"))
-            .and_then(|i| i.get("cmd").or_else(|| i.get("command")))
+            .and_then(|i| i.get("cmd").or_else(|| i.get("command")).or_else(|| i.get("CommandLine")))
             .and_then(Value::as_str)
             .map(|s| s.to_string());
 
@@ -615,6 +613,11 @@ impl AcpClientImpl {
                 if let Some(Value::String(previous_text)) =
                     raw_update.update.pointer_mut("/content/text")
                 {
+                    if previous_text.ends_with("context canceled")
+                        && chunk_text.chars().next().is_some_and(|c| c.is_ascii_uppercase())
+                    {
+                        previous_text.push_str(": ");
+                    }
                     previous_text.push_str(chunk_text);
                     return true;
                 }
@@ -727,22 +730,17 @@ pub struct AcpAgent {
     history_manager: Arc<RwLock<AcpHistoryManager>>,
     /// Channel to send file operations to the ACP filesystem background task
     fs_sender: mpsc::Sender<AcpFsCommand>,
+    project_root: PathBuf,
     queue: Arc<tokio::sync::Mutex<Vec<AcpQueuedMessage>>>,
     queue_notify: Arc<Notify>,
+    /// Set by Stop. While set, queued prompts wait until the user sends one explicitly.
+    /// Written only while holding the `queue` lock.
+    queue_paused: Arc<AtomicBool>,
     pub acp_db: Option<Arc<crate::acp_db::AcpDb>>,
+    pub terminal_manager: Arc<crate::acp_terminal::AcpTerminalManager>,
 }
 
 impl AcpAgent {
-    pub fn new(
-        agent_id: String,
-        agent_name: String,
-        fs_sender: mpsc::Sender<AcpFsCommand>,
-        acp_db: Option<Arc<crate::acp_db::AcpDb>>,
-    ) -> Self {
-        let project_root = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-        Self::new_with_project_root(agent_id, agent_name, project_root, fs_sender, acp_db)
-    }
-
     pub fn new_with_project_root(
         agent_id: String,
         agent_name: String,
@@ -755,6 +753,8 @@ impl AcpAgent {
         if let Err(e) = history_manager.init() {
             error!("Failed to initialize history manager: {}", e);
         }
+
+        let terminal_manager = Arc::new(crate::acp_terminal::AcpTerminalManager::new());
 
         Self {
             agent_id,
@@ -773,9 +773,12 @@ impl AcpAgent {
             history: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             history_manager: Arc::new(RwLock::new(history_manager)),
             fs_sender,
+            project_root,
             queue: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             queue_notify: Arc::new(Notify::new()),
+            queue_paused: Arc::new(AtomicBool::new(false)),
             acp_db,
+            terminal_manager,
         }
     }
 
@@ -792,6 +795,13 @@ impl AcpAgent {
     pub fn init_message_sender_for_test(&mut self) -> broadcast::Receiver<AcpMessage> {
         let (tx, rx) = broadcast::channel(100);
         self.message_sender = Some(tx);
+        rx
+    }
+
+    #[cfg(test)]
+    pub fn init_cancel_sender_for_test(&mut self) -> mpsc::Receiver<()> {
+        let (tx, rx) = mpsc::channel::<()>(10);
+        self.cancel_sender = Arc::new(tokio::sync::Mutex::new(Some(tx)));
         rx
     }
 
@@ -827,7 +837,8 @@ impl AcpAgent {
         let (bootstrap_tx, bootstrap_rx) = oneshot::channel::<Result<SessionBootstrapOutcome>>();
 
         // Spawn agent process
-        let (mut child, stdin, stdout, stderr) = Self::spawn_agent_process(cmd, args, env.as_ref())?;
+        let (mut child, stdin, stdout, stderr) =
+            Self::spawn_agent_process(cmd, args, env.as_ref(), &self.project_root)?;
 
         // Setup connection and run in LocalSet
         let ready_clone = self.ready.clone();
@@ -838,8 +849,11 @@ impl AcpAgent {
         let fs_sender_clone = self.fs_sender.clone();
         let queue_clone = self.queue.clone();
         let queue_notify_clone = self.queue_notify.clone();
+        let queue_paused_clone = self.queue_paused.clone();
         let history_manager_clone = self.history_manager.clone();
         let acp_db_clone = self.acp_db.clone();
+        let project_root_clone = self.project_root.clone();
+        let terminal_manager_clone = self.terminal_manager.clone();
 
         let local_set_handle = tokio::task::spawn_blocking(move || {
             tokio::runtime::Handle::current().block_on(async {
@@ -854,6 +868,7 @@ impl AcpAgent {
                             history_manager_clone,
                             queue_clone,
                             queue_notify_clone,
+                            queue_paused_clone,
                             message_sender_clone,
                             fs_sender_clone,
                             stdin,
@@ -865,6 +880,8 @@ impl AcpAgent {
                             bootstrap_tx,
                             resume_session_id,
                             acp_db_clone,
+                            project_root_clone,
+                            terminal_manager_clone,
                         )
                         .await;
                     })
@@ -927,6 +944,7 @@ impl AcpAgent {
         cmd: &str,
         args: &[String],
         env: Option<&HashMap<String, String>>,
+        project_root: &std::path::Path,
     ) -> io::Result<(
         tokio::process::Child,
         tokio::process::ChildStdin,
@@ -935,6 +953,7 @@ impl AcpAgent {
     )> {
         let mut command = Self::agent_command(cmd);
         command.args(args);
+        command.current_dir(project_root);
         if let Some(env_map) = env {
             for (key, val) in env_map {
                 let resolved_val = if val.starts_with("~/") {
@@ -993,6 +1012,7 @@ impl AcpAgent {
         history_manager: Arc<RwLock<AcpHistoryManager>>,
         queue: Arc<tokio::sync::Mutex<Vec<AcpQueuedMessage>>>,
         queue_notify: Arc<Notify>,
+        queue_paused: Arc<AtomicBool>,
         message_sender: broadcast::Sender<AcpMessage>,
         fs_sender: mpsc::Sender<AcpFsCommand>,
         stdin: tokio::process::ChildStdin,
@@ -1004,6 +1024,8 @@ impl AcpAgent {
         bootstrap_tx: oneshot::Sender<Result<SessionBootstrapOutcome>>,
         resume_session_id: Option<String>,
         acp_db: Option<Arc<crate::acp_db::AcpDb>>,
+        project_root: PathBuf,
+        terminal_manager: Arc<crate::acp_terminal::AcpTerminalManager>,
     ) {
         // Clone history before moving client_impl
         let history_for_prompt = history.clone();
@@ -1013,8 +1035,10 @@ impl AcpAgent {
             agent_id: agent_id.clone(),
             message_sender: message_sender.clone(),
             history,
+            project_root: project_root.clone(),
             fs_sender: Some(fs_sender),
             acp_db,
+            terminal_manager: terminal_manager.clone(),
         });
 
         // Read stderr for debugging
@@ -1111,7 +1135,12 @@ impl AcpAgent {
                 agent_client_protocol::on_receive_notification!(),
             )
             .connect_with(transport, async move |conn| {
-                let outcome = match Self::initialize_connection(&conn, &agent_id_for_conn, resume_session_id).await {
+                let outcome = match Self::initialize_connection(
+                    &conn,
+                    &agent_id_for_conn,
+                    resume_session_id,
+                    project_root,
+                ).await {
                     Ok(value) => value,
                     Err(e) => {
                         let recent_stderr = {
@@ -1214,10 +1243,12 @@ impl AcpAgent {
                     history_manager,
                     queue,
                     queue_notify,
+                    queue_paused,
                     bootstrap.session_id,
                     bootstrap.prompt_capabilities,
                     &mut config_rx,
                     &mut cancel_rx,
+                    terminal_manager,
                 )
                 .await;
                 Ok(())
@@ -1268,14 +1299,16 @@ impl AcpAgent {
             .read_text_file(true)
             .write_text_file(true);
 
-        let client_capabilities = acp::ClientCapabilities::new().fs(fs_capabilities);
+        let client_capabilities = acp::ClientCapabilities::new()
+            .fs(fs_capabilities)
+            .terminal(true);
 
         let init_message = acp::InitializeRequest::new(ProtocolVersion::V1)
             .client_info(client_info)
             .client_capabilities(client_capabilities);
 
         info!(
-            "Initializing ACP agent {} with capabilities: fs.readTextFile=true, fs.writeTextFile=true",
+            "Initializing ACP agent {} with capabilities: fs.readTextFile=true, fs.writeTextFile=true, terminal=true",
             agent_id
         );
 
@@ -1299,10 +1332,9 @@ impl AcpAgent {
         conn: &ConnectionTo<agent_client_protocol::Agent>,
         agent_id: &str,
         resume_session_id: Option<String>,
+        cwd: PathBuf,
     ) -> Result<SessionBootstrapOutcome> {
         let (prompt_capabilities, auth_methods) = Self::initialize_agent_connection(conn, agent_id).await?;
-
-        let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
 
         if let Some(resume_session_id) = resume_session_id.as_deref() {
             match Self::restore_session(conn, resume_session_id, &cwd).await? {
@@ -1585,10 +1617,12 @@ impl AcpAgent {
         history_manager: Arc<RwLock<AcpHistoryManager>>,
         queue: Arc<tokio::sync::Mutex<Vec<AcpQueuedMessage>>>,
         queue_notify: Arc<Notify>,
+        queue_paused: Arc<AtomicBool>,
         session_id: acp::SessionId,
         prompt_capabilities: acp::PromptCapabilities,
         config_rx: &mut mpsc::Receiver<PendingConfigUpdate>,
         cancel_rx: &mut mpsc::Receiver<()>,
+        terminal_manager: Arc<crate::acp_terminal::AcpTerminalManager>,
     ) {
         info!(
             "Starting prompt handling loop for agent {} with session {}",
@@ -1596,10 +1630,14 @@ impl AcpAgent {
         );
 
         loop {
+            // Cancel signals only matter while a turn is in flight. Anything still buffered
+            // here is stale, so drop it before the next queued prompt can start.
+            while cancel_rx.try_recv().is_ok() {}
+
             // First check if there is an item in the queue to process
             let next_prompt = {
                 let mut q = queue.lock().await;
-                if !q.is_empty() {
+                if !q.is_empty() && !queue_paused.load(Ordering::SeqCst) {
                     is_processing.store(true, Ordering::SeqCst);
                     Some(q.remove(0))
                 } else {
@@ -1666,11 +1704,9 @@ impl AcpAgent {
                     );
                 }
 
-                // Drain any stale cancel signals before processing prompt
-                while cancel_rx.try_recv().is_ok() {}
-
-                // Handle prompt with cancellation support
-                let was_cancelled = Self::handle_prompt_with_cancellation(
+                // Handle prompt with cancellation support. Stop already dropped the prompts queued
+                // before it (see cancel_prompt), so prompts sent after Stop are not cleared here.
+                Self::handle_prompt_with_cancellation(
                     conn,
                     agent_id,
                     message_sender,
@@ -1680,25 +1716,12 @@ impl AcpAgent {
                     queued_item.attachments,
                     &prompt_capabilities,
                     cancel_rx,
+                    &terminal_manager,
                 )
                 .await;
 
-                if was_cancelled {
-                    // If user cancelled, clear the rest of the queue so subsequent prompts do not execute automatically
-                    let mut q = queue.lock().await;
-                    info!(
-                        "Prompt was cancelled for agent {}, clearing {} remaining queued prompts",
-                        agent_id,
-                        q.len()
-                    );
-                    q.clear();
-                    let _ = message_sender.send(AcpMessage::QueueUpdate(AcpQueueUpdate {
-                        queue: Vec::new(),
-                    }));
-                }
-
                 // Only emit processing = false when queue is completely drained
-                let has_more = !queue.lock().await.is_empty();
+                let has_more = !queue.lock().await.is_empty() && !queue_paused.load(Ordering::SeqCst);
                 if !has_more {
                     is_processing.store(false, Ordering::SeqCst);
 
@@ -1707,9 +1730,6 @@ impl AcpAgent {
                         is_processing: false,
                     }));
                 }
-
-                // Drain any remaining cancel signals before processing next prompt
-                while cancel_rx.try_recv().is_ok() {}
 
                 tokio::task::yield_now().await;
                 continue;
@@ -1755,9 +1775,14 @@ impl AcpAgent {
         attachments: Vec<AcpPromptAttachment>,
         prompt_capabilities: &acp::PromptCapabilities,
         cancel_rx: &mut mpsc::Receiver<()>,
-    ) -> bool {
-        // Drain any stale cancel signals before sending prompt
-        while cancel_rx.try_recv().is_ok() {}
+        terminal_manager: &Arc<crate::acp_terminal::AcpTerminalManager>,
+    ) {
+        // Stop pressed after the turn started but before the request was sent cancels this
+        // turn. Do not send the prompt at all.
+        if cancel_rx.try_recv().is_ok() {
+            info!("Prompt cancelled before it was sent to agent {}", agent_id);
+            return;
+        }
 
         let blocks = Self::prepare_prompt_blocks(prompt, attachments, prompt_capabilities);
         let prompt_request = acp::PromptRequest::new(session_id.clone(), blocks);
@@ -1804,6 +1829,8 @@ impl AcpAgent {
                     if !cancel_sent {
                         cancel_sent = true;
                         info!("Cancelling current prompt for agent {}", agent_id);
+                        // Kill any active terminal commands for this session immediately
+                        terminal_manager.kill_all_for_session(session_id.0.as_ref()).await;
                         // Send cancel notification to agent via ACP protocol
                         if let Err(e) = conn_for_cancel
                             .send_notification(acp::CancelNotification::new(session_id.clone()))
@@ -1812,10 +1839,12 @@ impl AcpAgent {
                         }
                     }
                 }
+                _ = tokio::time::sleep(tokio::time::Duration::from_secs(4)), if cancel_sent => {
+                    warn!("Agent {} prompt turn timed out 4s after cancel notification; breaking loop", agent_id);
+                    break;
+                }
             }
         }
-
-        cancel_sent
     }
 
     fn prepare_prompt_blocks(
@@ -2000,7 +2029,7 @@ impl AcpAgent {
                 local_set
                     .run_until(async move {
                         let (mut child, stdin, stdout, stderr) =
-                            Self::spawn_agent_process(&cmd, &args, None).map_err(|e| {
+                            Self::spawn_agent_process(&cmd, &args, None, &cwd).map_err(|e| {
                                 anyhow!("Failed to spawn ACP agent for session listing: {}", e)
                             })?;
 
@@ -2083,6 +2112,7 @@ impl AcpAgent {
 
     pub async fn stop(&mut self) {
         self.ready.store(false, Ordering::SeqCst);
+        self.terminal_manager.kill_all().await;
         self.clear_queue().await;
         if let Some(shutdown_tx) = self.shutdown_sender.take() {
             let _ = shutdown_tx.send(()).await;
@@ -2129,9 +2159,14 @@ impl AcpAgent {
 
         let (current_queue, should_broadcast) = {
             let mut q = self.queue.lock().await;
+            if q.is_empty() {
+                // Nothing is held back, so this prompt runs like any other.
+                self.queue_paused.store(false, Ordering::SeqCst);
+            }
             q.push(item);
             let is_busy = self.is_processing.load(Ordering::SeqCst);
-            let should_broadcast = is_busy || q.len() > 1;
+            let is_paused = self.queue_paused.load(Ordering::SeqCst);
+            let should_broadcast = is_busy || q.len() > 1 || is_paused;
             (q.clone(), should_broadcast)
         };
 
@@ -2236,6 +2271,36 @@ impl AcpAgent {
         moved
     }
 
+    /// Moves a queued prompt to the front and sends it now, interrupting a running turn.
+    /// Also resumes a queue paused by Stop. Returns false if the item is not queued.
+    pub async fn send_queued_prompt_now(&self, item_id: &str) -> bool {
+        let (current_queue, is_busy) = {
+            let mut q = self.queue.lock().await;
+            let Some(index) = q.iter().position(|item| item.id == item_id) else {
+                return false;
+            };
+            let item = q.remove(index);
+            q.insert(0, item);
+            self.queue_paused.store(false, Ordering::SeqCst);
+            (q.clone(), self.is_processing.load(Ordering::SeqCst))
+        };
+
+        if let Some(sender) = &self.message_sender {
+            let _ = sender.send(AcpMessage::QueueUpdate(AcpQueueUpdate {
+                queue: current_queue,
+            }));
+        }
+
+        if is_busy {
+            // The cancelled turn ends, then the prompt loop starts the front item.
+            if let Some(cancel_tx) = self.cancel_sender.lock().await.as_ref() {
+                let _ = cancel_tx.send(()).await;
+            }
+        }
+        self.queue_notify.notify_one();
+        true
+    }
+
     pub async fn clear_queue(&self) {
         let current_queue = {
             let mut q = self.queue.lock().await;
@@ -2247,6 +2312,15 @@ impl AcpAgent {
                 queue: current_queue,
             }));
         }
+    }
+
+    pub fn is_queue_paused(&self) -> bool {
+        self.queue_paused.load(Ordering::SeqCst)
+    }
+
+    #[cfg(test)]
+    pub fn set_queue_paused_for_test(&self, paused: bool) {
+        self.queue_paused.store(paused, Ordering::SeqCst);
     }
 
     /// Restore project to state before a specific prompt was processed
@@ -2273,6 +2347,19 @@ impl AcpAgent {
             Some(tx) => tx,
             None => return Err(anyhow!("Cancel sender not initialized")),
         };
+
+        if let Some(ref session_id) = self.session_id {
+            self.terminal_manager.kill_all_for_session(session_id.0.as_ref()).await;
+        } else {
+            self.terminal_manager.kill_all().await;
+        }
+
+        // Stop stops the running turn only. Queued prompts stay in the queue and do not start
+        // until the user sends one of them with the send-now action.
+        {
+            let _q = self.queue.lock().await;
+            self.queue_paused.store(true, Ordering::SeqCst);
+        }
 
         // Send cancel signal to agent
         cancel_tx.send(()).await?;
@@ -2349,14 +2436,16 @@ impl AcpManager {
         args: &[String],
         env: Option<HashMap<String, String>>,
         resume_session_id: Option<String>,
+        project_root: PathBuf,
     ) -> Result<AcpStartOutcome> {
         if self.agents.contains_key(&agent_id) {
             return Err(anyhow::anyhow!("Agent {} already running", agent_id));
         }
 
-        let mut agent = AcpAgent::new(
+        let mut agent = AcpAgent::new_with_project_root(
             agent_id.clone(),
             agent_name.clone(),
+            project_root,
             self.fs_sender.clone(),
             self.acp_db.clone(),
         );
@@ -2561,6 +2650,14 @@ impl AcpManager {
         }
     }
 
+    pub async fn send_agent_queued_prompt_now(&self, agent_id: &str, item_id: &str) -> bool {
+        if let Some(agent) = self.agents.get(agent_id) {
+            agent.send_queued_prompt_now(item_id).await
+        } else {
+            false
+        }
+    }
+
     #[allow(dead_code)]
     pub async fn clear_agent_queue(&self, agent_id: &str) -> bool {
         if let Some(agent) = self.agents.get(agent_id) {
@@ -2569,5 +2666,31 @@ impl AcpManager {
         } else {
             false
         }
+    }
+}
+
+#[cfg(all(test, unix))]
+mod workspace_tests {
+    use super::AcpAgent;
+    use tokio::io::AsyncReadExt;
+
+    #[tokio::test]
+    async fn agent_process_starts_in_explicit_project_root() {
+        let project = tempfile::tempdir().unwrap();
+        let expected_root = project
+            .path()
+            .canonicalize()
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+        let (mut child, _stdin, mut stdout, _stderr) =
+            AcpAgent::spawn_agent_process("/bin/pwd", &[], None, project.path()).unwrap();
+
+        let mut output = Vec::new();
+        stdout.read_to_end(&mut output).await.unwrap();
+        let status = child.wait().await.unwrap();
+
+        assert!(status.success());
+        assert_eq!(String::from_utf8(output).unwrap().trim(), expected_root);
     }
 }

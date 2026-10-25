@@ -1,4 +1,21 @@
 import { test, expect, type Page } from '@playwright/test';
+import {
+    DEMO_RESUME_MARKED_TURNS,
+    DEMO_RESUME_QUERY,
+    DEMO_RESUME_TURN_COUNT,
+    demoResumeUserPrompt,
+} from '../demoSessionHistory';
+
+// Each marked turn contributes a matching prompt and a matching answer.
+const EXPECTED_MATCHES = DEMO_RESUME_MARKED_TURNS.length * 2;
+
+// Demo mode seeds the Demo Agent on first run; starting it enables the prompt input.
+const startDemoAgent = async (page: Page) => {
+    await page.getByTitle('Start Demo Agent in').click();
+    const promptInput = page.getByPlaceholder('Ask anything...');
+    await expect(promptInput).toBeEnabled({ timeout: 10000 });
+    return promptInput;
+};
 
 const openSettingsPanel = async (page: Page) => {
     const settingsPanel = page.locator('.layout-dock-panel--settings:visible').first();
@@ -114,11 +131,10 @@ test.describe('Anycode Live Demo Mode E2E Tests', () => {
         await expect(readme).toBeVisible({ timeout: 10000 });
         await readme.click();
 
-        const editor = page.locator('.anycode-editor, canvas, .dockview-panel-body').first();
-        if (await editor.isVisible({ timeout: 5000 }).catch(() => false)) {
-            await editor.click();
-            await page.keyboard.type('test typing');
-        }
+        const editor = page.locator('.anyeditor .code').first();
+        await expect(editor).toBeVisible({ timeout: 10000 });
+        await editor.click();
+        await page.keyboard.type('test typing');
     });
 
     test('should track edited files in Changes panel and remove them when reverted', async ({ page }) => {
@@ -126,40 +142,38 @@ test.describe('Anycode Live Demo Mode E2E Tests', () => {
         await expect(readme).toBeVisible({ timeout: 10000 });
         await readme.click();
 
-        const editor = page.locator('.anycode-editor, canvas, .dockview-panel-body').first();
-        if (await editor.isVisible({ timeout: 5000 }).catch(() => false)) {
-            await editor.click();
-            await page.keyboard.type('123');
+        const editor = page.locator('.anyeditor .code').first();
+        await expect(editor).toBeVisible({ timeout: 10000 });
+        await editor.click();
+        await page.keyboard.type('123');
 
-            const changesTab = page.getByText('CHANGES').or(page.getByText('Changes')).first();
-            if (await changesTab.isVisible({ timeout: 5000 }).catch(() => false)) {
-                await changesTab.click();
+        const changesTab = page.getByRole('tab', { name: 'Changes' });
+        await changesTab.click();
 
-                // Assert 1: README.md must appear in the Changes list
-                const changedFile = page.locator('.changes-list').getByText('README.md').first();
-                await expect(changedFile).toBeVisible({ timeout: 10000 });
+        // Assert 1: README.md must appear in the Changes list
+        const changedFile = page.locator('.changes-list').getByText('README.md').first();
+        await expect(changedFile).toBeVisible({ timeout: 10000 });
 
-                // Delete '123' via backspaces to restore original content
-                await editor.click();
-                await page.keyboard.press('Backspace');
-                await page.keyboard.press('Backspace');
-                await page.keyboard.press('Backspace');
+        // Delete '123' via backspaces to restore original content
+        await editor.click();
+        await page.keyboard.press('Backspace');
+        await page.keyboard.press('Backspace');
+        await page.keyboard.press('Backspace');
 
-                // Switch back to Changes tab
-                await changesTab.click();
+        // Switch back to Changes tab
+        await changesTab.click();
 
-                // Assert 2: README.md must NOT be in Changes list and 'No changes' message must appear
-                await expect(page.getByText('No changes')).toBeVisible({ timeout: 10000 });
-                await expect(changedFile).not.toBeVisible();
-            }
-        }
+        // Assert 2: README.md must NOT be in Changes list and 'No changes' message must appear
+        await expect(page.getByText('No changes')).toBeVisible({ timeout: 10000 });
+        await expect(changedFile).not.toBeVisible();
     });
 
     test('should allow creating a new branch from branch select in Changes panel', async ({ page }) => {
         const changesTab = page.getByText('CHANGES').or(page.getByText('Changes')).first();
         if (await changesTab.isVisible({ timeout: 5000 }).catch(() => false)) {
             await changesTab.click();
-            const branchSelect = page.locator('.changes-branch-select');
+            // The project picker shares the .changes-branch-select class for styling, so select by its label.
+            const branchSelect = page.getByRole('combobox', { name: 'Select branch' });
             await expect(branchSelect).toBeVisible({ timeout: 10000 });
             await branchSelect.selectOption('__create_new_branch__');
 
@@ -169,14 +183,14 @@ test.describe('Anycode Live Demo Mode E2E Tests', () => {
             await newBranchInput.press('Enter');
 
             await expect(newBranchInput).not.toBeVisible({ timeout: 5000 });
-            await expect(page.locator('.changes-branch-select')).toHaveValue('feature-test');
+            await expect(branchSelect).toHaveValue('feature-test');
 
             // Also test Escape cancels
-            await page.locator('.changes-branch-select').selectOption('__create_new_branch__');
+            await branchSelect.selectOption('__create_new_branch__');
             await expect(page.locator('.changes-new-branch-input')).toBeVisible({ timeout: 5000 });
             await page.locator('.changes-new-branch-input').press('Escape');
             await expect(page.locator('.changes-new-branch-input')).not.toBeVisible({ timeout: 5000 });
-            await expect(page.locator('.changes-branch-select')).toBeVisible();
+            await expect(branchSelect).toBeVisible();
         }
     });
 
@@ -245,23 +259,22 @@ test.describe('Anycode Live Demo Mode E2E Tests', () => {
         await expect(readme).toBeVisible({ timeout: 10000 });
         await readme.click();
 
-        const editor = page.locator('.anycode-editor, canvas, .dockview-panel-body').first();
-        if (await editor.isVisible({ timeout: 5000 }).catch(() => false)) {
-            await editor.click();
-            await page.keyboard.press('Control+Space');
+        const editor = page.locator('.anyeditor .code').first();
+        await expect(editor).toBeVisible({ timeout: 10000 });
+        await editor.click();
+        await page.keyboard.press('Control+Space');
 
-            // Assert completion popup box container is visible in DOM
-            const completionBox = page.locator('.completion-box').first();
-            await expect(completionBox).toBeVisible({ timeout: 10000 });
+        // Assert completion popup box container is visible in DOM
+        const completionBox = page.locator('.completion-box').first();
+        await expect(completionBox).toBeVisible({ timeout: 10000 });
 
-            // Assert completion popup contains items and is not empty!
-            const completionItems = page.locator('.completion-item');
-            const itemCount = await completionItems.count();
-            expect(itemCount).toBeGreaterThan(0);
+        // Assert completion popup contains items and is not empty!
+        const completionItems = page.locator('.completion-item');
+        const itemCount = await completionItems.count();
+        expect(itemCount).toBeGreaterThan(0);
 
-            const firstItemText = await completionItems.first().innerText();
-            expect(firstItemText.trim().length).toBeGreaterThan(0);
-        }
+        const firstItemText = await completionItems.first().innerText();
+        expect(firstItemText.trim().length).toBeGreaterThan(0);
     });
 
     test('should trigger LSP references and render peek view panel with item list matching dataset count and valid code preview', async ({ page }) => {
@@ -269,30 +282,29 @@ test.describe('Anycode Live Demo Mode E2E Tests', () => {
         await expect(readme).toBeVisible({ timeout: 10000 });
         await readme.click();
 
-        const editor = page.locator('.anycode-editor, canvas, .dockview-panel-body').first();
-        if (await editor.isVisible({ timeout: 5000 }).catch(() => false)) {
-            await editor.click();
-            await page.keyboard.press('Shift+F12');
+        const editor = page.locator('.anyeditor .code').first();
+        await expect(editor).toBeVisible({ timeout: 10000 });
+        await editor.click();
+        await page.keyboard.press('F11');
 
-            // Assert 1: References peek view widget container is rendered
-            const peekWidget = page.locator('.reference-zone-widget, .references-peek-container').first();
-            await expect(peekWidget).toBeVisible({ timeout: 10000 });
+        // Assert 1: References peek view widget container is rendered
+        const peekWidget = page.locator('.references-peek');
+        await expect(peekWidget).toBeVisible({ timeout: 10000 });
 
-            // Assert 2: Exact item count of .references-peek-item-select matches response items (2)
-            const peekItems = page.locator('.references-peek-item-select');
-            await expect(peekItems).toHaveCount(2, { timeout: 10000 });
+        // Assert 2: Exact item count of .references-peek-item-select matches response items (2)
+        const peekItems = page.locator('.references-peek-item-select');
+        await expect(peekItems).toHaveCount(2, { timeout: 10000 });
 
-            // Assert 3: "Preview unavailable" text is NOT present in DOM
-            await expect(page.getByText('Preview unavailable')).not.toBeVisible();
+        // Assert 3: "Preview unavailable" text is NOT present in DOM
+        await expect(page.getByText('Preview unavailable')).not.toBeVisible();
 
-            // Assert 4: References preview code area is rendered
-            await expect(page.locator('.references-peek-preview')).toBeVisible({ timeout: 10000 });
+        // Assert 4: References preview code area is rendered
+        await expect(page.locator('.references-peek-preview')).toBeVisible({ timeout: 10000 });
 
-            // Assert 5: Clicking the 2nd item updates selection
-            const secondItem = peekItems.nth(1);
-            await secondItem.click();
-            await expect(secondItem).toHaveClass(/is-selected/);
-        }
+        // Assert 5: Clicking the 2nd item updates selection
+        const secondItem = peekItems.nth(1);
+        await secondItem.click();
+        await expect(secondItem).toHaveClass(/is-selected/);
     });
 
     test('should trigger LSP definition and jump to symbol definition without errors', async ({ page }) => {
@@ -300,12 +312,11 @@ test.describe('Anycode Live Demo Mode E2E Tests', () => {
         await expect(readme).toBeVisible({ timeout: 10000 });
         await readme.click();
 
-        const editor = page.locator('.anycode-editor, canvas, .dockview-panel-body').first();
-        if (await editor.isVisible({ timeout: 5000 }).catch(() => false)) {
-            await editor.click();
-            await page.keyboard.press('F12');
-            await expect(page.locator('body')).toBeVisible();
-        }
+        const editor = page.locator('.anyeditor .code').first();
+        await expect(editor).toBeVisible({ timeout: 10000 });
+        await editor.click();
+        await page.keyboard.press('F12');
+        await expect(page.locator('body')).toBeVisible();
     });
 
     test('should render interactive terminal banner and prompt in demo mode', async ({ page }) => {
@@ -378,7 +389,7 @@ test.describe('Anycode Live Demo Mode E2E Tests', () => {
         // Switch away to Editor tab (hides terminal container) and back to Terminal
         const editorTab = page.getByRole('tab', { name: 'Editor' }).first();
         await editorTab.click();
-        await page.waitForTimeout(150);
+        await expect(page.locator('.wterm').first()).toBeHidden();
         await openTerminalPanel(page);
 
         await expect(page.locator('.wterm').getByText('developer').first()).toBeVisible({ timeout: 10000 });
@@ -388,17 +399,17 @@ test.describe('Anycode Live Demo Mode E2E Tests', () => {
         });
         expect(isAtBottom).toBe(true);
 
-        // Wait for debounced snapshot save and verify localStorage persistence
-        await page.waitForTimeout(200);
-        const hasSnapshot = await page.evaluate(() => {
+        // Debounced snapshot save: poll until localStorage holds the terminal output
+        await expect.poll(() => page.evaluate(() => {
             return Object.keys(localStorage).some(
                 (k) => k.startsWith('terminal:data:') && (localStorage.getItem(k) || '').includes('developer')
             );
-        });
-        expect(hasSnapshot).toBe(true);
+        })).toBe(true);
 
         // Reload page and verify terminal restores previous output from snapshot
         await page.reload();
+        // Layout restore is async after reload; wait for the restored Terminal tab before reusing it.
+        await expect(page.getByRole('tab', { name: /^Terminal$/i }).first()).toBeVisible({ timeout: 10000 });
         await openTerminalPanel(page);
         await expect(page.locator('.wterm').getByText('developer').first()).toBeVisible({ timeout: 10000 });
     });
@@ -426,7 +437,7 @@ test.describe('Anycode Live Demo Mode E2E Tests', () => {
 
         // Switch to Editor tab and back to Terminal
         await page.getByRole('tab', { name: 'Editor' }).first().click();
-        await page.waitForTimeout(150);
+        await expect(wtermEl).toBeHidden();
         await openTerminalPanel(page);
 
         await expect.poll(() => wtermEl.evaluate((el) => Math.round(el.scrollTop))).toBe(25);
@@ -463,8 +474,8 @@ test.describe('Anycode Live Demo Mode E2E Tests', () => {
         await quoteBtn.click();
         await expect(page.locator('.acp-input-quote-badge-label').getByText('Terminal: 1')).toBeVisible({ timeout: 5000 });
 
-        // Wait for snapshot to be written, then close the terminal from the bottom toolbar tab
-        await page.waitForTimeout(200);
+        // Wait for the debounced snapshot to be written, then close the terminal from the bottom toolbar tab
+        await expect.poll(() => page.evaluate(() => Object.keys(localStorage).some((k) => k.startsWith('terminal:data:')))).toBe(true);
         const toolbarTermTab = page.locator('.toolbar-tabs .tab').filter({ hasText: /term:1/i }).first();
         await toolbarTermTab.locator('.tab-close-button').dispatchEvent('click');
 
@@ -485,144 +496,136 @@ test.describe('Anycode Live Demo Mode E2E Tests', () => {
     });
 
     test('should perform complete ACP agent lifecycle (user message, thought reasoning, tool card toggle, streaming response & demo notice)', async ({ page }) => {
-        const promptInput = page.getByPlaceholder('Ask anything...');
-        if (await promptInput.isVisible({ timeout: 5000 }).catch(() => false)) {
-            // 1. Send User Prompt
-            await promptInput.fill('hello, scan my workspace');
-            await promptInput.press('Enter');
+        const promptInput = await startDemoAgent(page);
+        // 1. Send User Prompt
+        await promptInput.fill('hello, scan my workspace');
+        await promptInput.press('Enter');
 
-            // 2. Assert User Prompt Bubble appears
-            await expect(page.getByText('hello, scan my workspace').first()).toBeVisible({ timeout: 10000 });
+        // 2. Assert User Prompt Bubble appears
+        await expect(page.getByText('hello, scan my workspace').first()).toBeVisible({ timeout: 10000 });
 
-            // 3. Assert Thought reasoning block appears
-            await expect(page.getByText(/Analyzing workspace VFS files/i).first()).toBeVisible({ timeout: 10000 });
+        // 3. Assert Thought reasoning block appears
+        await expect(page.getByText(/Analyzing workspace VFS files/i).first()).toBeVisible({ timeout: 10000 });
 
-            // 4. Assert Tool Call Card appears and expands in the latest group
-            const toolToggle = page.locator('.acp-tool-call-toggle').first();
-            await expect(toolToggle).toBeVisible({ timeout: 10000 });
-            await toolToggle.click();
+        // 4. Assert Tool Call Card appears and expands in the latest group
+        const toolToggle = page.locator('.acp-tool-call-toggle').first();
+        await expect(toolToggle).toBeVisible({ timeout: 10000 });
+        await toolToggle.click();
 
-            // 5. Assert Tool Command details are rendered inside expanded card
-            await expect(page.locator('.acp-tool-call-expanded, .acp-tool-call-name').getByText(/list_dir|Scanning/i).first()).toBeVisible({ timeout: 10000 });
+        // 5. Assert Tool Command details are rendered inside expanded card
+        await expect(page.locator('.acp-tool-call-expanded, .acp-tool-call-name').getByText(/list_dir|Scanning/i).first()).toBeVisible({ timeout: 10000 });
 
-            // 6. Assert Assistant streaming response with English demo notice appears
-            await expect(
-                page.getByText(/Demo Mode Notice/i).first()
-            ).toBeVisible({ timeout: 10000 });
-        }
+        // 6. Assert Assistant streaming response with English demo notice appears
+        await expect(
+            page.getByText(/Demo Mode Notice/i).first()
+        ).toBeVisible({ timeout: 10000 });
     });
 
     test('should collapse and expand long user messages', async ({ page }) => {
-        const promptInput = page.getByPlaceholder('Ask anything...');
-        if (await promptInput.isVisible({ timeout: 5000 }).catch(() => false)) {
-            const longPrompt = Array.from({ length: 24 }, (_, index) => `Log line ${index + 1}: repeated diagnostic output`).join('\n');
-            await promptInput.fill(longPrompt);
-            await promptInput.press('Enter');
+        const promptInput = await startDemoAgent(page);
+        const longPrompt = Array.from({ length: 24 }, (_, index) => `Log line ${index + 1}: repeated diagnostic output`).join('\n');
+        await promptInput.fill(longPrompt);
+        await promptInput.press('Enter');
 
-            const userMessage = page.locator('.acp-message-user').filter({ hasText: 'Log line 24' }).last();
-            const toggle = userMessage.getByRole('button', { name: 'Show more' });
-            await expect(toggle).toBeVisible({ timeout: 10000 });
-            await expect(toggle).toHaveAttribute('aria-expanded', 'false');
-            await expect(userMessage.locator('.acp-user-message-body')).toHaveClass(/acp-user-message-body-collapsed/);
+        const userMessage = page.locator('.acp-message-user').filter({ hasText: 'Log line 24' }).last();
+        const toggle = userMessage.getByRole('button', { name: 'Show more' });
+        await expect(toggle).toBeVisible({ timeout: 10000 });
+        await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+        await expect(userMessage.locator('.acp-user-message-body')).toHaveClass(/acp-user-message-body-collapsed/);
 
-            await toggle.click();
-            await expect(userMessage.getByRole('button', { name: 'Show less' })).toHaveAttribute('aria-expanded', 'true');
-            await expect(userMessage.locator('.acp-user-message-body')).not.toHaveClass(/acp-user-message-body-collapsed/);
-            await expect(page.getByRole('button', { name: 'Enable auto-scroll' })).toBeVisible();
-        }
+        await toggle.click();
+        await expect(userMessage.getByRole('button', { name: 'Show less' })).toHaveAttribute('aria-expanded', 'true');
+        await expect(userMessage.locator('.acp-user-message-body')).not.toHaveClass(/acp-user-message-body-collapsed/);
+        await expect(page.getByRole('button', { name: 'Enable auto-scroll' })).toBeVisible();
     });
 
-    test('should search ACP text without expanding unrelated work groups', async ({ page }) => {
-        const promptInput = page.getByPlaceholder('Ask anything...');
-        if (await promptInput.isVisible({ timeout: 5000 }).catch(() => false)) {
-            await promptInput.fill('first first search turn');
-            await promptInput.press('Enter');
-            await expect(page.getByText(/Demo Mode Notice/i).first()).toBeVisible({ timeout: 10000 });
+    test('should search ACP text without expanding unrelated tool calls', async ({ page }) => {
+        // Resuming the stored demo session replays its history instead of streaming new turns.
+        await page.goto('/');
+        await page.getByTitle('Browse Demo Agent sessions').click();
+        await page.getByRole('button', { name: 'Resume' }).click();
+        // The list opens at the latest turn; the marked turns are older and get reached by searching.
+        const latestPrompt = demoResumeUserPrompt(DEMO_RESUME_TURN_COUNT);
+        await expect(page.locator('.acp-message-user', { hasText: latestPrompt })).toBeVisible({ timeout: 10000 });
+        await expect(page.locator('.acp-tool-call-expanded')).toHaveCount(0);
 
-            await promptInput.fill('second search turn');
-            await promptInput.press('Enter');
-            await expect(page.locator('.acp-work-group').first()).toHaveClass(/collapsed/);
-            await expect(page.locator('.acp-message-markdown blockquote')).toHaveCount(2, { timeout: 10000 });
+        const selectedMessage = page.locator('.acp-message-user').filter({ hasText: latestPrompt });
+        await selectedMessage.evaluate((element) => {
+            const range = document.createRange();
+            range.selectNodeContents(element.querySelector('.acp-message-content p')!);
+            window.getSelection()?.removeAllRanges();
+            window.getSelection()?.addRange(range);
+        });
+        await page.keyboard.press('Control+f');
 
-            const selectedMessage = page.locator('.acp-message-user').filter({ hasText: 'first first search turn' });
-            await selectedMessage.evaluate((element) => {
-                const range = document.createRange();
-                range.selectNodeContents(element.querySelector('.acp-message-content')!);
-                window.getSelection()?.removeAllRanges();
-                window.getSelection()?.addRange(range);
-            });
-            await page.keyboard.press('Control+f');
+        const conversationSearch = page.getByRole('search').getByLabel('Find in conversation');
+        await expect(conversationSearch).toBeFocused();
+        await expect(conversationSearch).toHaveValue(latestPrompt);
 
-            const conversationSearch = page.getByRole('search').getByLabel('Find in conversation');
-            await expect(conversationSearch).toBeFocused();
-            await expect(conversationSearch).toHaveValue('first first search turn');
+        // One hit per marked prompt and per marked answer; tool calls must stay collapsed while stepping through them.
+        await conversationSearch.fill(DEMO_RESUME_QUERY);
+        await expect(page.locator('.acp-search-count')).toHaveText(`1 / ${EXPECTED_MATCHES}`);
+        await expect.poll(() => page.evaluate(() => CSS.highlights.get('acp-search-current')?.size ?? 0)).toBe(1);
 
-            await expect(page.locator('.acp-search-count')).toHaveText('1 / 3');
-            await expect(page.locator('.acp-search-current-hit')).toBeVisible();
+        await conversationSearch.press('Enter');
+        await expect(page.locator('.acp-search-count')).toHaveText(`2 / ${EXPECTED_MATCHES}`);
+        await expect(page.locator('.acp-tool-call-expanded')).toHaveCount(0);
 
-            await conversationSearch.press('Enter');
-            await expect(page.locator('.acp-search-count')).toHaveText('2 / 3');
-            await expect(page.locator('[data-search-expanded="true"]')).toHaveCount(1);
-            await expect(page.locator('.acp-tool-call-expanded')).toHaveCount(0);
+        await conversationSearch.fill('zzz-not-in-history');
+        await expect(page.locator('.acp-search-count')).toHaveText('No results');
+        await expect(page.locator('.acp-tool-call-expanded')).toHaveCount(0);
 
-            await conversationSearch.fill('first');
-            await expect(page.locator('.acp-search-count')).toHaveText('1 / 6');
-            await conversationSearch.press('Enter');
-            await expect(page.locator('.acp-search-count')).toHaveText('2 / 6');
-
-            await conversationSearch.fill('Read 182 bytes from README.md');
-            await expect(page.locator('.acp-search-count')).toHaveText('No results');
-            await expect(page.locator('[data-search-expanded="true"]')).toHaveCount(0);
-
-            await conversationSearch.press('Escape');
-            await expect(page.getByRole('search')).not.toBeVisible();
-        }
+        await conversationSearch.press('Escape');
+        await expect(page.getByRole('search')).not.toBeVisible();
     });
 
     test('should generate interactive Git diff cards (apply_diff) and verify acp-code and acp-diff-code CSS classes', async ({ page }) => {
-        const promptInput = page.getByPlaceholder('Ask anything...');
-        if (await promptInput.isVisible({ timeout: 5000 }).catch(() => false)) {
-            // Send Code Edit Prompt
-            await promptInput.fill('fix demo.py code');
-            await promptInput.press('Enter');
+        const promptInput = await startDemoAgent(page);
+        // Send Code Edit Prompt
+        await promptInput.fill('fix demo.py code');
+        await promptInput.press('Enter');
 
-            // Assert Tool Call Card for apply_diff appears
-            const diffToolCard = page.locator('.acp-message-tool_call').first();
-            await expect(diffToolCard).toBeVisible({ timeout: 10000 });
+        // Assert Tool Call Card for apply_diff appears
+        const diffToolCard = page.locator('.acp-message-tool_call').first();
+        await expect(diffToolCard).toBeVisible({ timeout: 10000 });
 
-            // Click toggle to expand tool call details
-            const toggleBtn = diffToolCard.locator('.acp-tool-call-toggle').first();
-            if (await toggleBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
-                await toggleBtn.click();
+        // Click toggle to expand tool call details
+        const toggleBtn = diffToolCard.locator('.acp-tool-call-toggle').first();
+        await expect(toggleBtn).toBeVisible({ timeout: 10000 });
+        await toggleBtn.click();
 
-                // Assert 1: Clickable file link button demo.py is rendered inside diff card
-                const diffFileLink = diffToolCard.locator('.acp-tool-call-diff-link').getByText('demo.py').first();
-                await expect(diffFileLink).toBeVisible({ timeout: 10000 });
+        // Assert 1: Clickable file link button demo.py is rendered inside diff card
+        const diffFileLink = diffToolCard.locator('.acp-tool-call-diff-link').getByText('demo.py').first();
+        await expect(diffFileLink).toBeVisible({ timeout: 10000 });
 
-                // Assert 2: Verify .acp-code.acp-diff-code element is rendered in DOM for Git diff card
-                const acpDiffCodeElement = page.locator('.acp-code.acp-diff-code, .acp-tool-call-diffs').first();
-                await expect(acpDiffCodeElement).toBeVisible({ timeout: 10000 });
-            }
+        // Assert 2: Verify .acp-code.acp-diff-code element is rendered in DOM for Git diff card
+        const acpDiffCodeElement = page.locator('.acp-code.acp-diff-code, .acp-tool-call-diffs').first();
+        await expect(acpDiffCodeElement).toBeVisible({ timeout: 10000 });
 
-            // Assert 3: Verify .acp-code element is rendered in DOM for Markdown code response
-            const acpCodeElement = page.locator('.acp-code').first();
-            await expect(acpCodeElement).toBeVisible({ timeout: 10000 });
+        // Assert 3: Verify .acp-code element is rendered in DOM for Markdown code response
+        const acpCodeElement = page.locator('.acp-code').first();
+        await expect(acpCodeElement).toBeVisible({ timeout: 10000 });
 
-            // Assert 4: Code block diff snippet is rendered in response message
-            await expect(page.locator('.acp-message-content code, pre').getByText(/def greet/i).first()).toBeVisible({ timeout: 10000 });
+        // Assert 4: Code block diff snippet is rendered in response message
+        await expect(page.locator('.acp-message-content code, pre').getByText(/def greet/i).first()).toBeVisible({ timeout: 10000 });
 
-            // Assert 5: Markdown code blocks expose a copy action and acknowledge the copy
-            const markdownCode = page.locator('.acp-message-markdown').last();
-            const copyCodeButton = markdownCode.getByRole('button', { name: 'Copy code' }).first();
-            const codeBlock = markdownCode.locator('.acp-code').filter({ has: copyCodeButton }).first();
-            await expect(copyCodeButton).not.toBeVisible();
-            await codeBlock.hover();
-            await expect(copyCodeButton).toBeVisible({ timeout: 10000 });
-            await expect(copyCodeButton.locator('svg')).toBeVisible();
-            await expect(codeBlock.locator('.acp-code-toolbar')).toHaveCSS('position', 'absolute');
-            await copyCodeButton.click();
-            await expect(page.getByRole('button', { name: 'Code copied' }).first()).toBeVisible({ timeout: 5000 });
-        }
+        // Assert 5: Markdown code blocks expose a copy action and acknowledge the copy
+        const markdownCode = page.locator('.acp-message-markdown').last();
+        // The reply streams in chunks and the code block reflows until the last chunk (the notice) lands.
+        await expect(markdownCode.getByText(/Demo Mode Notice/i)).toBeVisible({ timeout: 15000 });
+        const codeBlock = markdownCode.locator('.acp-code').first();
+        const copyCodeButton = codeBlock.getByRole('button', { name: 'Copy code' });
+        // The copy button is hidden with opacity until the block is hovered.
+        await expect(copyCodeButton).toHaveCSS('opacity', '0');
+        await codeBlock.hover();
+        await expect(copyCodeButton).toBeVisible({ timeout: 10000 });
+        await expect(copyCodeButton.locator('svg')).toBeVisible();
+        await expect(codeBlock.locator('.acp-code-toolbar')).toHaveCSS('position', 'absolute');
+        // The button only receives pointer events while the block is hovered, so keep the block under the pointer until the click.
+        await codeBlock.scrollIntoViewIfNeeded();
+        await codeBlock.hover();
+        await copyCodeButton.click();
+        await expect(page.getByRole('button', { name: 'Code copied' }).first()).toBeVisible({ timeout: 5000 });
     });
 
     test('should perform real content search across VFS files', async ({ page }) => {
@@ -681,7 +684,8 @@ test.describe('Anycode Live Demo Mode E2E Tests', () => {
         const reviewBtn = historyList.locator('.history-review-button, button:has-text("Review")').first();
         await expect(reviewBtn).toBeVisible({ timeout: 5000 });
         await reviewBtn.click();
-        await expect(page.locator('.multibuffer-panel').first()).toBeVisible({ timeout: 10000 });
+        const multibufferPanel = page.locator('.multibuffer-panel').first();
+        await expect(multibufferPanel).toBeVisible({ timeout: 10000 });
 
         const historyFileRows = historyList.locator('.history-file-row');
         const count = await historyFileRows.count();
@@ -695,7 +699,11 @@ test.describe('Anycode Live Demo Mode E2E Tests', () => {
 
             const headerRow = page.locator('.multibuffer-file-header-row').filter({ hasText: fileName }).first();
             await expect(headerRow).toBeVisible({ timeout: 10000 });
-            await page.waitForTimeout(500);
+            // Wait for the scroll to settle instead of sleeping a fixed time.
+            await expect.poll(async () => {
+                const [header, panel] = await Promise.all([headerRow.boundingBox(), multibufferPanel.boundingBox()]);
+                return header !== null && panel !== null && header.y >= panel.y && header.y + header.height <= panel.y + panel.height;
+            }, { timeout: 5000 }).toBe(true);
         }
     });
 
@@ -742,7 +750,6 @@ test.describe('Anycode Live Demo Mode E2E Tests', () => {
         const firstCommit = historyList.locator('.history-commit-row').first();
         await expect(firstCommit).toBeVisible({ timeout: 5000 });
         await firstCommit.click();
-        await page.waitForTimeout(300);
 
         const reviewBtn = historyList.locator('.history-review-button, button:has-text("Review")').first();
         await expect(reviewBtn).toBeVisible({ timeout: 5000 });
@@ -842,7 +849,9 @@ test.describe('Anycode Live Demo Mode E2E Tests', () => {
         const editorContainer = page.locator('.multibuffer-editor-shell .anyeditor').first();
         await expect(editorContainer).toBeVisible({ timeout: 10000 });
 
-        // Scroll down in review editor
+        // Scroll down in review editor. Wait for enough content first: a scrollTop set before the
+        // review finishes laying out is clamped to the shorter height and never re-applies.
+        await expect.poll(() => editorContainer.evaluate((el) => el.scrollHeight - el.clientHeight)).toBeGreaterThanOrEqual(200);
         await editorContainer.evaluate((el) => {
             el.scrollTop = 200;
             el.dispatchEvent(new Event('scroll'));

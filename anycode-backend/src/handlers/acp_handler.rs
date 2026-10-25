@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{self, json};
 use socketioxide::extract::{AckSender, Data, SocketRef, State};
 use tokio::sync::broadcast;
+use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -18,6 +19,8 @@ pub struct AcpStartRequest {
     #[serde(default)]
     pub env: std::collections::HashMap<String, String>,
     pub resume_session_id: Option<String>,
+    #[serde(default)]
+    pub project_id: Option<String>,
 }
 
 pub async fn handle_acp_start(
@@ -34,7 +37,20 @@ pub async fn handle_acp_start(
         args,
         env,
         resume_session_id,
+        project_id,
     } = request;
+    let project_id = match project_id {
+        Some(project_id) => project_id,
+        None => match state.active_project_id(socket.id.as_str()).await {
+            Some(project_id) => project_id,
+            None => error_ack!(ack, &agent_id, "Choose a project before starting an agent"),
+        },
+    };
+    let project = match state.workspace.lock().await.get(&project_id) {
+        Some(project) => project,
+        None => error_ack!(ack, &agent_id, "Project is no longer part of this workspace"),
+    };
+    let project_root = PathBuf::from(&project.info.root);
     let (start_result, msg_rx) = {
         let mut acp_manager = state.acp_manager.lock().await;
 
@@ -51,6 +67,7 @@ pub async fn handle_acp_start(
                 &args,
                 Some(env),
                 resume_session_id,
+                project_root,
             )
             .await;
 
@@ -66,21 +83,23 @@ pub async fn handle_acp_start(
     match start_result {
         Ok(crate::acp::AcpStartOutcome::Ready { session_id }) => {
             info!("ACP agent {} started successfully", agent_id);
+            state
+                .agent_project_ids
+                .lock()
+                .await
+                .insert(agent_id.clone(), project_id.clone());
 
             send_agent_history(&socket, &state, &agent_id).await;
 
             // Set up message forwarding
             if let Some(msg_rx) = msg_rx {
-                let agent_id = agent_id.clone();
-                let state = state.0.clone();
-                tokio::spawn(async move {
-                    forward_agent_messages(socket, state, agent_id, msg_rx).await;
-                });
+                setup_agent_message_forwarding(&socket, &state, &agent_id, msg_rx).await;
             }
 
             ack.send(&json!({
                 "success": true,
                 "agent_id": agent_id,
+                "project_id": project_id,
                 "session_id": session_id,
                 "auth_required": false
             }))
@@ -88,21 +107,23 @@ pub async fn handle_acp_start(
         }
         Ok(crate::acp::AcpStartOutcome::AuthRequired { auth_methods }) => {
             info!("ACP agent {} requires authentication: {:?}", agent_id, auth_methods);
+            state
+                .agent_project_ids
+                .lock()
+                .await
+                .insert(agent_id.clone(), project_id.clone());
 
             send_agent_history(&socket, &state, &agent_id).await;
 
             // Set up message forwarding so notifications/updates flow
             if let Some(msg_rx) = msg_rx {
-                let agent_id = agent_id.clone();
-                let state = state.0.clone();
-                tokio::spawn(async move {
-                    forward_agent_messages(socket, state, agent_id, msg_rx).await;
-                });
+                setup_agent_message_forwarding(&socket, &state, &agent_id, msg_rx).await;
             }
 
             ack.send(&json!({
                 "success": true,
                 "agent_id": agent_id,
+                "project_id": project_id,
                 "auth_required": true,
                 "auth_methods": auth_methods
             }))
@@ -179,39 +200,91 @@ pub async fn handle_acp_authenticate(
     }
 }
 
+/// Set up or replace message forwarding for a socket and agent, ensuring only one task forwards at a time.
+pub(crate) async fn setup_agent_message_forwarding(
+    socket: &SocketRef,
+    state: &State<AppState>,
+    agent_id: &str,
+    msg_rx: broadcast::Receiver<AcpMessage>,
+) {
+    let cancel_token = CancellationToken::new();
+    let socket_id = socket.id.as_str().to_string();
+
+    {
+        let mut sockets_data = state.socket2data.lock().await;
+        let socket_data = sockets_data.entry(socket_id).or_default();
+        if let Some(old_token) = socket_data
+            .acp_subscribers
+            .insert(agent_id.to_string(), cancel_token.clone())
+        {
+            old_token.cancel();
+        }
+    }
+
+    let socket_clone = socket.clone();
+    let state_clone = state.0.clone();
+    let agent_id_clone = agent_id.to_string();
+
+    tokio::spawn(async move {
+        forward_agent_messages(socket_clone, state_clone, agent_id_clone, msg_rx, cancel_token).await;
+    });
+}
+
 /// Forward new agent messages to the socket
 pub(crate) async fn forward_agent_messages(
     socket: SocketRef,
     state: AppState,
     agent_id: String,
     mut msg_rx: broadcast::Receiver<AcpMessage>,
+    cancel_token: CancellationToken,
 ) {
+    let socket_id = socket.id.as_str().to_string();
     loop {
-        match msg_rx.recv().await {
-            Ok(item) => {
-                let data = json!({ "agent_id": agent_id, "item": item });
-                let result = socket.emit("acp:message", &data);
-                if result.is_err() {
-                    error!(
-                        "Failed to forward agent message for agent {}: {} to socket {}",
-                        agent_id,
-                        result.err().unwrap(),
-                        socket.id
-                    );
-                    break; // Socket disconnected
+        tokio::select! {
+            _ = cancel_token.cancelled() => {
+                info!(
+                    "Cancelled forward_agent_messages for agent {} on socket {}",
+                    agent_id, socket.id
+                );
+                break;
+            }
+            msg = msg_rx.recv() => {
+                match msg {
+                    Ok(item) => {
+                        let data = json!({ "agent_id": agent_id, "item": item });
+                        let result = socket.emit("acp:message", &data);
+                        if result.is_err() {
+                            error!(
+                                "Failed to forward agent message for agent {}: {} to socket {}",
+                                agent_id,
+                                result.err().unwrap(),
+                                socket.id
+                            );
+                            break; // Socket disconnected
+                        }
+                    }
+                    Err(broadcast::error::RecvError::Closed) => {
+                        error!("Channel closed for agent {}: {}", agent_id, socket.id);
+                        break; // Channel closed
+                    }
+                    Err(broadcast::error::RecvError::Lagged(skipped)) => {
+                        error!(
+                            "Lagged behind for agent {}: {} (skipped {} messages), sending full history resync",
+                            agent_id, socket.id, skipped
+                        );
+                        send_agent_history(&socket, &State(state.clone()), &agent_id).await;
+                        continue; // Lagged behind, continue
+                    }
                 }
             }
-            Err(broadcast::error::RecvError::Closed) => {
-                error!("Channel closed for agent {}: {}", agent_id, socket.id);
-                break; // Channel closed
-            }
-            Err(broadcast::error::RecvError::Lagged(skipped)) => {
-                error!(
-                    "Lagged behind for agent {}: {} (skipped {} messages), sending full history resync",
-                    agent_id, socket.id, skipped
-                );
-                send_agent_history(&socket, &State(state.clone()), &agent_id).await;
-                continue; // Lagged behind, continue
+        }
+    }
+
+    let mut sockets_data = state.socket2data.lock().await;
+    if let Some(socket_data) = sockets_data.get_mut(&socket_id) {
+        if let Some(current_token) = socket_data.acp_subscribers.get(&agent_id) {
+            if current_token.is_cancelled() {
+                socket_data.acp_subscribers.remove(&agent_id);
             }
         }
     }
@@ -261,7 +334,7 @@ fn get_mime_type(ext: &str) -> &'static str {
     }
 }
 
-fn find_local_paths(text: &str) -> Vec<PathBuf> {
+fn find_local_paths(text: &str, project_root: &std::path::Path) -> Vec<PathBuf> {
     let mut paths = Vec::new();
     let extensions = [
         ".png", ".jpg", ".jpeg", ".gif", ".webp", ".webm", ".wav", ".mp3", ".m4a", ".txt", ".md",
@@ -309,7 +382,7 @@ fn find_local_paths(text: &str) -> Vec<PathBuf> {
                                     best_path = Some(path.to_path_buf());
                                 }
                             } else {
-                                let rel = crate::utils::current_dir().join(candidate_clean);
+                                let rel = project_root.join(candidate_clean);
                                 if rel.is_file() {
                                     best_path = Some(rel);
                                 }
@@ -343,8 +416,20 @@ pub async fn handle_acp_prompt(
         mut attachments,
     } = request;
 
-    // Detect and load any local file paths mentioned in the prompt text
-    let detected_paths = find_local_paths(&prompt);
+    let project_root = {
+        let project_id = state.agent_project_ids.lock().await.get(&agent_id).cloned();
+        let Some(project_id) = project_id else {
+            error_ack!(ack, &agent_id, "Agent {} not found", agent_id);
+        };
+        let project = state.workspace.lock().await.get(&project_id);
+        let Some(project) = project else {
+            error_ack!(ack, &agent_id, "Agent project is no longer available");
+        };
+        PathBuf::from(project.info.root)
+    };
+
+    // Resolve relative paths against the agent's immutable project root.
+    let detected_paths = find_local_paths(&prompt, &project_root);
     for path in detected_paths {
         info!("Detected local file path in prompt: {:?}", path);
         if let Ok(bytes) = std::fs::read(&path) {
@@ -406,9 +491,36 @@ pub async fn handle_acp_stop(
     info!("handle_acp_stop {:?}", request);
     let AcpStopRequest { agent_id } = request;
 
+    {
+        let mut sockets_data = state.socket2data.lock().await;
+        for socket_data in sockets_data.values_mut() {
+            if let Some(token) = socket_data.acp_subscribers.remove(&agent_id) {
+                token.cancel();
+            }
+        }
+    }
+
     let mut acp_manager = state.acp_manager.lock().await;
     acp_manager.stop_agent(&agent_id).await;
+    state.agent_project_ids.lock().await.remove(&agent_id);
 
+    ack.send(&json!({ "success": true })).ok();
+}
+
+pub async fn handle_acp_stop_all(ack: AckSender, state: State<AppState>) {
+    info!("handle_acp_stop_all: stopping all active agents");
+
+    {
+        let mut sockets_data = state.socket2data.lock().await;
+        for socket_data in sockets_data.values_mut() {
+            for (_, token) in socket_data.acp_subscribers.drain() {
+                token.cancel();
+            }
+        }
+    }
+
+    let mut acp_manager = state.acp_manager.lock().await;
+    acp_manager.stop_all().await;
     ack.send(&json!({ "success": true })).ok();
 }
 
@@ -545,6 +657,7 @@ pub async fn handle_acp_set_reasoning(
 pub async fn handle_acp_list(ack: AckSender, state: State<AppState>) {
     info!("handle_acp_list");
 
+    let project_ids = state.agent_project_ids.lock().await.clone();
     let acp_manager = state.acp_manager.lock().await;
     let agents = acp_manager.list_agents();
 
@@ -553,6 +666,7 @@ pub async fn handle_acp_list(ack: AckSender, state: State<AppState>) {
         let queue = acp_manager.get_agent_queue(id).await.unwrap_or_default();
         agents_json.push(json!({
             "id": id,
+            "project_id": project_ids.get(id),
             "name": name,
             "is_processing": acp_manager.is_agent_processing(id),
             "queue": queue,
@@ -567,16 +681,30 @@ pub async fn handle_acp_list(ack: AckSender, state: State<AppState>) {
 pub struct AcpSessionsListRequest {
     pub command: String,
     pub args: Vec<String>,
+    #[serde(default)]
+    pub project_id: Option<String>,
 }
 
 pub async fn handle_acp_sessions_list(
+    socket: SocketRef,
     Data(request): Data<AcpSessionsListRequest>,
     ack: AckSender,
     state: State<AppState>,
 ) {
     info!("handle_acp_sessions_list {:?}", request);
-    let AcpSessionsListRequest { command, args } = request;
-    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    let AcpSessionsListRequest { command, args, project_id } = request;
+    let project_id = match project_id {
+        Some(project_id) => project_id,
+        None => match state.active_project_id(socket.id.as_str()).await {
+            Some(project_id) => project_id,
+            None => error_ack!(ack, &command, "Choose a project before listing sessions"),
+        },
+    };
+    let project = match state.workspace.lock().await.get(&project_id) {
+        Some(project) => project,
+        None => error_ack!(ack, &command, "Project is no longer part of this workspace"),
+    };
+    let cwd = PathBuf::from(project.info.root);
 
     let acp_manager = state.acp_manager.lock().await;
     match acp_manager.list_sessions(&command, &args, cwd).await {
@@ -594,6 +722,7 @@ pub async fn handle_acp_sessions_list(
 pub async fn handle_acp_reconnect(socket: SocketRef, ack: AckSender, state: State<AppState>) {
     info!("handle_acp_reconnect for socket {}", socket.id);
 
+    let project_ids = state.agent_project_ids.lock().await.clone();
     let mut acp_manager = state.acp_manager.lock().await;
     let agents = acp_manager.list_agents();
 
@@ -621,12 +750,7 @@ pub async fn handle_acp_reconnect(socket: SocketRef, ack: AckSender, state: Stat
 
         // Subscribe to new messages in a separate task
         if let Some(msg_rx) = acp_manager.subscribe(agent_id) {
-            let socket_clone = socket.clone();
-            let agent_id_clone = agent_id.clone();
-            let state_clone = state.0.clone();
-            tokio::spawn(async move {
-                forward_agent_messages(socket_clone, state_clone, agent_id_clone, msg_rx).await;
-            });
+            setup_agent_message_forwarding(&socket, &state, agent_id, msg_rx).await;
         }
     }
 
@@ -636,6 +760,7 @@ pub async fn handle_acp_reconnect(socket: SocketRef, ack: AckSender, state: Stat
         let session_id = acp_manager.get_agent_session_id(id);
         agents_json.push(json!({
             "id": id,
+            "project_id": project_ids.get(id),
             "name": name,
             "session_id": session_id,
             "is_processing": acp_manager.is_agent_processing(id),
@@ -758,6 +883,26 @@ pub async fn handle_acp_queue_move(
     let acp_manager = state.acp_manager.lock().await;
     let success = acp_manager
         .move_agent_queued_prompt(&agent_id, &item_id, &direction)
+        .await;
+    ack.send(&json!({ "success": success })).ok();
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct AcpQueueSendNowRequest {
+    pub agent_id: String,
+    pub item_id: String,
+}
+
+pub async fn handle_acp_queue_send_now(
+    Data(request): Data<AcpQueueSendNowRequest>,
+    ack: AckSender,
+    state: State<AppState>,
+) {
+    info!("handle_acp_queue_send_now {:?}", request);
+    let AcpQueueSendNowRequest { agent_id, item_id } = request;
+    let acp_manager = state.acp_manager.lock().await;
+    let success = acp_manager
+        .send_agent_queued_prompt_now(&agent_id, &item_id)
         .await;
     ack.send(&json!({ "success": success })).ok();
 }

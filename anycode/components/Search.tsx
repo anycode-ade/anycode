@@ -6,6 +6,7 @@ import { FileIcon } from "./FileIcon";
 import { usePersistedScroll } from "../hooks/usePersistedScroll";
 import "./Search.css";
 import type { FileSearchResult, SearchResult, SearchMatch } from "../types";
+import type { WorkspaceProject } from "../workspace";
 import { normalizePath } from "../utils";
 
 const StopIcon = () => (
@@ -91,6 +92,9 @@ interface SearchProps {
     id: string;
     wsRef: RefObject<Socket | null>;
     isConnected: boolean;
+    projects: WorkspaceProject[];
+    projectId: string | null;
+    onProjectChange: (projectId: string) => void;
     focusRequestToken?: number | null;
     inputValue: string;
     onInputValueChange: (value: string) => void;
@@ -210,18 +214,20 @@ SearchMatchRow.displayName = "SearchMatchRow";
 type FilesSearchBatch = {
     query?: string;
     request_id?: string;
+    project_id?: string;
     results?: FileSearchResult[];
 };
 
 type FilesSearchError = {
     query?: string;
     request_id?: string;
+    project_id?: string;
     message?: string;
 };
 
-const Search = ({ id, wsRef, isConnected, focusRequestToken, inputValue, onInputValueChange, onEnter, onInputChange, onCancel, onClear, onMatchClick, onFileClick, results, searchEnded, fileIconsStyle }: SearchProps) => {
+const Search = ({ id, wsRef, isConnected, projects, projectId, onProjectChange, focusRequestToken, inputValue, onInputValueChange, onEnter, onInputChange, onCancel, onClear, onMatchClick, onFileClick, results, searchEnded, fileIconsStyle }: SearchProps) => {
     const searchPatternRef = useRef("");
-    const activeFilesRequestRef = useRef<{ query: string; requestId: string } | null>(null);
+    const activeFilesRequestRef = useRef<{ query: string; requestId: string; projectId: string } | null>(null);
     const filesSearchRequestCounterRef = useRef(0);
     const [visibleMatches, setVisibleMatches] = useState<Record<string, Set<string> | undefined>>({});
     const [activeItemKey, setActiveItemKey] = useState<string | null>(null);
@@ -348,24 +354,39 @@ const Search = ({ id, wsRef, isConnected, focusRequestToken, inputValue, onInput
 
     const startFilesSearch = useCallback((pattern: string) => {
         const trimmed = pattern.trim();
-        if (!trimmed || !wsRef.current || !isConnected) return;
+        if (!trimmed || !projectId || !wsRef.current || !isConnected) return;
 
         filesSearchRequestCounterRef.current += 1;
         const requestId = `${Date.now()}:${filesSearchRequestCounterRef.current}`;
-        activeFilesRequestRef.current = { query: trimmed.toLowerCase(), requestId };
+        activeFilesRequestRef.current = { query: trimmed.toLowerCase(), requestId, projectId };
         setFileResults([]);
         setFilesSearchError(null);
         setFilesSearchEnded(false);
         setActiveFileSearchPath(null);
         resultsRef.current?.scrollTo({ top: 0 });
-        wsRef.current.emit('search:files:start', { query: trimmed, request_id: requestId });
-    }, [isConnected, wsRef]);
+        wsRef.current.emit('search:files:start', {
+            query: trimmed,
+            request_id: requestId,
+            project_id: projectId,
+        });
+    }, [isConnected, projectId, wsRef]);
 
     const cancelFilesSearch = useCallback(() => {
         wsRef.current?.emit('search:files:cancel');
         activeFilesRequestRef.current = null;
         setFilesSearchEnded(true);
     }, [wsRef]);
+
+    const previousProjectIdRef = useRef(projectId);
+    useEffect(() => {
+        if (previousProjectIdRef.current === projectId) return;
+        previousProjectIdRef.current = projectId;
+        cancelFilesSearch();
+        setFileResults([]);
+        setFilesSearchError(null);
+        setActiveFileSearchPath(null);
+        setActiveItemKey(null);
+    }, [cancelFilesSearch, projectId]);
 
     const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
         if (e.key === "ArrowDown") {
@@ -401,12 +422,13 @@ const Search = ({ id, wsRef, isConnected, focusRequestToken, inputValue, onInput
         if (!wsRef.current || !isConnected) return;
 
         const socket = wsRef.current;
-        const isActiveFilesSearchMessage = (message: { query?: string; request_id?: string }) => {
+        const isActiveFilesSearchMessage = (message: { query?: string; request_id?: string; project_id?: string }) => {
             const activeRequest = activeFilesRequestRef.current;
             return Boolean(
                 activeRequest
                 && message.query === activeRequest.query
                 && message.request_id === activeRequest.requestId
+                && (!message.project_id || message.project_id === activeRequest.projectId)
             );
         };
 
@@ -800,7 +822,6 @@ const Search = ({ id, wsRef, isConnected, focusRequestToken, inputValue, onInput
 
     return (
         <div className="search-container">
-            
             <div
                 className="search-input-wrapper"
             >
@@ -818,6 +839,34 @@ const Search = ({ id, wsRef, isConnected, focusRequestToken, inputValue, onInput
                     title={`Search... (Enter to search, Shift+Enter for newline)`}
                     placeholder={`Search...`}
                 />
+            </div>
+
+            <div className="search-actions-row">
+                <label className="search-project-selector" title="Select project">
+                    <Icons.Folder size={14} />
+                    <select
+                        className="search-project-select"
+                        value={projectId ?? ''}
+                        onChange={(event) => onProjectChange(event.target.value)}
+                        disabled={projects.length === 0}
+                        aria-label="Project"
+                    >
+                        {projects.length === 0 ? (
+                            <option value="">No project selected</option>
+                        ) : (
+                            projects.map((project) => (
+                                <option key={project.id} value={project.id}>
+                                    {project.name}
+                                </option>
+                            ))
+                        )}
+                    </select>
+                    <span className="search-project-select-chevron" aria-hidden="true">
+                        <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                            <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                    </span>
+                </label>
                 <div className="search-mode-toggle" role="tablist" aria-label="Search mode">
                     <button
                         type="button"
@@ -840,21 +889,6 @@ const Search = ({ id, wsRef, isConnected, focusRequestToken, inputValue, onInput
                         <span className="search-mode-label-short">F</span>
                     </button>
                 </div>
-            </div>
-
-            <div className="search-summary">
-                {hasQuery ? (
-                    <span className="search-summary-text">
-                        {searchMode === "content"
-                            ? `${totalMatches} matches · ${totalFiles} files · ${elapsedMs} ms`
-                            : `${totalFileNameMatches} files · ${elapsedMs} ms`}
-                    </span>
-                ) : (
-                    <span className="search-summary-text search-summary-text-empty"></span>
-                )}
-            </div>
-
-            <div className="search-actions-row">
                 <div className="search-actions-group">
                 {searchMode === "content" && searchEnded && matchItems.length > 0 && (
                     <>
@@ -922,14 +956,14 @@ const Search = ({ id, wsRef, isConnected, focusRequestToken, inputValue, onInput
                         <span className="search-loading"><span>.</span><span>.</span><span>.</span></span>
                     </>
                 )}
-                {searchMode === "content" && <button
+                {searchMode === "content" && results.length > 0 && <button
                     className="search-button"
                     onClick={handleExpandAll}
                     title="Expand all files"
                 >
                     <Icons.ChevronDown />
                 </button>}
-                {searchMode === "content" && <button
+                {searchMode === "content" && results.length > 0 && <button
                     className="search-button"
                     onClick={handleCollapseAll}
                     title="Collapse all files"
@@ -937,6 +971,18 @@ const Search = ({ id, wsRef, isConnected, focusRequestToken, inputValue, onInput
                     <Icons.ChevronUp />
                 </button>}
                 </div>
+            </div>
+
+            <div className="search-summary">
+                {hasQuery ? (
+                    <span className="search-summary-text">
+                        {searchMode === "content"
+                            ? `${totalMatches} matches · ${totalFiles} files · ${elapsedMs} ms`
+                            : `${totalFileNameMatches} files · ${elapsedMs} ms`}
+                    </span>
+                ) : (
+                    <span className="search-summary-text search-summary-text-empty"></span>
+                )}
             </div>
 
             <div
@@ -976,9 +1022,11 @@ const Search = ({ id, wsRef, isConnected, focusRequestToken, inputValue, onInput
                                 ))}
                             </div>
                         </div>
-                    ) : (
-                        <div className="no-results">{filesSearchError ?? (filesSearchEnded ? "No results found" : "Searching...")}</div>
-                    )
+                    ) : filesSearchError ? (
+                        <div className="no-results">{filesSearchError}</div>
+                    ) : !filesSearchEnded ? (
+                        <div className="no-results">Searching...</div>
+                    ) : null
                 ) : results.length > 0 ? (
                     <div
                         className="search-virtual-spacer"
@@ -1023,9 +1071,7 @@ const Search = ({ id, wsRef, isConnected, focusRequestToken, inputValue, onInput
                             })}
                         </div>
                     </div>
-                ) : (
-                    <div className="no-results">No results found</div>
-                )}
+                ) : null}
             </div>
         </div>
     );

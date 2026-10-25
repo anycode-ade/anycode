@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { Icons } from './Icons';
 import { FileIcon } from './FileIcon';
 import { usePersistedScroll } from '../hooks/usePersistedScroll';
+import type { WorkspaceProject } from '../workspace';
 import './ChangesPanel.css';
 
 const COMMIT_MESSAGE_STORAGE_KEY = 'commitMessage';
@@ -15,6 +16,7 @@ export enum GitActionState {
 
 export interface ChangedFile {
     path: string;
+    project_id?: string;
     status: 'modified' | 'added' | 'deleted' | 'renamed' | 'conflict';
     staged?: boolean;
     unstaged?: boolean;
@@ -25,6 +27,9 @@ export interface ChangedFile {
 
 interface ChangesPanelProps {
     files: ChangedFile[];
+    projects: WorkspaceProject[];
+    selectedProjectId: string | null;
+    onProjectChange: (projectId: string) => void;
     active: ChangedFile | null;
     branch: string;
     branches: { name: string; is_current: boolean }[];
@@ -236,6 +241,9 @@ export type VirtualChangesRow =
 
 const ChangesPanelImpl: React.FC<ChangesPanelProps> = ({
     files,
+    projects,
+    selectedProjectId,
+    onProjectChange,
     active,
     branch,
     branches,
@@ -673,6 +681,32 @@ const ChangesPanelImpl: React.FC<ChangesPanelProps> = ({
 
             <div className="changes-header">
                 <div className="changes-title">
+                    <label className="changes-project-selector" title="Select project">
+                        <Icons.Folder size={14} />
+                        <select
+                            className="changes-project-select changes-branch-select"
+                            value={selectedProjectId ?? ''}
+                            onChange={(event) => onProjectChange(event.target.value)}
+                            disabled={projects.length === 0}
+                            aria-label="Project"
+                        >
+                            {projects.length === 0 ? (
+                                <option value="">No project selected</option>
+                            ) : (
+                                projects.map((project) => (
+                                    <option key={project.id} value={project.id}>
+                                        {project.name}
+                                    </option>
+                                ))
+                            )}
+                        </select>
+                        <span className="changes-project-select-chevron" aria-hidden="true">
+                            <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                                <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+                            </svg>
+                        </span>
+                    </label>
+                    <div className="changes-branch-group">
                     <span className="changes-branch-icon"><Icons.Git /></span>
                     {isCreatingBranch ? (
                         <div className="changes-new-branch-container">
@@ -735,6 +769,7 @@ const ChangesPanelImpl: React.FC<ChangesPanelProps> = ({
                             )}
                         </select>
                     )}
+                    </div>
                 </div>
                 {!isCreatingBranch && (
                     <div className="changes-actions-right">

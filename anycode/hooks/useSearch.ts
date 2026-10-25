@@ -6,9 +6,10 @@ import { normalizePath } from '../utils';
 type UseSearchParams = {
     wsRef: React.RefObject<Socket | null>;
     isConnected: boolean;
+    projectId?: string | null;
 };
 
-export const useSearch = ({ wsRef, isConnected }: UseSearchParams) => {
+export const useSearch = ({ wsRef, isConnected, projectId }: UseSearchParams) => {
     const SEARCH_INPUT_STORAGE_KEY = 'searchInput';
     const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
     const [searchEnded, setSearchEnded] = useState<boolean>(true);
@@ -18,6 +19,8 @@ export const useSearch = ({ wsRef, isConnected }: UseSearchParams) => {
     });
     const pendingResultsRef = useRef<Map<string, SearchResult>>(new Map());
     const flushFrameRef = useRef<number | null>(null);
+    const projectIdRef = useRef(projectId);
+    projectIdRef.current = projectId;
 
     const applySearchResultUpdate = (resultsMap: Map<string, SearchResult>, result: SearchResult) => {
         if (result.matches.length === 0) {
@@ -65,8 +68,8 @@ export const useSearch = ({ wsRef, isConnected }: UseSearchParams) => {
         }
     }, [searchInput]);
 
-    const startSearch = useCallback((pattern: string) => {
-        if (!pattern) return;
+    const startSearch = useCallback((pattern: string, targetProjectId = projectId) => {
+        if (!pattern || !targetProjectId) return;
         if (!wsRef.current || !isConnected) return;
 
         pendingResultsRef.current.clear();
@@ -74,10 +77,10 @@ export const useSearch = ({ wsRef, isConnected }: UseSearchParams) => {
             window.cancelAnimationFrame(flushFrameRef.current);
             flushFrameRef.current = null;
         }
-        wsRef.current.emit('search:start', { pattern });
+        wsRef.current.emit('search:start', { pattern, project_id: targetProjectId });
         setSearchResults([]);
         setSearchEnded(false);
-    }, [wsRef, isConnected]);
+    }, [wsRef, isConnected, projectId]);
 
     const cancelSearch = useCallback(() => {
         if (!wsRef.current || !isConnected) return;
@@ -87,6 +90,7 @@ export const useSearch = ({ wsRef, isConnected }: UseSearchParams) => {
     }, [wsRef, isConnected]);
 
     const handleSearchResults = useCallback((message: SearchResultsBatch) => {
+        if (message.project_id && message.project_id !== projectIdRef.current) return;
         for (const result of message.results) {
             const normalized = {
                 ...result,
@@ -98,7 +102,8 @@ export const useSearch = ({ wsRef, isConnected }: UseSearchParams) => {
         scheduleResultsFlush();
     }, [scheduleResultsFlush]);
 
-    const handleSearchEnd = useCallback((_result: SearchEnd) => {
+    const handleSearchEnd = useCallback((result: SearchEnd) => {
+        if (result.project_id && result.project_id !== projectIdRef.current) return;
         if (flushFrameRef.current !== null) {
             window.cancelAnimationFrame(flushFrameRef.current);
             flushFrameRef.current = null;
@@ -128,7 +133,8 @@ export const useSearch = ({ wsRef, isConnected }: UseSearchParams) => {
     const searchFiles = useCallback((query: string): Promise<FileSearchResult[]> => {
         return new Promise((resolve) => {
             const socket = wsRef.current;
-            if (!socket || !isConnected) {
+            const targetProjectId = projectId;
+            if (!socket || !isConnected || !targetProjectId) {
                 resolve([]);
                 return;
             }
@@ -136,8 +142,12 @@ export const useSearch = ({ wsRef, isConnected }: UseSearchParams) => {
             const requestId = `files-search-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
             let results: FileSearchResult[] = [];
 
-            const handleResults = (data: { query?: string; request_id?: string; results?: FileSearchResult[] }) => {
-                if (data.request_id === requestId && Array.isArray(data.results)) {
+            const handleResults = (data: { query?: string; request_id?: string; project_id?: string; results?: FileSearchResult[] }) => {
+                if (
+                    data.request_id === requestId
+                    && (!data.project_id || data.project_id === targetProjectId)
+                    && Array.isArray(data.results)
+                ) {
                     results = results.concat(data.results);
                 }
             };
@@ -169,9 +179,27 @@ export const useSearch = ({ wsRef, isConnected }: UseSearchParams) => {
             socket.on('search:files:results', handleResults);
             socket.on('search:files:end', handleEnd);
             socket.on('search:files:error', handleError);
-            socket.emit('search:files:start', { query, request_id: requestId });
+            socket.emit('search:files:start', {
+                query,
+                request_id: requestId,
+                project_id: targetProjectId,
+            });
         });
-    }, [wsRef, isConnected]);
+    }, [wsRef, isConnected, projectId]);
+
+    const resetSearch = useCallback(() => {
+        cancelSearch();
+        clearResults();
+        setSearchInput('');
+    }, [cancelSearch, clearResults]);
+
+    const previousProjectIdRef = useRef(projectId);
+    useEffect(() => {
+        if (previousProjectIdRef.current === projectId) return;
+        previousProjectIdRef.current = projectId;
+        cancelSearch();
+        clearResults();
+    }, [projectId, cancelSearch, clearResults]);
 
     return {
         searchInput,
@@ -182,6 +210,7 @@ export const useSearch = ({ wsRef, isConnected }: UseSearchParams) => {
         cancelSearch,
         searchFiles,
         clearResults,
+        resetSearch,
         handleSearchResults,
         handleSearchEnd,
     };

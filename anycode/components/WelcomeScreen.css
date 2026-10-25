@@ -1,0 +1,324 @@
+.welcome-screen {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    background-color: transparent;
+    color: var(--theme-foreground, var(--foreground-color, #d4d4d4));
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro', 'Segoe UI', Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    user-select: none;
+    overflow: hidden;
+    padding: 32px 16px;
+    box-sizing: border-box;
+    perspective: 1200px;
+}
+
+/* Spotlight Dots Layer */
+.welcome-dots {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background-image: radial-gradient(var(--theme-foreground, rgba(255, 255, 255, 1)) 1.2px, transparent 1.2px);
+    background-size: 16px 16px;
+    mask-image: radial-gradient(600px circle at var(--mouse-x, 50%) var(--mouse-y, 45%), black 35%, transparent 100%);
+    -webkit-mask-image: radial-gradient(600px circle at var(--mouse-x, 50%) var(--mouse-y, 45%), black 35%, transparent 100%);
+    opacity: 0.12;
+    transition: opacity 0.2s ease;
+}
+
+[data-theme-mode="light"] .welcome-dots {
+    opacity: 0.08;
+}
+
+.welcome-container {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    max-width: 520px;
+    width: 100%;
+    transform-style: preserve-3d;
+    transition: transform 0.15s ease-out;
+}
+
+.welcome-header {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin-bottom: 60px;
+    text-align: center;
+    position: relative;
+}
+
+.welcome-screen,
+.welcome-screen * {
+    -webkit-user-select: none !important;
+    user-select: none !important;
+    -webkit-user-drag: none;
+}
+
+.welcome-screen ::selection,
+.welcome-screen *::selection {
+    background: transparent !important;
+    color: inherit !important;
+}
+
+.welcome-header::before {
+    content: '';
+    position: absolute;
+    top: -20px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 320px;
+    height: 130px;
+    background: radial-gradient(ellipse at center, rgba(147, 197, 253, 0.10) 0%, transparent 70%);
+    pointer-events: none;
+    z-index: 0;
+}
+
+.welcome-title {
+    font-size: 40px;
+    font-weight: 750;
+    margin: 0;
+    color: var(--theme-foreground, var(--foreground-color, #ffffff));
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    background: linear-gradient(180deg, #ffffff 15%, rgba(255, 255, 255, 0.70) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    filter: drop-shadow(0 2px 16px rgba(255, 255, 255, 0.09));
+    transition: filter 0.3s ease, transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    cursor: default;
+    position: relative;
+    z-index: 1;
+}
+
+.welcome-title:hover {
+    filter: drop-shadow(0 0 24px rgba(147, 197, 253, 0.35)) drop-shadow(0 2px 8px rgba(255, 255, 255, 0.2));
+    transform: scale(1.03);
+}
+
+[data-theme-mode="light"] .welcome-title {
+    background: linear-gradient(180deg, #111827 0%, #374151 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.08));
+}
+
+[data-theme-mode="light"] .welcome-title:hover {
+    filter: drop-shadow(0 2px 12px rgba(0, 122, 204, 0.25));
+}
+
+.welcome-recent-section {
+    width: 100%;
+    background: transparent;
+    border: none;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+.welcome-recent-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+    padding: 0 4px 8px 4px;
+    border-bottom: 1px solid var(--theme-border, rgba(255, 255, 255, 0.08));
+}
+
+.welcome-recent-header-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.welcome-recent-title {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: var(--theme-muted-foreground, rgba(255, 255, 255, 0.45));
+}
+
+.welcome-recent-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 5px;
+    background: var(--theme-tab-active-background, rgba(255, 255, 255, 0.07));
+    border-radius: 8px;
+    font-size: 10px;
+    font-weight: 500;
+    color: var(--theme-muted-foreground, rgba(255, 255, 255, 0.55));
+}
+
+[data-theme-mode="light"] .welcome-recent-count {
+    background: rgba(0, 0, 0, 0.06);
+}
+
+.welcome-btn-native {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 26px;
+    padding: 0 10px;
+    background: var(--theme-tab-active-background, rgba(255, 255, 255, 0.08));
+    color: var(--theme-foreground, var(--foreground-color, #ffffff));
+    border: none;
+    outline: none;
+    border-radius: 5px;
+    font-size: 12px;
+    font-weight: 450;
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.12s ease;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+}
+
+.welcome-btn-native:hover {
+    background: var(--hover-bg, rgba(255, 255, 255, 0.13));
+}
+
+.welcome-btn-native:active {
+    opacity: 0.85;
+}
+
+[data-theme-mode="light"] .welcome-btn-native {
+    background: rgba(0, 0, 0, 0.06);
+    border: none;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
+[data-theme-mode="light"] .welcome-btn-native:hover {
+    background: rgba(0, 0, 0, 0.1);
+}
+
+.welcome-shortcut {
+    font-size: 10px;
+    color: var(--theme-muted-foreground, rgba(255, 255, 255, 0.45));
+    font-family: inherit;
+    font-weight: 400;
+    margin-left: 2px;
+    letter-spacing: 0.3px;
+}
+
+.welcome-recent-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    max-height: 340px;
+    overflow-y: auto;
+}
+
+.welcome-recent-item {
+    display: flex;
+    align-items: center;
+    padding: 6px 8px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 0.12s ease;
+    gap: 10px;
+}
+
+.welcome-recent-item:hover {
+    background: var(--hover-bg, rgba(255, 255, 255, 0.06));
+}
+
+[data-theme-mode="light"] .welcome-recent-item:hover {
+    background: rgba(0, 0, 0, 0.05);
+}
+
+.welcome-recent-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--theme-muted-foreground, rgba(255, 255, 255, 0.55));
+    flex-shrink: 0;
+}
+
+.welcome-recent-item:hover .welcome-recent-icon {
+    color: var(--theme-foreground, var(--foreground-color, #ffffff));
+}
+
+.welcome-recent-info {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    flex: 1;
+}
+
+.welcome-recent-name {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--theme-foreground, var(--foreground-color, rgba(255, 255, 255, 0.9)));
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.welcome-recent-path {
+    font-size: 11px;
+    color: var(--theme-muted-foreground, rgba(255, 255, 255, 0.4));
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-top: 1px;
+}
+
+.welcome-recent-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+.welcome-recent-time {
+    font-size: 11px;
+    color: var(--theme-muted-foreground, rgba(255, 255, 255, 0.4));
+}
+
+.welcome-recent-remove {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    background: transparent;
+    border: none;
+    border-radius: 4px;
+    color: var(--theme-muted-foreground, rgba(255, 255, 255, 0.4));
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.12s ease, background 0.12s ease, color 0.12s ease;
+}
+
+.welcome-recent-item:hover .welcome-recent-remove {
+    opacity: 1;
+}
+
+.welcome-recent-remove:hover {
+    background: rgba(255, 75, 75, 0.15);
+    color: #ff5555;
+}
+
+.welcome-loading,
+.welcome-empty {
+    padding: 24px 16px;
+    text-align: center;
+    color: var(--theme-muted-foreground, rgba(255, 255, 255, 0.4));
+    font-size: 13px;
+}
+
+.welcome-empty-hint {
+    font-size: 12px;
+    color: var(--theme-muted-foreground, rgba(255, 255, 255, 0.3));
+    opacity: 0.75;
+    margin-top: 4px;
+}

@@ -1,5 +1,6 @@
 import { AcpAgent, ResolvedAgentPreset } from './types';
 import { loadAgents, saveAgents, loadDefaultAgentId, saveDefaultAgentId } from './storage';
+import { IS_DEMO_MODE } from './constants';
 
 // Default configuration of agents in code
 // Can be overridden by user settings
@@ -69,7 +70,11 @@ export function getProfileEnvForAgent(agent: AcpAgent, newId: string): Record<st
     return result;
 }
 
-export const DEFAULT_AGENTS: AcpAgent[] = [];
+// Seeded on first run only (no saved agent list yet). Demo mode has no real agent binaries,
+// so it gets the mock agent that DemoSocket answers for.
+export const DEFAULT_AGENTS: AcpAgent[] = IS_DEMO_MODE
+    ? [{ id: 'demo-agent', name: 'Demo Agent', command: 'demo-acp', args: [] }]
+    : [];
 
 const isLegacyMockAgent = (agent: AcpAgent): boolean => {
     if (agent.id === 'qwen' && agent.command === 'qwen') return true;
@@ -86,7 +91,7 @@ export function getAllAgents(): AcpAgent[] {
         return cachedAgents;
     }
 
-    const rawSavedAgents = loadAgents();
+    const rawSavedAgents = loadAgents() ?? DEFAULT_AGENTS;
     const savedAgents = rawSavedAgents.filter(a => !isLegacyMockAgent(a));
     if (savedAgents.length !== rawSavedAgents.length) {
         saveAgents(savedAgents);
@@ -167,6 +172,26 @@ export function getDefaultAgentId(): string | null {
 
 type AgentsSyncCallback = (agents: AcpAgent[], defaultAgentId: string | null) => void;
 let syncCallback: AgentsSyncCallback | null = null;
+const agentListeners = new Set<() => void>();
+
+export function subscribeAgents(listener: () => void): () => void {
+    agentListeners.add(listener);
+    const onStorage = (e: StorageEvent) => {
+        if (e.key === 'acpAgents') {
+            clearAgentsCache();
+            try { listener(); } catch {}
+        }
+    };
+    if (typeof window !== 'undefined') {
+        window.addEventListener('storage', onStorage);
+    }
+    return () => {
+        agentListeners.delete(listener);
+        if (typeof window !== 'undefined') {
+            window.removeEventListener('storage', onStorage);
+        }
+    };
+}
 
 export function onAgentsUpdated(callback: AgentsSyncCallback | null): void {
     syncCallback = callback;
@@ -176,6 +201,16 @@ export function updateAgents(agents: AcpAgent[], defaultAgentId: string | null, 
     cachedAgents = agents;
     saveAgents(agents);
     saveDefaultAgentId(defaultAgentId);
+    agentListeners.forEach(listener => {
+        try {
+            listener();
+        } catch (e) {
+            console.error('Agent listener error:', e);
+        }
+    });
+    if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('anycode:agents-updated', { detail: { agents, defaultAgentId } }));
+    }
     if (shouldSync && syncCallback) {
         syncCallback(agents, defaultAgentId);
     }
@@ -186,6 +221,16 @@ export function setRemoteAgents(agents: AcpAgent[], defaultAgentId: string | nul
     saveDefaultAgentId(defaultAgentId);
     clearAgentsCache();
     getAllAgents();
+    agentListeners.forEach(listener => {
+        try {
+            listener();
+        } catch (e) {
+            console.error('Agent listener error:', e);
+        }
+    });
+    if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('anycode:agents-updated', { detail: { agents, defaultAgentId } }));
+    }
 }
 
 export function addOrUpdateAgent(agent: AcpAgent): void {
@@ -198,6 +243,8 @@ export function addOrUpdateAgent(agent: AcpAgent): void {
         nextAgents[existingIndex] = {
             ...agent,
             profile: agent.profile ?? existing.profile,
+            avatar: agent.avatar ?? existing.avatar,
+            avatarOriginal: agent.avatarOriginal ?? existing.avatarOriginal,
             env: {
                 ...(agent.env || {}),
                 ...(existing.env || {}),
@@ -378,4 +425,58 @@ export function resolveAgentDisplay(
 
     const fullName = accountName ? `${baseName} (${accountName})` : baseName;
     return { baseName, accountName, fullName, authors: matched?.authors };
+}
+
+export function getAgentAvatar(agentId?: string, agentTitle?: string): string | null {
+    if (!agentId && !agentTitle) return null;
+    const agents = getAllAgents();
+
+    // 1. Exact match by agent id
+    if (agentId) {
+        const found = agents.find(a => a.id === agentId);
+        if (found?.avatar) return found.avatar;
+    }
+
+    // 2. Exact match by agent name
+    if (agentTitle) {
+        const found = agents.find(a => a.name === agentTitle);
+        if (found?.avatar) return found.avatar;
+    }
+
+    // 3. Runtime session ID prefix match (e.g. "google-antigravity-djvipmax-1" -> "google-antigravity-djvipmax"), longest ID first
+    if (agentId) {
+        const candidates = agents
+            .filter(a => agentId === a.id || agentId.startsWith(a.id + '-'))
+            .sort((a, b) => b.id.length - a.id.length);
+        for (const candidate of candidates) {
+            if (candidate.avatar) return candidate.avatar;
+        }
+    }
+
+    // 4. Match by displayName baseName & accountName (e.g. "Google Antigravity (djvipmax)")
+    if (agentTitle) {
+        const parsed = parseAgentDisplayName(agentTitle);
+        if (parsed.accountName) {
+            const foundProfile = agents.find(a => 
+                (a.name.toLowerCase() === parsed.baseName.toLowerCase() || a.id.toLowerCase().startsWith(parsed.baseName.toLowerCase())) &&
+                a.profile?.toLowerCase() === parsed.accountName?.toLowerCase()
+            );
+            if (foundProfile?.avatar) return foundProfile.avatar;
+        }
+
+        // Try matching by baseName
+        const foundBase = agents.find(a => a.name.toLowerCase() === parsed.baseName.toLowerCase() || a.id.toLowerCase() === parsed.baseName.toLowerCase());
+        if (foundBase?.avatar) return foundBase.avatar;
+    }
+
+    // 5. Fallback: match by rootId (e.g. "google-antigravity-work" -> "google-antigravity")
+    if (agentId) {
+        const rootId = getRootAgentId(agentId);
+        if (rootId && rootId !== agentId) {
+            const found = agents.find(a => a.id === rootId);
+            if (found?.avatar) return found.avatar;
+        }
+    }
+
+    return null;
 }

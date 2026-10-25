@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - develop
+      - "feat/**"
   pull_request:
     branches:
       - main
@@ -12,9 +13,6 @@ on:
 
 permissions:
   contents: read
-
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   test-build-linux:
@@ -82,6 +80,7 @@ jobs:
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
+          prefix-key: v1-rust
           workspaces: |
             anycode-backend -> target
       
@@ -109,6 +108,12 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v6
+
+      - name: Optimize Windows Defender
+        shell: pwsh
+        run: |
+          Set-MpPreference -DisableRealtimeMonitoring $true -ErrorAction SilentlyContinue
+          Add-MpPreference -ExclusionPath $env:GITHUB_WORKSPACE, $env:CARGO_HOME -ErrorAction SilentlyContinue
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -163,6 +168,7 @@ jobs:
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
+          prefix-key: v1-rust
           workspaces: |
             anycode-backend -> target
 
@@ -183,3 +189,134 @@ jobs:
       - name: Test binary help
         working-directory: ./anycode-backend
         run: .\target\release\anycode.exe --help
+
+  test-desktop:
+    name: Test Desktop (${{ matrix.platform }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macOS Apple Silicon
+            os: macos-latest
+            arch: arm64
+            target: aarch64-apple-darwin
+          - platform: Windows x64
+            os: windows-latest
+            arch: x64
+            target: ""
+          - platform: Linux x64
+            os: ubuntu-latest
+            arch: x64
+            target: ""
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Optimize Windows Defender
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Set-MpPreference -DisableRealtimeMonitoring $true -ErrorAction SilentlyContinue
+          Add-MpPreference -ExclusionPath $env:GITHUB_WORKSPACE, $env:CARGO_HOME -ErrorAction SilentlyContinue
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Get pnpm store directory (bash)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+
+      - name: Get pnpm store directory (pwsh)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          "STORE_PATH=$(pnpm store path --silent)" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Setup pnpm cache
+        uses: actions/cache@v5
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Linux system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.96.0
+          targets: ${{ matrix.target }}
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: v1-rust
+          workspaces: |
+            anycode-backend -> target
+            anycode/src-tauri -> target
+
+      - name: Build Desktop (non-Windows)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          if [ -n "${{ matrix.target }}" ]; then
+            pnpm --filter anycode tauri build --target ${{ matrix.target }}
+          else
+            pnpm --filter anycode tauri build
+          fi
+
+      - name: Build Desktop (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if ("${{ matrix.target }}") {
+            pnpm --filter anycode tauri build --target ${{ matrix.target }}
+          } else {
+            pnpm --filter anycode tauri build
+          }
+
+      - name: Package Desktop Artifacts (non-Windows)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          mkdir -p dist-desktop
+          if [ "${{ runner.os }}" = "macOS" ]; then
+            cp anycode/src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg dist-desktop/anycode-desktop-macos-${{ matrix.arch }}.dmg
+          elif [ "${{ runner.os }}" = "Linux" ]; then
+            cp anycode/src-tauri/target/release/bundle/deb/*.deb dist-desktop/anycode-desktop-linux-amd64.deb
+            strip anycode/src-tauri/target/release/anycode-desktop
+            tar -czf dist-desktop/anycode-desktop-linux-x86_64.tar.gz -C anycode/src-tauri/target/release anycode-desktop
+          fi
+          ls -la dist-desktop
+
+      - name: Package Desktop Artifacts (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist-desktop | Out-Null
+          $exe = Get-ChildItem -Path anycode/src-tauri/target/release/bundle/nsis/*.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($exe) { Copy-Item $exe.FullName dist-desktop/anycode-desktop-windows-x64-setup.exe }
+          $msi = Get-ChildItem -Path anycode/src-tauri/target/release/bundle/msi/*.msi -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($msi) { Copy-Item $msi.FullName dist-desktop/anycode-desktop-windows-x64.msi }
+          Get-ChildItem -Path dist-desktop
+
+      - name: Upload Desktop Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: anycode-desktop-${{ matrix.arch }}-${{ runner.os }}
+          path: dist-desktop/*

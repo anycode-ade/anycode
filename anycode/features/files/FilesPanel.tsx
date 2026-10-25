@@ -5,6 +5,7 @@ import type { TreeNode } from '../../types';
 import { Icons } from '../../components/Icons';
 import { usePersistedScroll } from '../../hooks/usePersistedScroll';
 import { normalizePath } from '../../utils';
+import type { WorkspaceProject } from '../../workspace';
 
 type FilesPanelProps = {
     fileTree: TreeNode[];
@@ -21,11 +22,17 @@ type FilesPanelProps = {
         onOpenFile: (path: string) => void;
         onLoadFolder: (path: string) => void;
         onFocusEditor?: () => void;
-    }) => boolean;
+    }, navigationTree?: TreeNode[]) => boolean;
     fileIconsStyle?: 'colored' | 'monochrome' | 'disabled';
     onDeleteNode?: (path: string) => void;
     onRenameNode?: (oldPath: string, newPath: string) => void;
-    onCreateNode?: (parentPath: string, name: string, isFile: boolean, onCreated?: (path: string) => void) => void;
+    onCreateNode?: (parentPath: string, name: string, isFile: boolean, onCreated?: (path: string) => void, projectId?: string) => void;
+    projects?: WorkspaceProject[];
+    activeProjectId?: string | null;
+    onSelectProject?: (projectId: string) => void;
+    onAddProject?: (anchor: HTMLElement) => void;
+    isAddingProject?: boolean;
+    onRemoveProject?: (projectId: string) => void;
 };
 
 const getParentPath = (path: string): string => {
@@ -42,6 +49,7 @@ interface ContextMenuState {
 interface CreatingNodeState {
     parentPath: string;
     isFile: boolean;
+    projectId?: string;
 }
 
 export const FilesPanel = ({
@@ -60,8 +68,30 @@ export const FilesPanel = ({
     onDeleteNode,
     onRenameNode,
     onCreateNode,
+    projects = [],
+    activeProjectId,
+    onSelectProject,
+    onAddProject,
+    isAddingProject,
+    onRemoveProject,
 }: FilesPanelProps) => {
-    const scrollRef = usePersistedScroll<HTMLDivElement>('files-panel', 'local', [fileTree]);
+    const selectedProject = projects.find((project) => project.id === activeProjectId)
+        ?? projects[0]
+        ?? null;
+    const projectTree = useMemo(() => {
+        if (projects.length === 0) return fileTree;
+        if (!selectedProject) return [];
+        const selectedRootPath = normalizePath(selectedProject.root);
+        return fileTree.filter((node) => (
+            node.project_id === selectedProject.id
+            || normalizePath(node.path) === selectedRootPath
+        ));
+    }, [fileTree, projects.length, selectedProject]);
+    const scrollRef = usePersistedScroll<HTMLDivElement>(
+        `files-panel:${selectedProject?.id ?? 'workspace'}`,
+        'local',
+        [projectTree],
+    );
     const treeRef = useRef<HTMLDivElement | null>(null);
     const treeNodeRefs = useRef<Map<string, HTMLDivElement>>(new Map());
     const shouldAutoScrollRef = useRef(false);
@@ -133,14 +163,17 @@ export const FilesPanel = ({
     }, [contextMenu, closeContextMenu]);
 
     const getRelativePath = useCallback((absolutePath: string) => {
-        const rootPath = fileTree[0]?.path;
+        const rootPath = projects
+            .map((project) => project.root)
+            .filter((root) => absolutePath === root || absolutePath.startsWith(`${root}/`))
+            .sort((a, b) => b.length - a.length)[0];
         if (!rootPath) return absolutePath;
         if (absolutePath === rootPath) return '.';
         if (absolutePath.startsWith(rootPath + '/')) {
             return absolutePath.substring(rootPath.length + 1);
         }
         return absolutePath;
-    }, [fileTree]);
+    }, [projects]);
 
     const handleCopyName = (e: React.MouseEvent) => {
         e.stopPropagation();
@@ -178,7 +211,7 @@ export const FilesPanel = ({
         if (contextMenu) {
             const node = contextMenu.node;
             const parentPath = node.type === 'directory' ? node.path : getParentPath(node.path);
-            setCreatingNode({ parentPath, isFile: true });
+            setCreatingNode({ parentPath, isFile: true, projectId: node.project_id });
             setEditingNodeId('virtual-new-node');
         }
     };
@@ -189,7 +222,7 @@ export const FilesPanel = ({
         if (contextMenu) {
             const node = contextMenu.node;
             const parentPath = node.type === 'directory' ? node.path : getParentPath(node.path);
-            setCreatingNode({ parentPath, isFile: false });
+            setCreatingNode({ parentPath, isFile: false, projectId: node.project_id });
             setEditingNodeId('virtual-new-node');
         }
     };
@@ -201,7 +234,7 @@ export const FilesPanel = ({
         if (isCreate) {
             setCreatingNode(null);
             if (onCreateNode && creatingNode) {
-                onCreateNode(creatingNode.parentPath, newName, creatingNode.isFile);
+                onCreateNode(creatingNode.parentPath, newName, creatingNode.isFile, undefined, creatingNode.projectId);
             }
             return;
         }
@@ -240,12 +273,12 @@ export const FilesPanel = ({
         e.preventDefault();
         e.stopPropagation();
 
-        const rootPath = fileTree[0]?.path || '';
-        const rootNode: TreeNode = {
-            id: rootPath,
-            name: '',
-            path: rootPath,
+        const rootNode: TreeNode = projectTree[0] ?? {
+            id: selectedProject ? `project:${selectedProject.id}` : '',
+            name: selectedProject?.name ?? '',
+            path: selectedProject?.root ?? '',
             type: 'directory',
+            project_id: selectedProject?.id,
             isExpanded: true,
         };
 
@@ -259,8 +292,8 @@ export const FilesPanel = ({
             onOpenFile: (path: string) => onOpenFile(path),
             onLoadFolder: (path: string) => onLoadFolder(path),
             onFocusEditor: onFocusEditor,
-        });
-    }, [onNavigateByKey, onOpenFile, onLoadFolder, onFocusEditor]);
+        }, projectTree);
+    }, [onNavigateByKey, onOpenFile, onLoadFolder, onFocusEditor, projectTree]);
 
     const handleKeyDown = useCallback((e: KeyboardEvent<HTMLDivElement>) => {
         if (editingNodeId !== null) {
@@ -352,15 +385,19 @@ export const FilesPanel = ({
     }, [creatingNode]);
 
     const displayTree = useMemo(() => {
-        return injectVirtualNode(fileTree);
-    }, [fileTree, injectVirtualNode]);
+        return injectVirtualNode(projectTree);
+    }, [projectTree, injectVirtualNode]);
 
     const menuWidth = 196;
     const menuHeight = 250;
     const xPos = contextMenu ? Math.min(contextMenu.x, window.innerWidth - menuWidth - 8) : 0;
     const yPos = contextMenu ? Math.min(contextMenu.y, window.innerHeight - menuHeight - 8) : 0;
 
-    const isWorkspaceRoot = contextMenu && fileTree[0] && contextMenu.node.path === fileTree[0].path;
+    const contextProjectId = contextMenu?.node.project_id
+        ?? projects.find((project) => project.root === contextMenu?.node.path)?.id;
+    const isWorkspaceRoot = Boolean(contextMenu && projects.some((project) => (
+        contextMenu.node.path === project.root
+    )));
 
     return (
         <div className="file-system-panel">
@@ -398,6 +435,10 @@ export const FilesPanel = ({
                                     setEditingNodeId(null);
                                     setCreatingNode(null);
                                 }}
+                                projectOptions={projects}
+                                onProjectChange={onSelectProject}
+                                onAddProject={onAddProject}
+                                isAddingProject={isAddingProject}
                             />
                         ))}
                     </div>
@@ -444,6 +485,24 @@ export const FilesPanel = ({
                             >
                                 <Icons.Trash size={14} />
                                 <span>Delete {contextMenu.node.type === 'file' ? 'File' : 'Folder'}</span>
+                            </button>
+                        </>
+                    )}
+                    {isWorkspaceRoot && contextProjectId && onRemoveProject && (
+                        <>
+                            <div className="tree-context-menu-separator" />
+                            <button
+                                type="button"
+                                className="delete"
+                                onClick={(event) => {
+                                    event.stopPropagation();
+                                    closeContextMenu();
+                                    if (window.confirm(`Remove project "${contextMenu.node.name}" from the workspace?`)) {
+                                        onRemoveProject(contextProjectId);
+                                    }
+                                }}
+                            >
+                                Remove project
                             </button>
                         </>
                     )}

@@ -602,24 +602,28 @@ mod tests {
     #[test]
     fn test_did_open_deduplication_and_close() {
         let mut lsp = Lsp::new();
-        let path = "test_file.rs";
+        let path = std::env::current_dir()
+            .unwrap()
+            .join("test_file.rs")
+            .to_string_lossy()
+            .to_string();
         let lang = "rust";
         let text = "fn main() {}";
 
-        assert!(!lsp.opened.contains(path));
-        assert!(lsp.did_open(lang, path, text).is_ok());
-        assert!(lsp.opened.contains(path));
+        assert!(!lsp.opened.contains(&path));
+        assert!(lsp.did_open(lang, &path, text).is_ok());
+        assert!(lsp.opened.contains(&path));
 
         // Repeated open is deduplicated
-        assert!(lsp.did_open(lang, path, text).is_ok());
-        assert!(lsp.opened.contains(path));
+        assert!(lsp.did_open(lang, &path, text).is_ok());
+        assert!(lsp.opened.contains(&path));
 
         // Close removes it
-        assert!(lsp.did_close(path).is_ok());
-        assert!(!lsp.opened.contains(path));
+        assert!(lsp.did_close(&path).is_ok());
+        assert!(!lsp.opened.contains(&path));
 
         // Repeated close is a safe no-op
-        assert!(lsp.did_close(path).is_ok());
+        assert!(lsp.did_close(&path).is_ok());
     }
 
     #[tokio::test]
@@ -934,14 +938,16 @@ pub mod lsp_messages {
 
 pub struct LspManager {
     config: Config,
+    root: std::path::PathBuf,
     lang2lsp: HashMap<String, Lsp>,
     diagnostics_sender: Option<mpsc::Sender<PublishDiagnosticsParams>>,
 }
 
 impl LspManager {
-    pub fn new(config: Config) -> Self {
+    pub fn new_with_root(config: Config, root: std::path::PathBuf) -> Self {
         Self {
             config,
+            root,
             lang2lsp: HashMap::new(),
             diagnostics_sender: None,
         }
@@ -984,10 +990,7 @@ impl LspManager {
             }
         }
 
-        let dir = std::env::current_dir()
-            .unwrap()
-            .to_string_lossy()
-            .into_owned();
+        let dir = self.root.to_string_lossy().into_owned();
 
         if let Err(e) = lsp.init(&dir).await {
             error!("error initializing lsp process {}: {}", &lsp_cmd, e);

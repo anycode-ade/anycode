@@ -1,5 +1,6 @@
 import type { FileState, Terminal, AcpSession, AcpAgent } from '../../types';
 import { useState, useMemo, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { loadItem, saveItem } from '../../storage';
 import { resolveAgentDisplay } from '../../agents';
 import { TabContextMenu } from './TabContextMenu';
@@ -576,7 +577,9 @@ export const Toolbar = ({
                                 badge={accountName}
                                 title={fullName}
                                 variant="agent"
+                                agentId={session.agentId}
                                 isLoading={session.isStarting}
+                                isWorking={Boolean(session.isProcessing)}
                                 pinned={pinnedAgentIds.includes(session.agentId)}
                                 onUnpin={() => togglePinAgent(session.agentId)}
                                 onSelect={() => onSelectAgent(session.agentId)}
@@ -594,13 +597,14 @@ export const Toolbar = ({
                 </div>
             )}
 
-            {tabMenu && menuGroups.length > 0 && (
+            {tabMenu && menuGroups.length > 0 && createPortal(
                 <TabContextMenu
                     menuRef={menuRef}
                     anchor={tabMenu.anchor}
                     groups={menuGroups}
                     onClose={closeMenu}
-                />
+                />,
+                document.body,
             )}
         </div>
     );

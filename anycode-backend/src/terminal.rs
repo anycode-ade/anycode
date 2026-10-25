@@ -1,4 +1,3 @@
-use crate::utils::current_dir;
 use anyhow::Result;
 use portable_pty::{Child, CommandBuilder, PtyPair, PtySize, native_pty_system};
 use std::io::{Read, Write};
@@ -18,7 +17,7 @@ impl Terminal {
         rows: u16,
         cols: u16,
         cmd: Option<String>,
-        cwd: Option<PathBuf>,
+        cwd: PathBuf,
         on_output_tx: mpsc::Sender<String>,
     ) -> anyhow::Result<Self> {
         let pty_system = native_pty_system();
@@ -33,8 +32,7 @@ impl Terminal {
         let command_str = cmd.unwrap_or_else(Self::default_shell);
         let mut cmd_builder = CommandBuilder::new(command_str);
 
-        let working_dir = cwd.unwrap_or_else(|| current_dir());
-        cmd_builder.cwd(working_dir);
+        cmd_builder.cwd(cwd);
 
         let child = pair.slave.spawn_command(cmd_builder)?;
 
@@ -218,7 +216,7 @@ mod tests {
             30,
             80,
             Some(shell),
-            None,
+            std::env::current_dir()?,
             tx,
         )
         .await?;
@@ -267,7 +265,7 @@ mod tests {
             30,
             80,
             Some(shell),
-            None,
+            std::env::current_dir()?,
             tx,
         )
         .await?;
@@ -294,6 +292,40 @@ mod tests {
             output
         );
 
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn terminal_process_starts_in_explicit_project_root() -> Result<()> {
+        let project = tempfile::tempdir()?;
+        let expected_root = project.path().canonicalize()?.to_string_lossy().to_string();
+        let (tx, mut rx) = mpsc::channel::<String>(10);
+        let terminal = Terminal::new(
+            "cwd-test".to_string(),
+            "project-a".to_string(),
+            10,
+            40,
+            Some("/bin/pwd".to_string()),
+            project.path().to_path_buf(),
+            tx,
+        )
+        .await?;
+
+        let output = timeout(Duration::from_secs(2), async {
+            let mut output = String::new();
+            while let Some(chunk) = rx.recv().await {
+                output.push_str(&chunk);
+                if output.contains(&expected_root) {
+                    break;
+                }
+            }
+            output
+        })
+        .await?;
+
+        assert!(output.contains(&expected_root), "unexpected pwd output: {output}");
+        drop(terminal);
         Ok(())
     }
 }

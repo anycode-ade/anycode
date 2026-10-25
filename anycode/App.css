@@ -7,10 +7,99 @@
     display: flex;
     flex-direction: column;
     position: relative;
-    background: var(--background-color, #242424);
+    background: var(--background-color, #0a0a0a);
     padding: 0 2px 2px 2px;
     box-sizing: border-box;
 }
+
+.app-container.app-with-dynamic-bg,
+.app-container[data-dynamic-bg="global"],
+[data-dynamic-bg="global"] .app-container,
+.app-container:has(.app-global-dynamic-bg) {
+    background: transparent !important;
+}
+
+/* Ensure editor, preview, and terminal panes are transparent when dynamic background is active */
+.app-container.app-with-dynamic-bg .editor-container,
+.app-container[data-dynamic-bg="global"] .editor-container,
+[data-dynamic-bg="global"] .editor-container,
+.app-container.app-with-dynamic-bg .anyeditor-wrapper,
+.app-container[data-dynamic-bg="global"] .anyeditor-wrapper,
+[data-dynamic-bg="global"] .anyeditor-wrapper,
+.app-container.app-with-dynamic-bg .anyeditor,
+.app-container[data-dynamic-bg="global"] .anyeditor,
+[data-dynamic-bg="global"] .anyeditor,
+.app-container.app-with-dynamic-bg .multibuffer-panel,
+.app-container[data-dynamic-bg="global"] .multibuffer-panel,
+[data-dynamic-bg="global"] .multibuffer-panel,
+.app-container.app-with-dynamic-bg .multibuffer-scroll,
+.app-container[data-dynamic-bg="global"] .multibuffer-scroll,
+[data-dynamic-bg="global"] .multibuffer-scroll,
+.app-container.app-with-dynamic-bg .multibuffer-section,
+.app-container[data-dynamic-bg="global"] .multibuffer-section,
+[data-dynamic-bg="global"] .multibuffer-section,
+.app-container.app-with-dynamic-bg .markdown-preview,
+.app-container[data-dynamic-bg="global"] .markdown-preview,
+[data-dynamic-bg="global"] .markdown-preview,
+.app-container.app-with-dynamic-bg .layout-panel-picker,
+.app-container[data-dynamic-bg="global"] .layout-panel-picker,
+[data-dynamic-bg="global"] .layout-panel-picker,
+.app-container.app-with-dynamic-bg .layout-dock-panel--picker,
+.app-container[data-dynamic-bg="global"] .layout-dock-panel--picker,
+[data-dynamic-bg="global"] .layout-dock-panel--picker,
+.app-container.app-with-dynamic-bg .terminal-panel,
+.app-container[data-dynamic-bg="global"] .terminal-panel,
+[data-dynamic-bg="global"] .terminal-panel,
+.app-container.app-with-dynamic-bg .terminal-content,
+.app-container[data-dynamic-bg="global"] .terminal-content,
+[data-dynamic-bg="global"] .terminal-content,
+.app-container.app-with-dynamic-bg .terminal-container,
+.app-container[data-dynamic-bg="global"] .terminal-container,
+[data-dynamic-bg="global"] .terminal-container,
+.app-container.app-with-dynamic-bg .terminal-wrapper,
+.app-container[data-dynamic-bg="global"] .terminal-wrapper,
+[data-dynamic-bg="global"] .terminal-wrapper,
+.app-container.app-with-dynamic-bg .terminal-container .wterm,
+.app-container[data-dynamic-bg="global"] .terminal-container .wterm,
+[data-dynamic-bg="global"] .terminal-container .wterm,
+.app-container.app-with-dynamic-bg .wterm.wterm,
+.app-container[data-dynamic-bg="global"] .wterm.wterm,
+[data-dynamic-bg="global"] .wterm.wterm,
+.app-container.app-with-dynamic-bg .terminal-pane-empty,
+.app-container[data-dynamic-bg="global"] .terminal-pane-empty,
+[data-dynamic-bg="global"] .terminal-pane-empty {
+    background: transparent !important;
+    background-color: transparent !important;
+    --term-bg: transparent !important;
+    --term-app-bg: transparent !important;
+}
+
+.app-container.app-with-dynamic-bg .layout-panel-picker-item,
+.app-container[data-dynamic-bg="global"] .layout-panel-picker-item,
+[data-dynamic-bg="global"] .layout-panel-picker-item {
+    background: color-mix(in srgb, var(--background-color, #0a0a0a) 75%, transparent 25%);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid color-mix(in srgb, var(--theme-foreground, #ffffff) 10%, transparent);
+}
+
+.app-container.app-with-dynamic-bg .layout-panel-picker-item:hover,
+.app-container[data-dynamic-bg="global"] .layout-panel-picker-item:hover {
+    background: color-mix(
+        in srgb,
+        var(--theme-accent-background, #007acc) 18%,
+        color-mix(in srgb, var(--background-color, #0a0a0a) 75%, transparent 25%)
+    );
+    border-color: color-mix(in srgb, var(--theme-accent-background, #007acc) 50%, transparent);
+}
+
+/* Dynamic background: in-flow file headers blend into the transparent editor.
+   The sticky header keeps its opaque theme background so content doesn't show through it. */
+.app-container.app-with-dynamic-bg .anyeditor .multibuffer-file-header-row,
+[data-dynamic-bg="global"] .anyeditor .multibuffer-file-header-row {
+    background: transparent !important;
+}
+
 
 .tab-bar {
     display: flex;
@@ -143,7 +232,7 @@
     position: relative;
     z-index: 1;
     height: 100vh;
-    background: var(--background-color, #242424);
+    background: var(--background-color, #0a0a0a);
 }
 
 /* Legacy spacing for floating toolbar removed after docked-toolbar migration. */
@@ -294,4 +383,47 @@
 
 .is-restoring-scroll::-webkit-scrollbar {
     display: none !important; /* Chrome, Safari, Opera */
+}
+
+/* Hyperspace Warp Jump Transitions */
+.warp-screen-wrapper {
+    flex: 1;
+    display: flex;
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    will-change: transform, opacity;
+}
+
+.warp-screen-wrapper.warping-out {
+    animation: warpHyperspaceOut var(--warp-swap-duration) cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    pointer-events: none;
+}
+
+.warp-screen-wrapper.warping-in {
+    animation: warpHyperspaceIn var(--warp-in-duration) cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes warpHyperspaceOut {
+    0% {
+        opacity: 1;
+        transform: scale(1);
+    }
+    100% {
+        opacity: 0;
+        transform: scale(1.04);
+    }
+}
+
+@keyframes warpHyperspaceIn {
+    0% {
+        opacity: 0;
+        transform: scale(0.97);
+    }
+    100% {
+        opacity: 1;
+        transform: scale(1);
+    }
 }

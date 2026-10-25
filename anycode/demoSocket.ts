@@ -1,5 +1,6 @@
 // demoSocket.ts - In-memory Mock Socket for Anycode Live Demo
 import { Code } from 'anycode-base';
+import { DEMO_RESUME_SESSION_ID, buildDemoResumeHistory } from './demoSessionHistory';
 
 type EventHandler = (...args: any[]) => void;
 
@@ -57,6 +58,22 @@ function generateDemoScrollContent(targetLines: number = 1000000): string {
 }
 
 const SCROLL_DEMO_CONTENT = generateDemoScrollContent(1000000);
+
+// Same channel the backend uses for terminal output: terminal:data:<session>:<name>.
+function terminalDataChannel(payload: any): string {
+    const name = payload?.name || payload?.terminal_id || 'terminal-1';
+    return `terminal:data:${payload?.session}:${name}`;
+}
+
+const DEMO_PROJECT_ID = 'demo-project';
+
+// Every workspace event answers with this single fixed project rooted at the VFS root ('.'),
+// matching the relative VFS paths. Workspace mutations are no-ops in demo mode.
+const DEMO_WORKSPACE_STATE = {
+    projects: [{ id: DEMO_PROJECT_ID, name: 'anycode-demo', root: '.' }],
+    active_project_id: DEMO_PROJECT_ID,
+    recent_workspaces: [] as unknown[],
+};
 
 const DEMO_VFS: Record<string, VfsNode> = {
     '.': { path: '.', name: '.', is_dir: true },
@@ -236,7 +253,8 @@ const notifyGitChange = (socket: DemoSocket, targetPath: string) => {
     } else if (original === undefined) {
         DEMO_CHANGED_FILES.set(targetPath, { path: targetPath, status: 'added', staged: false });
     } else {
-        const isModified = node.code ? (node.code.getVersionId() > 0) : (node.content !== original);
+        // Compare content, not Code.versionId: the version only grows, so reverting edits would stay "modified".
+        const isModified = getNodeContent(node) !== original;
         if (isModified) {
             const existing = DEMO_CHANGED_FILES.get(targetPath);
             DEMO_CHANGED_FILES.set(targetPath, {
@@ -250,8 +268,10 @@ const notifyGitChange = (socket: DemoSocket, targetPath: string) => {
     }
 
     const changedItem = DEMO_CHANGED_FILES.get(targetPath);
+    // The backend stamps project_id on every git:update; the Changes panel only reads per-project git state.
     const gitUpdatePayload = {
         kind: 'patch',
+        project_id: DEMO_PROJECT_ID,
         branch: demoCurrentBranch,
         files: changedItem
             ? [{ path: targetPath, status: changedItem.status, staged: changedItem.staged }]
@@ -304,6 +324,13 @@ Object.entries(themeModules).forEach(([filePath, mod]) => {
     }
 });
 
+interface DemoRunningAgent {
+    id: string;
+    name: string;
+    session_id: string;
+    project_id: string | null;
+}
+
 export class DemoSocket {
     public connected: boolean = true;
     public active: boolean = true;
@@ -313,6 +340,7 @@ export class DemoSocket {
     private terminalBuffer: string = '';
     private terminalCurrentDir: string = '.';
     private agentNames: Map<string, string> = new Map();
+    private runningAgents: Map<string, DemoRunningAgent> = new Map();
 
     constructor() {
         // Trigger connect event on next tick
@@ -382,6 +410,16 @@ export class DemoSocket {
 
     private handleEvent(event: string, payload: any, callback: ((res: any) => void) | null): void {
         switch (event) {
+            case 'workspace:state':
+            case 'workspace:select-project':
+            case 'workspace:add-project':
+            case 'workspace:remove-project':
+            case 'workspace:remove-recent':
+            case 'workspace:close': {
+                callback?.({ success: true, ...DEMO_WORKSPACE_STATE });
+                break;
+            }
+
             case 'dir:list': {
                 const reqPath = (payload?.path || '.').replace(/^\.\//, '');
                 const normPath = reqPath === '' ? '.' : reqPath;
@@ -555,6 +593,7 @@ export class DemoSocket {
             case 'git:status': {
                 callback?.({
                     success: true,
+                    project_id: DEMO_PROJECT_ID,
                     branch: demoCurrentBranch,
                     files: Array.from(DEMO_CHANGED_FILES.values()),
                 });
@@ -574,7 +613,7 @@ export class DemoSocket {
                 if (target && demoBranches.includes(target)) {
                     demoCurrentBranch = target;
                     callback?.({ success: true });
-                    this.emitLocal('git:update', { kind: 'full', branch: demoCurrentBranch, files: Array.from(DEMO_CHANGED_FILES.values()) });
+                    this.emitLocal('git:update', { kind: 'full', project_id: DEMO_PROJECT_ID, branch: demoCurrentBranch, files: Array.from(DEMO_CHANGED_FILES.values()) });
                 } else {
                     callback?.({ success: false, error: 'Branch not found' });
                 }
@@ -589,7 +628,7 @@ export class DemoSocket {
                     }
                     demoCurrentBranch = newBranch;
                     callback?.({ success: true });
-                    this.emitLocal('git:update', { kind: 'full', branch: demoCurrentBranch, files: Array.from(DEMO_CHANGED_FILES.values()) });
+                    this.emitLocal('git:update', { kind: 'full', project_id: DEMO_PROJECT_ID, branch: demoCurrentBranch, files: Array.from(DEMO_CHANGED_FILES.values()) });
                 } else {
                     callback?.({ success: false, error: 'Branch name cannot be empty' });
                 }
@@ -740,7 +779,7 @@ export class DemoSocket {
                     }
                 });
                 DEMO_CHANGED_FILES.clear();
-                this.emitLocal('git:update', { kind: 'full', branch: 'main', files: [] });
+                this.emitLocal('git:update', { kind: 'full', project_id: DEMO_PROJECT_ID, branch: 'main', files: [] });
                 callback?.({ success: true });
                 break;
             }
@@ -784,22 +823,16 @@ export class DemoSocket {
                 const promptPath = this.terminalCurrentDir === '.' ? 'anycode-demo' : `anycode-demo/${this.terminalCurrentDir}`;
                 const banner = `\r\n\x1b[1;32mWelcome to Anycode Live Demo Terminal!\x1b[0m\r\n\x1b[33mNote: This is an in-memory VFS sandbox, not a real OS filesystem.\x1b[0m\r\n\x1b[90m(For real bash/zsh PTY processes, download and run Anycode locally)\x1b[0m\r\n\r\n\x1b[1;34m${promptPath}\x1b[0m $ `;
 
-                setTimeout(() => {
-                    this.emitLocal(`terminal:data:${termName}`, banner);
-                    this.emitLocal('terminal:data', { terminal_id: termName, data: banner });
-                }, 50);
+                const channel = terminalDataChannel(payload);
+                setTimeout(() => this.emitLocal(channel, banner), 50);
                 break;
             }
 
             case 'terminal:input': {
-                const termName = payload?.name || payload?.terminal_id || 'terminal-1';
                 const inputData = payload?.input ?? payload?.data ?? '';
-                const channel = `terminal:data:${termName}`;
+                const channel = terminalDataChannel(payload);
 
-                const emitData = (str: string) => {
-                    this.emitLocal(channel, str);
-                    this.emitLocal('terminal:data', { terminal_id: termName, data: str });
-                };
+                const emitData = (str: string) => this.emitLocal(channel, str);
 
                 if (inputData === '\r' || inputData === '\n') {
                     const cmd = this.terminalBuffer.trim();
@@ -986,12 +1019,24 @@ export class DemoSocket {
                 this.agentNames.set(agentId, agentName);
 
                 const sessionId = payload?.resume_session_id || `session-${agentId}`;
+                this.runningAgents.set(agentId, {
+                    id: agentId,
+                    name: agentName,
+                    session_id: sessionId,
+                    project_id: payload?.project_id ?? null,
+                });
                 callback?.({
                     status: 'ok',
                     success: true,
                     agent_id: agentId,
                     session_id: sessionId,
                 });
+                if (payload?.resume_session_id === DEMO_RESUME_SESSION_ID) {
+                    // Like the backend: a resumed session replays its stored history after the start ack.
+                    setTimeout(() => {
+                        this.emitLocal('acp:history', { agent_id: agentId, history: buildDemoResumeHistory() });
+                    }, 0);
+                }
                 break;
             }
 
@@ -1013,7 +1058,8 @@ export class DemoSocket {
 
             case 'acp:queue:update':
             case 'acp:queue:remove':
-            case 'acp:queue:move': {
+            case 'acp:queue:move':
+            case 'acp:queue:send_now': {
                 callback?.({ success: true });
                 break;
             }
@@ -1239,10 +1285,20 @@ export class DemoSocket {
                 break;
             }
 
-            case 'acp:stop':
+            case 'acp:stop': {
+                this.runningAgents.delete(payload?.agent_id);
+                callback?.({ status: 'ok', success: true });
+                break;
+            }
+
+            case 'acp:reconnect': {
+                // Like the backend: report running agents so the client keeps their sessions.
+                callback?.({ status: 'ok', success: true, agents: [...this.runningAgents.values()] });
+                break;
+            }
+
             case 'acp:cancel':
             case 'acp:undo':
-            case 'acp:reconnect':
             case 'acp:set_model':
             case 'acp:set_reasoning': {
                 callback?.({ status: 'ok', success: true });

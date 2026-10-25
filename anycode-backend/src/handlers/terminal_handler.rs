@@ -18,6 +18,8 @@ pub struct TerminalStartRequest {
     pub cmd: Option<String>,
     pub rows: Option<u16>,
     pub cols: Option<u16>,
+    #[serde(default)]
+    pub project_id: Option<String>,
 }
 
 pub async fn handle_terminal_start(
@@ -32,28 +34,30 @@ pub async fn handle_terminal_start(
     let session_id = terminal_start_request.session.clone();
     let id = format!("{}-{}", session_id, terminal_name);
 
-    if state.terminals.lock().await.contains_key(&id) {
-        // let _ = socket.emit("terminal:error", "Terminal already exists");
-
-        let terminal_data_opt = {
-            let terminals = state.terminals.lock().await;
-            terminals.get(&id).cloned()
-        };
-
-        if let Some(terminal_data) = terminal_data_opt {
-            // Clear existing sockets and add the new one
-            let mut sockets = terminal_data.sockets.lock().await;
-            sockets.clear();
-            sockets.push(socket);
-
-            let _ = ack.send(&json!({ "success": true }));
-            info!("Terminal {} reconnected successfully", terminal_name);
-        } else {
-            let _ = ack.send(&json!({ "success": false, "error": "Terminal not found" }));
-            info!("Terminal {} not found for reconnection", terminal_name);
-        }
+    if let Some(terminal_data) = state.terminals.lock().await.get(&id).cloned() {
+        let mut sockets = terminal_data.sockets.lock().await;
+        sockets.clear();
+        sockets.push(socket);
+        let _ = ack.send(&json!({
+            "success": true,
+            "project_id": terminal_data.project_id,
+        }));
+        info!("Terminal {} reconnected successfully", terminal_name);
         return;
     }
+
+    let project = if let Some(project_id) = terminal_start_request.project_id.as_deref() {
+        state.workspace.lock().await.get(project_id)
+    } else {
+        state.project_for_socket(socket.id.as_str()).await
+    };
+    let Some(project) = project else {
+        let _ = ack.send(&json!({
+            "success": false,
+            "error": "Select a project before creating a terminal"
+        }));
+        return;
+    };
 
     // Get terminal dimensions
     let rows = terminal_start_request.rows.unwrap_or(30);
@@ -69,7 +73,7 @@ pub async fn handle_terminal_start(
         rows,
         cols,
         None,
-        None,
+        std::path::PathBuf::from(&project.info.root),
         output_tx,
     )
     .await;
@@ -93,15 +97,17 @@ pub async fn handle_terminal_start(
         terminal: Arc::new(terminal),
         sockets: sockets.clone(),
         buffer: buffer.clone(),
+        project_id: project.info.id.clone(),
     };
 
     // Spawn task to handle terminal output
     let tname = terminal_name.clone();
+    let tname_channel_session = session_id.clone();
     let sockets_clone = sockets.clone();
     let buffer_clone = buffer.clone();
     tokio::spawn(async move {
         while let Some(output) = output_rx.recv().await {
-            let channel = format!("terminal:data:{}", tname);
+            let channel = format!("terminal:data:{}:{}", tname_channel_session, tname);
             let mut needs_buffer = false;
 
             {
@@ -136,7 +142,7 @@ pub async fn handle_terminal_start(
             buffer_guard.push_back(exit_message.clone());
         }
 
-        let data_channel = format!("terminal:data:{}", tname);
+        let data_channel = format!("terminal:data:{}:{}", tname_channel_session, tname);
         let sockets_guard = sockets_clone.lock().await;
         for socket in sockets_guard.iter() {
             let _ = socket.emit(&data_channel, &exit_message);
@@ -145,9 +151,14 @@ pub async fn handle_terminal_start(
     });
 
     // Store terminal in app state
+    let project_id = terminal_data.project_id.clone();
     state.terminals.lock().await.insert(id, terminal_data);
 
     info!("Terminal {} started successfully", terminal_name);
+    let _ = ack.send(&json!({
+        "success": true,
+        "project_id": project_id,
+    }));
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -292,7 +303,10 @@ pub async fn handle_terminal_reconnect(
         sockets.clear();
         sockets.push(socket.clone());
 
-        let _ = ack.send(&json!({ "success": true }));
+        let _ = ack.send(&json!({
+            "success": true,
+            "project_id": terminal_data.project_id,
+        }));
         info!("Terminal {} reconnected successfully", name);
 
         let buffered_output: Vec<String> = {
@@ -301,11 +315,8 @@ pub async fn handle_terminal_reconnect(
         };
         let buffered_output_len = buffered_output.len();
 
-        // time sleep 100 milliseconds. TODO FIX THIS
-        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-
         for chunk in buffered_output {
-            let channel = format!("terminal:data:{}", name);
+            let channel = format!("terminal:data:{}:{}", session, name);
             let _ = socket.emit(channel, &chunk);
         }
         info!(

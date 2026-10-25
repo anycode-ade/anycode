@@ -2,20 +2,18 @@ use super::*;
 
 #[test]
 fn test_find_local_paths() {
-    let temp_dir = std::env::temp_dir();
-    let temp_file = temp_dir.join("test_file_anycode.txt");
+    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_file = temp_dir.path().join("test_file_anycode.txt");
     std::fs::write(&temp_file, "hello").unwrap();
 
     let prompt = format!("Please look at file://{} and write code", temp_file.display());
-    let paths = find_local_paths(&prompt);
+    let paths = find_local_paths(&prompt, temp_dir.path());
     assert!(paths.contains(&temp_file));
 
     // Test non-ASCII input (Cyrillic 'с' like in the user's report)
     let prompt_cyrillic = format!("Привет, вот файл: file://{} с текстом", temp_file.display());
-    let paths_cyrillic = find_local_paths(&prompt_cyrillic);
+    let paths_cyrillic = find_local_paths(&prompt_cyrillic, temp_dir.path());
     assert!(paths_cyrillic.contains(&temp_file));
-
-    let _ = std::fs::remove_file(temp_file);
 }
 
 #[tokio::test]
@@ -141,4 +139,86 @@ async fn test_idle_prompt_does_not_broadcast_queue_update_but_busy_does() {
         }
         other => panic!("Expected QueueUpdate, got {:?}", other),
     }
+}
+
+#[tokio::test]
+async fn test_cancel_prompt_keeps_queued_prompts_and_does_not_start_them() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let (fs_tx, _fs_rx) = tokio::sync::mpsc::channel(1);
+    let mut agent = crate::acp::AcpAgent::new_with_project_root(
+        "test-agent".to_string(),
+        "Test Agent".to_string(),
+        temp_dir.path().to_path_buf(),
+        fs_tx,
+        None,
+    );
+    let mut cancel_rx = agent.init_cancel_sender_for_test();
+
+    agent.enqueue_prompt("Wrong folder".to_string(), vec![]).await;
+    agent.enqueue_prompt("Queued after mistake".to_string(), vec![]).await;
+
+    agent.cancel_prompt().await.unwrap();
+
+    let queue = agent.get_queue().await;
+    assert_eq!(queue.len(), 2, "Stop must keep queued prompts");
+    assert!(agent.is_queue_paused(), "queued prompts must wait after Stop");
+    assert!(cancel_rx.try_recv().is_ok(), "cancel signal should reach the prompt loop");
+}
+
+#[tokio::test]
+async fn test_send_queued_prompt_now_moves_item_to_front_and_resumes_queue() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let (fs_tx, _fs_rx) = tokio::sync::mpsc::channel(1);
+    let agent = crate::acp::AcpAgent::new_with_project_root(
+        "test-agent".to_string(),
+        "Test Agent".to_string(),
+        temp_dir.path().to_path_buf(),
+        fs_tx,
+        None,
+    );
+
+    let first = agent.enqueue_prompt("first".to_string(), vec![]).await;
+    let second = agent.enqueue_prompt("second".to_string(), vec![]).await;
+    agent.set_queue_paused_for_test(true);
+
+    assert!(agent.send_queued_prompt_now(&second).await);
+
+    let ids: Vec<String> = agent.get_queue().await.into_iter().map(|item| item.id).collect();
+    assert_eq!(ids, vec![second, first]);
+    assert!(!agent.is_queue_paused(), "send-now resumes the queue");
+    assert!(!agent.send_queued_prompt_now("missing").await);
+}
+
+#[tokio::test]
+async fn test_agent_message_forwarding_cancels_previous_token() {
+    let (diagnostic_tx, _diagnostic_rx) = tokio::sync::mpsc::channel(1);
+    let (acp_fs_tx, _acp_fs_rx) = tokio::sync::mpsc::channel(1);
+    let state = AppState::new(diagnostic_tx, acp_fs_tx, None);
+
+    let socket_id = "test-socket-1".to_string();
+    let agent_id = "agent-1".to_string();
+
+    let token1 = CancellationToken::new();
+    {
+        let mut sockets_data = state.socket2data.lock().await;
+        let socket_data = sockets_data.entry(socket_id.clone()).or_default();
+        socket_data.acp_subscribers.insert(agent_id.clone(), token1.clone());
+    }
+
+    assert!(!token1.is_cancelled());
+
+    // Register second subscriber for same socket and agent
+    let token2 = CancellationToken::new();
+    {
+        let mut sockets_data = state.socket2data.lock().await;
+        let socket_data = sockets_data.entry(socket_id.clone()).or_default();
+        if let Some(old_token) = socket_data.acp_subscribers.insert(agent_id.clone(), token2.clone()) {
+            old_token.cancel();
+        }
+    }
+
+    // Previous token MUST be cancelled
+    assert!(token1.is_cancelled());
+    // New token MUST NOT be cancelled
+    assert!(!token2.is_cancelled());
 }

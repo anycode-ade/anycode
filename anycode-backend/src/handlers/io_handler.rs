@@ -2,7 +2,7 @@ use crate::app_state::*;
 use crate::code::{Edit, Operation};
 use crate::error_ack;
 use crate::handlers::git_handler::is_file_tracked;
-use crate::utils::{abs_file, format_path, is_ignored_path};
+use crate::utils::{abs_file, format_path};
 use crate::{
     app_state::{AppState, SocketData},
     code::Code,
@@ -91,7 +91,10 @@ pub async fn handle_file_open(
 ) {
     info!("Received file:open: {:?}", request);
 
-    let abs_path = match abs_file(&request.path) {
+    let abs_path = match state
+        .resolve_path_for_socket(socket.id.as_str(), &request.path)
+        .await
+    {
         Ok(p) => p,
         Err(e) => error_ack!(ack, &request.path, "Failed to resolve file: {:?}", e),
     };
@@ -125,7 +128,8 @@ pub async fn handle_file_open(
     }
 
     let original = {
-        let git = state.git_manager.lock().await;
+        let git_manager = state.git_for_path(&abs_path).await;
+        let git = git_manager.lock().await;
         match git.file_original(&abs_path) {
             Ok(file) => {
                 let status = if file.is_new { "new" } else { "ok" };
@@ -160,7 +164,7 @@ pub async fn handle_file_open(
 
     // LSP startup can take several seconds. Keep it out of the file-open
     // response path so one slow language server cannot block other opens.
-    let lsp_manager = state.lsp_manager.clone();
+    let lsp_manager = state.lsp_for_path(&abs_path).await;
     tokio::spawn(async move {
         let mut lsp_manager = lsp_manager.lock().await;
         if let Some(lsp) = lsp_manager.get(&lang).await {
@@ -184,9 +188,24 @@ pub async fn handle_dir_list(
 ) {
     info!("Received dir:list: {:?}", request);
 
-    let dir = match request.path.as_str().trim() {
-        "" | "." | "./" => crate::utils::current_dir().to_string_lossy().into_owned(),
-        d => d.to_string(),
+    let sid = socket.id.as_str().to_string();
+    let active_project_root = state
+        .project_for_socket(&sid)
+        .await
+        .map(|project| project.info.root)
+        .ok_or_else(|| anyhow::anyhow!("Select a project before browsing files"));
+    let active_project_root = match active_project_root {
+        Ok(root) => root,
+        Err(error) => error_ack!(ack, &request.path, "{}", error),
+    };
+    let requested_dir = request.path.trim();
+    let dir = match requested_dir {
+        "" | "." | "./" => active_project_root.clone(),
+        path if Path::new(path).is_absolute() => path.to_string(),
+        path => PathBuf::from(&active_project_root)
+            .join(path)
+            .to_string_lossy()
+            .into_owned(),
     };
 
     let abs_path = match abs_file(&dir) {
@@ -194,38 +213,31 @@ pub async fn handle_dir_list(
         Err(e) => error_ack!(ack, &dir, "Failed to resolve directory: {:?}", e),
     };
 
+    let project = state
+        .workspace
+        .lock()
+        .await
+        .find_project_for_path(Path::new(&abs_path));
+    let Some(project) = project else {
+        error_ack!(ack, &request.path, "Directory is not part of an open project");
+    };
+    let project_id = Some(project.info.id.clone());
+    let project_root = project.info.root;
     let name = crate::utils::file_name(&dir);
-    let mut relative_path = crate::utils::relative_path(&dir);
-    if relative_path.is_empty() {
-        relative_path = ".".to_string();
-    }
-
-    let entries = match std::fs::read_dir(&dir) {
-        Ok(e) => e,
+    let relative_path = Path::new(&dir)
+        .strip_prefix(&project_root)
+        .map(|path| path.to_string_lossy().into_owned())
+        .unwrap_or_else(|_| dir.clone());
+    let relative_path = if relative_path.is_empty() {
+        ".".to_string()
+    } else {
+        relative_path
+    };
+    let (dirs, files) = match crate::workspace::list_directory_entries(Path::new(&dir)) {
+        Ok(entries) => entries,
         Err(e) => error_ack!(ack, &dir, "Failed to open directory: {:?}", e),
     };
-
-    let mut files = Vec::new();
-    let mut dirs = Vec::new();
-
-    for entry in entries.flatten() {
-        let path = entry.path();
-
-        if is_ignored_path(&path) {
-            continue;
-        }
-
-        if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-            if path.is_dir() {
-                dirs.push(name.to_string());
-            } else {
-                files.push(name.to_string());
-            }
-        }
-    }
-
-    dirs.sort();
-    files.sort();
+    let dirs = dirs.into_iter().map(|(name, _)| name).collect::<Vec<_>>();
 
     let message = json!({
         "files": files,
@@ -233,10 +245,11 @@ pub async fn handle_dir_list(
         "name": name,
         "fullpath": format_path(&dir),
         "relative_path": relative_path,
+        "project_id": project_id,
+        "project_name": project.info.name.clone(),
     });
 
     // Track opened directories
-    let sid = socket.id.as_str().to_string();
     let mut sockets_data = state.socket2data.lock().await;
     let data = sockets_data.entry(sid).or_insert_with(SocketData::default);
     data.opened_dirs.insert(abs_path.clone());
@@ -264,7 +277,10 @@ pub async fn handle_file_close(
 
     let sid = socket.id.as_str().to_string();
 
-    let abs_path = match abs_file(&request.file) {
+    let abs_path = match state
+        .resolve_path_for_socket(socket.id.as_str(), &request.file)
+        .await
+    {
         Ok(p) => p,
         Err(e) => error_ack!(ack, &request, "Failed to resolve file: {:?}", e),
     };
@@ -279,8 +295,10 @@ pub async fn handle_file_close(
     };
 
     // Close file in LSP
+    let project = state.project_for_path(&abs_path).await;
     {
-        let mut lsp_manager = state.lsp_manager.lock().await;
+        let lsp_manager = state.lsp_for_path(&abs_path).await;
+        let mut lsp_manager = lsp_manager.lock().await;
         if let Some(lsp) = lsp_manager.get(&lang).await {
             if let Err(e) = lsp.did_close(&abs_path) {
                 error!("Failed to notify LSP didClose for {}: {:?}", abs_path, e);
@@ -311,7 +329,13 @@ pub async fn handle_file_close(
     }
 
     // Lsp autoclose
-    if !is_language_opened(&lang, &state).await {
+    if let Some(project) = project {
+        if !is_language_opened_in_project(&lang, &project, &state).await {
+            let mut lsp_manager = project.lsp.lock().await;
+            lsp_manager.stop(&lang).await;
+            info!("Lsp autoclose: '{}'", lang);
+        }
+    } else if !is_language_opened(&lang, &state).await {
         let mut lsp_manager = state.lsp_manager.lock().await;
         lsp_manager.stop(&lang).await;
         info!("Lsp autoclose: '{}'", lang);
@@ -340,7 +364,10 @@ pub async fn handle_file_change(
         change.file
     );
 
-    let abs_path = match abs_file(&change.file) {
+    let abs_path = match state
+        .resolve_path_for_socket(socket.id.as_str(), &change.file)
+        .await
+    {
         Ok(p) => p,
         Err(e) => {
             tracing::error!("Failed to resolve file: {:?}", e);
@@ -387,7 +414,8 @@ pub async fn handle_file_change(
 
     // Send all changes to LSP in a single notification, then notify save after autosave.
     if !lsp_changes.is_empty() || did_autosave {
-        let mut lsp_manager = state.lsp_manager.lock().await;
+        let lsp_manager = state.lsp_for_path(&abs_path).await;
+        let mut lsp_manager = lsp_manager.lock().await;
         if let Some(lsp) = lsp_manager.get(&lang).await {
             if !lsp_changes.is_empty() {
                 if let Err(e) = lsp.did_change(&abs_path, lsp_changes).await {
@@ -413,14 +441,17 @@ pub struct FileSaveRequest {
 }
 
 pub async fn handle_file_save(
-    _socket: SocketRef,
+    socket: SocketRef,
     Data(request): Data<FileSaveRequest>,
     state: State<AppState>,
     ack: AckSender,
 ) {
     info!("Received file:save: {:?}", request.path);
 
-    let abs_path = match abs_file(&request.path) {
+    let abs_path = match state
+        .resolve_path_for_socket(socket.id.as_str(), &request.path)
+        .await
+    {
         Ok(p) => p,
         Err(e) => error_ack!(ack, &request.path, "Failed to resolve file: {:?}", e),
     };
@@ -437,7 +468,8 @@ pub async fn handle_file_save(
 
     info!("File saved successfully: {}", abs_path);
 
-    let mut lsp_manager = state.lsp_manager.lock().await;
+    let lsp_manager = state.lsp_for_path(&abs_path).await;
+    let mut lsp_manager = lsp_manager.lock().await;
     if let Some(lsp) = lsp_manager.get(&code.lang).await {
         if let Err(e) = lsp.did_save(&abs_path) {
             error!("Failed to notify LSP didSave for {}: {:?}", abs_path, e);
@@ -454,6 +486,8 @@ pub struct CreateRequest {
     pub is_file: bool,
     pub content_base64: Option<String>,
     pub to_temp_dir: Option<bool>,
+    #[serde(default)]
+    pub project_id: Option<String>,
 }
 
 pub async fn handle_create(
@@ -480,21 +514,37 @@ pub async fn handle_create(
     let full_path = if is_temp {
         std::env::temp_dir().join(name)
     } else {
+        let project = match request.project_id.as_deref() {
+            Some(project_id) => state.workspace.lock().await.get(project_id),
+            None => state.project_for_socket(socket.id.as_str()).await,
+        };
+        let Some(project) = project else {
+            error_ack!(ack, &request.name, "Select a project before creating files");
+        };
+        let project_root = PathBuf::from(&project.info.root);
         // Build path using PathBuf for cross-platform compatibility
         let fp = if parent_path.is_empty() || parent_path == "." || parent_path == "./" {
-            PathBuf::from(name)
+            project_root.join(name)
         } else {
             PathBuf::from(parent_path).join(name)
         };
 
-        // For relative paths, we need to join with current directory
-        if fp.is_absolute() {
+        let fp = if Path::new(&fp).is_absolute() {
             fp
         } else {
-            // Relative path, join with current directory
-            let current_dir = std::env::current_dir().unwrap_or_default();
-            current_dir.join(&fp)
+            project_root.join(fp)
+        };
+        let Some(parent) = fp.parent() else {
+            error_ack!(ack, &request.name, "Invalid destination path");
+        };
+        let canonical_parent = match parent.canonicalize() {
+            Ok(parent) => parent,
+            Err(error) => error_ack!(ack, &request.name, "Cannot access destination folder: {error}"),
+        };
+        if !canonical_parent.starts_with(&project_root) {
+            error_ack!(ack, &request.name, "Destination folder is outside the selected project");
         }
+        fp
     };
 
     let full_path_str = full_path.to_string_lossy().to_string();
@@ -584,14 +634,17 @@ pub struct DeleteRequest {
 }
 
 pub async fn handle_delete(
-    _socket: SocketRef,
+    socket: SocketRef,
     Data(request): Data<DeleteRequest>,
     state: State<AppState>,
     ack: AckSender,
 ) {
     info!("Received delete request: {:?}", request);
 
-    let abs_path = match abs_file(&request.path) {
+    let abs_path = match state
+        .resolve_path_for_socket(socket.id.as_str(), &request.path)
+        .await
+    {
         Ok(p) => p,
         Err(e) => error_ack!(ack, &request.path, "Failed to resolve path: {:?}", e),
     };
@@ -622,8 +675,9 @@ pub async fn handle_delete(
             };
 
             if !files_to_close.is_empty() {
-                let mut lsp_manager = state.lsp_manager.lock().await;
                 for (file_path, lang) in &files_to_close {
+                    let lsp_manager = state.lsp_for_path(file_path).await;
+                    let mut lsp_manager = lsp_manager.lock().await;
                     if let Some(lsp) = lsp_manager.get(lang).await {
                         if let Err(e) = lsp.did_close(file_path) {
                             error!(
@@ -670,7 +724,10 @@ pub async fn handle_rename(
 ) {
     info!("Received rename request: {:?}", request);
 
-    let old_abs_path = match abs_file(&request.old_path) {
+    let old_abs_path = match state
+        .resolve_path_for_socket(socket.id.as_str(), &request.old_path)
+        .await
+    {
         Ok(p) => p,
         Err(e) => error_ack!(
             ack,
@@ -680,7 +737,10 @@ pub async fn handle_rename(
         ),
     };
 
-    let new_abs_path = match abs_file(&request.new_path) {
+    let new_abs_path = match state
+        .resolve_path_for_socket(socket.id.as_str(), &request.new_path)
+        .await
+    {
         Ok(p) => p,
         Err(e) => error_ack!(
             ack,
@@ -741,9 +801,9 @@ pub async fn handle_rename(
             }
 
             if !files_to_rename.is_empty() {
-                let mut lsp_manager = state.lsp_manager.lock().await;
-
                 for (old_path, _, old_lang, _, _) in &files_to_rename {
+                    let lsp_manager = state.lsp_for_path(old_path).await;
+                    let mut lsp_manager = lsp_manager.lock().await;
                     if let Some(lsp) = lsp_manager.get(old_lang).await {
                         let _ = lsp.did_close(old_path);
                     }
@@ -773,6 +833,8 @@ pub async fn handle_rename(
                 }
 
                 for (_, new_path, _, new_lang, content) in &files_to_rename {
+                    let lsp_manager = state.lsp_for_path(new_path).await;
+                    let mut lsp_manager = lsp_manager.lock().await;
                     if let Some(lsp) = lsp_manager.get(new_lang).await {
                         let _ = lsp.did_open(new_lang, new_path, content);
                     }

@@ -1,5 +1,5 @@
 import React from 'react';
-import ReactMarkdown from 'react-markdown';
+import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkBreaks from 'remark-breaks';
 import remarkGfm from 'remark-gfm';
 import { diffLines } from 'diff';
@@ -22,6 +22,11 @@ import {
 import { LANGUAGE_EXTENSIONS, EDITOR_SUPPORTED_LANGUAGES, getFileName, copyTextToClipboard, uriToFilePath, formatBytes } from '../../utils';
 import { toolOutputCache } from '../../features/agents/toolOutputCache';
 import { MermaidBlock } from '../../features/markdown/MermaidBlock';
+import { BACKEND_URL } from '../../constants';
+import { getToken } from '../../hooks/useSocket';
+import { getToolResultImages } from './acpToolUtils';
+import { AcpTerminalView } from './AcpTerminalView';
+import { AcpTerminalCard } from './AcpTerminalCard';
 import './AcpMessage.css';
 
 let codeBlockIdCounter = 0;
@@ -37,7 +42,211 @@ interface AcpMessageProps {
   onOpenFile?: (path: string, line?: number, column?: number) => void;
   onOpenFileDiff?: (path: string, line?: number, column?: number) => void;
   onGetToolOutput?: (toolId: string, sessionId?: string) => Promise<string | null>;
+  // Read on mount only: the assistant text fades in all its words when it mounts as a live message.
+  animateEnter?: boolean;
+  isProcessing?: boolean;
 }
+
+const formatToolCallLabel = (diffPaths: string[], fallbackLabel: string): string => {
+  if (diffPaths.length === 0) {
+    return fallbackLabel;
+  }
+
+  if (diffPaths.length === 1) {
+    return getFileName(diffPaths[0]);
+  }
+
+  const visibleNames = diffPaths.slice(0, 2).map(getFileName);
+  const hiddenCount = diffPaths.length - visibleNames.length;
+  return hiddenCount > 0
+    ? `${visibleNames.join(", ")} +${hiddenCount}`
+    : visibleNames.join(", ");
+};
+
+const getToolCallLabel = (
+  message: AcpToolCallMessage,
+  diffPaths: string[],
+  kind?: string,
+): string => {
+  if (diffPaths.length > 0) {
+    return formatToolCallLabel(diffPaths, "");
+  }
+
+  const rawInput = (message.raw_input ?? message.arguments) as Record<string, unknown> | undefined;
+
+  // 1. Human-readable action or summary provided by agent (standard across MCP / ACP tools)
+  const summaryCandidates = [
+    rawInput?.toolSummary,
+    rawInput?.toolAction,
+    rawInput?.summary,
+    rawInput?.description,
+  ];
+  for (const candidate of summaryCandidates) {
+    if (typeof candidate === "string" && candidate.trim()) {
+      return candidate.trim();
+    }
+  }
+
+  // 2. Real terminal / shell command (cmd, command, CommandLine)
+  const commandCandidates = [
+    rawInput?.cmd,
+    rawInput?.command,
+    rawInput?.CommandLine,
+    message.command,
+  ];
+  for (const cmd of commandCandidates) {
+    if (typeof cmd === "string" && cmd.trim()) {
+      const trimmed = cmd.trim();
+      if (!/^running\s+/i.test(trimmed) && trimmed !== message.name) {
+        return trimmed;
+      }
+    }
+  }
+
+  // 3. File path referenced in locations or input arguments
+  const pathCandidates = [
+    message.locations?.[0]?.path,
+    rawInput?.absolute_path,
+    rawInput?.AbsolutePath,
+    rawInput?.target_file,
+    rawInput?.path,
+    rawInput?.filePath,
+    rawInput?.file_path,
+    rawInput?.DirectoryPath,
+    rawInput?.directory_path,
+    rawInput?.SearchPath,
+    rawInput?.search_path,
+  ];
+  for (const p of pathCandidates) {
+    if (typeof p === "string" && p.trim()) {
+      const fileName = getFileName(p.trim());
+      if (fileName) {
+        const verb = kind === "read" ? "Read" : kind === "search" ? "Search" : null;
+        return verb ? `${verb} ${fileName}` : fileName;
+      }
+    }
+  }
+
+  // 4. URL
+  const urlCandidate = rawInput?.url ?? rawInput?.Url;
+  if (typeof urlCandidate === "string" && urlCandidate.trim()) {
+    try {
+      const parsed = new URL(urlCandidate.trim());
+      return parsed.hostname + (parsed.pathname !== "/" ? parsed.pathname : "");
+    } catch {
+      return urlCandidate.trim();
+    }
+  }
+
+  // 5. Query / search pattern
+  const queryCandidate = rawInput?.Query ?? rawInput?.query ?? rawInput?.Pattern ?? rawInput?.pattern;
+  if (typeof queryCandidate === "string" && queryCandidate.trim()) {
+    return `Search "${queryCandidate.trim()}"`;
+  }
+
+  // 6. Fallback to title / name, cleaning up generic "Running <tool>" prefix
+  const rawTitle = message.title?.trim() || message.name?.trim() || "tool";
+  if (/^running\s+/i.test(rawTitle)) {
+    return rawTitle.replace(/^running\s+/i, "");
+  }
+
+  return rawTitle;
+};
+
+const getToolInputDetails = (message: AcpToolCallMessage) => {
+  const rawInput = (message.raw_input ?? message.arguments) as Record<string, unknown> | undefined;
+  if (!rawInput || typeof rawInput !== "object") return null;
+
+  const rawCommand = (
+    rawInput.cmd ??
+    rawInput.command ??
+    rawInput.CommandLine ??
+    rawInput.command_line ??
+    rawInput.Command ??
+    message.command
+  ) as string | undefined;
+
+  const command =
+    typeof rawCommand === "string" &&
+    !rawCommand.endsWith("?") &&
+    !/^run\s+[a-z0-9_]+$/i.test(rawCommand.trim())
+      ? rawCommand
+      : undefined;
+
+  const cwd = (
+    rawInput.cwd ??
+    rawInput.Cwd ??
+    rawInput.working_dir ??
+    rawInput.workingDir ??
+    rawInput.WorkingDir ??
+    rawInput.current_dir ??
+    rawInput.CurrentDir
+  ) as string | undefined;
+
+  const filePath = (
+    message.locations?.[0]?.path ??
+    rawInput.absolute_path ??
+    rawInput.AbsolutePath ??
+    rawInput.target_file ??
+    rawInput.path ??
+    rawInput.filePath ??
+    rawInput.file_path ??
+    rawInput.DirectoryPath ??
+    rawInput.directory_path ??
+    rawInput.SearchPath ??
+    rawInput.search_path
+  ) as string | undefined;
+
+  const startLine = (rawInput.start_line ?? rawInput.StartLine) as number | undefined;
+  const endLine = (rawInput.end_line ?? rawInput.EndLine) as number | undefined;
+
+  const cleanInput: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(rawInput)) {
+    const lowerKey = key.toLowerCase();
+    if ([
+      "toolsummary", "toolaction", "summary", "description", "prompt",
+      "command", "cmd", "commandline", "command_line",
+      "cwd", "working_dir", "workingdir", "current_dir", "currentdir",
+      "waitmsbeforeasync", "wait_ms_before_async", "isdaemon", "is_daemon",
+      "code_content", "codecontent", "content", "new_content", "old_content",
+      "text", "new_text", "old_text", "new_str", "old_str", "file_text",
+      "target_file", "targetfile", "path", "filepath", "file_path", "absolutepath", "absolute_path"
+    ].includes(lowerKey)) continue;
+    cleanInput[key] = value;
+  }
+
+  return { filePath, startLine, endLine, command, cwd, cleanInput };
+};
+
+const isProtocolMetadataOnly = (val: unknown): boolean => {
+  if (!val || typeof val !== 'object' || Array.isArray(val)) return false;
+  const obj = val as Record<string, unknown>;
+  const protocolKeys = new Set([
+    'sessionupdate',
+    'session_update',
+    'toolcallid',
+    'tool_call_id',
+    'sessionid',
+    'session_id',
+    'agentid',
+    'agent_id',
+    'status',
+    'id',
+    'kind',
+    'type',
+    'ts',
+    'timestamp',
+  ]);
+  const keys = Object.keys(obj);
+  if (keys.length === 0) return true;
+  return keys.every((k) => {
+    const lower = k.toLowerCase();
+    if (lower === 'fields' && obj[k] && typeof obj[k] === 'object') {
+      return isProtocolMetadataOnly(obj[k]);
+    }
+    return protocolKeys.has(lower);
+  });
+};
 
 const ToolCallMessage: React.FC<{
   message: AcpToolCallMessage;
@@ -45,20 +254,78 @@ const ToolCallMessage: React.FC<{
   toolUpdates?: AcpToolUpdateMessage[];
   isExpanded: boolean;
   onToggle: () => void;
+  onOpenFile?: (path: string, line?: number, column?: number) => void;
   onOpenFileDiff?: (path: string, line?: number, column?: number) => void;
   onGetToolOutput?: (toolId: string, sessionId?: string) => Promise<string | null>;
-}> = ({ message, toolResult, toolUpdates, isExpanded, onToggle, onOpenFileDiff, onGetToolOutput }) => {
-
-
-  const displayCommand = message.command?.trim() || message.name;
+  isProcessing?: boolean;
+}> = ({ message, toolResult, toolUpdates, isExpanded, onToggle, onOpenFile, onOpenFileDiff, onGetToolOutput, isProcessing }) => {
   const toolCallView = React.useMemo(
     () => getToolCallView(message, toolUpdates, toolResult),
     [message, toolResult, toolUpdates],
   );
   const diffFileNames = getToolCallFileNames(toolCallView.diffs);
-  const toggleLabel = formatToolCallLabel(diffFileNames, displayCommand);
+  const toggleLabel = getToolCallLabel(message, diffFileNames, toolCallView.kind);
   const toggleStats = getToolCallStats(toolCallView.diffs);
+
+  const inputDetails = getToolInputDetails(message);
+  const resultDetails = React.useMemo(() => {
+    if (toolResult?.result) {
+      return extractToolResultDetails(toolResult.result);
+    }
+    if (message.raw_output) {
+      return extractToolResultDetails(message.raw_output);
+    }
+    if (toolUpdates && toolUpdates.length > 0) {
+      for (let i = toolUpdates.length - 1; i >= 0; i--) {
+        const details = extractToolResultDetails(toolUpdates[i].update);
+        if (details) return details;
+      }
+    }
+    if (message.content) {
+      return extractToolResultDetails({ content: message.content, status: message.status });
+    }
+    return null;
+  }, [toolResult?.result, message.raw_output, message.content, message.status, toolUpdates]);
+
+  const cmd = inputDetails?.command || resultDetails?.command || (
+    message.command &&
+    !message.command.endsWith('?') &&
+    !/^run\s+[a-z0-9_]+$/i.test(message.command.trim())
+      ? message.command
+      : undefined
+  );
+  const cwd = inputDetails?.cwd || resultDetails?.cwd;
+  const filePath = inputDetails?.filePath;
+  const startLine = inputDetails?.startLine;
+  const endLine = inputDetails?.endLine;
+  const cleanInput = inputDetails?.cleanInput ?? {};
+  const hasCleanKeys = Object.keys(cleanInput).length > 0;
   const isEditCall = toolCallView.kind === 'edit' || toolCallView.diffs.length > 0;
+  const isTerminalCommand = !isEditCall && toolCallView.diffs.length === 0 && !filePath && Boolean(cmd);
+  const exitCode = resultDetails?.exitCode;
+  const effectiveStatus = message.status || resultDetails?.status;
+  const isFinishedResult = Boolean(
+    toolResult?.result ||
+    message.raw_output ||
+    exitCode !== undefined ||
+    effectiveStatus === 'completed' ||
+    effectiveStatus === 'failed' ||
+    effectiveStatus === 'error'
+  );
+
+  const isCanceled =
+    effectiveStatus === 'canceled' ||
+    effectiveStatus === 'cancelled' ||
+    effectiveStatus === 'stopped' ||
+    (isProcessing === false && !isFinishedResult && (!effectiveStatus || effectiveStatus === 'in_progress' || effectiveStatus === 'pending'));
+
+  const isRunning =
+    !isCanceled &&
+    !isFinishedResult &&
+    (!effectiveStatus || effectiveStatus === 'in_progress' || effectiveStatus === 'pending');
+
+  const displayOutput = resultDetails?.output || (resultDetails?.errorOutput ? undefined : resultDetails?.contentText);
+  const errorOutput = resultDetails?.errorOutput;
 
   return (
     <div className="acp-message acp-message-tool_call">
@@ -80,31 +347,47 @@ const ToolCallMessage: React.FC<{
                 <span className="acp-tool-call-diff-deleted">-{toggleStats.deleted}</span>
               </div>
             )}
+            {isTerminalCommand && (
+              <div className="acp-tool-call-toggle-stats">
+                {isRunning ? (
+                  <span className="acp-terminal-badge is-running" style={{ fontSize: '10px', padding: '0 4px' }}>
+                    <span className="acp-terminal-pulse-dot" />
+                    running
+                  </span>
+                ) : isCanceled ? (
+                  <span className="acp-tool-call-exit-badge is-error">
+                    canceled
+                  </span>
+                ) : exitCode !== undefined && exitCode !== 0 ? (
+                  <span className="acp-tool-call-exit-badge is-error">
+                    {`✗ ${exitCode}`}
+                  </span>
+                ) : null}
+              </div>
+            )}
           </div>
         </div>
 
         {isExpanded && (
-          <div className="acp-tool-call-expanded">
-            {message.command && (
-              <div className="acp-tool-call-section">
-                <div className="acp-tool-call-label">Command:</div>
-                <pre className="acp-tool-call-command">{message.command}</pre>
-              </div>
-            )}
-
-            {!isEditCall && toolUpdates && toolUpdates.length > 0 && (
-              <div className="acp-tool-call-section">
-                <div className="acp-tool-call-label">Updates:</div>
-                {toolUpdates.map((toolUpdate, index) => (
-                  <pre key={`${toolUpdate.id}-${index}`} className="acp-tool-result-content">
-                    {JSON.stringify(sanitizeToolUpdate(toolUpdate.update), null, 2)}
-                  </pre>
-                ))}
-              </div>
-            )}
-            {toolCallView.diffs.length > 0 && (
-              <div className="acp-tool-call-section">
-                <div className="acp-tool-call-label">Diff:</div>
+          <div className={`acp-tool-call-expanded ${isTerminalCommand ? 'is-terminal' : ''}`}>
+            {isTerminalCommand ? (
+              <AcpTerminalCard
+                command={cmd!}
+                cwd={cwd}
+                exitCode={exitCode}
+                isRunning={isRunning}
+                isCancelled={isCanceled}
+                output={displayOutput}
+                errorOutput={errorOutput}
+                toolId={message.id || toolResult?.id}
+                sessionId={message.session_id}
+                hasFullOutput={message.has_full_output}
+                fullOutputBytes={message.full_output_bytes}
+                isTruncated={message.is_truncated}
+                onGetToolOutput={onGetToolOutput}
+              />
+            ) : toolCallView.diffs.length > 0 ? (
+              <>
                 <div className="acp-tool-call-diffs">
                   {toolCallView.diffs.map((diffEntry, index) => (
                     <div key={`${diffEntry.path}-${index}`} className="acp-tool-call-diff">
@@ -120,44 +403,108 @@ const ToolCallMessage: React.FC<{
                     </div>
                   ))}
                 </div>
-              </div>
+                {errorOutput && (
+                  <div className="acp-tool-call-section">
+                    <div className="acp-tool-call-label">Error:</div>
+                    <AcpTerminalView content={errorOutput} isError />
+                  </div>
+                )}
+                {toolResult && !isProtocolMetadataOnly(toolResult.result) && (
+                  <ToolResultDetails
+                    result={toolResult.result}
+                    toolId={message.id || toolResult.id}
+                    sessionId={message.session_id}
+                    hasFullOutput={message.has_full_output}
+                    fullOutputBytes={message.full_output_bytes}
+                    isTruncated={message.is_truncated}
+                    suppressCommand
+                    suppressStatus
+                    onGetToolOutput={onGetToolOutput}
+                  />
+                )}
+                <button
+                  type="button"
+                  className="acp-tool-call-bottom-toggle"
+                  onClick={onToggle}
+                  aria-label="Collapse tool call"
+                  title="Collapse tool call"
+                >
+                  <span className="acp-toggle-icon">▲</span>
+                </button>
+              </>
+            ) : (
+              <>
+                {(filePath || hasCleanKeys) && (
+                  <div className="acp-tool-call-section">
+                    <div className="acp-tool-call-label">Input:</div>
+                    {filePath && (
+                      <div style={{ marginBottom: hasCleanKeys ? "6px" : undefined }}>
+                        <button
+                          type="button"
+                          className="acp-tool-call-diff-link"
+                          onClick={() => onOpenFile?.(filePath, startLine)}
+                          title={`Open ${filePath}`}
+                        >
+                          {getFileName(filePath)}{startLine ? `:${startLine}${endLine ? `-${endLine}` : ""}` : ""}
+                        </button>
+                      </div>
+                    )}
+                    {hasCleanKeys && (
+                      <pre className="acp-tool-result-content">
+                        {JSON.stringify(cleanInput, null, 2)}
+                      </pre>
+                    )}
+                  </div>
+                )}
+
+                {toolUpdates && toolUpdates.length > 0 && (
+                  <div className="acp-tool-call-section">
+                    <div className="acp-tool-call-label">Updates:</div>
+                    {toolUpdates.map((toolUpdate, index) => (
+                      <pre key={`${toolUpdate.id}-${index}`} className="acp-tool-result-content">
+                        {JSON.stringify(sanitizeToolUpdate(toolUpdate.update), null, 2)}
+                      </pre>
+                    ))}
+                  </div>
+                )}
+
+                {toolResult && !isProtocolMetadataOnly(toolResult.result) ? (
+                  <ToolResultDetails
+                    result={toolResult.result}
+                    toolId={message.id || toolResult.id}
+                    sessionId={message.session_id}
+                    hasFullOutput={message.has_full_output}
+                    fullOutputBytes={message.full_output_bytes}
+                    isTruncated={message.is_truncated}
+                    onGetToolOutput={onGetToolOutput}
+                  />
+                ) : message.raw_output && !isProtocolMetadataOnly(message.raw_output) ? (
+                  <ToolResultDetails
+                    result={message.raw_output}
+                    toolId={message.id}
+                    sessionId={message.session_id}
+                    hasFullOutput={message.has_full_output}
+                    fullOutputBytes={message.full_output_bytes}
+                    isTruncated={message.is_truncated}
+                    onGetToolOutput={onGetToolOutput}
+                  />
+                ) : !toolResult && !message.raw_output ? (
+                  <div className="acp-tool-call-section">
+                    <div className="acp-tool-call-label">Status:</div>
+                    <div className="acp-tool-result-status">{message.status || "running"}</div>
+                  </div>
+                ) : null}
+                <button
+                  type="button"
+                  className="acp-tool-call-bottom-toggle"
+                  onClick={onToggle}
+                  aria-label="Collapse tool call"
+                  title="Collapse tool call"
+                >
+                  <span className="acp-toggle-icon">▲</span>
+                </button>
+              </>
             )}
-            {toolResult ? (
-              <div className="acp-tool-call-section">
-                <div className="acp-tool-call-label">Result:</div>
-                <ToolResultDetails
-                  result={toolResult.result}
-                  toolId={message.id || toolResult.id}
-                  sessionId={message.session_id}
-                  hasFullOutput={message.has_full_output}
-                  fullOutputBytes={message.full_output_bytes}
-                  isTruncated={message.is_truncated}
-                  onGetToolOutput={onGetToolOutput}
-                />
-              </div>
-            ) : message.raw_output ? (
-              <div className="acp-tool-call-section">
-                <div className="acp-tool-call-label">Result:</div>
-                <ToolResultDetails
-                  result={message.raw_output}
-                  toolId={message.id}
-                  sessionId={message.session_id}
-                  hasFullOutput={message.has_full_output}
-                  fullOutputBytes={message.full_output_bytes}
-                  isTruncated={message.is_truncated}
-                  onGetToolOutput={onGetToolOutput}
-                />
-              </div>
-            ) : null}
-            <button
-              type="button"
-              className="acp-tool-call-bottom-toggle"
-              onClick={onToggle}
-              aria-label="Collapse tool call"
-              title="Collapse tool call"
-            >
-              <span className="acp-toggle-icon">▲</span>
-            </button>
           </div>
         )}
       </div>
@@ -193,6 +540,8 @@ type ToolResultDetailsView = {
   title?: string;
   status?: string;
   command?: string;
+  cwd?: string;
+  exitCode?: number;
   description?: string;
   contentText?: string;
   output?: string;
@@ -237,14 +586,35 @@ const extractToolResultDetails = (result: unknown): ToolResultDetailsView | null
   const description =
     getMaybeString(rawInput?.description) ??
     getMaybeString(metadata?.description);
+  const cwd =
+    getMaybeString(rawInput?.cwd) ??
+    getMaybeString(rawInput?.working_dir) ??
+    getMaybeString(rawInput?.workingDir) ??
+    getMaybeString(rawInput?.current_dir) ??
+    getMaybeString(rawOutputRecord?.cwd);
+  const exitCode =
+    typeof rawOutputRecord?.exit_code === 'number' ? rawOutputRecord.exit_code :
+    typeof rawOutputRecord?.exitCode === 'number' ? rawOutputRecord.exitCode :
+    typeof resultRecord.exit_code === 'number' ? resultRecord.exit_code :
+    typeof resultRecord.exitCode === 'number' ? resultRecord.exitCode :
+    typeof fields?.exit_code === 'number' ? fields.exit_code :
+    typeof fields?.exitCode === 'number' ? fields.exitCode :
+    undefined;
   const output =
-    getMaybeString(rawOutput) ??
     getMaybeString(rawOutputRecord?.formatted_output) ??
+    getMaybeString(resultRecord.formatted_output) ??
+    getMaybeString(fields?.formatted_output) ??
+    getMaybeString(rawOutput) ??
     getMaybeString(rawOutputRecord?.stdout) ??
     getMaybeString(rawOutputRecord?.aggregated_output) ??
     getMaybeString(rawOutputRecord?.output) ??
+    getMaybeString(rawOutputRecord?.result) ??
+    getMaybeString(rawOutputRecord?.text) ??
+    getMaybeString(resultRecord.output) ??
+    getMaybeString(resultRecord.result) ??
     getMaybeString(metadata?.output) ??
-    getMaybeString(metadata?.stderr);
+    getMaybeString(metadata?.stderr) ??
+    (rawOutput && typeof rawOutput === 'object' ? JSON.stringify(rawOutput, null, 2) : undefined);
   const errorOutput = getMaybeString(rawOutputRecord?.stderr) ?? getMaybeString(metadata?.stderr);
 
   const toolId =
@@ -283,18 +653,25 @@ const extractToolResultDetails = (result: unknown): ToolResultDetailsView | null
             fields?.is_truncated || fields?.isTruncated ||
             rawOutputRecord?.is_truncated || rawOutputRecord?.isTruncated);
 
-  const content = resultRecord.content ?? fields?.content;
+  const content = resultRecord.content ?? fields?.content ?? rawOutputRecord?.content;
   const contentText = Array.isArray(content)
     ? content
-      .map((item: unknown) => getMaybeString(asRecord(getField(item, 'content'))?.text))
+      .map((item: unknown) => {
+        if (typeof item === 'string') return item;
+        const itemRecord = asRecord(item);
+        return getMaybeString(itemRecord?.text)
+          ?? getMaybeString(asRecord(itemRecord?.content)?.text)
+          ?? (itemRecord?.text !== undefined ? String(itemRecord.text) : undefined);
+      })
       .filter((text): text is string => typeof text === 'string' && text.length > 0)
-      .join('')
+      .join('\n')
     : undefined;
-
   const hasParsed = Boolean(
     title ||
     status ||
     command ||
+    cwd ||
+    exitCode !== undefined ||
     description ||
     output ||
     errorOutput ||
@@ -309,6 +686,8 @@ const extractToolResultDetails = (result: unknown): ToolResultDetailsView | null
     title,
     status,
     command,
+    cwd,
+    exitCode,
     description,
     contentText,
     output,
@@ -328,6 +707,8 @@ interface ToolResultDetailsProps {
   hasFullOutput?: boolean;
   fullOutputBytes?: number;
   isTruncated?: boolean;
+  suppressCommand?: boolean;
+  suppressStatus?: boolean;
   onGetToolOutput?: (toolId: string, sessionId?: string) => Promise<string | null>;
 }
 
@@ -338,6 +719,8 @@ const ToolResultDetails: React.FC<ToolResultDetailsProps> = ({
   hasFullOutput: propHasFullOutput,
   fullOutputBytes: propFullOutputBytes,
   isTruncated: propIsTruncated,
+  suppressCommand = false,
+  suppressStatus = false,
   onGetToolOutput,
 }) => {
   const details = extractToolResultDetails(result);
@@ -393,7 +776,10 @@ const ToolResultDetails: React.FC<ToolResultDetailsProps> = ({
   }, [effectiveToolId]);
 
   if (!details) {
-
+    // Image-only results would otherwise dump base64 as JSON; the feed renders the image.
+    if (getToolResultImages(result).length > 0) {
+      return null;
+    }
     return (
       <pre className="acp-tool-result-content">
         {JSON.stringify(result, null, 2)}
@@ -421,35 +807,87 @@ const ToolResultDetails: React.FC<ToolResultDetailsProps> = ({
     errorOutput.length > 0 &&
     errorOutput.trim() !== normalizedOutput;
 
+  const hasExitCodeError = details.exitCode !== undefined && details.exitCode !== 0;
+
+  const showStatusSection =
+    !suppressStatus &&
+    Boolean(
+      title ||
+      (status && status.toLowerCase() !== 'completed') ||
+      hasExitCodeError,
+    );
+
+  const showCommandSection = !suppressCommand && Boolean(command || description);
+
+  const hasAnySection = Boolean(
+    showStatusSection ||
+    showCommandSection ||
+    shouldShowContent ||
+    shouldShowOutput ||
+    shouldShowError,
+  );
+
+  if (!hasAnySection) {
+    if (getToolResultImages(result).length > 0 || isProtocolMetadataOnly(result)) {
+      return null;
+    }
+    const fallbackText = typeof result === "string"
+      ? result
+      : JSON.stringify(result, null, 2);
+    return (
+      <pre className="acp-tool-result-content">
+        {fallbackText}
+      </pre>
+    );
+  }
+
   return (
     <div className="acp-tool-result-details">
-      {(title || (status && status !== 'completed')) && (
+      {showStatusSection && (
         <div className="acp-tool-call-section">
           <div className="acp-tool-call-label">Status:</div>
           <div className="acp-tool-result-meta">
             {title && <div className="acp-tool-result-title">{title}</div>}
-            {status && <div className="acp-tool-result-status">{status}</div>}
+            {status && status.toLowerCase() !== 'completed' && <div className="acp-tool-result-status">{status}</div>}
+            {hasExitCodeError && (
+              <div className="acp-tool-exit-badge exit-failure">
+                {`✗ Exited with code ${details.exitCode}`}
+              </div>
+            )}
           </div>
         </div>
       )}
-      {(command || description) && (
+      {showCommandSection && (
         <div className="acp-tool-call-section">
           <div className="acp-tool-call-label">Input:</div>
           {description && <div className="acp-tool-result-text">{description}</div>}
           {command && (
-            <pre className="acp-tool-result-content">{command}</pre>
+            <div className="acp-tool-command-container">
+              {details.cwd && (
+                <div className="acp-tool-command-cwd" title={details.cwd}>
+                  <span className="acp-tool-command-cwd-label">cwd:</span> {details.cwd}
+                </div>
+              )}
+              <div className="acp-tool-command-bar">
+                <pre className="acp-tool-result-content">{command}</pre>
+              </div>
+            </div>
           )}
         </div>
       )}
       {shouldShowContent && (
         <div className="acp-tool-call-section">
-          <pre className="acp-tool-result-content">{contentText}</pre>
+          {command || (contentText && /[\u001b\u009b]/.test(contentText)) ? (
+            <AcpTerminalView content={contentText} />
+          ) : (
+            <pre className="acp-tool-result-content">{contentText}</pre>
+          )}
         </div>
       )}
       {shouldShowOutput && (
         <div className="acp-tool-call-section">
           <div className="acp-tool-call-label">Output:</div>
-          <pre className="acp-tool-result-content">{displayOutput}</pre>
+          <AcpTerminalView content={displayOutput} />
           {isTruncatedOrHasFull && !fullOutput && (
             <div className="acp-tool-output-truncated-notice">
               <span>Output truncated ({effectiveBytes ? formatBytes(effectiveBytes) : 'large log'}).</span>
@@ -485,7 +923,7 @@ const ToolResultDetails: React.FC<ToolResultDetailsProps> = ({
       {shouldShowError && (
         <div className="acp-tool-call-section">
           <div className="acp-tool-call-label">Error:</div>
-          <pre className="acp-tool-result-content">{errorOutput}</pre>
+          <AcpTerminalView content={errorOutput} isError />
         </div>
       )}
     </div>
@@ -522,21 +960,7 @@ const getLanguageFromPath = (path?: string): string => {
   return normalizeFenceLanguage(extension ?? 'text');
 };
 
-const formatToolCallLabel = (diffPaths: string[], fallbackLabel: string): string => {
-  if (diffPaths.length === 0) {
-    return fallbackLabel;
-  }
 
-  if (diffPaths.length === 1) {
-    return getFileName(diffPaths[0]);
-  }
-
-  const visibleNames = diffPaths.slice(0, 2).map(getFileName);
-  const hiddenCount = diffPaths.length - visibleNames.length;
-  return hiddenCount > 0
-    ? `${visibleNames.join(', ')} +${hiddenCount}`
-    : visibleNames.join(', ');
-};
 
 const getToolCallStats = (diffs: AcpDiffContent[]) => {
   if (diffs.length === 0) {
@@ -857,7 +1281,9 @@ const mapLocalImageSrc = (src?: string): string | undefined => {
     } catch {
       normalizedPath = trimmed;
     }
-    return `/api/local-image?path=${encodeURIComponent(normalizedPath)}`;
+    const token = getToken();
+    const tokenParam = token ? `&token=${encodeURIComponent(token)}` : '';
+    return `${BACKEND_URL}/api/local-image?path=${encodeURIComponent(normalizedPath)}${tokenParam}`;
   }
 
   return trimmed;
@@ -981,29 +1407,115 @@ const MarkdownPreBlock: React.FC<React.ComponentProps<'pre'>> = ({ children, ...
   return <pre {...props}>{children}</pre>;
 };
 
+type HastNode = {
+  type: string;
+  value?: string;
+  tagName?: string;
+  properties?: Record<string, unknown>;
+  children?: HastNode[];
+};
+
+const countWords = (node: HastNode): number => {
+  if (node.type === 'text') {
+    return (node.value ?? '').split(/\s+/).filter(Boolean).length;
+  }
+  return (node.children ?? []).reduce((sum, child) => sum + countWords(child), 0);
+};
+
+type FadeState = { wordIndex: number; firstFadingWord: number };
+
+// Splits text into words; words from `firstFadingWord` on are wrapped in spans that fade in.
+const fadeWordsIn = (node: HastNode, state: FadeState): HastNode[] => {
+  if (node.type !== 'text') {
+    if (node.children) {
+      node.children = node.children.flatMap((child) => fadeWordsIn(child, state));
+    }
+    return [node];
+  }
+
+  const result: HastNode[] = [];
+  let plain = '';
+  for (const piece of (node.value ?? '').split(/(\s+)/)) {
+    if (piece.trim() === '') {
+      plain += piece;
+      continue;
+    }
+    const wordIndex = state.wordIndex;
+    state.wordIndex += 1;
+    if (wordIndex < state.firstFadingWord) {
+      plain += piece;
+      continue;
+    }
+    if (plain) result.push({ type: 'text', value: plain });
+    plain = '';
+    result.push({
+      type: 'element',
+      tagName: 'span',
+      properties: { className: ['acp-word-enter'] },
+      children: [{ type: 'text', value: piece }],
+    });
+  }
+  if (plain) result.push({ type: 'text', value: plain });
+  return result;
+};
+
+type FadeInWordsOptions = {
+  // Filled on the block's first render: words already rendered then stay still.
+  mountedWordCount: { current: number | null };
+  fadeAllWords: boolean;
+};
+
+const rehypeFadeInWords = (options: FadeInWordsOptions) => (tree: HastNode) => {
+  const totalWords = countWords(tree);
+  let mountedWords = options.mountedWordCount.current;
+  if (mountedWords === null) {
+    mountedWords = options.fadeAllWords ? 0 : totalWords;
+    options.mountedWordCount.current = mountedWords;
+  }
+  // Wrapping only grows as text streams in. A sliding window would unwrap the oldest words on
+  // every update, shifting sibling indexes so React re-creates the DOM and replays the fade.
+  if (mountedWords >= totalWords) return;
+  fadeWordsIn(tree, { wordIndex: 0, firstFadingWord: mountedWords });
+};
+
 const MarkdownTextBlock: React.FC<{
   content: string;
+  // Streaming text: words that arrive after this block mounted fade in.
+  fadeInWords?: boolean;
+  // The whole block is new since the message mounted, so all of its words fade in.
+  fadeAllWords?: boolean;
   onOpenFile?: (path: string, line?: number, column?: number) => void;
   onOpenFileDiff?: (path: string, line?: number, column?: number) => void;
-}> = ({ content, onOpenFile, onOpenFileDiff }) => (
-  <ReactMarkdown
-    remarkPlugins={[remarkGfm, remarkBreaks]}
-    components={{
-      a: ({ node: _node, ...props }) => (
-        <MarkdownLink
-          {...props}
-          onOpenFile={onOpenFile}
-          onOpenFileDiff={onOpenFileDiff}
-        />
-      ),
-      code: MarkdownInlineCode,
-      pre: MarkdownPreBlock,
-      img: ({ node: _node, ...props }) => <MarkdownImage {...props} />,
-    }}
-  >
-    {content}
-  </ReactMarkdown>
-);
+}> = ({ content, fadeInWords = false, fadeAllWords = false, onOpenFile, onOpenFileDiff }) => {
+  const mountedWordCount = React.useRef<number | null>(null);
+  // Read by the link component below. `components` must keep its identity: a new component
+  // type on every render remounts links and their word spans, replaying the fade-in animation
+  // on each parent update (e.g. typing in the input).
+  const openHandlers = React.useRef({ onOpenFile, onOpenFileDiff });
+  openHandlers.current = { onOpenFile, onOpenFileDiff };
+  const components = React.useMemo<Components>(() => ({
+    a: ({ node: _node, ...props }) => (
+      <MarkdownLink
+        {...props}
+        onOpenFile={openHandlers.current.onOpenFile}
+        onOpenFileDiff={openHandlers.current.onOpenFileDiff}
+      />
+    ),
+    code: MarkdownInlineCode,
+    pre: MarkdownPreBlock,
+    img: ({ node: _node, ...props }) => <MarkdownImage {...props} />,
+  }), []);
+
+  return (
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm, remarkBreaks]}
+      rehypePlugins={fadeInWords ? [[rehypeFadeInWords, { mountedWordCount, fadeAllWords }]] : []}
+      components={components}
+    >
+      {content}
+    </ReactMarkdown>
+  );
+};
 
 const CodeCopyButton: React.FC<{ content: string }> = ({ content }) => {
   const [copyStatus, setCopyStatus] = React.useState<'idle' | 'copied' | 'error'>('idle');
@@ -1109,6 +1621,7 @@ const MarkdownCodeBlock: React.FC<{
           buffer: 1000,
         });
         await editor.init();
+        editor.setLineHeight(18);
 
         if (cancelled) {
           editor.clean();
@@ -1195,6 +1708,7 @@ const DiffCodeBlock: React.FC<{
           buffer: 1000,
         });
         await nextEditor.init();
+        nextEditor.setLineHeight(18);
         nextEditor.setOriginalCode(diff.oldText ?? '');
         nextEditor.setDiffEnabled(true);
 
@@ -1229,6 +1743,7 @@ const DiffCodeBlock: React.FC<{
     editor.updateTextIncremental(diff.newText);
     editor.setOriginalCode(diff.oldText ?? '');
     editor.setDiffEnabled(true);
+    editor.setLineHeight(18);
   }, [diff.newText, diff.oldText, editor]);
 
   const codeToolbar = (
@@ -1266,41 +1781,51 @@ const DiffCodeBlock: React.FC<{
 
 const StreamingMarkdownContent: React.FC<{
   content: string;
+  fadeAllOnMount?: boolean;
   onOpenFile?: (path: string, line?: number, column?: number) => void;
   onOpenFileDiff?: (path: string, line?: number, column?: number) => void;
-}> = ({ content, onOpenFile, onOpenFileDiff }) => (
-  <div className="acp-message-markdown">
-    {parseMarkdownParts(content).map((part, index) => {
-      if (part.kind === 'code') {
+}> = ({ content, fadeAllOnMount = false, onOpenFile, onOpenFileDiff }) => {
+  const parts = parseMarkdownParts(content);
+  // Parts present on mount (e.g. history) stay still unless fadeAllOnMount; parts that arrive later fade in.
+  const [initialPartCount] = React.useState(fadeAllOnMount ? 0 : parts.length);
+
+  return (
+    <div className="acp-message-markdown">
+      {parts.map((part, index) => {
+        if (part.kind === 'code') {
+          return (
+            <MarkdownCodeBlock
+              key={`code-${index}`}
+              code={part.content}
+              language={part.language}
+              isOpen={part.isOpen}
+            />
+          );
+        }
+
         return (
-          <MarkdownCodeBlock
-            key={`code-${index}`}
-            code={part.content}
-            language={part.language}
-            isOpen={part.isOpen}
+          <MarkdownTextBlock
+            key={`text-${index}`}
+            content={part.content}
+            fadeInWords
+            fadeAllWords={index >= initialPartCount}
+            onOpenFile={onOpenFile}
+            onOpenFileDiff={onOpenFileDiff}
           />
         );
-      }
-
-      return (
-        <MarkdownTextBlock
-          key={`text-${index}`}
-          content={part.content}
-          onOpenFile={onOpenFile}
-          onOpenFileDiff={onOpenFileDiff}
-        />
-      );
-    })}
-  </div>
-);
+      })}
+    </div>
+  );
+};
 
 const TextMessage: React.FC<{
   message: AcpUserMessage | AcpAssistantMessage;
+  animateEnter?: boolean;
   onUserMessageToggle?: () => void;
   onUndo?: () => void;
   onOpenFile?: (path: string, line?: number, column?: number) => void;
   onOpenFileDiff?: (path: string, line?: number, column?: number) => void;
-}> = ({ message, onUserMessageToggle, onUndo, onOpenFile, onOpenFileDiff }) => {
+}> = ({ message, animateEnter = false, onUserMessageToggle, onUndo, onOpenFile, onOpenFileDiff }) => {
   const [isExpanded, setIsExpanded] = React.useState(false);
   const [isCollapsible, setIsCollapsible] = React.useState(false);
   const bodyRef = React.useRef<HTMLDivElement>(null);
@@ -1328,6 +1853,7 @@ const TextMessage: React.FC<{
         >
           <StreamingMarkdownContent
             content={message.content}
+            fadeAllOnMount={animateEnter}
             onOpenFile={onOpenFile}
             onOpenFileDiff={onOpenFileDiff}
           />
@@ -1496,6 +2022,8 @@ const AcpMessageComponent: React.FC<AcpMessageProps> = ({
   onOpenFile,
   onOpenFileDiff,
   onGetToolOutput,
+  animateEnter = false,
+  isProcessing,
 }) => {
   switch (message.role) {
     case 'tool_call':
@@ -1507,8 +2035,10 @@ const AcpMessageComponent: React.FC<AcpMessageProps> = ({
             toolUpdates={toolUpdates}
             isExpanded={isExpanded}
             onToggle={onToggle}
+            onOpenFile={onOpenFile}
             onOpenFileDiff={onOpenFileDiff}
             onGetToolOutput={onGetToolOutput}
+            isProcessing={isProcessing}
           />
       );
     case 'tool_result':
@@ -1544,6 +2074,7 @@ const AcpMessageComponent: React.FC<AcpMessageProps> = ({
       return (
         <TextMessage
           message={message}
+          animateEnter={animateEnter}
           onOpenFile={onOpenFile}
           onOpenFileDiff={onOpenFileDiff}
         />
