@@ -375,16 +375,17 @@ async fn handle_file_modification(
         .to_str()
         .ok_or_else(|| anyhow::anyhow!("Invalid UTF-8 in path"))?;
 
-    let current_file_meta = FileMeta::query(path);
-
-    // Read new content from disk first (before locking)
-    let new_text = tokio::fs::read_to_string(path)
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to read file {:?}: {}", path, e))?;
-
-    // Lock file2code, check file_meta, compute diff, apply edits
+    // Lock file2code, read disk state, check file_meta, compute diff, apply edits.
+    // Disk must be read *under* the lock: otherwise a concurrent file:change + autosave
+    // can land between the read and the lock, and we would diff the new in-memory
+    // content against stale disk content and send a reverting edit to the client.
     let (edits, lsp_changes, lang) = {
         let mut f2c = file2code.lock().await;
+
+        let current_file_meta = FileMeta::query(path);
+        let new_text = tokio::fs::read_to_string(path)
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to read file {:?}: {}", path, e))?;
         let code = match f2c.get_mut(path_str) {
             Some(c) => c,
             None => {
