@@ -56,6 +56,7 @@
   white-space: pre;
   outline: none;
   position: relative;
+  container-type: inline-size;
   contain: layout size;
   isolation: isolate;
 }
@@ -322,7 +323,12 @@
 
 .anyeditor .multibuffer-file-header-row {
   cursor: text;
-  position: relative;
+  /* Pinned to the left edge of the scrollport while scrolling horizontally.
+     Width is the viewport width (container query unit), so the sticky box
+     always fits inside its containing block across the whole scroll range. */
+  position: sticky;
+  left: 0;
+  width: 100cqw;
   margin-left: calc(-1 * (var(--anycode-folds-left, 80px) + 24px));
   padding-left: 7px;
   z-index: 12;
