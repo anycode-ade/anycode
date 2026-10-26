@@ -1,6 +1,6 @@
 [package]
 name = "anycode-desktop"
-version = "0.1.0"
+version = "0.2.0"
 description = "Anycode Desktop Application"
 authors = ["Anycode Team"]
 edition = "2024"

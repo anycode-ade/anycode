@@ -2,6 +2,67 @@
 
 All notable changes are documented here by release tag.
 
+## v0.2.0 - 2026-10-26
+
+### Highlights
+- Major milestone release introducing Tauri desktop application integration for macOS, Windows, and Linux with auto-updater, DMG/DEB/NSIS installers, and shell PATH discovery.
+- Added full multi-root workspaces support allowing opening and managing multiple project roots concurrently.
+- Complete ACP and AI agent chat virtualization by message and turn for lag-free long conversation rendering.
+- Added default and custom agent avatars, user profile avatars, and live breathing pulse indicator during generation.
+- Added ACP terminal tool execution support, prompt queue deduplication, and safe prompt cancellation.
+- Integrated interactive Mermaid diagram rendering in Markdown preview and ACP chat.
+- Stabilized editor cursor and selection preservation across remote edits and background watcher syncs.
+- Enhanced diff visualization with scrollbar deleted markers and ghost line numbers.
+- Hardened file saving with atomic temporary file swapping and preserved UTF-8 BOM.
+- Set Vesper Dark as default theme.
+
+### Commits
+- `aace15d` refactor(fs): simplify atomic file save
+- `7c2a028` fix(fs): implement atomic file saving with retry backoff
+- `9d620da` fix(sync): strip UTF-8 BOM in backend buffer and restore on save
+- `96013b4` fix(diff): show deleted markers in scrollbar, ghost line numbers, and update theme palette
+- `b578e6e` docs(readme): upgrade header badges with release, build, tests, and license
+- `84ab496` feat(agent): add default and custom agent avatars support
+- `3f88be6` docs: move detailed installation steps to separate guide and compact README
+- `87d56a4` Merge pull request #37 from anycode-ade/feat/tauri-desktop
+- `dbe2ea6` fix(editor): keep cursor and selection in place on remote edits
+- `e7fd32a` fix(watch): read disk under the file2code lock
+- `8ca46cd` feat(agent): support ACP terminal tool calls
+- `4ba4673` fix(agent): keep diff stats adjacent to filename when expanding tool call
+- `75f221b` fix(agent): display agent avatars and breathing pulse in toolbar and opened cards, clean up dots
+- `41a73cd` fix(agent): preserve scroll and virtualization state on tab switch, improve tool call display
+- `d11a750` Keep selected agent turns mounted during scroll
+- `6824324` Speed up demo e2e tests and fix ACP scroll baseline after search jump
+- `7983f4a` Fix demo project paths, git channels, and stale editor test selectors
+- `29f6162` Fix demo agent start and make demo ACP tests strict
+- `96799e3` Virtualize agent chat by message and turn
+- `dacbd2c` refactor(acp): inline chat full width hook into AcpSettings
+- `900e498` feat(acp): refine agent chat UI, work groups, and input performance
+- `367ab60` feat(acp): enhance ACP chat UI, add user profile avatar support, and refine theme/terminal styling
+- `2e341aa` fix(acp): prevent duplicate message forwarding and deduplicate user prompts
+- `40ef595` fix(desktop): load shell PATH so LSP servers are found on macOS
+- `0665c07` ci(build): optimize desktop builds and fix rust-cache target paths
+- `44ba7fc` feat(theme): set Vesper Dark as default theme
+- `ea50ff0` test(workspace): canonicalize paths in git status assertion for windows UNC compatibility
+- `b628030` feat: merge multi-root workspaces, WebGL background, and tauri recipes from worktree
+- `0554739` feat: multi-root workspaces support, WebGL background, and tauri recipes
+- `d4f71f7` perf(background): optimize canvas rendering, frame throttling, and empty pane transparency
+- `dc16daf` feat(desktop): add welcome screen, dynamic background fx defaults, and workspace teardown
+- `ef90bb6` docs: replace specific M-series chip list with generic Apple Silicon / ARM64
+- `6cd2248` docs: add comprehensive step-by-step installation guides for macOS, Windows, and Linux
+- `58f1f6e` docs: add desktop installation and macos gatekeeper xattr instructions
+- `2462dae` ci: remove FORCE_JAVASCRIPT_ACTIONS_TO_NODE24 to eliminate deprecation warnings
+- `2479067` build(desktop): add standalone stripped tar.gz for universal linux support alongside deb
+- `2410765` build(desktop): drop AppImage and build only lightweight deb, dmg and nsis
+- `8286d61` fix(ci): restore complete release.yml workflow
+- `c7f08d0` feat(desktop): add tauri updater and process relaunch plugin with signing support
+- `c92dd04` ci: optimize workflows with matrix, separate macos archs and defender tweak
+- `1802d11` fix(desktop): make title_bar_style conditional on macos
+- `a9f69fd` ci: add desktop build jobs for macos, windows, and linux
+- `05f04fc` fix(desktop): platform target dependencies and config
+- `5a7412c` feat(desktop): add tauri desktop app integration
+- `0bfad51` feat(markdown): add Mermaid diagram rendering to markdown preview and ACP chat
+
 ## v0.1.2 - 2026-10-14
 
 ### Highlights
