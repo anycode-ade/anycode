@@ -316,15 +316,19 @@ export class AnycodeEditor {
         this.renderer?.setStickyHeaderEnabled(enabled, this.getEditorState());
     }
 
-    public toggleMultibufferHeader(line: number): boolean {
+    private isMultibufferHeaderLine(line: number): boolean {
         const multibufferCode = this.code as Code & {
             getMultibufferHeader?: (line: number) => string | null;
+        };
+        const header = multibufferCode.getMultibufferHeader?.(line);
+        return header !== undefined && header !== null;
+    }
+
+    public toggleMultibufferHeader(line: number): boolean {
+        const multibufferCode = this.code as Code & {
             toggleMultibufferFileAtLine?: (line: number) => boolean;
         };
-        if (
-            multibufferCode.getMultibufferHeader?.(line) !== null
-            && multibufferCode.getMultibufferHeader !== undefined
-        ) {
+        if (this.isMultibufferHeaderLine(line)) {
             const oldCursor: Position = { line: this.cursor.row, column: this.cursor.column };
             if (multibufferCode.toggleMultibufferFileAtLine?.(line)) {
                 this.renderer.clearExpandedDiffRanges();
@@ -1172,10 +1176,19 @@ export class AnycodeEditor {
         this.clearPendingHover();
         this.closeHover();
 
-        this.isMouseSelecting = true;
-
         const pos = getPosFromMouse(e);
         if (!pos) return;
+
+        // A press on a file header is a toggle target, not the start of a selection.
+        // Drop the previous selection and skip selecting mode, so neither a leftover
+        // selection nor a few pixels of mouse movement can swallow the click in handleClick.
+        if (this.isMultibufferHeaderLine(pos.row)) {
+            this.selection = null;
+            this.renderCursorOrSelection();
+            return;
+        }
+
+        this.isMouseSelecting = true;
 
         if (!this.code.isLineEditable(pos.row)) {
             return;

@@ -743,6 +743,43 @@ test.describe('Anycode Live Demo Mode E2E Tests', () => {
         expect(lineTextAfter).toBe(lineTextBefore);
     });
 
+    test('should toggle file header in Multibuffer Review after a text selection and a jittery press', async ({ page }) => {
+        const historyTab = page.getByText(/^History$/i).first();
+        await historyTab.click();
+        const historyList = page.locator('.history-panel').getByRole('list', { name: 'Git history' });
+        await historyList.locator('.history-commit-row').first().click();
+
+        const reviewBtn = historyList.locator('.history-review-button, button:has-text("Review")').first();
+        await expect(reviewBtn).toBeVisible({ timeout: 5000 });
+        await reviewBtn.click();
+        const headerRow = page.locator('.multibuffer-file-header-row').first();
+        await expect(headerRow).toBeVisible({ timeout: 10000 });
+        const chevron = headerRow.locator('.multibuffer-header-chevron');
+        await expect(chevron).toHaveClass(/expanded/);
+
+        // Leave a text selection behind; the header click must still toggle the file.
+        const firstBodyLine = page.locator('.line:not(.multibuffer-file-header-row)').first();
+        await expect(firstBodyLine).toBeVisible({ timeout: 10000 });
+        await firstBodyLine.dragTo(firstBodyLine, {
+            sourcePosition: { x: 40, y: 10 },
+            targetPosition: { x: 140, y: 10 },
+        });
+
+        await chevron.click();
+        await expect(chevron).toHaveClass(/collapsed/);
+
+        // A press on the chevron with a few pixels of movement is still a click, not a selection drag.
+        const chevronBox = await chevron.boundingBox();
+        expect(chevronBox).not.toBeNull();
+        const cx = chevronBox!.x + chevronBox!.width / 2;
+        const cy = chevronBox!.y + chevronBox!.height / 2;
+        await page.mouse.move(cx, cy);
+        await page.mouse.down();
+        await page.mouse.move(cx + 3, cy + 2, { steps: 3 });
+        await page.mouse.up();
+        await expect(chevron).toHaveClass(/expanded/);
+    });
+
     test('should expand hidden diff gap lines when expand button is clicked in Multibuffer Review', async ({ page }) => {
         const historyTab = page.getByText(/^History$/i).first();
         await historyTab.click();
