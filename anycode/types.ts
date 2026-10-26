@@ -1,5 +1,9 @@
 import type { Change, Edit } from 'anycode-editor';
 
+// Omit applied to each member of a union. Plain Omit<Union, K> keeps only the keys
+// shared by all members, which rejects variant-specific fields in object literals.
+export type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
+
 export type FileSource =
     | { type: 'filesystem'; path: string }
     | { type: 'git'; revision: string; path: string; project_id?: string };

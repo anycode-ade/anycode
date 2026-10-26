@@ -4,6 +4,7 @@ import { Icons } from './Icons';
 import type { GitHistoryCommit, GitHistoryFile, GitHistorySearchMode } from '../hooks/useGit';
 import { usePersistedScroll } from '../hooks/usePersistedScroll';
 import type { WorkspaceProject } from '../workspace';
+import type { DistributiveOmit } from '../types';
 import './HistoryPanel.css';
 
 interface HistoryPanelProps {
@@ -263,7 +264,7 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = ({
     const { rows, totalHeight } = useMemo(() => {
         const nextRows: HistoryRow[] = [];
         let top = 0;
-        const push = (row: Omit<HistoryRow, 'top'>) => {
+        const push = (row: DistributiveOmit<HistoryRow, 'top'>) => {
             nextRows.push({ ...row, top } as HistoryRow);
             top += row.height;
         };

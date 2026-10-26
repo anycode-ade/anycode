@@ -3,6 +3,7 @@ import { Icons } from './Icons';
 import { FileIcon } from './FileIcon';
 import { usePersistedScroll } from '../hooks/usePersistedScroll';
 import type { WorkspaceProject } from '../workspace';
+import type { DistributiveOmit } from '../types';
 import './ChangesPanel.css';
 
 const COMMIT_MESSAGE_STORAGE_KEY = 'commitMessage';
@@ -351,7 +352,7 @@ const ChangesPanelImpl: React.FC<ChangesPanelProps> = ({
         const nextRows: VirtualChangesRow[] = [];
         let top = 0;
 
-        const pushRow = (row: Omit<VirtualChangesRow, 'top'>) => {
+        const pushRow = (row: DistributiveOmit<VirtualChangesRow, 'top'>) => {
             nextRows.push({ ...row, top } as VirtualChangesRow);
             top += row.height;
         };
