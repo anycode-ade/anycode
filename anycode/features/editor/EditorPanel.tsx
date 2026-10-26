@@ -1,7 +1,7 @@
 import { useCallback, useContext, useEffect, useState } from 'react';
-import { AnycodeEditor, AnycodeEditorReact } from 'anycode-react';
+import { AnycodeEditor, AnycodeEditorReact } from 'anycode-editor-react';
 import { LayoutVersionContext } from '../../components/layout/Layout';
-import type { DefinitionRequest, DefinitionResponse, HoverRequest } from 'anycode-base';
+import type { DefinitionRequest, DefinitionResponse, HoverRequest } from 'anycode-editor';
 import type { FileState, ReferencesPeekState } from '../../types';
 import type { DiffMode } from '../../types/diffMode';
 import { ReferencesPeek } from './ReferencesPeek';

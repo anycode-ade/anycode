@@ -910,6 +910,21 @@ const App: React.FC<AppProps> = ({ initialWorkspace }) => {
         handleOpenFile(path, line, column, mode);
     });
 
+    // Agent links may point at folders or files: reveal them in the file tree, then open files in the editor.
+    const openAgentFileLink = useEvent((path: string, open: () => void) => {
+        void fileTree.revealPath(path).then((isFolder) => {
+            if (!isFolder) open();
+        });
+    });
+
+    const handleAgentOpenFile = useEvent((path: string, line?: number, column?: number) => {
+        openAgentFileLink(path, () => handleOpenFile(path, line, column));
+    });
+
+    const handleAgentOpenFileDiff = useEvent((path: string, line?: number, column?: number) => {
+        openAgentFileLink(path, () => handleOpenFileDiff(path, line, column));
+    });
+
     const handleOpenHistoryDiff = useEvent(async (hash: string, file: GitHistoryFile) => {
         const targetProjectId = selectedHistoryProjectId;
         if (!targetProjectId) return;
@@ -1177,6 +1192,7 @@ const App: React.FC<AppProps> = ({ initialWorkspace }) => {
                         isAddingProject={folderPicker !== null}
                         onRemoveProject={handleRemoveProject}
                         activeNodeId={fileTree.activeNodeId}
+                        revealRequest={fileTree.revealRequest}
                         changedFiles={workspaceChangedFiles}
                         focusRequestToken={layout.getFocusRequestToken('files')}
                         onActivateNode={fileTree.setActiveNode}
@@ -1369,8 +1385,8 @@ const App: React.FC<AppProps> = ({ initialWorkspace }) => {
                         onResumeSettingsSession={handleResumeSettingsSession}
                         onStartSpecificAgent={handleStartSpecificAgent}
                         onOpenSettings={handleOpenAgentSettings}
-                        onOpenFile={handleOpenFile}
-                        onOpenFileDiff={handleOpenFileDiff}
+                        onOpenFile={handleAgentOpenFile}
+                        onOpenFileDiff={handleAgentOpenFileDiff}
                     />
                 );
             case 'browser':

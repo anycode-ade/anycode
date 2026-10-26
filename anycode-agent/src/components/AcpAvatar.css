@@ -1,0 +1,47 @@
+.acp-avatar {
+  width: var(--acp-chat-avatar-size, 24px);
+  height: var(--acp-chat-avatar-size, 24px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  user-select: none;
+  -webkit-user-select: none;
+  border-radius: 50%;
+  border: 1px solid color-mix(in srgb, var(--theme-foreground, #fff) 14%, transparent);
+  background: color-mix(in srgb, var(--theme-background, #1e1e1e) 88%, var(--theme-foreground, #fff) 12%);
+  overflow: hidden;
+  box-sizing: border-box;
+  transition: width 0.15s ease, height 0.15s ease;
+}
+
+.acp-avatar.has-image,
+.acp-avatar:has(.acp-avatar-image) {
+  background: transparent;
+  border-color: transparent;
+}
+
+.acp-avatar-user {
+  color: var(--theme-foreground, #ececec);
+  opacity: 0.85;
+}
+
+.acp-avatar-user svg {
+  display: block;
+}
+
+.acp-avatar-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+  display: block;
+}
+
+.acp-avatar-agent {
+  color: var(--theme-foreground, #ececec);
+}
+
+.acp-avatar-agent svg {
+  display: block;
+}

@@ -164,6 +164,14 @@ const TreeNodeComponentImpl: React.FC<TreeNodeComponentProps> = ({
         onToggle(node.id);
     };
 
+    const rowClassName = [
+        'tree-item-content',
+        node.type,
+        isProjectRoot && 'project-root-selector',
+        isSelected && !isProjectRoot && 'selected',
+        isActive && 'active',
+    ].filter(Boolean).join(' ');
+
     const title = typeof node.size === 'number' ? `${node.path} ${node.size} B` : node.path;
     const handleActivateOnly = (e: React.MouseEvent<HTMLDivElement>) => {
         if (e.button !== 0) {
@@ -180,7 +188,7 @@ const TreeNodeComponentImpl: React.FC<TreeNodeComponentProps> = ({
     return (
         <div className="tree-item">
             <div
-                className={`tree-item-content ${node.type} ${isProjectRoot ? 'project-root-selector' : ''} ${isSelected && !isProjectRoot ? 'selected' : ''} ${isActive && !isProjectRoot ? 'active' : ''}`}
+                className={rowClassName}
                 ref={(element) => onNodeRef(node.id, element)}
                 onMouseDown={handleActivateOnly}
                 onClick={handleNameClick}

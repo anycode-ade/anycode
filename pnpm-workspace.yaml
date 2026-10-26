@@ -1,6 +1,6 @@
 packages:
-  - anycode-base
-  - anycode-react
+  - anycode-editor/*
+  - anycode-agent
   - anycode
 allowBuilds:
   esbuild: set this to true or false

@@ -9,7 +9,7 @@ export interface AcpAvatarProps {
   type: 'user' | 'agent';
   agentTitle?: string;
   agentId?: string;
-  avatar?: string;
+  avatar?: string | null;
   size?: number;
   className?: string;
 }

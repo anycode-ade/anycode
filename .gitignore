@@ -5,6 +5,8 @@ node_modules
 *copy*.ts
 anycode/dist
 anycode-base/dist
+anycode-editor/*/dist
+anycode-agent/dist
 anycode-backend/dist/*
 !anycode-backend/dist/.gitkeep
 csharp-test-project
@@ -15,6 +17,7 @@ playwright-report
 
 .zed
 anycode-react/dist/Component.js
+anycode-editor/react/dist/Component.js
 awesome.md
 promo.md
 promo_ru.md

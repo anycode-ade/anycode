@@ -2,7 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import './index.css'
-import { setWasmBasePath } from 'anycode-react';
+import { setWasmBasePath } from 'anycode-editor-react';
 import { initAutoUpdater } from './updater';
 import { getWorkspaceState } from './workspace';
 

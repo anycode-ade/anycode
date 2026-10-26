@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Socket } from 'socket.io-client';
-import { AnycodeEditor } from 'anycode-react';
-import type { Change, Position } from '../../anycode-base/src/code';
+import { AnycodeEditor } from 'anycode-editor-react';
+import type { Change, Position } from 'anycode-editor';
 import {
     type CursorHistory,
     type FileState,
@@ -16,7 +16,7 @@ import { getFileName, getLanguageFromFileName, normalizePath, uriToFilePath } fr
 import { loadItem, loadOpenFiles, saveItem, saveOpenFiles } from '../storage';
 import type { DiffMode } from '../types/diffMode';
 import { DEFAULT_DIFF_VIEW_MODE, getNextDiffMode } from '../types/diffMode';
-import {
+import type {
     Completion,
     CompletionRequest,
     DefinitionRequest,
@@ -24,8 +24,8 @@ import {
     Diagnostic,
     DiagnosticResponse,
     HoverRequest,
-    type ReferencesRequest,
-} from '../../anycode-base/src/lsp';
+    ReferencesRequest,
+} from 'anycode-editor';
 
 type UseEditorsParams = {
     wsRef: React.RefObject<Socket | null>;

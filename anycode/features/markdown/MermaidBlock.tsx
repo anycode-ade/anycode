@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import type { Mermaid } from 'mermaid';
-import { FastSyntaxHighlighter, TokenDictionary } from 'anycode-base';
+import { FastSyntaxHighlighter, TokenDictionary } from 'anycode-editor';
 import { copyTextToClipboard } from '../../utils';
 import { Icons } from '../../components/Icons';
 import './MermaidBlock.css';

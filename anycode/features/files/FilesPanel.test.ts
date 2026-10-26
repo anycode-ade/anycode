@@ -64,7 +64,7 @@ describe('FilesPanel project selector', () => {
         expect(html).not.toMatch(/<button[^>]*>\s*<span class="project-switcher-name"/);
         expect(html).toContain('class="tree-project-selector"');
         expect(html).toContain('project-root-selector');
-        expect(html).not.toMatch(/project-root-selector[^"]*active/);
+        expect(html).toMatch(/project-root-selector[^"]*active/);
         expect(html).toContain('class="project-switcher"');
         expect(html).toContain('project-switcher-name" title="Beta">Beta<');
         expect(html).toContain('aria-haspopup="menu"');

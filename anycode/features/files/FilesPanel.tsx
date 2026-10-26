@@ -10,6 +10,7 @@ import type { WorkspaceProject } from '../../workspace';
 type FilesPanelProps = {
     fileTree: TreeNode[];
     activeNodeId: string | null;
+    revealRequest?: { nodeId: string } | null;
     changedFiles?: ChangedFile[];
     focusRequestToken: number | null;
     onActivateNode: (nodeId: string) => void;
@@ -55,6 +56,7 @@ interface CreatingNodeState {
 export const FilesPanel = ({
     fileTree,
     activeNodeId,
+    revealRequest,
     changedFiles,
     focusRequestToken,
     onActivateNode,
@@ -355,6 +357,11 @@ export const FilesPanel = ({
         }
         shouldAutoScrollRef.current = false;
     }, [activeNodeId]);
+
+    useEffect(() => {
+        if (!revealRequest) return;
+        treeNodeRefs.current.get(revealRequest.nodeId)?.scrollIntoView({ block: 'nearest' });
+    }, [revealRequest]);
 
     const injectVirtualNode = useCallback((nodes: TreeNode[]): TreeNode[] => {
         if (!creatingNode) return nodes;

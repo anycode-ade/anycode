@@ -1,13 +1,32 @@
-import { defineConfig } from "vite";
+import { defineConfig, createLogger } from "vite";
 import react from "@vitejs/plugin-react";
 import { fileURLToPath, URL } from "node:url";
 
+const logger = createLogger();
+const originalWarn = logger.warn;
+logger.warn = (msg, options) => {
+  if (typeof msg === "string" && msg.includes("@wterm/ghostty")) {
+    return;
+  }
+  originalWarn(msg, options);
+};
+const originalWarnOnce = logger.warnOnce;
+logger.warnOnce = (msg, options) => {
+  if (typeof msg === "string" && msg.includes("@wterm/ghostty")) {
+    return;
+  }
+  originalWarnOnce(msg, options);
+};
+
 const vendorChunk = (id) => {
-  if (!id.includes("node_modules") && !id.includes("/anycode-base/")) {
+  if (!id.includes("node_modules") && !id.includes("/anycode-editor/") && !id.includes("/anycode-agent/")) {
     return undefined;
   }
-  if (id.includes("web-tree-sitter") || id.includes("/anycode-base/")) {
+  if (id.includes("web-tree-sitter") || id.includes("/anycode-editor/")) {
     return "editor";
+  }
+  if (id.includes("/anycode-agent/")) {
+    return "agent";
   }
   if (id.includes("@wterm/")) {
     return "terminal";
@@ -32,6 +51,7 @@ export default defineConfig(({ mode }) => {
   const backendTarget = `http://localhost:${backendPort}`;
 
   return {
+    customLogger: logger,
     base: mode === "demo" ? "./" : "/",
     plugins: [react()],
     resolve: {

@@ -2,14 +2,15 @@
   "extends": "../tsconfig.base.json",
   "compilerOptions": {
     "outDir": "dist",
-    "rootDir": ".",
+    "rootDir": "..",
     "jsx": "react-jsx",
-    "baseUrl": ".",
     "paths": {
-      "anycode-base": ["../anycode-base/src"],
-      "anycode-base/*": ["../anycode-base/src/*"],
-      "anycode-react": ["../anycode-react/src"],
-      "anycode-react/*": ["../anycode-react/src/*"]
+      "anycode-agent": ["../anycode-agent/src"],
+      "anycode-agent/*": ["../anycode-agent/src/*"],
+      "anycode-editor": ["../anycode-editor/core/src"],
+      "anycode-editor/*": ["../anycode-editor/core/src/*"],
+      "anycode-editor-react": ["../anycode-editor/react/src"],
+      "anycode-editor-react/*": ["../anycode-editor/react/src/*"]
     }
   },
   "include": ["**/*.ts", "**/*.tsx", "**/*.d.ts"],

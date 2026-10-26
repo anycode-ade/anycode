@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { AnycodeEditor, AnycodeEditorReact } from 'anycode-react';
+import { AnycodeEditor, AnycodeEditorReact } from 'anycode-editor-react';
 import type { ReferencesPeekItem, ReferencesPeekState } from '../../types';
 import { getFileName, getLanguageFromFileName, uriToFilePath } from '../../utils';
 import './ReferencesPeek.css';

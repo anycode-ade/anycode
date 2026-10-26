@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { Socket } from 'socket.io-client';
-import { addCssToDocument, generateCssClasses } from '../../anycode-base/src/utils';
+import { addCssToDocument, generateCssClasses } from 'anycode-editor';
 import { isTauri } from '../constants';
 
 type UseThemeParams = {

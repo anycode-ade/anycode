@@ -1,5 +1,5 @@
 // demoSocket.ts - In-memory Mock Socket for Anycode Live Demo
-import { Code } from 'anycode-base';
+import { Code } from 'anycode-editor';
 import { DEMO_RESUME_SESSION_ID, buildDemoResumeHistory } from './demoSessionHistory';
 
 type EventHandler = (...args: any[]) => void;

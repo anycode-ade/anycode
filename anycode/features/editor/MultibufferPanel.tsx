@@ -1,6 +1,6 @@
 import React, { useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { AnycodeEditorReact } from 'anycode-react';
-import { AnycodeEditor, Code, MultiBufferCode, type MultiBufferEntry, type DefinitionRequest, type DefinitionResponse, type HoverRequest, type CompletionRequest, type Completion, type ReferencesRequest } from 'anycode-base';
+import { AnycodeEditorReact } from 'anycode-editor-react';
+import { AnycodeEditor, Code, MultiBufferCode, type MultiBufferEntry, type DefinitionRequest, type DefinitionResponse, type HoverRequest, type CompletionRequest, type Completion, type ReferencesRequest } from 'anycode-editor';
 import type { DockviewPanelApi } from 'dockview';
 import { LayoutPanelApiContext, LayoutVersionContext } from '../../components/layout/Layout';
 import type { FileState } from '../../types';

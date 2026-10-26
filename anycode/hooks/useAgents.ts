@@ -547,9 +547,14 @@ export const useAgents = ({
                     };
                 }
                 const isProcessing = promptState.is_processing;
+                // A finished call gets a tool_result; its tool_call status stays in_progress/pending.
+                // Only calls without a result were actually cut off when the turn ended.
+                const completedToolIds = new Set(
+                    existing.messages.flatMap((msg) => (msg.role === 'tool_result' ? [msg.id] : [])),
+                );
                 const messages = !isProcessing
                     ? existing.messages.map((msg) => {
-                        if (msg.role === 'tool_call') {
+                        if (msg.role === 'tool_call' && !completedToolIds.has(msg.id)) {
                             const tc = msg as AcpToolCallMessage;
                             if (!tc.status || tc.status === 'in_progress' || tc.status === 'pending') {
                                 return { ...tc, status: 'canceled' as const };

@@ -61,7 +61,7 @@ jobs:
           echo "Total files: $(find dist -type f | wc -l)"
       
       - name: Run core library tests
-        working-directory: ./anycode-base
+        working-directory: ./anycode-editor/core
         run: pnpm test -- --run
       
       - name: Install Rust
@@ -157,7 +157,7 @@ jobs:
           Write-Host "Frontend build verified. Total files: $($files.Count)"
 
       - name: Run core library tests
-        working-directory: ./anycode-base
+        working-directory: ./anycode-editor/core
         run: pnpm test -- --run
 
       - name: Install Rust

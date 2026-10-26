@@ -1,13 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
 import type { Socket } from 'socket.io-client';
 import { AcpSettings } from '../../components/agent/AcpSettings';
-import { AcpSession } from '../../components/agent/AcpSession';
+import { AnycodeAgentSession } from '../../components/agent/AnycodeAgentSession';
 import { AcpEmptyPane } from '../../components/agent/AcpEmptyPane';
 import { AcpRegistryModal } from '../../components/agent/AcpRegistryModal';
 import { resolveAgentDisplay } from '../../agents';
 import type {
     AcpAgent,
-    AcpSession as AcpSessionState,
+    AcpSession,
     AcpSessionSummary,
     FileSearchResult,
     OpenFileInfo,
@@ -29,7 +29,7 @@ type AgentPanelProps = {
         selectForPane: (paneKey: string, agentId: string | null) => void;
     };
     agents: {
-        acpSessions: Map<string, AcpSessionState>;
+        acpSessions: Map<string, AcpSession>;
         isAgentSettingsOpen: boolean;
         isRegistryOpen: boolean;
         setIsRegistryOpen: (open: boolean) => void;
@@ -51,7 +51,7 @@ type AgentPanelProps = {
         getToolOutput?: (toolId: string, sessionId?: string) => Promise<string | null>;
         markSessionAsRead?: (agentId: string) => void;
     };
-    sessions: AcpSessionState[];
+    sessions: AcpSession[];
     projects: WorkspaceProject[];
     activeProjectId: string | null;
     availableAgents: AcpAgent[];
@@ -217,7 +217,7 @@ const AgentPanelComponent = ({
     return (
         <div ref={panelRef} tabIndex={-1} style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
             <div style={{ position: 'relative', flex: 1, minHeight: 0, overflow: 'hidden' }}>
-                <AcpSession
+                <AnycodeAgentSession
                     key={selectedSession.agentId}
                     agentId={selectedSession.agentId}
                     title={selectedSessionDisplay?.fullName ?? selectedSession.agentId}

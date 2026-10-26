@@ -38,12 +38,15 @@ importers:
       '@wterm/ghostty':
         specifier: ^0.5.4
         version: 0.5.4
-      anycode-base:
+      anycode-agent:
         specifier: workspace:*
-        version: link:../anycode-base
-      anycode-react:
+        version: link:../anycode-agent
+      anycode-editor:
         specifier: workspace:*
-        version: link:../anycode-react
+        version: link:../anycode-editor/core
+      anycode-editor-react:
+        specifier: workspace:*
+        version: link:../anycode-editor/react
       diff:
         specifier: ^9.0.0
         version: 9.0.0
@@ -106,7 +109,44 @@ importers:
         specifier: ^8.0.3
         version: 8.0.3(@emnapi/core@1.9.1)(@emnapi/runtime@1.9.1)(@types/node@22.18.8)(tsx@4.20.4)
 
-  anycode-base:
+  anycode-agent:
+    dependencies:
+      diff:
+        specifier: ^9.0.0
+        version: 9.0.0
+      react-markdown:
+        specifier: ^10.1.0
+        version: 10.1.0(@types/react@19.1.8)(react@19.1.0)
+      remark-breaks:
+        specifier: ^4.0.0
+        version: 4.0.0
+      remark-gfm:
+        specifier: ^4.0.1
+        version: 4.0.1
+    devDependencies:
+      '@types/diff':
+        specifier: ^7.0.2
+        version: 7.0.2
+      '@types/react':
+        specifier: ^19.1.8
+        version: 19.1.8
+      '@types/react-dom':
+        specifier: ^19.1.6
+        version: 19.1.6(@types/react@19.1.8)
+      react:
+        specifier: ^19.1.0
+        version: 19.1.0
+      react-dom:
+        specifier: ^19.1.0
+        version: 19.1.0(react@19.1.0)
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
+      vitest:
+        specifier: ^4.1.2
+        version: 4.1.2(@types/node@22.18.8)(vite@8.0.3(@emnapi/core@1.9.1)(@emnapi/runtime@1.9.1)(@types/node@22.18.8)(tsx@4.20.4))
+
+  anycode-editor/core:
     dependencies:
       diff:
         specifier: ^9.0.0
@@ -125,11 +165,11 @@ importers:
         specifier: ^4.1.2
         version: 4.1.2(@types/node@22.18.8)(vite@8.0.3(@emnapi/core@1.9.1)(@emnapi/runtime@1.9.1)(@types/node@22.18.8)(tsx@4.20.4))
 
-  anycode-react:
+  anycode-editor/react:
     dependencies:
-      anycode-base:
+      anycode-editor:
         specifier: workspace:*
-        version: link:../anycode-base
+        version: link:../core
       react:
         specifier: ^19.1.0
         version: 19.1.0
@@ -668,6 +708,9 @@ packages:
 
   '@types/deep-eql@4.0.2':
     resolution: {integrity: sha512-c9h9dVVMigMPc4bwTvC5dxqtqJZwQPePsWjPlpSOnojbor6pGqdk541lfA7AqFQr5pB1BRdq0juY9db81BwyFw==}
+
+  '@types/diff@7.0.2':
+    resolution: {integrity: sha512-JSWRMozjFKsGlEjiiKajUjIJVKuKdE3oVy2DNtK+fUo8q82nhFZ2CPQwicAIkXrofahDXrWJ7mjelvZphMS98Q==}
 
   '@types/estree-jsx@1.0.5':
     resolution: {integrity: sha512-52CcUVNFyfb1A2ALocQw/Dd1BQFNmSdkuC3BkZ6iqhdMfQz7JWOFRuJFloOzjk+6WijU56m9oKXFAXc7o3Towg==}
@@ -2511,6 +2554,8 @@ snapshots:
       '@types/ms': 2.1.0
 
   '@types/deep-eql@4.0.2': {}
+
+  '@types/diff@7.0.2': {}
 
   '@types/estree-jsx@1.0.5':
     dependencies:

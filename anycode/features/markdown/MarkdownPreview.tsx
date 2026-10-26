@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { FastSyntaxHighlighter, TokenDictionary } from 'anycode-base';
-import type { AnycodeEditor } from 'anycode-base';
+import { FastSyntaxHighlighter, TokenDictionary } from 'anycode-editor';
+import type { AnycodeEditor } from 'anycode-editor';
 import type { FileState } from '../../types';
 import { Icons } from '../../components/Icons';
 import { copyTextToClipboard, normalizePath } from '../../utils';

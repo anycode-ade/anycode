@@ -114,6 +114,8 @@ const walkVisibleForNode = (nodes: TreeNode[], targetNodeId: string | null): Vis
 export const useFileTree = ({ wsRef, isConnected }: UseFileTreeParams) => {
     const [fileTree, setFileTree] = useState<TreeNode[]>([]);
     const [activeNodeId, setActiveNodeId] = useState<string | null>(null);
+    // A new object per reveal, so the same folder can be revealed again and scrolled to again.
+    const [revealRequest, setRevealRequest] = useState<{ nodeId: string } | null>(null);
 
     const setActiveNode = useCallback((nodeId: string | null) => {
         setActiveNodeId(nodeId);
@@ -226,6 +228,59 @@ export const useFileTree = ({ wsRef, isConnected }: UseFileTreeParams) => {
         if (!wsRef.current || !isConnected) return;
         wsRef.current.emit('dir:list', { path }, handleOpenFolderResponse);
     }, [wsRef, isConnected, handleOpenFolderResponse]);
+
+    const requestDirectoryListing = useCallback((path: string): Promise<any> => (
+        new Promise((resolve) => {
+            if (!wsRef.current || !isConnected) {
+                resolve({ error: 'Not connected' });
+                return;
+            }
+            wsRef.current.emit('dir:list', { path }, resolve);
+        })
+    ), [wsRef, isConnected]);
+
+    // Loads the project root and every folder between it and `listing`, top-down, so each child exists
+    // before it is filled. `listing` itself is not loaded here.
+    const loadAncestorsOf = useCallback(async (listing: any) => {
+        const fullPath = normalizePath(listing.fullpath);
+        const relativePath = normalizePath(listing.relative_path);
+        const segments = relativePath === '.' ? [] : relativePath.split('/');
+        let folderPath = segments.length === 0
+            ? fullPath
+            : fullPath.slice(0, -(relativePath.length + 1));
+        for (const segment of segments) {
+            const ancestor = await requestDirectoryListing(folderPath);
+            if (!ancestor.error) handleOpenFolderResponse(ancestor);
+            folderPath = joinPath(folderPath, segment);
+        }
+    }, [requestDirectoryListing, handleOpenFolderResponse]);
+
+    // Reveals a file or folder in the tree. A folder is expanded and made active. For a file, its
+    // folder is expanded and the file is made active. Resolves true only when `path` is a folder.
+    const revealPath = useCallback(async (path: string): Promise<boolean> => {
+        const revealNode = (nodeId: string) => {
+            setActiveNodeId(nodeId);
+            setRevealRequest({ nodeId });
+        };
+
+        const folder = await requestDirectoryListing(path);
+        if (!folder.error) {
+            await loadAncestorsOf(folder);
+            handleOpenFolderResponse(folder);
+            const folderPath = normalizePath(folder.fullpath);
+            // A project root is identified by `project:<id>`, not by its path.
+            const isProjectRoot = normalizePath(folder.relative_path) === '.';
+            revealNode(isProjectRoot ? `project:${folder.project_id ?? folderPath}` : folderPath);
+            return true;
+        }
+
+        const parent = await requestDirectoryListing(getParentPath(path));
+        if (parent.error) return false;
+        await loadAncestorsOf(parent);
+        handleOpenFolderResponse(parent);
+        revealNode(joinPath(normalizePath(parent.fullpath), getFileName(path)));
+        return false;
+    }, [requestDirectoryListing, loadAncestorsOf, handleOpenFolderResponse]);
 
     const resetFileTree = useCallback(() => {
         setFileTree([]);
@@ -585,8 +640,10 @@ export const useFileTree = ({ wsRef, isConnected }: UseFileTreeParams) => {
         createNodeOnDisk,
         handleFileRenamed,
         activeNodeId,
+        revealRequest,
         setActiveNode,
         openFolder,
+        revealPath,
         resetFileTree,
         removeProjectRoot,
         handleOpenFolderResponse,

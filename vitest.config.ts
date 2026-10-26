@@ -6,12 +6,13 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     include: ['**/*.test.ts'],
-    exclude: ['**/node_modules/**', '**/dist/**', '**/*.spec.ts'],
+    exclude: ['**/node_modules/**', '**/dist/**', '**/*.spec.ts', '**/.delta/**'],
   },
   resolve: {
     alias: {
-      'anycode-base': resolve(__dirname, './anycode-base/src'),
-      'anycode-react': resolve(__dirname, './anycode-react/src'),
+      'anycode-agent': resolve(__dirname, './anycode-agent/src'),
+      'anycode-editor': resolve(__dirname, './anycode-editor/core/src'),
+      'anycode-editor-react': resolve(__dirname, './anycode-editor/react/src'),
     },
   },
 });
