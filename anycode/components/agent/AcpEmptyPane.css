@@ -20,6 +20,7 @@
 }
 
 .acp-pane-empty-actions {
+    container: acp-start-actions / inline-size;
     display: flex;
     flex-wrap: wrap;
     justify-content: center;
@@ -141,9 +142,10 @@
 .acp-start-card-title-row {
     display: flex;
     align-items: center;
-    justify-content: center;
+    justify-content: safe center;
     gap: 5px;
     max-width: 100%;
+    min-width: 0;
 }
 
 .acp-start-card-title {
@@ -180,12 +182,23 @@
 
 .acp-start-card-footer {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    justify-content: center;
-    gap: 12px;
+    justify-content: safe center;
+    column-gap: 12px;
+    row-gap: 2px;
+    width: 100%;
+    min-width: 0;
     margin-top: 1px;
     font-size: 11px;
     line-height: 1.2;
+}
+
+/* Footer chips wrap to a new line on narrow panes; a chip wider than the card clips instead of overflowing. */
+.acp-start-card-footer > * {
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
 }
 
 .acp-start-card-profile-wrap {
@@ -339,6 +352,13 @@
 .acp-start-card:hover .acp-start-card-arrow {
     transform: translateX(3px);
     color: var(--theme-foreground, #ffffff);
+}
+
+/* The chevron is decoration; drop it when the start cards are too narrow for the text to spare the space. */
+@container acp-start-actions (max-width: 260px) {
+    .acp-start-card-arrow {
+        display: none;
+    }
 }
 
 .acp-pane-opened-agents,
@@ -571,7 +591,7 @@
     box-sizing: border-box;
     display: flex;
     align-items: center;
-    justify-content: center;
+    justify-content: safe center;
     gap: 8px;
     width: 100%;
     min-height: 20px;
@@ -582,7 +602,7 @@
 .acp-pane-opened-identity {
     display: flex;
     align-items: center;
-    justify-content: center;
+    justify-content: safe center;
     gap: 6px;
     min-width: 0;
     max-width: 100%;
@@ -591,12 +611,13 @@
 .acp-pane-opened-context-row {
     display: flex;
     align-items: center;
-    justify-content: center;
+    justify-content: safe center;
     gap: 8px;
     min-width: 0;
     width: 100%;
     margin-top: 3px;
     font-size: 10.5px;
+    overflow: hidden;
 }
 
 .acp-pane-opened-context-item {
@@ -674,12 +695,21 @@
 .acp-pane-opened-info-row {
     display: flex;
     align-items: center;
-    justify-content: center;
+    justify-content: safe center;
     gap: 8px;
     margin-top: 3px;
     width: 100%;
+    min-width: 0;
     font-size: 11px;
     transition: all 0.25s ease;
+    overflow: hidden;
+}
+
+/* Info chips shrink and clip instead of pushing the centered row past the card edges. */
+.acp-pane-opened-info-row > * {
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
 }
 
 .acp-pane-opened-count,
