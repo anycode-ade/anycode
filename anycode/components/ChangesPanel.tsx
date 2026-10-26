@@ -617,6 +617,7 @@ const ChangesPanelImpl: React.FC<ChangesPanelProps> = ({
     const [isCreatingBranch, setIsCreatingBranch] = useState(false);
     const [newBranchName, setNewBranchName] = useState('');
     const [isSubmittingBranch, setIsSubmittingBranch] = useState(false);
+    const [isCommitOpen, setIsCommitOpen] = useState(false);
     const newBranchInputRef = useRef<HTMLInputElement>(null);
 
     const handleBranchChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -666,19 +667,6 @@ const ChangesPanelImpl: React.FC<ChangesPanelProps> = ({
 
     return (
         <div className="changes-panel">
-            <div className="changes-message-container">
-                <div className="changes-message-mirror" aria-hidden="true">
-                    {message + '\u200b'}
-                </div>
-                <textarea
-                    className="changes-message-input"
-                    placeholder="Message..."
-                    value={message}
-                    onChange={(e) => setMessage(e.target.value)}
-                    rows={1}
-                />
-            </div>
-
             <div className="changes-header">
                 <div className="changes-title">
                     <label className="changes-project-selector" title="Select project">
@@ -743,6 +731,7 @@ const ChangesPanelImpl: React.FC<ChangesPanelProps> = ({
                             </button>
                         </div>
                     ) : (
+                        <>
                         <select
                             className="changes-branch-select"
                             value={isCurrentBranchInList ? branch : ''}
@@ -768,69 +757,94 @@ const ChangesPanelImpl: React.FC<ChangesPanelProps> = ({
                                 </>
                             )}
                         </select>
+                        <span className="changes-branch-select-chevron" aria-hidden="true">
+                            <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                                <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+                            </svg>
+                        </span>
+                        </>
                     )}
                     </div>
                 </div>
-                {!isCreatingBranch && (
-                    <div className="changes-actions-right">
-                        {pushStatus.state !== GitActionState.Idle && (
-                            <span
-                                className={`changes-push-status changes-push-status-${pushStatus.state}`}
-                                role="status"
-                                title={pushStatus.message}
-                            >
-                                {pushStatus.state === GitActionState.InProgress && <span className="changes-push-spinner" aria-hidden="true" />}
-                                {pushStatus.message}
-                            </span>
-                        )}
+                <div className="changes-actions-right">
+                    {pushStatus.state !== GitActionState.Idle && (
+                        <span
+                            className={`changes-push-status changes-push-status-${pushStatus.state}`}
+                            role="status"
+                            title={pushStatus.message}
+                        >
+                            {pushStatus.state === GitActionState.InProgress && <span className="changes-push-spinner" aria-hidden="true" />}
+                            {pushStatus.message}
+                        </span>
+                    )}
+                    <button
+                        type="button"
+                        className="changes-branch-toggle"
+                        onClick={() => setIsCommitOpen((open) => !open)}
+                        aria-expanded={isCommitOpen}
+                        aria-label={isCommitOpen ? 'Hide commit' : 'Show commit'}
+                        title={isCommitOpen ? 'Hide commit' : 'Show commit'}
+                    >
+                        <Icons.GitCommitNode />
+                    </button>
+                </div>
+            </div>
+
+            {isCommitOpen && (
+                <div className="changes-commit-panel">
+                    <div className="changes-message-container">
+                        <div className="changes-message-mirror" aria-hidden="true">
+                            {message + '\u200b'}
+                        </div>
+                        <textarea
+                            className="changes-message-input"
+                            placeholder="Message..."
+                            value={message}
+                            onChange={(e) => setMessage(e.target.value)}
+                            rows={1}
+                        />
+                    </div>
+                    <div className="changes-commit-actions">
                         <button
-                            className="changes-action-btn changes-action-btn-icon"
+                            className="changes-action-btn"
                             onClick={handleCommit}
                             disabled={!message.trim() || stagedFilesCount === 0}
-                            title="Commit"
-                            aria-label="Commit"
+                            title="Commit staged changes"
                         >
                             <Icons.GitCommit />
+                            <span>Commit</span>
                         </button>
                         {onFetch && (
                             <button
-                                className="changes-action-btn changes-action-btn-icon"
+                                className="changes-action-btn"
                                 onClick={onFetch}
                                 disabled={pushStatus.state === GitActionState.InProgress}
                                 title="Fetch"
-                                aria-label="Fetch"
                             >
                                 <Icons.GitFetch />
+                                <span>Fetch</span>
                             </button>
                         )}
-                        <button
-                            className="changes-action-btn changes-action-btn-icon"
-                            onClick={onPull}
-                            title="Pull"
-                            aria-label="Pull"
-                        >
+                        <button className="changes-action-btn" onClick={onPull} title="Pull">
                             <Icons.GitPull />
+                            <span>Pull</span>
                         </button>
                         <button
-                            className="changes-action-btn changes-action-btn-icon"
+                            className="changes-action-btn"
                             onClick={onPush}
                             disabled={pushStatus.state === GitActionState.InProgress}
                             title="Push"
-                            aria-label="Push"
                         >
                             <Icons.GitPush />
+                            <span>Push</span>
                         </button>
-                        <button
-                            className="changes-action-btn changes-action-btn-icon"
-                            onClick={onRefresh}
-                            title="Refresh"
-                            aria-label="Refresh"
-                        >
+                        <button className="changes-action-btn" onClick={onRefresh} title="Refresh">
                             <Icons.Refresh />
+                            <span>Refresh</span>
                         </button>
                     </div>
-                )}
-            </div>
+                </div>
+            )}
 
             {pushStatus.state === GitActionState.Error && pushStatus.message && (
                 <div className="changes-error-banner" role="alert" title={pushStatus.message}>

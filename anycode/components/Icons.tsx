@@ -78,6 +78,12 @@ export const Icons = {
       <path d="M20 7L10 17L5 12" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   ),
+  GitCommitNode: () => (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M0 12H7M17 12H24" stroke="currentColor" strokeWidth="3" />
+      <circle cx="12" cy="12" r="6" stroke="currentColor" strokeWidth="3" />
+    </svg>
+  ),
   GitFetch: () => (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <path d="M12 3V14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />

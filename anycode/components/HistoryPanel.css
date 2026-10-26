@@ -11,11 +11,11 @@
 .history-scope button.active { color: var(--theme-foreground, #e0e0e0); font-weight: 800; box-shadow: inset 0 -2px 0 var(--theme-accent-background, #007acc); }
 .history-scope button:focus-visible { outline: 1px solid var(--theme-accent-background, #007acc); outline-offset: 1px; }
 .history-scope button:disabled { opacity: .45; cursor: default; }
-.history-project-selector { display: inline-flex; align-items: center; gap: 3px; flex: 0 1 auto; min-width: 0; max-width: 180px; color: var(--theme-tab-foreground, #888); cursor: pointer; }
+.history-project-selector { display: inline-flex; align-items: center; gap: 6px; flex: 0 0 auto; min-width: 0; color: var(--theme-tab-foreground, #888); cursor: pointer; }
 .history-project-selector > svg { flex: 0 0 auto; }
-.history-project-select { display: inline-block; width: fit-content; max-width: min(140px, 100%); min-width: 0; flex: 0 1 auto; field-sizing: content; padding: 0; appearance: none; -webkit-appearance: none; border: 0; border-radius: 0; outline: none; color: var(--theme-foreground, var(--foreground-color, #e0e0e0)); background: transparent; font-family: var(--interface-font-family); font-size: .86em; font-weight: var(--interface-font-weight, 700); cursor: pointer; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
+.history-project-select { display: inline-block; width: fit-content; max-width: min(180px, 100%); min-width: 0; flex: 0 0 auto; field-sizing: content; padding: 0; appearance: none; -webkit-appearance: none; border: 0; border-radius: 0; min-height: 24px; outline: none; color: var(--theme-foreground, var(--foreground-color, #e0e0e0)); background: transparent; font-family: var(--interface-font-family); font-size: .86em; font-weight: var(--interface-font-weight, 700); cursor: pointer; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
 .history-project-select:disabled { opacity: .7; cursor: not-allowed; }
-.history-project-select-chevron { display: inline-flex; align-items: center; flex: 0 0 auto; width: 12px; height: 12px; margin-left: -3px; pointer-events: none; }
+.history-project-select-chevron { display: inline-flex; align-items: center; flex: 0 0 auto; width: 12px; height: 12px; pointer-events: none; }
 .history-project-select-chevron svg { display: block; width: 12px; height: 12px; }
 .history-scope-path { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .history-scope-path { flex: 1 1 auto; color: var(--theme-tab-foreground, #999); font-size: .82em; font-weight: 500; }
