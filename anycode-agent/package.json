@@ -1,6 +1,6 @@
 {
   "name": "anycode-agent",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Anycode AI Agent Chat & ACP Session UI component",
   "main": "src/index.ts",
   "types": "src/index.ts",
