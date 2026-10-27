@@ -27,6 +27,9 @@ pub mod terminal;
 pub mod utils;
 pub mod workspace;
 
+#[cfg(test)]
+mod windows_path_tests;
+
 use app_state::AppState;
 use handlers::auth_handler::auth_middleware;
 use handlers::connection_handler::handle_connect;
