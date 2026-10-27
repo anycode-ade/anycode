@@ -19,8 +19,17 @@ function DemoAvatar(props) {
 
 const COMPONENTS = { Avatar: DemoAvatar };
 
+const MODEL_OPTIONS = [
+  { config_id: 'model', value: 'sonnet', name: 'Claude Sonnet 4.5' },
+  { config_id: 'model', value: 'opus', name: 'Claude Opus 4.1' },
+  { config_id: 'model', value: 'haiku', name: 'Claude Haiku 4.5' },
+];
+
 // Shared shell: the component takes the whole pane, so each demo passes only what it needs.
+// The model dropdown is hidden unless both modelSelector and onSelectModel are given.
 function Session(props) {
+  const [model, setModel] = useState(MODEL_OPTIONS[0].value);
+
   return (
     <div className="agent-pane">
       <AgentSession
@@ -31,6 +40,8 @@ function Session(props) {
         onFocusPane={noop}
         onCloseAgent={noop}
         components={COMPONENTS}
+        modelSelector={{ current_value: model, options: MODEL_OPTIONS }}
+        onSelectModel={(_agentId, option) => setModel(option.value)}
         {...props}
       />
     </div>
