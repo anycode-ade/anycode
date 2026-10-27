@@ -2707,15 +2707,15 @@ mod windows_workspace_tests {
         let project = tempfile::tempdir().unwrap();
         let shim = project.path().join("fake-agent.cmd");
         std::fs::write(&shim, "@echo off\r\necho %CD%\r\necho %1\r\n").unwrap();
-        let expected_root = crate::utils::canonicalize_path(project.path())
-            .unwrap()
-            .to_string_lossy()
-            .to_string();
+        // The project root is always canonical in the app; `TEMP` may be an
+        // 8.3 short path (RUNNER~1), which cmd.exe reports back verbatim.
+        let root = crate::utils::canonicalize_path(project.path()).unwrap();
+        let expected_root = root.to_string_lossy().to_string();
         let (mut child, _stdin, mut stdout, _stderr) = AcpAgent::spawn_agent_process(
             shim.to_str().unwrap(),
             &["hello".to_string()],
             None,
-            project.path(),
+            &root,
         )
         .unwrap();
 
