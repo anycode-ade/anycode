@@ -51,6 +51,13 @@ const FILE_CARD = { width: 200, height: 28 };
 const AGENT_CARD = { width: 280, height: 76 };
 const TERMINAL_CARD = { width: 150, height: 60 };
 
+// Stable hue per author so each avatar keeps its colour across renders.
+const avatarHue = (name: string): number => {
+    let hash = 0;
+    for (const char of name) hash = (hash * 31 + char.charCodeAt(0)) | 0;
+    return Math.abs(hash) % 360;
+};
+
 const baseName = (path: string): string => {
     const normalized = normalizePath(path);
     return normalized.slice(normalized.lastIndexOf('/') + 1);
@@ -188,47 +195,62 @@ export const ProjectsPanel = ({
                 return (
                     <section key={project.id} className="projects-project">
                         <div className="projects-project-header">
-                            <div className="projects-plate projects-plate-card" title={project.root}>
-                                <span className="projects-project-icon" aria-hidden="true">
-                                    <Icons.Folder size={14} />
-                                </span>
-                                <span className="projects-project-name">{project.name}</span>
-                            </div>
-                            {git && (git.branch || git.branches.length > 0) && (
-                                <div className="projects-plate projects-plate-card">
+                            <div
+                                className="projects-plate projects-plate-card projects-plate-project"
+                                title={project.root}
+                                data-dirty={changedFiles.length > 0}
+                            >
+                                <div className="projects-project-row">
                                     <span className="projects-project-icon" aria-hidden="true">
-                                        <Icons.Git />
+                                        <Icons.Folder size={14} />
                                     </span>
-                                    <select
-                                        className="projects-branch-select"
-                                        value={git.branch}
-                                        onChange={(event) => onBranchChange(project.id, event.target.value)}
-                                        disabled={git.isSwitchingBranch || git.branches.length === 0}
-                                        title={git.isSwitchingBranch ? 'Switching branch...' : 'Select branch'}
-                                        aria-label={`Branch of ${project.name}`}
-                                    >
-                                        {!git.branches.some((branch) => branch.name === git.branch) && (
-                                            <option value={git.branch}>{git.branch || 'HEAD'}</option>
+                                    <span className="projects-project-name">{project.name}</span>
+                                </div>
+                                {git && (git.branch || git.branches.length > 0) && (
+                                    <div className="projects-project-row">
+                                        <span className="projects-project-icon" aria-hidden="true">
+                                            <Icons.Git />
+                                        </span>
+                                        <select
+                                            className="projects-branch-select"
+                                            value={git.branch}
+                                            onChange={(event) => onBranchChange(project.id, event.target.value)}
+                                            disabled={git.isSwitchingBranch || git.branches.length === 0}
+                                            title={git.isSwitchingBranch ? 'Switching branch...' : 'Select branch'}
+                                            aria-label={`Branch of ${project.name}`}
+                                        >
+                                            {!git.branches.some((branch) => branch.name === git.branch) && (
+                                                <option value={git.branch}>{git.branch || 'HEAD'}</option>
+                                            )}
+                                            {git.branches.map((branch) => (
+                                                <option key={branch.name} value={branch.name}>{branch.name}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                )}
+                                {git?.lastCommit && (
+                                    <div className="projects-project-row projects-project-commit">
+                                        <span
+                                            className="projects-commit-time"
+                                            title={new Date(git.lastCommit.timestamp * 1000).toLocaleString()}
+                                        >
+                                            {formatRelativeTime(git.lastCommit.timestamp)}
+                                        </span>
+                                        {git.lastCommit.authorName && (
+                                            <>
+                                                <span
+                                                    className="projects-commit-avatar"
+                                                    aria-hidden="true"
+                                                    style={{ background: `hsl(${avatarHue(git.lastCommit.authorName)} 60% 52%)` }}
+                                                >
+                                                    {git.lastCommit.authorName.trim().charAt(0).toUpperCase()}
+                                                </span>
+                                                <span className="projects-commit-author">{git.lastCommit.authorName}</span>
+                                            </>
                                         )}
-                                        {git.branches.map((branch) => (
-                                            <option key={branch.name} value={branch.name}>{branch.name}</option>
-                                        ))}
-                                    </select>
-                                </div>
-                            )}
-                            {git?.lastCommit && (
-                                <div className="projects-plate projects-plate-card projects-plate-commit">
-                                    <span
-                                        className="projects-commit-time"
-                                        title={new Date(git.lastCommit.timestamp * 1000).toLocaleString()}
-                                    >
-                                        {formatRelativeTime(git.lastCommit.timestamp)}
-                                    </span>
-                                    {git.lastCommit.authorName && (
-                                        <span className="projects-commit-author">by {git.lastCommit.authorName}</span>
-                                    )}
-                                </div>
-                            )}
+                                    </div>
+                                )}
+                            </div>
                         </div>
 
                         {isEmpty && <div className="projects-empty-project">Nothing open</div>}

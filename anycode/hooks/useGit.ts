@@ -10,6 +10,8 @@ interface ProjectGitUiState {
     isSwitchingBranch: boolean;
     pushStatus: { state: GitActionState; message?: string };
     lastCommit?: GitLastCommit | null;
+    /** Commits per day for the last COMMIT_ACTIVITY_DAYS days, oldest first, today last. */
+    commitActivity?: number[] | null;
 }
 
 export type GitLastCommit = {
@@ -152,6 +154,24 @@ const mergeProjectGitFiles = (previous: ChangedFile[], update: GitStatusUpdate):
     return sortChangedFiles(Array.from(next.values()));
 };
 
+const COMMIT_ACTIVITY_DAYS = 14;
+const COMMIT_ACTIVITY_SAMPLE = 100;
+const MS_PER_DAY = 86_400_000;
+
+// Buckets commit timestamps (unix seconds) by local calendar day. Commits older than the window are ignored.
+const buildCommitActivity = (timestamps: number[], now = new Date()): number[] => {
+    const counts = new Array<number>(COMMIT_ACTIVITY_DAYS).fill(0);
+    const today = new Date(now);
+    today.setHours(0, 0, 0, 0);
+    for (const timestamp of timestamps) {
+        const day = new Date(timestamp * 1000);
+        day.setHours(0, 0, 0, 0);
+        const daysAgo = Math.round((today.getTime() - day.getTime()) / MS_PER_DAY);
+        if (daysAgo >= 0 && daysAgo < COMMIT_ACTIVITY_DAYS) counts[COMMIT_ACTIVITY_DAYS - 1 - daysAgo] += 1;
+    }
+    return counts;
+};
+
 export const useGit = ({ wsRef, isConnected, projectId }: UseGitParams) => {
     const activeProjectIdRef = useRef(projectId);
     activeProjectIdRef.current = projectId;
@@ -176,6 +196,8 @@ export const useGit = ({ wsRef, isConnected, projectId }: UseGitParams) => {
                 branches: previous[targetProjectId]?.branches ?? [],
                 isSwitchingBranch: previous[targetProjectId]?.isSwitchingBranch ?? false,
                 pushStatus: previous[targetProjectId]?.pushStatus ?? { state: GitActionState.Idle },
+                lastCommit: previous[targetProjectId]?.lastCommit ?? null,
+                commitActivity: previous[targetProjectId]?.commitActivity ?? null,
                 ...update,
             },
         }));
@@ -481,14 +503,17 @@ export const useGit = ({ wsRef, isConnected, projectId }: UseGitParams) => {
         })
     ), [isConnected, wsRef, projectId]);
 
-    // Time and author of the HEAD commit come from the history list (a single commit), not from git status.
-    const fetchLastCommit = useCallback((targetProjectId: string | undefined) => {
+    // One recent-history request feeds two things: HEAD commit (time and author, first entry)
+    // and the per-day commit activity for the project card.
+    const fetchCommitSummary = useCallback((targetProjectId: string | undefined) => {
         if (!targetProjectId || !wsRef.current || !isConnected) return;
-        wsRef.current.emit('git:history', { offset: 0, limit: 1, project_id: targetProjectId }, (response: any) => {
+        wsRef.current.emit('git:history', { offset: 0, limit: COMMIT_ACTIVITY_SAMPLE, project_id: targetProjectId }, (response: any) => {
             if (!response?.success || removedProjectIdsRef.current.has(targetProjectId)) return;
-            const commit = response.commits?.[0];
+            const commits: { timestamp: number; author_name?: string }[] = response.commits ?? [];
+            const head = commits[0];
             updateProjectGitUi(targetProjectId, {
-                lastCommit: commit ? { timestamp: commit.timestamp, authorName: commit.author_name ?? '' } : null,
+                lastCommit: head ? { timestamp: head.timestamp, authorName: head.author_name ?? '' } : null,
+                commitActivity: buildCommitActivity(commits.map((commit) => commit.timestamp)),
             });
         });
     }, [wsRef, isConnected, updateProjectGitUi]);
@@ -519,7 +544,7 @@ export const useGit = ({ wsRef, isConnected, projectId }: UseGitParams) => {
                         gitAvailable: true,
                         branch: response.branch || '',
                     });
-                    fetchLastCommit(responseProjectId);
+                    fetchCommitSummary(responseProjectId);
                 }
                 if (
                     activeProjectIdRef.current === requestedActiveProjectId
@@ -538,6 +563,7 @@ export const useGit = ({ wsRef, isConnected, projectId }: UseGitParams) => {
                         branch: '',
                         branches: [],
                         lastCommit: null,
+                        commitActivity: null,
                     });
                 }
                 if (
@@ -550,7 +576,7 @@ export const useGit = ({ wsRef, isConnected, projectId }: UseGitParams) => {
                 }
             }
         });
-    }, [wsRef, isConnected, projectId, updateProjectGitUi, fetchLastCommit]);
+    }, [wsRef, isConnected, projectId, updateProjectGitUi, fetchCommitSummary]);
 
     const fetchOriginalFileContent = useCallback((path: string, targetProjectId = projectId): Promise<string | null> => (
         new Promise((resolve) => {
@@ -693,11 +719,11 @@ export const useGit = ({ wsRef, isConnected, projectId }: UseGitParams) => {
         });
 
         const statusProjectId = data.project_id ?? activeProjectId;
-        fetchLastCommit(statusProjectId ?? undefined);
+        fetchCommitSummary(statusProjectId ?? undefined);
         if (headChanged && statusProjectId === historyProjectIdRef.current) {
             refreshHistory(statusProjectId);
         }
-    }, [projectId, refreshHistory, updateProjectGitUi, fetchLastCommit]);
+    }, [projectId, refreshHistory, updateProjectGitUi, fetchCommitSummary]);
 
     const commit = useCallback((message: string, targetProjectId = projectId): Promise<boolean> => {
         return new Promise((resolve) => {

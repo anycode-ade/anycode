@@ -73,6 +73,74 @@
     height: 14px;
 }
 
+/* Project card: name, branch and last commit stacked in one plate.
+   --project-state tints the card: green when the working tree is clean, amber when it has changes. */
+.projects-plate-project {
+    --project-state: var(--theme-git-added, #79c97d);
+    flex: 0 1 auto;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    column-gap: 16px;
+    row-gap: 4px;
+    align-items: center;
+    height: auto;
+    padding: 10px 14px 10px 16px;
+    border-radius: 12px;
+    border-left: 4px solid var(--project-state);
+    background:
+        linear-gradient(90deg, color-mix(in srgb, var(--project-state) 14%, transparent), transparent 75%),
+        var(--theme-card-background, rgba(255, 255, 255, 0.06));
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    transition: box-shadow 150ms ease;
+}
+
+/* Two lines: name with the commit on the right, branch underneath. */
+.projects-plate-project > :first-child {
+    grid-column: 1;
+    grid-row: 1;
+}
+
+.projects-plate-project > .projects-project-row:not(.projects-project-commit):not(:first-child) {
+    grid-column: 1;
+    grid-row: 2;
+}
+
+.projects-plate-project > .projects-project-commit {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    justify-self: end;
+}
+
+.projects-plate-project[data-dirty='true'] {
+    --project-state: var(--theme-git-modified, #e5b567);
+}
+
+.projects-plate-project:hover {
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.projects-plate-project .projects-project-name {
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+}
+
+.projects-plate-project .projects-project-icon {
+    color: var(--project-state);
+}
+
+.projects-project-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+}
+
+.projects-project-commit {
+    font-size: 11px;
+    font-weight: 400;
+}
+
 .projects-plate-stats {
     flex: 0 0 auto;
     gap: 6px;
@@ -145,6 +213,22 @@
     opacity: 0.6;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+.projects-commit-avatar {
+    flex: 0 0 auto;
+    display: inline-grid;
+    place-items: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.25);
+    color: #fff;
+    font-family: var(--interface-font-family);
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1;
+    text-shadow: 0 1px 1px rgba(0, 0, 0, 0.3);
 }
 
 .projects-stat-added {
