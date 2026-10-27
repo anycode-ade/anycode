@@ -96,6 +96,10 @@ export function AgentChat() {
 
 ---
 
+## 🧪 Example App
+
+A runnable demo with a static transcript and a live mock session lives in [`example/`](./example). Run it with `cd example && npm install && npm run dev`.
+
 ## 🧩 Slot Architecture (Component Inversion of Control)
 
 Every major sub-view in `anycode-agent` can be replaced using the `components` prop on `<AgentSession />`. If omitted, lightweight default fallbacks are used automatically.
