@@ -169,7 +169,7 @@ describe('computeGitChanges', () => {
         expect(duration).toBeLessThan(200);
     });
 
-    it('should compute diff with dirtyRange on 1,000,000 lines in less than 5ms', () => {
+    it('should compute a single-line change on 1,000,000 lines in less than 100ms', () => {
         const lineContent = 'const x = 1;';
         const modifiedContent = 'const x = 2;';
         const origSource = {
@@ -184,12 +184,29 @@ describe('computeGitChanges', () => {
         };
 
         const start = performance.now();
-        const result = computeGitChangesFromSource(origSource, currSource, { start: 500000, end: 500000 });
+        const result = computeGitChangesFromSource(origSource, currSource);
         const duration = performance.now() - start;
 
         expect(result.diffs.size).toBe(1);
         expect(result.diffs.get(500001)?.changeType).toBe('modified');
-        expect(duration).toBeLessThan(25);
+        expect(duration).toBeLessThan(100);
+    });
+
+    it('marks only the real change when lines were inserted above it', () => {
+        // Regression: a stale dirty range made unchanged lines show as added.
+        const original = ['a', 'b', 'c', 'd', 'e', 'f'];
+        const current = ['new1', 'new2', 'a', 'b', 'c', 'd', 'E', 'f'];
+        const result = computeGitChangesFromSource(
+            { linesLength: () => original.length, lineLength: (i) => original[i].length, line: (i) => original[i] },
+            { linesLength: () => current.length, lineLength: (i) => current[i].length, line: (i) => current[i] },
+        );
+
+        expect(result.added).toBe(3);
+        expect(result.removed).toBe(1);
+        expect(result.diffs.getHunks().map(h => [h.changeType, h.startLine, h.lineCount])).toEqual([
+            ['added', 1, 2],
+            ['modified', 7, 1],
+        ]);
     });
 
     it('should compute diff from empty original source on 1,000,000 lines in less than 2ms and have 1 hunk', () => {

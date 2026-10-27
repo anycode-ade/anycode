@@ -9,6 +9,8 @@ type TerminalPanelProps = {
     focusRequestToken: number | null;
     isConnected: boolean;
     terminals: TerminalState[];
+    terminalLastCommands: Record<string, string>;
+    terminalTitles: Record<string, string>;
     projects: WorkspaceProject[];
     activeProjectId: string | null;
     onCreateTerminal: (projectId: string) => void;
@@ -20,6 +22,7 @@ type TerminalPanelProps = {
     onTerminalData: (name: string, session: string, data: string) => void;
     onTerminalMessage: (name: string, session: string, callback: (data: string) => void) => () => void;
     onTerminalResize: (name: string, session: string, cols: number, rows: number) => void;
+    onTerminalTitle: (name: string, session: string, title: string) => void;
     onIsTerminalClosing: (name: string, session: string) => boolean;
     onUploadFile: (file: File) => Promise<string | null>;
     fontConfig: FontConfig;
@@ -30,6 +33,8 @@ export const TerminalPanel = ({
     focusRequestToken,
     isConnected,
     terminals,
+    terminalLastCommands,
+    terminalTitles,
     projects,
     activeProjectId,
     onCreateTerminal,
@@ -37,6 +42,7 @@ export const TerminalPanel = ({
     onTerminalData,
     onTerminalMessage,
     onTerminalResize,
+    onTerminalTitle,
     onIsTerminalClosing,
     onUploadFile,
     fontConfig,
@@ -47,6 +53,8 @@ export const TerminalPanel = ({
             <div className="terminal-panel terminal-panel-empty">
                 <TerminalEmptyPane
                     terminals={terminals}
+                    terminalLastCommands={terminalLastCommands}
+                    terminalTitles={terminalTitles}
                     onSelectTerminal={(terminalId) => terminalPanes.setSelectedForPane(panelKey, terminalId)}
                     onCloseTerminal={terminalPanes.closeTab}
                     onCreateTerminal={onCreateTerminal}
@@ -63,6 +71,8 @@ export const TerminalPanel = ({
             <div className="terminal-panel terminal-panel-empty">
                 <TerminalEmptyPane
                     terminals={terminals}
+                    terminalLastCommands={terminalLastCommands}
+                    terminalTitles={terminalTitles}
                     onSelectTerminal={(terminalId) => terminalPanes.setSelectedForPane(panelKey, terminalId)}
                     onCloseTerminal={terminalPanes.closeTab}
                     onCreateTerminal={onCreateTerminal}
@@ -85,6 +95,7 @@ export const TerminalPanel = ({
                         onData={onTerminalData}
                         onMessage={onTerminalMessage}
                         onResize={onTerminalResize}
+                        onTitle={onTerminalTitle}
                         isConnected={isConnected}
                         isTerminalClosing={onIsTerminalClosing}
                         onUploadFile={onUploadFile}

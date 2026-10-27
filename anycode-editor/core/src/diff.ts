@@ -363,7 +363,6 @@ function getEffectiveSourceLength(source: LineSource): number {
 export function computeGitChangesFromSource(
     original: LineSource,
     current: LineSource,
-    dirtyRange?: { start: number; end: number } | null
 ): GitChangesResult {
     const origLen = getEffectiveSourceLength(original);
     const currLen = getEffectiveSourceLength(current);
@@ -398,33 +397,24 @@ export function computeGitChangesFromSource(
         return { diffs: new DiffModel([hunk], 0, origLen), added: 0, removed: origLen };
     }
 
-    // Find common prefix (using dirtyRange if available)
+    // Trim the common prefix and suffix. Always scan the content: any range
+    // tracked during editing can drift out of sync with the current lines.
     let prefix = 0;
-    if (dirtyRange && dirtyRange.start > 0) {
-        prefix = Math.max(0, Math.min(origLen, currLen, dirtyRange.start));
-    } else {
-        while (prefix < origLen && prefix < currLen) {
-            if (original.lineLength(prefix) !== current.lineLength(prefix) || original.line(prefix) !== current.line(prefix)) {
-                break;
-            }
-            prefix++;
+    while (prefix < origLen && prefix < currLen) {
+        if (original.lineLength(prefix) !== current.lineLength(prefix) || original.line(prefix) !== current.line(prefix)) {
+            break;
         }
+        prefix++;
     }
 
-    // Find common suffix (using dirtyRange if available)
     let suffix = 0;
-    if (dirtyRange && dirtyRange.end >= 0) {
-        const maxUnchangedSuffix = Math.max(0, currLen - 1 - dirtyRange.end);
-        suffix = Math.max(0, Math.min(origLen - prefix, currLen - prefix, maxUnchangedSuffix));
-    } else {
-        while (suffix < (origLen - prefix) && suffix < (currLen - prefix)) {
-            const oIdx = origLen - 1 - suffix;
-            const cIdx = currLen - 1 - suffix;
-            if (original.lineLength(oIdx) !== current.lineLength(cIdx) || original.line(oIdx) !== current.line(cIdx)) {
-                break;
-            }
-            suffix++;
+    while (suffix < (origLen - prefix) && suffix < (currLen - prefix)) {
+        const oIdx = origLen - 1 - suffix;
+        const cIdx = currLen - 1 - suffix;
+        if (original.lineLength(oIdx) !== current.lineLength(cIdx) || original.line(oIdx) !== current.line(cIdx)) {
+            break;
         }
+        suffix++;
     }
 
     if (prefix === origLen && prefix === currLen) {

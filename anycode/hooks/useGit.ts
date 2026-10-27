@@ -9,7 +9,13 @@ interface ProjectGitUiState {
     branches: GitBranch[];
     isSwitchingBranch: boolean;
     pushStatus: { state: GitActionState; message?: string };
+    lastCommit?: GitLastCommit | null;
 }
+
+export type GitLastCommit = {
+    timestamp: number;
+    authorName: string;
+};
 
 type UseGitParams = {
     wsRef: React.RefObject<Socket | null>;
@@ -475,6 +481,18 @@ export const useGit = ({ wsRef, isConnected, projectId }: UseGitParams) => {
         })
     ), [isConnected, wsRef, projectId]);
 
+    // Time and author of the HEAD commit come from the history list (a single commit), not from git status.
+    const fetchLastCommit = useCallback((targetProjectId: string | undefined) => {
+        if (!targetProjectId || !wsRef.current || !isConnected) return;
+        wsRef.current.emit('git:history', { offset: 0, limit: 1, project_id: targetProjectId }, (response: any) => {
+            if (!response?.success || removedProjectIdsRef.current.has(targetProjectId)) return;
+            const commit = response.commits?.[0];
+            updateProjectGitUi(targetProjectId, {
+                lastCommit: commit ? { timestamp: commit.timestamp, authorName: commit.author_name ?? '' } : null,
+            });
+        });
+    }, [wsRef, isConnected, updateProjectGitUi]);
+
     const fetchGitStatus = useCallback((targetProjectId = projectId) => {
         if (!wsRef.current || !isConnected) return;
         if (targetProjectId && removedProjectIdsRef.current.has(targetProjectId)) return;
@@ -501,6 +519,7 @@ export const useGit = ({ wsRef, isConnected, projectId }: UseGitParams) => {
                         gitAvailable: true,
                         branch: response.branch || '',
                     });
+                    fetchLastCommit(responseProjectId);
                 }
                 if (
                     activeProjectIdRef.current === requestedActiveProjectId
@@ -518,6 +537,7 @@ export const useGit = ({ wsRef, isConnected, projectId }: UseGitParams) => {
                         gitAvailable: false,
                         branch: '',
                         branches: [],
+                        lastCommit: null,
                     });
                 }
                 if (
@@ -530,7 +550,7 @@ export const useGit = ({ wsRef, isConnected, projectId }: UseGitParams) => {
                 }
             }
         });
-    }, [wsRef, isConnected, projectId, updateProjectGitUi]);
+    }, [wsRef, isConnected, projectId, updateProjectGitUi, fetchLastCommit]);
 
     const fetchOriginalFileContent = useCallback((path: string, targetProjectId = projectId): Promise<string | null> => (
         new Promise((resolve) => {
@@ -673,10 +693,11 @@ export const useGit = ({ wsRef, isConnected, projectId }: UseGitParams) => {
         });
 
         const statusProjectId = data.project_id ?? activeProjectId;
+        fetchLastCommit(statusProjectId ?? undefined);
         if (headChanged && statusProjectId === historyProjectIdRef.current) {
             refreshHistory(statusProjectId);
         }
-    }, [projectId, refreshHistory, updateProjectGitUi]);
+    }, [projectId, refreshHistory, updateProjectGitUi, fetchLastCommit]);
 
     const commit = useCallback((message: string, targetProjectId = projectId): Promise<boolean> => {
         return new Promise((resolve) => {

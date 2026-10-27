@@ -7,6 +7,8 @@ import { useEffect, useState } from 'react';
 
 interface TerminalEmptyPaneProps {
   terminals: Terminal[];
+  terminalLastCommands: Record<string, string>;
+  terminalTitles: Record<string, string>;
   onSelectTerminal: (terminalId: string) => void;
   onCloseTerminal: (terminalId: string) => void;
   onCreateTerminal: (projectId: string) => void;
@@ -16,6 +18,8 @@ interface TerminalEmptyPaneProps {
 
 export const TerminalEmptyPane: React.FC<TerminalEmptyPaneProps> = ({
   terminals,
+  terminalLastCommands,
+  terminalTitles,
   onSelectTerminal,
   onCloseTerminal,
   onCreateTerminal,
@@ -68,6 +72,16 @@ export const TerminalEmptyPane: React.FC<TerminalEmptyPaneProps> = ({
                         </button>
                       </div>
                     </div>
+                    {terminalTitles[terminal.id] && (
+                      <span className="terminal-pane-opened-title" title={terminalTitles[terminal.id]}>
+                        {terminalTitles[terminal.id]}
+                      </span>
+                    )}
+                    {terminalLastCommands[terminal.id] && (
+                      <span className="terminal-pane-opened-command" title={terminalLastCommands[terminal.id]}>
+                        {terminalLastCommands[terminal.id]}
+                      </span>
+                    )}
                     <button
                       className="terminal-pane-opened-project"
                       onClick={() => onSelectTerminal(terminal.id)}

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Socket } from 'socket.io-client';
 import type { Terminal } from '../types';
 import { loadTerminals } from '../storage';
+import { applyTerminalInput } from '../terminalInput';
 
 type UseTerminalsParams = {
     wsRef: React.RefObject<Socket | null>;
@@ -26,6 +27,11 @@ export const useTerminals = ({ wsRef, isConnected }: UseTerminalsParams) => {
     const lastResizeSentRef = useRef<Map<string, { cols: number; rows: number }>>(new Map());
     const resizeThrottleMsRef = useRef<number>(TERMINAL_DELAY_MS);
     const closingTerminalsRef = useRef<Set<string>>(new Set());
+    // Line being typed per terminal id, and the last submitted command per terminal id.
+    const inputLinesRef = useRef<Map<string, string>>(new Map());
+    const [lastCommands, setLastCommands] = useState<Record<string, string>>({});
+    // Latest OSC 0/2 window title per terminal id, reported by wterm's onTitle.
+    const [titles, setTitles] = useState<Record<string, string>>({});
 
     const clearResizeState = useCallback((name?: string, session?: string) => {
         if (!name || !session) {
@@ -123,7 +129,21 @@ export const useTerminals = ({ wsRef, isConnected }: UseTerminalsParams) => {
             session: terminal.session,
             input: data,
         });
+
+        const input = applyTerminalInput(inputLinesRef.current.get(terminal.id) ?? '', data);
+        inputLinesRef.current.set(terminal.id, input.line);
+        if (input.commands.length > 0) {
+            const command = input.commands[input.commands.length - 1];
+            setLastCommands((prev) => ({ ...prev, [terminal.id]: command }));
+        }
     }, [terminals, wsRef, isConnected]);
+
+    const handleTerminalTitle = useCallback((name: string, session: string, title: string) => {
+        const terminal = terminals.find((t) => t.name === name && t.session === session);
+        if (!terminal) return;
+        // wterm reports the title on every output flush, so skip unchanged values.
+        setTitles((prev) => (prev[terminal.id] === title ? prev : { ...prev, [terminal.id]: title }));
+    }, [terminals]);
 
     const handleTerminalResize = useCallback((name: string, session: string, cols: number, rows: number) => {
         const terminal = terminals.find((t) => t.name === name && t.session === session);
@@ -165,6 +185,20 @@ export const useTerminals = ({ wsRef, isConnected }: UseTerminalsParams) => {
         terminalCounterRef.current = nextId;
 
         const id = String(nextId);
+        // Ids are reused after a terminal closes, so drop any input state left under this id.
+        inputLinesRef.current.delete(id);
+        setLastCommands((prev) => {
+            if (!(id in prev)) return prev;
+            const next = { ...prev };
+            delete next[id];
+            return next;
+        });
+        setTitles((prev) => {
+            if (!(id in prev)) return prev;
+            const next = { ...prev };
+            delete next[id];
+            return next;
+        });
         const newTerminal: Terminal = {
             id,
             name: id,
@@ -292,6 +326,9 @@ export const useTerminals = ({ wsRef, isConnected }: UseTerminalsParams) => {
 
     return {
         terminals,
+        lastCommands,
+        terminalTitles: titles,
+        handleTerminalTitle,
         handleTerminalData,
         handleTerminalResize,
         handleTerminalDataCallback,

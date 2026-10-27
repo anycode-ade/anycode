@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import 'dockview-react/dist/styles/dockview.css';
-import { ChangesPanel, HistoryPanel, type ChangedFile, SettingsPanel, DynamicBackground } from './components';
+import { ChangesPanel, HistoryPanel, ProjectsPanel, type ChangedFile, type ProjectGitSummary, SettingsPanel, DynamicBackground } from './components';
 import Search from './components/Search';
 import { Layout, type LayoutActions, type PanelId } from './components/layout/Layout';
 import { Toolbar } from './components/toolbar/Toolbar';
@@ -35,7 +35,7 @@ import { TerminalPanel } from './features/terminal/TerminalPanel';
 import { AgentPanel } from './features/agents/AgentPanel';
 import { BrowserPanel } from './features/browser/BrowserPanel';
 import { type DiffMode } from './types/diffMode';
-import { announceWarp, getLanguageFromFileName, normalizePath, uriToFilePath } from './utils';
+import { announceWarp, getLanguageFromFileName, normalizePath, pathBelongsToProject, uriToFilePath } from './utils';
 import { useSettings } from './hooks/useSettings';
 import { isTauri, warpCssVars, warpSwapMs } from './constants';
 import { WelcomeScreen } from './components/WelcomeScreen';
@@ -60,14 +60,6 @@ const toMultibufferFiles = (files: ChangedFile[]): MultibufferFile[] => files.ma
     removed: file.removed,
     status: file.status,
 }));
-
-const pathBelongsToProject = (path: string, root: string) => {
-    const normalizedPath = normalizePath(path);
-    const normalizedRoot = normalizePath(root).replace(/\/+$/, '');
-    // A relative root ('.') is the VFS root, so every relative path belongs to it.
-    if (normalizedRoot === '.') return !/^([A-Za-z]:)?\//.test(normalizedPath);
-    return normalizedPath === normalizedRoot || normalizedPath.startsWith(`${normalizedRoot}/`);
-};
 
 type ReviewSession = {
     projectId: string;
@@ -724,6 +716,21 @@ const App: React.FC<AppProps> = ({ initialWorkspace }) => {
             };
         }))
     ), [workspaceState.projects, git.changedFilesByProject]);
+    const projectGitSummaries = useMemo<Record<string, ProjectGitSummary>>(() => Object.fromEntries(
+        workspaceState.projects.map((project): [string, ProjectGitSummary] => {
+            const ui = git.gitUiByProject[project.id];
+            const changes = git.changedFilesByProject[project.id] ?? [];
+            return [project.id, {
+                branch: ui?.branch ?? '',
+                branches: ui?.branches ?? [],
+                isSwitchingBranch: ui?.isSwitchingBranch ?? false,
+                changedFiles: changes,
+                added: changes.reduce((sum, file) => sum + (file.added ?? 0), 0),
+                removed: changes.reduce((sum, file) => sum + (file.removed ?? 0), 0),
+                lastCommit: ui?.lastCommit ?? null,
+            }];
+        }),
+    ), [workspaceState.projects, git.gitUiByProject, git.changedFilesByProject]);
     const selectedChangesProjectId = workspaceState.projects.some(
         (project) => project.id === changesProjectId,
     )
@@ -758,8 +765,9 @@ const App: React.FC<AppProps> = ({ initialWorkspace }) => {
         git.fetchBranches(projectId);
     }, [git.fetchGitStatus, git.fetchBranches]);
 
-    const handleOpenMultibuffer = useEvent(() => {
-        if (!selectedChangesProjectId || selectedChangesProjectFiles.length === 0) return;
+    const openProjectReview = useEvent((projectId: string) => {
+        const changedFiles = workspaceChangedFiles.filter((file) => file.project_id === projectId);
+        if (changedFiles.length === 0) return;
 
         const paneId = layoutActionsRef.current?.ensureEditorPanel(editors.activeEditorPaneId);
         if (!paneId) return;
@@ -767,11 +775,11 @@ const App: React.FC<AppProps> = ({ initialWorkspace }) => {
         closeReview(paneId);
         editors.setActiveEditorPaneId(paneId);
         editors.setEditorDiffMode(paneId, 'diff');
-        const files = toMultibufferFiles(selectedChangesProjectFiles);
+        const files = toMultibufferFiles(changedFiles);
         setMultibufferReviews((previous) => ({
             ...previous,
             [paneId]: {
-                projectId: selectedChangesProjectId,
+                projectId,
                 files,
                 title: 'Review changes',
                 ignoreEdits: false,
@@ -783,6 +791,10 @@ const App: React.FC<AppProps> = ({ initialWorkspace }) => {
                     .map((file) => file.id),
             },
         }));
+    });
+
+    const handleOpenMultibuffer = useEvent(() => {
+        if (selectedChangesProjectId) openProjectReview(selectedChangesProjectId);
     });
 
     useEffect(() => {
@@ -900,6 +912,10 @@ const App: React.FC<AppProps> = ({ initialWorkspace }) => {
         handleOpenFile(filePath, match.line, match.column, undefined, selection);
     };
 
+    const handleProjectBranchChange = useEvent((projectId: string, branch: string) => {
+        void git.checkoutBranch(branch, projectId);
+    });
+
     const handleOpenFileDiff = useEvent((
         path: string, line?: number, column?: number,
     ) => {
@@ -910,7 +926,6 @@ const App: React.FC<AppProps> = ({ initialWorkspace }) => {
         handleOpenFile(path, line, column, mode);
     });
 
-    // Agent links may point at folders or files: reveal them in the file tree, then open files in the editor.
     const openAgentFileLink = useEvent((path: string, open: () => void) => {
         void fileTree.revealPath(path).then((isFolder) => {
             if (!isFolder) open();
@@ -1285,6 +1300,28 @@ const App: React.FC<AppProps> = ({ initialWorkspace }) => {
                     />
                 );
             }
+            case 'projects':
+                return (
+                    <ProjectsPanel
+                        projects={workspaceState.projects}
+                        gitByProjectId={projectGitSummaries}
+                        terminals={terminals.terminals}
+                        terminalLastCommands={terminals.lastCommands}
+                        terminalTitles={terminals.terminalTitles}
+                        agentSessions={sessionsArray}
+                        availableAgents={availableAgents}
+                        activeChangedFile={activeChangedFile}
+                        activeTerminalId={activeTerminalId}
+                        activeAgentId={activeToolbarAgentId}
+                        fileIconsStyle={fileIconsStyle}
+                        onOpenChangedFile={handleOpenFileDiff}
+                        onOpenReview={openProjectReview}
+                        onSelectTerminal={handleTerminalTabSelect}
+                        onSelectAgent={agentPanes.selectFromToolbar}
+                        onCloseAgent={agents.closeAgent}
+                        onBranchChange={handleProjectBranchChange}
+                    />
+                );
             case 'history':
                 return (
                     <HistoryPanel
@@ -1348,6 +1385,8 @@ const App: React.FC<AppProps> = ({ initialWorkspace }) => {
                         focusRequestToken={layout.getFocusRequestToken('terminal', panelKey)}
                         isConnected={isConnected}
                         terminals={terminals.terminals}
+                        terminalLastCommands={terminals.lastCommands}
+                        terminalTitles={terminals.terminalTitles}
                         projects={workspaceState.projects}
                         activeProjectId={activeProjectId}
                         onCreateTerminal={(projectId) => (
@@ -1357,6 +1396,7 @@ const App: React.FC<AppProps> = ({ initialWorkspace }) => {
                         onTerminalData={terminals.handleTerminalData}
                         onTerminalMessage={terminals.handleTerminalDataCallback}
                         onTerminalResize={terminals.handleTerminalResize}
+                        onTerminalTitle={terminals.handleTerminalTitle}
                         onIsTerminalClosing={terminals.isTerminalClosing}
                         onUploadFile={terminals.uploadFile}
                         fontConfig={settings.fontSettings.terminal}

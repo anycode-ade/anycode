@@ -248,7 +248,7 @@ export const Split: React.FC<SplitProps> = ({ direction, panes, className }) => 
     );
 };
 
-export type PanelId = 'files' | 'search' | 'changes' | 'history' | 'editor' | 'agent' | 'terminal' | 'browser' | 'toolbar' | 'settings';
+export type PanelId = 'files' | 'search' | 'changes' | 'history' | 'projects' | 'editor' | 'agent' | 'terminal' | 'browser' | 'toolbar' | 'settings';
 
 type PanelParams = {
     panelKey: string;
@@ -386,6 +386,14 @@ const panelDefinitions = [
         ],
     },
     {
+        id: 'projects',
+        title: 'Projects',
+        pickerVisible: true,
+        defaultPlacements: [
+            { direction: 'within', referenceIds: ['files', 'search', 'changes', 'history'] },
+        ],
+    },
+    {
         id: 'editor',
         title: 'Editor',
         pickerVisible: true,
@@ -443,12 +451,13 @@ const getLayoutPanelTitle = (panelId: LayoutPanelId): string => (
     panelId === 'picker' ? 'Empty' : panelTitles[panelId]
 );
 
-const panelSyncOrder: PanelId[] = ['files', 'editor', 'agent', 'search', 'changes', 'history', 'terminal', 'browser', 'settings'];
+const panelSyncOrder: PanelId[] = ['files', 'editor', 'agent', 'search', 'changes', 'history', 'projects', 'terminal', 'browser', 'settings'];
 const loadPanelVisibility = (): PanelVisibility => ({
     files: (loadItem<number>(LAYOUT_VERSION_STORAGE_KEY) ?? 0) < CURRENT_LAYOUT_VERSION ? true : loadFilesPanelVisible(),
     search: (loadItem<number>(LAYOUT_VERSION_STORAGE_KEY) ?? 0) < CURRENT_LAYOUT_VERSION ? true : (loadItem<boolean>('searchPanelVisible') ?? false),
     changes: (loadItem<number>(LAYOUT_VERSION_STORAGE_KEY) ?? 0) < CURRENT_LAYOUT_VERSION ? true : (loadItem<boolean>('changesPanelVisible') ?? false),
     history: (loadItem<boolean>('historyPanelVisible') ?? true),
+    projects: (loadItem<boolean>('projectsPanelVisible') ?? false),
     editor: (loadItem<number>(LAYOUT_VERSION_STORAGE_KEY) ?? 0) < CURRENT_LAYOUT_VERSION ? true : loadEditorPanelVisible(),
     agent: (loadItem<number>(LAYOUT_VERSION_STORAGE_KEY) ?? 0) < CURRENT_LAYOUT_VERSION ? true : loadAgentPanelVisible(),
     terminal: loadTerminalPanelVisible(),
@@ -530,6 +539,7 @@ const pickerIconMap: Record<PanelId, React.ComponentType | undefined> = {
     search: Icons.Search,
     changes: Icons.Git,
     history: Icons.Git,
+    projects: Icons.Folder,
     editor: Icons.Editor,
     agent: Icons.Agent,
     terminal: Icons.Terminal,
@@ -896,6 +906,7 @@ export const Layout: React.FC<LayoutProps> = ({
         saveItem('searchPanelVisible', visibility.search);
         saveItem('changesPanelVisible', visibility.changes);
         saveItem('historyPanelVisible', visibility.history);
+        saveItem('projectsPanelVisible', visibility.projects);
         saveItem('editorPanelVisible', visibility.editor);
         saveItem('agentPanelVisible', visibility.agent);
         saveItem('terminalPanelVisible', visibility.terminal);

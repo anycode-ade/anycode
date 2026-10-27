@@ -1,0 +1,429 @@
+.projects-panel {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-width: 0;
+    color: var(--theme-foreground, var(--foreground-color, #e0e0e0));
+    font-family: var(--interface-font-family);
+    font-size: var(--interface-font-size, 14px);
+    font-weight: var(--interface-font-weight, 700);
+    contain: strict;
+    isolation: isolate;
+}
+
+.projects-list {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 0px 8px;
+}
+
+.projects-empty,
+.projects-empty-project {
+    padding: 8px 6px;
+    color: var(--theme-tab-foreground, #888);
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.projects-project {
+    padding: 10px 0 18px;
+    border-bottom: 1px solid var(--theme-border, rgba(128, 128, 128, 0.2));
+}
+
+.projects-project:last-child {
+    border-bottom: none;
+}
+
+/* Header: name, branch and stats are three separate plates; they wrap under each other when they don't fit. */
+.projects-project-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    margin-bottom: 8px;
+    padding: 0 6px;
+}
+
+.projects-plate {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
+    padding: 4px 10px;
+    border-radius: 8px;
+}
+
+.projects-plate-card {
+    flex: 0 1 auto;
+    height: 28px;
+    padding: 0 10px;
+    background: var(--theme-card-background, rgba(255, 255, 255, 0.06));
+    border: 0;
+    color: inherit;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.projects-plate-card .projects-project-icon svg {
+    width: 14px;
+    height: 14px;
+}
+
+.projects-plate-stats {
+    flex: 0 0 auto;
+    gap: 6px;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: inherit;
+    cursor: pointer;
+}
+
+.projects-plate-stats:hover {
+    text-decoration: underline;
+}
+
+.projects-project-icon {
+    display: inline-flex;
+    flex: 0 0 auto;
+    color: var(--theme-tab-foreground, #888);
+}
+
+.projects-project-name {
+    min-width: 0;
+    overflow: hidden;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.projects-branch-select {
+    min-width: 0;
+    flex: 0 1 auto;
+    field-sizing: content;
+    padding: 0 2px;
+    background-color: transparent;
+    color: inherit;
+    border: none;
+    border-radius: 4px;
+    font-family: inherit;
+    font-size: inherit;
+    font-weight: inherit;
+    outline: none;
+    cursor: pointer;
+    text-overflow: ellipsis;
+}
+
+.projects-branch-select:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
+}
+
+.projects-plate-commit {
+    gap: 6px;
+    font-size: 11px;
+    font-weight: 400;
+}
+
+.projects-commit-time {
+    flex: 0 0 auto;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    white-space: nowrap;
+}
+
+.projects-commit-author {
+    min-width: 0;
+    overflow: hidden;
+    opacity: 0.6;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.projects-stat-added {
+    color: var(--theme-git-added, #79c97d);
+}
+
+.projects-stat-removed {
+    color: var(--theme-git-removed, rgba(248, 65, 61, 1));
+}
+
+.projects-section {
+    margin-top: 6px;
+}
+
+.projects-section-title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 6px 4px;
+    color: var(--theme-tab-foreground, #888);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.projects-section-count {
+    font-variant-numeric: tabular-nums;
+}
+
+/* Card strip (Changes, Agents): rows of cards flowing into columns, scrolled horizontally.
+   The box has no fixed height: its content is the strip, and the scrollbar adds below it. */
+.projects-strip {
+    overflow-x: auto;
+    overflow-y: hidden;
+    /* Room for the horizontal scrollbar, which overlays the box on macOS and would otherwise cover the cards. */
+    padding-bottom: 10px;
+}
+
+.projects-strip-spacer {
+    position: relative;
+}
+
+/* Columns are absolutely positioned at their offset; only columns near the viewport are mounted. */
+.projects-strip-column {
+    position: absolute;
+    top: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.projects-strip-column > * {
+    flex: 0 0 auto;
+    height: var(--strip-card-height);
+}
+
+/* Compact tiles: one line per card (Changes, Terminals). Height matches FILE_CARD and TERMINAL_CARD in the TSX. */
+.projects-compact .projects-tile {
+    height: 28px;
+    padding: 4px 8px;
+    gap: 6px;
+}
+
+.projects-compact .projects-tile-body {
+    flex-direction: row;
+    align-items: center;
+    gap: 6px;
+}
+
+.projects-compact .projects-tile-title {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.projects-compact .projects-tile-subtitle {
+    flex: 0 0 auto;
+}
+
+.projects-tile {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    padding: 8px 10px;
+    background: var(--theme-card-background, rgba(255, 255, 255, 0.04));
+    border: 0;
+    border-radius: 10px;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.projects-tile:hover {
+    background: var(--theme-card-background-hover, rgba(255, 255, 255, 0.08));
+}
+
+.projects-tile.active {
+    background: color-mix(in srgb, var(--theme-accent-background, #458588) 22%, transparent);
+}
+
+/* Plates by section: file (Changes) and terminal. */
+.projects-tile-file {
+    background: var(--theme-card-background, rgba(255, 255, 255, 0.04));
+}
+
+/* Terminal card: the same look as the "Opened terminals" card in the terminal panel (TerminalEmptyPane.css). */
+.projects-terminal-card {
+    appearance: none;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 0;
+    width: 100%;
+    min-width: 0;
+    margin: 0;
+    padding: 4px 8px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    background: color-mix(
+        in srgb,
+        var(--theme-accent-background, #007acc) 10%,
+        var(--theme-tab-background, var(--theme-background, var(--background-color, #0a0a0a)))
+    );
+    color: var(--theme-accent-background, var(--theme-foreground, #7ec8ff));
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.projects-terminal-card:hover {
+    border-color: color-mix(in srgb, var(--theme-accent-background, #007acc) 50%, transparent);
+}
+
+.projects-terminal-card.active {
+    border-color: var(--theme-accent-background, #458588);
+}
+
+.projects-terminal-card-name {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    font-size: 0.95em;
+}
+
+.projects-terminal-card-name svg {
+    width: 14px;
+    height: 14px;
+    flex: 0 0 14px;
+    display: block;
+}
+
+.projects-terminal-card-name > span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.projects-terminal-card-title {
+    overflow: hidden;
+    color: color-mix(in srgb, var(--theme-foreground, #f0f0f0) 80%, transparent);
+    font-size: 0.85em;
+    font-weight: 400;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.projects-terminal-card-command {
+    overflow: hidden;
+    font-weight: 400;
+    color: var(--theme-muted-foreground, #8ea0ad);
+    font-family: var(--editor-font-family, ui-monospace, monospace);
+    font-size: 0.8em;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.projects-tile-icon {
+    display: inline-flex;
+    flex: 0 0 auto;
+    width: 16px;
+    height: 16px;
+}
+
+/*
+ * Agent cards are AcpOpenedAgentCard, shrunk for the panel. The wrapper marks the active agent
+ * with an inset ring.
+ */
+.projects-list .projects-agent > .acp-pane-opened-agent-item {
+    height: 100%;
+    padding: 5px 8px;
+    border-radius: 8px;
+    max-height: none;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.projects-list .projects-agent.active > .acp-pane-opened-agent-item {
+    box-shadow: inset 0 0 0 1px var(--theme-accent-background, #458588), 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.projects-list .projects-agent .acp-pane-opened-body {
+    gap: 8px;
+}
+
+.projects-list .projects-agent .acp-pane-opened-icon-box {
+    width: 24px;
+    height: 24px;
+}
+
+.projects-list .projects-agent .acp-pane-opened-header {
+    min-height: 16px;
+}
+
+.projects-list .projects-agent .acp-pane-opened-name {
+    font-size: 12px;
+    max-width: none;
+}
+
+.projects-list .projects-agent .acp-pane-opened-context-row {
+    margin-top: 1px;
+    font-size: 10px;
+}
+
+.projects-list .projects-agent .acp-pane-opened-info-row {
+    margin-top: 1px;
+    font-size: 10px;
+}
+
+.projects-list .projects-agent .acp-pane-opened-preview {
+    margin-top: 1px;
+    font-size: 10px;
+}
+
+.projects-tile-badge {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    background: rgba(128, 128, 128, 0.2);
+}
+
+.projects-tile-body {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.projects-tile-title {
+    overflow: hidden;
+    font-size: 12px;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.projects-tile-subtitle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--theme-tab-foreground, #888);
+    font-size: 11px;
+    font-weight: 500;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+

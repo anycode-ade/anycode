@@ -2195,7 +2195,7 @@ export class AnycodeEditor {
         this.lastDiffOriginalVersion = this.originalCode.getVersionId();
         this.lastDiffCurrentVersion = this.code.getVersionId();
 
-        this.diffs = computeGitChangesFromSource(this.originalCode, this.code, this.code.getDirtyRange()).diffs;
+        this.diffs = computeGitChangesFromSource(this.originalCode, this.code).diffs;
     }
 
 }

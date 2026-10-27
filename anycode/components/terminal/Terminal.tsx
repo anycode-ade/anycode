@@ -14,6 +14,7 @@ interface TerminalProps {
   onData: (name: string, session: string, data: string) => void;
   onMessage: (name: string, session: string, callback: (data: string) => void) => (() => void);
   onResize: (name: string, session: string, cols: number, rows: number) => void;
+  onTitle: (name: string, session: string, title: string) => void;
   isTerminalClosing: (name: string, session: string) => boolean;
   isConnected: boolean;
   onUploadFile: (file: File) => Promise<string | null>;
@@ -87,6 +88,7 @@ const Terminal: React.FC<TerminalProps> = ({
   onData,
   onMessage,
   onResize,
+  onTitle,
   isTerminalClosing,
   isConnected,
   onUploadFile,
@@ -109,6 +111,7 @@ const Terminal: React.FC<TerminalProps> = ({
   const wasContainerVisibleRef = useRef(false);
   const onDataRef = useRef(onData);
   const onResizeRef = useRef(onResize);
+  const onTitleRef = useRef(onTitle);
   const isTerminalClosingRef = useRef(isTerminalClosing);
   const onUploadFileRef = useRef(onUploadFile);
   const fontConfigRef = useRef(fontConfig);
@@ -116,10 +119,11 @@ const Terminal: React.FC<TerminalProps> = ({
   useEffect(() => {
     onDataRef.current = onData;
     onResizeRef.current = onResize;
+    onTitleRef.current = onTitle;
     isTerminalClosingRef.current = isTerminalClosing;
     onUploadFileRef.current = onUploadFile;
     fontConfigRef.current = fontConfig;
-  }, [onData, onResize, isTerminalClosing, onUploadFile, fontConfig]);
+  }, [onData, onResize, onTitle, isTerminalClosing, onUploadFile, fontConfig]);
 
   const appendToSnapshot = (chunk: string) => {
     let next = savedSnapshotRef.current + chunk;
@@ -441,6 +445,9 @@ const Terminal: React.FC<TerminalProps> = ({
             if (isRestoringRef.current) return;
             wasAtBottomRef.current = true;
             onDataRef.current(name, session, data);
+          },
+          onTitle: (title) => {
+            onTitleRef.current(name, session, title);
           },
           onResize: (nextCols, nextRows) => {
             if (terminalRef.current) {

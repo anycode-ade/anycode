@@ -185,6 +185,27 @@ fn file_history_only_returns_commits_that_touch_the_path() {
 }
 
 #[test]
+fn status_reports_head_commit_count_and_time() {
+    let temp_dir = tempfile::TempDir::new().unwrap();
+    let repo = Repository::init(temp_dir.path()).unwrap();
+    let manager = GitManager::new(temp_dir.path().to_path_buf());
+
+    let unborn = manager.status().unwrap();
+    assert_eq!(unborn.commit_count, None);
+    assert_eq!(unborn.last_commit_at, None);
+
+    std::fs::write(temp_dir.path().join("a.txt"), "a\n").unwrap();
+    commit_all(&repo, "first");
+    std::fs::write(temp_dir.path().join("b.txt"), "b\n").unwrap();
+    let second = commit_all(&repo, "second");
+
+    let status = manager.status().unwrap();
+    assert_eq!(status.commit_count, Some(2));
+    let head_time = repo.find_commit(second).unwrap().time().seconds();
+    assert_eq!(status.last_commit_at, Some(head_time));
+}
+
+#[test]
 #[ignore = "manual benchmark; set ANYCODE_GIT_BENCH_REPO or use ~/dev/linux"]
 fn benchmark_history_pages() {
     let repo_path = std::env::var_os("ANYCODE_GIT_BENCH_REPO")

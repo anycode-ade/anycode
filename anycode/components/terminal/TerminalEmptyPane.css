@@ -340,6 +340,26 @@
     color: var(--theme-foreground, #ffffff);
 }
 
+.terminal-pane-opened-command {
+    max-width: 100%;
+    overflow: hidden;
+    color: var(--theme-muted-foreground, #8ea0ad);
+    font-family: var(--editor-font-family, ui-monospace, monospace);
+    font-size: 0.8em;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.terminal-pane-opened-title {
+    max-width: 100%;
+    overflow: hidden;
+    color: color-mix(in srgb, var(--theme-foreground, #f0f0f0) 80%, transparent);
+    font-size: 0.8em;
+    font-weight: 500;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .terminal-pane-opened-primary-select:focus-visible,
 .terminal-pane-opened-project:focus-visible {
     outline: 2px solid var(--theme-accent-background, #007acc);

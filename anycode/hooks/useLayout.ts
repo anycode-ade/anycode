@@ -22,6 +22,7 @@ const defaultPanelKeysById: Record<PanelId, string[]> = {
     search: ['search'],
     changes: ['changes'],
     history: ['history'],
+    projects: ['projects'],
     editor: [],
     terminal: [],
     agent: [],

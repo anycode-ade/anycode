@@ -37,6 +37,10 @@ pub struct GitStatus {
     pub files: Vec<GitFileStatus>,
     pub branch: String,
     pub head_hash: String,
+    /// Commits reachable from HEAD; `None` when HEAD has no commit yet.
+    pub commit_count: Option<usize>,
+    /// Committer time of the HEAD commit in unix seconds; `None` when HEAD has no commit yet.
+    pub last_commit_at: Option<i64>,
 }
 
 impl GitStatus {
@@ -45,7 +49,9 @@ impl GitStatus {
             "kind": "full",
             "files": self.files,
             "branch": self.branch,
-            "head_hash": self.head_hash
+            "head_hash": self.head_hash,
+            "commit_count": self.commit_count,
+            "last_commit_at": self.last_commit_at
         })
     }
 }
@@ -932,10 +938,13 @@ impl GitManager {
         Self::sort_files(&mut files);
 
         let head_hash = Self::head_hash_of(&repo);
+        let (commit_count, last_commit_at) = Self::head_commit_info(&repo);
         Ok(GitStatus {
             files,
             branch,
             head_hash,
+            commit_count,
+            last_commit_at,
         })
     }
 
@@ -1590,6 +1599,18 @@ impl GitManager {
             .and_then(|h| h.peel_to_commit())
             .map(|c| c.id().to_string())
             .unwrap_or_default()
+    }
+
+    /// Returns (number of commits reachable from HEAD, HEAD commit time in unix seconds).
+    fn head_commit_info(repo: &Repository) -> (Option<usize>, Option<i64>) {
+        let Ok(head) = repo.head().and_then(|h| h.peel_to_commit()) else {
+            return (None, None);
+        };
+        let commit_count = repo.revwalk().ok().and_then(|mut walk| {
+            walk.push(head.id()).ok()?;
+            Some(walk.count())
+        });
+        (commit_count, Some(head.time().seconds()))
     }
 
     fn status_from_entry(

@@ -10,6 +10,14 @@ export const normalizePath = (path: string): string => {
     return path.replace(/\\/g, '/');
 };
 
+export const pathBelongsToProject = (path: string, root: string): boolean => {
+    const normalizedPath = normalizePath(path);
+    const normalizedRoot = normalizePath(root).replace(/\/+$/, '');
+    // A relative root ('.') is the VFS root, so every relative path belongs to it.
+    if (normalizedRoot === '.') return !/^([A-Za-z]:)?\//.test(normalizedPath);
+    return normalizedPath === normalizedRoot || normalizedPath.startsWith(`${normalizedRoot}/`);
+};
+
 export const uriToFilePath = (uriOrPath: string): string => {
     if (!uriOrPath || !uriOrPath.startsWith('file://')) return uriOrPath;
 

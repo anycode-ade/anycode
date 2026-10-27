@@ -282,23 +282,9 @@ export class Code {
     }[]>();
 
     private versionId: number = 0;
-    private dirtyStartLine: number | null = null;
-    private dirtyEndLine: number | null = null;
 
     public getVersionId(): number {
         return this.versionId;
-    }
-
-    public getDirtyRange(): { start: number; end: number } | null {
-        if (this.dirtyStartLine === null || this.dirtyEndLine === null) {
-            return null;
-        }
-        return { start: this.dirtyStartLine, end: this.dirtyEndLine };
-    }
-
-    public clearDirtyRange(): void {
-        this.dirtyStartLine = null;
-        this.dirtyEndLine = null;
     }
 
     constructor(content: string = '', filename: string = '', language: string = 'text') {
@@ -636,8 +622,6 @@ export class Code {
         const pieceTree = pieceTreeFactory.create(1);
         this.buffer = pieceTree;
         this.versionId++;
-        this.dirtyStartLine = 0;
-        this.dirtyEndLine = this.linesLength();
 
         if (this.parser) this.tree = this.parser.parse(this.input) || undefined;
         this.foldRangesInvalidated = true;
@@ -663,13 +647,6 @@ export class Code {
 
         this.buffer.insert(offset, text);
         this.versionId++;
-
-        let newlines = 0;
-        for (let i = 0; i < text.length; i++) {
-            if (text.charCodeAt(i) === 10) newlines++;
-        }
-        this.dirtyStartLine = this.dirtyStartLine === null ? pos.line : Math.min(this.dirtyStartLine, pos.line);
-        this.dirtyEndLine = this.dirtyEndLine === null ? (pos.line + newlines) : Math.max(this.dirtyEndLine, pos.line + newlines);
 
         if (this.tree) this.treeSitterInsert(text, offset);
 
@@ -711,9 +688,6 @@ export class Code {
         }
 
         const pos = this.getPosition(offset);
-
-        this.dirtyStartLine = this.dirtyStartLine === null ? pos.line : Math.min(this.dirtyStartLine, pos.line);
-        this.dirtyEndLine = this.dirtyEndLine === null ? pos.line : Math.max(this.dirtyEndLine, pos.line);
 
         this.buffer.delete(offset, length);
         if (this.tree) this.treeSitterRemove(offset + length, length);

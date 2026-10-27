@@ -51,7 +51,7 @@ interface ChangesPanelProps {
     onOpenMultibuffer: () => void;
 }
 
-const statusTextColors: Record<ChangedFile['status'], string> = {
+export const statusTextColors: Record<ChangedFile['status'], string> = {
     modified: 'file-status-modified',
     added: 'file-status-added',
     deleted: 'file-status-deleted',
