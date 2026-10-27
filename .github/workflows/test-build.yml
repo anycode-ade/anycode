@@ -316,7 +316,7 @@ jobs:
           Get-ChildItem -Path dist-desktop
 
       - name: Upload Desktop Artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: anycode-desktop-${{ matrix.arch }}-${{ runner.os }}
           path: dist-desktop/*
