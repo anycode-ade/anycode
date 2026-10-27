@@ -42,6 +42,8 @@ export interface ProjectsPanelProps {
     onOpenReview: (projectId: string) => void;
     onSelectTerminal: (terminalId: string) => void;
     onCloseTerminal: (terminalId: string) => void;
+    onAddProject?: (anchor: HTMLElement, alignTo: HTMLElement | null) => void;
+    isAddingProject?: boolean;
     onSelectAgent: (agentId: string) => void;
     onBranchChange: (projectId: string, branch: string) => void;
     onCloseAgent: (agentId: string) => void;
@@ -213,6 +215,8 @@ export const ProjectsPanel = ({
     onOpenReview,
     onSelectTerminal,
     onCloseTerminal,
+    onAddProject,
+    isAddingProject = false,
     onSelectAgent,
     onBranchChange,
     onCloseAgent,
@@ -413,6 +417,20 @@ export const ProjectsPanel = ({
                     </section>
                 );
             })}
+            {onAddProject && (
+                <button
+                    type="button"
+                    className="projects-add-project"
+                    disabled={isAddingProject}
+                    onClick={(event) => onAddProject(
+                        event.currentTarget,
+                        event.currentTarget.closest<HTMLElement>('.projects-panel'),
+                    )}
+                >
+                    <Icons.Plus size={12} />
+                    <span>Add project</span>
+                </button>
+            )}
         </div>
     </div>
 );

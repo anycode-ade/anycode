@@ -17,6 +17,8 @@ type ServerFolderPickerProps = {
     recentProjects: RecentWorkspace[];
     /** Element the picker pops out of. Without one, the picker is a centered dialog. */
     anchor: HTMLElement | null;
+    /** When set, the popover is centered horizontally on this element instead of aligned to the anchor's right edge. */
+    alignTo?: HTMLElement | null;
     onClose: () => void;
     onAdded: (state: WorkspaceState) => void;
 };
@@ -24,13 +26,21 @@ type ServerFolderPickerProps = {
 const POPOVER_WIDTH = 360;
 const VIEWPORT_MARGIN = 8;
 
-const getPopoverStyle = (anchorRect: DOMRect): React.CSSProperties => {
-    const top = anchorRect.bottom + 6;
+// Opens below the anchor, or above it when the space below is smaller (e.g. a button at the bottom of a panel).
+const getPopoverStyle = (anchorRect: DOMRect, alignRect?: DOMRect): React.CSSProperties => {
+    const preferredLeft = alignRect
+        ? alignRect.left + alignRect.width / 2 - POPOVER_WIDTH / 2
+        : anchorRect.right - POPOVER_WIDTH;
     const left = Math.min(
-        Math.max(anchorRect.right - POPOVER_WIDTH, VIEWPORT_MARGIN),
+        Math.max(preferredLeft, VIEWPORT_MARGIN),
         window.innerWidth - POPOVER_WIDTH - VIEWPORT_MARGIN,
     );
-    return { top, left, width: POPOVER_WIDTH, maxHeight: window.innerHeight - top - VIEWPORT_MARGIN };
+    const spaceBelow = window.innerHeight - anchorRect.bottom - 6 - VIEWPORT_MARGIN;
+    const spaceAbove = anchorRect.top - 6 - VIEWPORT_MARGIN;
+    if (spaceBelow >= spaceAbove) {
+        return { top: anchorRect.bottom + 6, left, width: POPOVER_WIDTH, maxHeight: spaceBelow };
+    }
+    return { bottom: window.innerHeight - anchorRect.top + 6, left, width: POPOVER_WIDTH, maxHeight: spaceAbove };
 };
 
 export const ServerFolderPicker = ({
@@ -38,6 +48,7 @@ export const ServerFolderPicker = ({
     isConnected,
     recentProjects,
     anchor,
+    alignTo,
     onClose,
     onAdded,
 }: ServerFolderPickerProps) => {
@@ -47,11 +58,12 @@ export const ServerFolderPicker = ({
     const [isAdding, setIsAdding] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [popoverStyle] = useState<React.CSSProperties | null>(() => (
-        anchor ? getPopoverStyle(anchor.getBoundingClientRect()) : null
+        anchor ? getPopoverStyle(anchor.getBoundingClientRect(), alignTo?.getBoundingClientRect()) : null
     ));
     const dialogRef = useRef<HTMLElement>(null);
     const browseRequestRef = useRef(0);
     const isPopover = popoverStyle !== null;
+    const parentPath = listing?.parent ?? null;
 
     const browse = useCallback(async (path?: string) => {
         if (!socket || !isConnected) {
@@ -148,7 +160,7 @@ export const ServerFolderPicker = ({
                         disabled={isAdding || !listing || !isConnected}
                         onClick={() => void addCurrentFolder()}
                     >
-                        Open
+                        Add
                     </button>
                     <button type="button" className="server-folder-close" aria-label="Close" title="Close" onClick={onClose}><Icons.CloseSmall size={14} /></button>
                 </div>
@@ -168,15 +180,6 @@ export const ServerFolderPicker = ({
                         placeholder="/path/to/project"
                         autoComplete="off"
                     />
-                    <button
-                        type="button"
-                        aria-label="Parent folder"
-                        title="Parent folder"
-                        disabled={!listing?.parent}
-                        onClick={() => listing?.parent && void browse(listing.parent)}
-                    >
-                        ↑
-                    </button>
                 </div>
             </form>
 
@@ -199,6 +202,19 @@ export const ServerFolderPicker = ({
 
             <div className="server-folder-list" aria-busy={loading}>
                 {!listing && loading && <div className="server-folder-loading">Loading folders…</div>}
+                {parentPath && (
+                    <button
+                        type="button"
+                        className="server-folder-entry"
+                        aria-label="Parent folder"
+                        title={parentPath}
+                        onClick={() => void browse(parentPath)}
+                    >
+                        <span aria-hidden="true">↑</span>
+                        <span>..</span>
+                        <small>{parentPath}</small>
+                    </button>
+                )}
                 {listing?.directories.length === 0 && (
                     <div className="server-folder-empty">This folder has no subfolders.</div>
                 )}

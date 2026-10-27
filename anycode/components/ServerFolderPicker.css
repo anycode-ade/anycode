@@ -47,7 +47,6 @@
 }
 
 .server-folder-header button,
-.server-folder-path button,
 .server-folder-actions button {
     color: inherit;
     background: transparent;
@@ -199,7 +198,7 @@
 }
 
 .server-folder-popover .server-folder-header {
-    padding: 6px 8px 6px 16px;
+    padding: 2px 6px 2px 14px;
     border-bottom: 0;
 }
 
@@ -207,7 +206,7 @@
     display: inline-flex;
     align-items: center;
     box-sizing: border-box;
-    height: 24px;
+    height: 22px;
     padding: 0 10px;
 }
 
@@ -215,8 +214,8 @@
 .server-folder-popover .server-folder-actions .server-folder-close {
     display: grid;
     place-items: center;
-    width: 24px;
-    height: 24px;
+    width: 22px;
+    height: 22px;
     padding: 0;
 }
 

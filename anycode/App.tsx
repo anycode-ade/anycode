@@ -105,7 +105,7 @@ const App: React.FC<AppProps> = ({ initialWorkspace }) => {
     const [changesProjectId, setChangesProjectId] = usePanelProjectId(CHANGES_PROJECT_SESSION_KEY);
     const [historyProjectId, setHistoryProjectId] = usePanelProjectId(HISTORY_PROJECT_SESSION_KEY);
     const [searchProjectId, setSearchProjectId] = usePanelProjectId(SEARCH_PROJECT_SESSION_KEY);
-    const [folderPicker, setFolderPicker] = useState<{ anchor: HTMLElement | null } | null>(null);
+    const [folderPicker, setFolderPicker] = useState<{ anchor: HTMLElement | null; alignTo: HTMLElement | null } | null>(null);
     const [warpDirection, setWarpDirection] = useState<'closing' | null>(null);
     const isWarping = warpDirection !== null;
     const activeProjectId = workspaceState.active_project_id;
@@ -411,13 +411,13 @@ const App: React.FC<AppProps> = ({ initialWorkspace }) => {
     }, [wsRef, isConnected, acceptWorkspaceState, fileTree.openFolder, refreshProjectGit, bumpProjectLifecycleVersion]);
 
     // Web builds pop the server folder picker out of the element that opened it; Tauri uses the native dialog.
-    const openFolderPicker = useCallback(async (anchor: HTMLElement | null) => {
+    const openFolderPicker = useCallback(async (anchor: HTMLElement | null, alignTo: HTMLElement | null = null) => {
         if (isTauri) {
             const picked = await openFolderDialog();
             if (picked) await handleAddProjectPath(picked);
             return;
         }
-        setFolderPicker({ anchor });
+        setFolderPicker({ anchor, alignTo });
     }, [handleAddProjectPath]);
 
     const handleOpenFolderClick = useCallback(() => openFolderPicker(null), [openFolderPicker]);
@@ -1319,6 +1319,8 @@ const App: React.FC<AppProps> = ({ initialWorkspace }) => {
                         onOpenReview={openProjectReview}
                         onSelectTerminal={handleTerminalTabSelect}
                         onCloseTerminal={handleTerminalTabClose}
+                        onAddProject={openFolderPicker}
+                        isAddingProject={folderPicker !== null}
                         onSelectAgent={agentPanes.selectFromToolbar}
                         onCloseAgent={agents.closeAgent}
                         onBranchChange={handleProjectBranchChange}
@@ -1628,6 +1630,7 @@ const App: React.FC<AppProps> = ({ initialWorkspace }) => {
                     isConnected={isConnected}
                     recentProjects={workspaceState.recent_workspaces}
                     anchor={folderPicker.anchor}
+                    alignTo={folderPicker.alignTo}
                     onClose={() => setFolderPicker(null)}
                     onAdded={(next) => {
                         acceptWorkspaceState(next);
