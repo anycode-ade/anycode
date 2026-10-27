@@ -1,5 +1,6 @@
 packages:
   - anycode-editor/*
+  - "!anycode-editor/example"
   - anycode-agent
   - anycode
 allowBuilds:

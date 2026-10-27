@@ -42,18 +42,18 @@ The AnycodeEditor library is available as separate packages:
 
 ```bash
 # Core editor library
-npm install anycode-base
+npm install anycode-editor
 
 # React wrapper component
-npm install anycode-react
+npm install anycode-editor-react
 ```
 
 ### Basic Usage
 
-#### 1. Core Library (anycode-base)
+#### 1. Core Library (anycode-editor)
 
 ```typescript
-import { AnycodeEditor } from 'anycode-base';
+import { AnycodeEditor } from 'anycode-editor';
 
 // Create editor instance
 const editor = new AnycodeEditor(content, { language: 'javascript' });
@@ -76,11 +76,11 @@ const state = editor.getState();
 editor.setState(state);
 ```
 
-#### 2. React Component (anycode-react)
+#### 2. React Component (anycode-editor-react)
 
 ```typescript
 import React from 'react';
-import { AnycodeEditorReact, AnycodeEditor } from 'anycode-react';
+import { AnycodeEditorReact, AnycodeEditor } from 'anycode-editor-react';
 
 function MyEditor() {
     // First create an AnycodeEditor instance
@@ -167,10 +167,10 @@ pnpm build
 ### Building Libraries
 ```bash
 # Build core library
-cd anycode-base && pnpm build
+cd anycode-editor/core && pnpm build
 
 # Build React wrapper
-cd anycode-react && pnpm build
+cd anycode-editor/react && pnpm build
 ```
 
 ## Contributing

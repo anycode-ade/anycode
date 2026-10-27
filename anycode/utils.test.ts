@@ -76,10 +76,10 @@ describe('toRelativeDisplayPath', () => {
   it('strips workspace root prefix when file is inside workspace', () => {
     expect(
       toRelativeDisplayPath(
-        '/Users/max/dev/anycode/anycode-base/src/renderer/StickyHeaderRenderer.ts',
+        '/Users/max/dev/anycode/anycode-editor/core/src/renderer/StickyHeaderRenderer.ts',
         '/Users/max/dev/anycode',
       ),
-    ).toBe('anycode-base/src/renderer/StickyHeaderRenderer.ts');
+    ).toBe('anycode-editor/core/src/renderer/StickyHeaderRenderer.ts');
   });
 
   it('works with global workspace root if workspaceRoot argument is omitted', () => {

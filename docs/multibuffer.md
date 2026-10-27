@@ -39,9 +39,9 @@ Instead of forcing developers to switch back and forth between separate file tab
 ```
 
 #### Key Classes & Modules:
-- **`MultiBufferCode` (`anycode-base/src/multibuffer.ts`)**:
+- **`MultiBufferCode` (`anycode-editor/core/src/multibuffer.ts`)**:
   Extends `Code`. Creates a unified virtual document index (`IndexedRow[]`) comprising header rows and file content rows. Maps global line numbers and character offsets to local file buffer coordinates.
-- **`DiffRenderer` & `LineRenderer` (`anycode-base/src/renderer/`)**:
+- **`DiffRenderer` & `LineRenderer` (`anycode-editor/core/src/renderer/`)**:
   Renders custom file headers (`▾ filename.ts +A −B`), applies display line numbers (local 1-based line numbers for each file), and folds/collapses unchanged lines in **Focused Diff Mode**.
 - **`MultibufferPanel.tsx` (`anycode/features/editor/MultibufferPanel.tsx`)**:
   React component managing the lifecycle of the shared `AnycodeEditor` instance, loading pending file buffers, subscribing to external change events, and preserving cursor position.
@@ -79,9 +79,9 @@ Instead of forcing developers to switch back and forth between separate file tab
 ### 2. Архитектура и ключевые компоненты
 
 #### Основные модули:
-- **`MultiBufferCode` (`anycode-base/src/multibuffer.ts`)**:
+- **`MultiBufferCode` (`anycode-editor/core/src/multibuffer.ts`)**:
   Наследует `Code`. Строит единый виртуальный индекс строк (`IndexedRow[]`), состоящий из строк-заголовков и строк содержимого файлов. Транслирует глобальные офсеты и номера строк в локальные координаты каждого файла.
-- **`DiffRenderer` и `LineRenderer` (`anycode-base/src/renderer/`)**:
+- **`DiffRenderer` и `LineRenderer` (`anycode-editor/core/src/renderer/`)**:
   Рендерят кастомные заголовки файлов (`▾ filename.ts +A −B`), отображают локальную нумерацию строк (1, 2, 3... для каждого файла заново) и сворачивают неизмененный контекст в режиме **Focused Diff**.
 - **`MultibufferPanel.tsx` (`anycode/features/editor/MultibufferPanel.tsx`)**:
   React-компонент, управляющий жизненным циклом общего `AnycodeEditor`, асинхронной подгрузкой файлов, подпиской на внешние изменения и сохранением позиции курсора.

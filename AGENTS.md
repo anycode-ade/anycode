@@ -11,10 +11,10 @@ Anycode is a web-based IDE with a Rust backend and React frontend. It provides c
 ```
 anycode_refactor/
 ├── anycode/              # React frontend application
-├── anycode-base/         # Core editor library (TypeScript, Tree-Sitter)
-├── anycode-react/        # React wrapper for the editor
+├── anycode-editor/core/         # Core editor library (TypeScript, Tree-Sitter)
+├── anycode-editor/react/        # React wrapper for the editor
+├── anycode-editor/example/      # Example usage of the editor library (not a pnpm workspace package)
 ├── anycode-backend/      # Rust backend (Axum, Tokio, Socket.IO)
-└── anycode-example/      # Example usage of the editor library
 ```
 
 ## Tech Stack
@@ -48,7 +48,7 @@ cargo run --release   # Run the backend server
 cargo test            # Run tests
 ```
 
-### Core Library (anycode-base/)
+### Core Library (anycode-editor/core/)
 ```bash
 pnpm install          # Install dependencies
 pnpm build            # Build the library
@@ -74,7 +74,7 @@ pnpm test             # Run tests
 - `acp.rs` - ACP client implementation
 - `terminal.rs` - PTY management
 
-### Core Editor (anycode-base/src/)
+### Core Editor (anycode-editor/core/src/)
 - `editor.ts` - Main editor class
 - `renderer.ts` - Virtual rendering engine
 - `code.ts` - Code manipulation
@@ -116,7 +116,7 @@ The editor uses a virtual rendering approach for performance:
 
 ### Frontend
 ```bash
-cd anycode-base && pnpm test  # Editor library tests
+cd anycode-editor/core && pnpm test  # Editor library tests
 ```
 
 ### Backend
@@ -133,7 +133,7 @@ cd anycode-backend && cargo test  # Rust tests
 
 ### Adding LSP support for a new language
 1. Add language server binary/command to `lsp.rs`
-2. Add language configuration in `anycode-base/src/langs/`
+2. Add language configuration in `anycode-editor/core/src/langs/`
 3. Map file extension to language ID
 
 ### Adding a new AI agent

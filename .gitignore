@@ -4,7 +4,6 @@ node_modules
 .anycode
 *copy*.ts
 anycode/dist
-anycode-base/dist
 anycode-editor/*/dist
 anycode-agent/dist
 anycode-backend/dist/*
@@ -16,7 +15,6 @@ test-results
 playwright-report
 
 .zed
-anycode-react/dist/Component.js
 anycode-editor/react/dist/Component.js
 awesome.md
 promo.md

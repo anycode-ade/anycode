@@ -1,11 +1,11 @@
 {
-  "name": "anycode-example",
+  "name": "anycode-editor-example",
   "version": "1.0.0",
-  "description": "Example project using anycode-base editor",
+  "description": "Example project using the anycode-editor package",
   "type": "module",
   "license": "Apache-2.0",
   "scripts": {
-    "postinstall": "mkdir -p public && cp node_modules/anycode-base/wasm/*.wasm public/ 2>/dev/null || true",
+    "postinstall": "mkdir -p public && cp node_modules/anycode-editor/wasm/*.wasm public/ 2>/dev/null || true",
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview"
@@ -14,7 +14,7 @@
     "node": ">=24"
   },
   "dependencies": {
-    "anycode-base": "^1.0.6"
+    "anycode-editor": "^1.0.7"
   },
   "devDependencies": {
     "vite": "^8.0.3"

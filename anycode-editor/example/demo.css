@@ -1,0 +1,135 @@
+.back {
+  color: #9cdcfe;
+  text-decoration: none;
+  font-size: 0.95rem;
+}
+
+.back:hover {
+  text-decoration: underline;
+}
+
+.toolbar {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.btn {
+  appearance: none;
+  border: 1px solid #5a5a60;
+  background: #3b3b40;
+  color: #f2f2f2;
+  font-size: 0.9rem;
+  padding: 0.5rem 0.9rem;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.btn:hover {
+  border-color: #6d6d75;
+}
+
+.btn.active {
+  background: #0e639c;
+  border-color: #1177bb;
+}
+
+.menu {
+  flex: 1;
+  overflow: auto;
+  padding: 2rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 1rem;
+  align-content: start;
+}
+
+.card {
+  display: block;
+  padding: 1.25rem;
+  background: #252526;
+  border: 1px solid #3e3e42;
+  border-radius: 8px;
+  color: inherit;
+  text-decoration: none;
+}
+
+.card:hover {
+  border-color: #0e639c;
+}
+
+.card h2 {
+  font-size: 1.1rem;
+  margin-bottom: 0.5rem;
+}
+
+.card p {
+  font-size: 0.9rem;
+  color: #a0a0a0;
+  line-height: 1.4;
+}
+
+.tabs {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.subbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.5rem 2rem;
+  background: #202021;
+  border-bottom: 1px solid #3e3e42;
+}
+
+.subbar:empty {
+  display: none;
+}
+
+.lsp {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.lsp-editor {
+  flex: 1;
+  min-height: 0;
+}
+
+.lsp-editor > * {
+  height: 100%;
+}
+
+.lsp-output {
+  flex: 0 0 auto;
+  max-height: 30%;
+  overflow: auto;
+  padding: 0.5rem 1rem;
+  background: #202021;
+  border-top: 1px solid #3e3e42;
+  font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: #d4d4d4;
+}
+
+.lsp-title {
+  margin-bottom: 0.25rem;
+  color: #a0a0a0;
+}
+
+.lsp-item {
+  display: block;
+  width: 100%;
+  padding: 2px 6px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  white-space: pre;
+  cursor: pointer;
+}
+
+.lsp-item:hover {
+  background: #2a2d2e;
+}

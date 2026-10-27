@@ -6,8 +6,9 @@ RUN corepack enable
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY anycode/package.json anycode/package.json
-COPY anycode-base/package.json anycode-base/package.json
-COPY anycode-react/package.json anycode-react/package.json
+COPY anycode-agent/package.json anycode-agent/package.json
+COPY anycode-editor/core/package.json anycode-editor/core/package.json
+COPY anycode-editor/react/package.json anycode-editor/react/package.json
 
 RUN pnpm install --frozen-lockfile
 

@@ -337,7 +337,7 @@ export function getWasmPath(filename: string): string {
     }
 
     // Try to determine the base path for WASM files
-    // In npm package: node_modules/anycode-base/wasm/tree-sitter-*.wasm
+    // In npm package: node_modules/anycode-editor/wasm/tree-sitter-*.wasm
     // In local development: /tree-sitter-*.wasm (from public folder)
 
     if (typeof import.meta !== 'undefined' && import.meta.url) {
@@ -346,8 +346,8 @@ export function getWasmPath(filename: string): string {
             const moduleUrl = new URL(import.meta.url);
             const modulePath = moduleUrl.pathname;
 
-            // Check if we're in npm package (node_modules/anycode-editor/dist/... or legacy anycode-base)
-            if (modulePath.includes('/node_modules/anycode-editor/') || modulePath.includes('/node_modules/anycode-base/')) {
+            // Check if we're in npm package (node_modules/anycode-editor/dist/...)
+            if (modulePath.includes('/node_modules/anycode-editor/')) {
                 // Calculate relative path to wasm folder
                 // From dist/utils.js to wasm/ in the same package
                 const wasmUrl = new URL('../wasm/' + filename, moduleUrl);
@@ -369,7 +369,7 @@ export function getWasmPath(filename: string): string {
  * 
  * @example
  * ```ts
- * import { setWasmBasePath } from 'anycode-base';
+ * import { setWasmBasePath } from 'anycode-editor';
  * // Set path relative to public folder
  * setWasmBasePath('/wasm/');
  * // Or use CDN

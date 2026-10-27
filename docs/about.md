@@ -17,10 +17,10 @@
 
 -   **React 19 & TypeScript**: Interactive, strictly-typed UI for the IDE shell — file explorer, editor tabs, AI agent panel, search, Git changes, and settings.
 -   **Vite**: Next-generation build tool with instant Hot Module Replacement (HMR) and optimized production builds; output is copied into `anycode-backend/dist` for serving.
--   **PNPM workspaces**: Monorepo package manager linking `anycode`, `anycode-base`, and `anycode-react` with shared, efficient dependency storage.
+-   **PNPM workspaces**: Monorepo package manager linking `anycode`, `anycode-editor`, and `anycode-editor-react` with shared, efficient dependency storage.
 -   **Socket.IO Client**: Real-time bidirectional WebSocket transport to the Rust backend for file I/O, LSP, terminal, ACP, and file-watcher events.
 -   **web-tree-sitter**: WASM Tree-sitter runtime for incremental AST parsing, syntax highlighting, and code folding inside the browser.
--   **vscode-textbuffer**: Piece-table text model optimized for frequent insert/delete operations in the editor core (`anycode-base`).
+-   **vscode-textbuffer**: Piece-table text model optimized for frequent insert/delete operations in the editor core (`anycode-editor`).
 -   **wterm (`@wterm/dom`)**: WASM + DOM terminal emulator powering the integrated terminal UI.
 -   **Dockview**: Dockable multi-panel layout system for editor groups, sidebars, and tool windows.
 -   **react-markdown**: Streaming Markdown rendering for AI agent chat (GFM and soft line breaks via remark plugins).
@@ -30,20 +30,20 @@
 The project follows a monorepo architecture managed by `pnpm workspaces`, enabling centralized dependency management and seamless integration between packages:
 
 -   `anycode-backend/` (Rust): The server component bridging the web UI and the user's local operating system. Handles file I/O operations, search, PTY terminal processes, LSP sessions, and ACP clients for AI agents. Runs background watcher services for file events (`spawn_file_watcher`) and Git status (`spawn_git_status_watcher`). Communicates with the frontend via **WebSockets** (`Socket.IO`).
--   `anycode-base/`: Core editor engine in pure TypeScript (framework-agnostic):
+-   `anycode-editor/core/`: Core editor engine in pure TypeScript (framework-agnostic):
     -   Text model management (`vscode-textbuffer`).
     -   `web-tree-sitter` integration for real-time AST parsing and Code Folding calculation.
     -   Diff calculation engine (`diff.ts`) and Focused Diff Mode support.
     -   Scrollbar markers rendering engine (Scrollbar Markers).
     -   Virtualized rendering system ensuring only visible lines are rendered to DOM for maximum performance on large files.
--   `anycode-react/`: React wrapper component for `anycode-base` providing React context, lifecycle management, and event handling.
+-   `anycode-editor/react/`: React wrapper component for `anycode-editor` providing React context, lifecycle management, and event handling.
 -   `anycode/`: Main web application assembling all components together (layout panels, file manager, terminal, AI agent chat panel, search, theme manager).
 
 ## Key Features: Detailed Overview
 
 ### Editor Engine
 
-The core of `anycode` is a custom-built editor engine powered by `anycode-base`:
+The core of `anycode` is a custom-built editor engine powered by `anycode-editor`:
 -   **Tree-sitter AST Parsing**: Instead of simple regex patterns, the editor builds a full Abstract Syntax Tree (AST) of the code. This enables precise syntax highlighting and serves as the foundation for structural code analysis.
 -   **Text Buffer Management**: Built on `vscode-textbuffer`, optimized for frequent text insertions and deletions.
 
@@ -66,7 +66,7 @@ Editor responsiveness is achieved through multi-stage optimizations:
 
 ### Diff Support and Focused Diff Editor
 
-`anycode-base` includes built-in text diffing and change tracking:
+`anycode-editor` includes built-in text diffing and change tracking:
 -   **Line-by-Line Diff Calculation (`computeGitChanges`)**: Compares original file contents against current edits to identify added, modified, and deleted lines.
 -   **Ghost Rows for Deleted Code**: Deleted lines are displayed inline as "ghost rows" with full syntax highlighting and original line numbering preserved.
 -   **Focused Diff Mode**: Automatically collapses unchanged code blocks, rendering only modified hunks with a configurable context line boundary (default: 3 lines).

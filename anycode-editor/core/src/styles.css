@@ -592,10 +592,14 @@
 }
 
 .anyeditor.readonly .buttons,
-.anyeditor.readonly .gutter,
 .anyeditor.readonly .folds,
 .anyeditor.no-folding .folds {
   display: none;
+}
+
+/* Buttons column is hidden, so the sticky gutter sticks at the left edge instead of 32px. */
+.anyeditor.readonly .gutter {
+  left: 0;
 }
 
 .anyeditor.readonly .code {

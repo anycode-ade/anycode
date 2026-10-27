@@ -525,7 +525,7 @@ profiles:
       }
     
     release_notes: >
-      This release brings a complete rewrite of the virtual rendering logic in anycode-base,
+      This release brings a complete rewrite of the virtual rendering logic in anycode-editor,
       offering up to 10x faster scroll speeds on large files and full integration of Tree-Sitter
       syntax parsing directly inside web-tree-sitter. It also introduces optional code folding!
 `;

@@ -30,10 +30,10 @@
 The project consists of several packages:
 
 - **`anycode/`** - Main React frontend application and Tauri desktop app
-- **`anycode-base/`** - Core editor library with tree-sitter support
-- **`anycode-react/`** - React wrapper for the editor
+- **`anycode-editor/core/`** - Core editor library with tree-sitter support
+- **`anycode-editor/react/`** - React wrapper for the editor
 - **`anycode-backend/`** - Rust backend for file system access
-- **`anycode-example/`** - Example application demonstrating anycode usage
+- **`anycode-editor/example/`** - Example application demonstrating anycode-editor usage
 
 ## Installation
 

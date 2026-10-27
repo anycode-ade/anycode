@@ -1,122 +1,216 @@
 # anycode-editor
 
-Core code editor component with tree-sitter support for syntax analysis and code highlighting. Serves as the foundation of the anycode editor and can be used as a standalone library.
+A fast code editor component for the web. Syntax highlighting uses tree-sitter (WebAssembly), rendering is virtualized (only visible lines are in the DOM), and language features (completion, hover, go-to-definition, references, diagnostics) are plugged in through callbacks.
 
-## Description
+It is the core of [anycode](https://github.com/anycode-ade/anycode) and can be used as a standalone library. Browser only, ESM only.
 
-`anycode-editor` is a high-performance code editor for web applications, built on top of tree-sitter for parsing and virtual rendering. The editor supports multiple programming languages, integrates with LSP for code completion and navigation, and provides a flexible API for customization.
-
-## Key Features
-
-- **Syntax Analysis**: Uses web-tree-sitter for code parsing and syntax highlighting
-- **Virtual Rendering**: Efficient rendering of large files with scroll virtualization
-- **Multi-language Support**: JavaScript, TypeScript, Python, Rust, Go, C/C++, Java, Kotlin, C#, HTML, CSS, JSON, YAML, TOML, Lua, Zig, Bash, and more
-- **LSP Integration**: Language Server Protocol support for code completion, go-to-definition, and hover information
-- **Change History**: Undo/redo functionality
-- **Search**: Built-in text search
-- **Text Selection**: Support for multiple selections and cursor operations
-- **Theme Customization**: Flexible theme system for appearance customization
-
-## Installation
+## Install
 
 ```bash
 npm install anycode-editor
 ```
 
-## Usage
+## Quick start
 
-### Basic Example
+**1. Serve the grammars.** The package ships tree-sitter WASM files in `node_modules/anycode-editor/wasm/`. Copy the folder to your static assets:
 
-```typescript
-import { AnycodeEditor } from 'anycode-editor';
-
-const code = `// Hello from Anycode Editor!
-function greet(name) {
-    return \`Hello, \${name}!\`;
-}
-
-console.log(greet('World'));
-`;
-
-async function init() {
-    const editor = new AnycodeEditor(code, 'example.js', 'javascript');
-    await editor.init();
-    editor.render();
-    document.getElementById('editor')
-        .appendChild(editor.getContainer());
-}
-
-init();
-
+```bash
+cp -r node_modules/anycode-editor/wasm public/wasm
 ```
 
+**2. Create the editor.**
 
-#### Main Methods
+```ts
+import { AnycodeEditor, setWasmBasePath } from 'anycode-editor';
 
-**Initialization & Lifecycle:**
-- `async init(): Promise<void>` - Initialize the editor (must be called before use)
-- `clean(): void` - Clean up and remove the editor from DOM
-- `getContainer(): HTMLDivElement` - Get the editor's DOM container
+setWasmBasePath('/wasm/'); // must match the URL the files are served from
 
-**Rendering:**
-- `render(): void` - Render the editor
-- `renderCursorOrSelection(): void` - Render cursor or selection only
+const editor = new AnycodeEditor(
+    'function greet(name) {\n    return `Hello, ${name}!`;\n}\n',
+    'example.js',
+    'javascript',
+);
+await editor.init();
+editor.render();
+document.getElementById('editor')!.appendChild(editor.getContainer());
+```
 
-**Text Operations:**
-- `getText(): string` - Get all text content
-- `setText(newText: string): void` - Set text content
-- `getTextLength(): number` - Get the length of text content
-- `applyChange(change: Change): void` - Apply a change object to the editor
+Notes:
 
-**Cursor & Focus:**
-- `getCursor(): { line: number, column: number }` - Get current cursor position
-- `setCursor(line: number, column: number): void` - Set cursor position
-- `requestFocus(line: number, column: number, center?: boolean): void` - Request focus at position
-- `requestedFocus(): { center: boolean } | null` - Consume a pending focus request (returns its `center` flag, or `null`)
+- The parent element needs a height (for example `height: 100%` inside a sized container). The editor scrolls inside it.
+- Styles are imported by the library itself. Your bundler must support importing CSS from JS (Vite, webpack, and esbuild do).
+- Without `setWasmBasePath`, grammars are requested from `/tree-sitter-<language>.wasm` at the site root.
 
-**Scroll:**
-- `hasScroll(): boolean` - Check if editor has scroll position
-- `restoreScroll(): void` - Restore previous scroll position
+## Constructor
 
-**LSP Integration:**
-- `setCompletionProvider(provider: (request: CompletionRequest) => Promise<Completion[]>): void` - Set completion provider
-- `setGoToDefinitionProvider(provider: (request: DefinitionRequest) => Promise<DefinitionResponse>): void` - Set go-to-definition provider
-- `setCompletions(completions: Completion[]): void` - Set completions manually
-- `async toggleCompletion(): Promise<void>` - Toggle completion popup
-- `async showCompletion(): Promise<void>` - Show completion popup
-- `applyCompletion(index: number): void` - Apply completion at index
+```ts
+new AnycodeEditor(text = '', filename = 'test.txt', language = '', options = {})
+```
 
-**Callbacks & Events:**
-- `setOnChange(func: (change: Change) => void): void` - Set callback for text changes
-- `setOnCursorChange(callback: (newState: Position, oldState: Position) => void): void` - Set callback on cursor change
+`language` is a grammar id, which is also the WASM file name: `'javascript'` loads `tree-sitter-javascript.wasm`.
 
-**UI Customization:**
-- `setRunButtonLines(lines: number[]): void` - Set lines that show run buttons
-- `setErrors(errors: { line: number, message: string }[]): void` - Set error markers for lines
+Supported ids: `bash`, `c`, `cpp`, `csharp`, `css`, `dockerfile`, `go`, `html`, `java`, `javascript`, `json`, `kotlin`, `lua`, `markdown`, `markdown_inline`, `php`, `python`, `ruby`, `rust`, `sql`, `toml`, `tsx`, `typescript`, `vue`, `yaml`, `zig`.
 
-## Supported Languages
+### Options
 
-- JavaScript / TypeScript
-- Python
-- Rust
-- Go
-- C / C++
-- Java
-- Kotlin
-- C#
-- HTML / CSS
-- JSON / YAML / TOML
-- Lua
-- Zig
-- Bash
+| Option | Default | Description |
+| --- | --- | --- |
+| `line`, `column` | cursor at first editable line | Initial cursor position |
+| `readOnly` | `false` | Block editing from the keyboard (see [Read-only](#read-only)) |
+| `theme` | `anycode` palette (`src/theme.ts`) | Map of highlight capture name to CSS color, e.g. `{ keyword: '#CC8242', string: '#6A8759' }` |
+| `codeFoldingEnabled` | `true` | Code folding |
+| `wordHighlightEnabled` | `true` | Highlight occurrences of the word under the cursor |
+| `scrollbarMarkersEnabled` | `true` | Markers (errors, diffs, search) on the scrollbar |
+| `stickyHeaderEnabled` | `true` | Sticky header with the current scope |
+| `focusedDiffEnabled` | `false` | Show only changed regions (see `focusedDiffContextLines`) |
+| `focusedDiffContextLines` | `3` | Context lines around changes in focused diff mode |
+| `originalCode` | none | A `Code` model to diff against |
+| `code` | none | An existing `Code` model to use instead of `text` |
+| `scrollbarStyle`, `scrollbarMinSize`, `scrollbarWidth` | defaults | Scrollbar appearance |
 
-A complete list of languages can be found in the `src/langs/` directory.
+## Modes
+
+### Read-only
+
+```ts
+new AnycodeEditor(text, 'file.ts', 'typescript', { readOnly: true });
+```
+
+Blocks keyboard editing. Line numbers stay visible. The cursor and selection highlight are not drawn, and folds are hidden. In a multibuffer, read-only is set per file with `MultiBufferEntry.readOnly`.
+
+### Diff
+
+The editor can show a diff against a baseline in three modes:
+
+| Mode | Shows |
+| --- | --- |
+| `'plain'` | The file only, no diff markers |
+| `'combine'` | The whole file with added and removed lines marked |
+| `'diff'` | Only changed regions, plus `contextLines` lines around them (focused diff) |
+
+```ts
+editor.setDiffMode('combine');
+editor.setDiffMode('diff', 5); // 5 context lines
+editor.setDiffMode('plain');
+```
+
+The baseline is:
+
+- the `originalCode` option (a `Code` model), or
+- `setOriginalText(text)` / `setOriginalCode(content)`, or
+- if none is set, the text at the moment diff mode is first enabled.
+
+Related: `setDiffEnabled(enabled)`, `setFocusedDiffMode(enabled, contextLines?)`, `getOriginalText()`, `getOriginalCodeModel()`.
+
+### Multibuffer
+
+`MultiBufferCode` shows several files as one document, with a header per file. Each file is a `MultiBufferEntry`:
+
+```ts
+type MultiBufferEntry = {
+    id: string;          // unique file id
+    path: string;        // shown in the file header
+    code: Code;          // the file's current content
+    originalCode: Code;  // the file's baseline (for the diff)
+    readOnly?: boolean;  // block edits in this file
+    added?: number;      // optional counters shown in the header
+    removed?: number;
+};
+```
+
+For a review view, build two multibuffers (current and baseline) and open them as one diff editor:
+
+```ts
+import { AnycodeEditor, Code, MultiBufferCode } from 'anycode-editor';
+
+const entries = files.map((f) => ({
+    id: f.id,
+    path: f.path,
+    readOnly: true,
+    code: new Code(f.after, f.path, 'typescript'),
+    originalCode: new Code(f.before, f.path, 'typescript'),
+}));
+
+const current = new MultiBufferCode(entries);
+const original = new MultiBufferCode(entries.map((e) => ({ ...e, code: e.originalCode })));
+
+const editor = new AnycodeEditor('', 'review', '', {
+    code: current,
+    originalCode: original,
+    focusedDiffEnabled: true,
+});
+await editor.init();
+```
+
+File management and navigation:
+
+- `addEntries(entries, atIndex?)` (async) / `removeEntries(ids)`
+- `getFileIdAtLine(line)` / `getFirstLineForFile(id)` / `getMultibufferLineForLocalLine(fileId, localLine)`
+- `getFileHeaders()` - headers with path, line, and counters
+- `toggleMultibufferFileAtLine(line)` - collapse or expand a file
+- `getFileText(id)` / `notifyFileChanged(id)`
+- `setOnFileChange((change) => ...)` - `{ fileId, change }` for edits in one file
+- `editor.setOnMultibufferToggle(cb)` - called when a file is collapsed or expanded
+
+## API
+
+Exported from `anycode-editor`: `AnycodeEditor`, `MultiBufferCode`, `Code`, `LruCache`, `Operation`, `setWasmBasePath`, `addCssToDocument`, `generateCssClasses`, `FastSyntaxHighlighter`, `TokenDictionary`, `BinaryTokens`, and the types `Change`, `Edit`, `Position`, `FilePosition`, `FoldRange`, `Completion`, `CompletionRequest`, `DefinitionRequest`, `DefinitionResponse`, `Diagnostic`, `Hover`, `Range`, and others.
+
+### Lifecycle and rendering
+
+- `init(): Promise<void>` - must be called before use
+- `render()` / `renderCursorOrSelection()` - draw the editor
+- `getContainer(): HTMLDivElement` - DOM node to attach
+- `clean()` - remove the editor from the DOM
+
+### Text
+
+- `getText()` / `setText(text)` / `getTextLength()`
+- `getSelectedText()`
+- `applyChange(change)` - apply an external change
+- `getCodeModel(): Code` - underlying model
+
+### Cursor and focus
+
+- `getCursor(): { line, column }` / `setCursor(line, column)`
+- `requestFocus(line, column, center?)` / `requestedFocus()`
+- `hasScroll()` / `restoreScroll()`
+
+### Events
+
+- `setOnChange((change) => void)` or `addOnChangeListener(listener)` (returns an unsubscribe function)
+- `setOnCursorChange((newState, oldState) => void)` or `addCursorChangeListener(callback)` (returns an unsubscribe function)
+
+### Language features
+
+Set providers as async callbacks. The request and response types are exported from the package.
+
+- `setCompletionProvider(provider)` / `setCompletions(list)`
+- `setHoverProvider(provider)`
+- `setGoToDefinitionProvider(provider)`
+- `setReferencesPeekProvider(provider)`
+- `toggleCompletion()` / `showCompletion()` / `applyCompletion(index)`
+
+### Diagnostics and run buttons
+
+- `setErrors([{ line, message }])` / `getErrorLines()`
+- `setRunButtonLines(lines)`
+
+### Diff
+
+- `setOriginalText(text)` / `getOriginalText()`
+- `setDiffMode('plain' | 'diff' | 'combine', contextLines?)`
+- `setFocusedDiffMode(enabled, contextLines?)`
 
 ## Dependencies
 
-- `web-tree-sitter` - Tree-sitter parser for syntax analysis
-- `vscode-textbuffer` - Efficient text buffer management
-- `typescript` - Type definitions
+- [`web-tree-sitter`](https://github.com/tree-sitter/tree-sitter/tree/master/lib/binding_web) - parser runtime
+- [`vscode-textbuffer`](https://www.npmjs.com/package/vscode-textbuffer) - text buffer
+- [`diff`](https://www.npmjs.com/package/diff) - diffing
+
+## Repository
+
+Source: [anycode-ade/anycode](https://github.com/anycode-ade/anycode), package directory `anycode-editor/core`.
 
 ## License
 

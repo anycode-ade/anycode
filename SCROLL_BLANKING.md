@@ -30,7 +30,7 @@ bottom spacer
 - code.
 
 Полная высота документа создаётся суммой двух пустых spacer-элементов и
-отрисованного диапазона. При скролле [`Renderer.renderScroll`](anycode-base/src/renderer/Renderer.ts)
+отрисованного диапазона. При скролле [`Renderer.renderScroll`](anycode-editor/core/src/renderer/Renderer.ts)
 вычисляет новый диапазон и передвигает строки между spacer-элементами.
 
 Формула диапазона для строк фиксированной высоты сама по себе корректна:

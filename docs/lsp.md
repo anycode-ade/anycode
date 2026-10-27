@@ -133,7 +133,7 @@ The flow is:
 
 ## Frontend API
 
-The frontend request types live in [`anycode-base/src/lsp.ts`](../anycode-base/src/lsp.ts).
+The frontend request types live in [`anycode-editor/core/src/lsp.ts`](../anycode-editor/core/src/lsp.ts).
 
 Current request/response flow:
 
@@ -170,7 +170,7 @@ Anycode currently uses these LSP requests:
 - [`anycode-backend/src/lsp.rs`](../anycode-backend/src/lsp.rs)
 - [`anycode-backend/src/handlers/lsp_handler.rs`](../anycode-backend/src/handlers/lsp_handler.rs)
 - [`anycode-backend/config.toml`](../anycode-backend/config.toml)
-- [`anycode-base/src/lsp.ts`](../anycode-base/src/lsp.ts)
+- [`anycode-editor/core/src/lsp.ts`](../anycode-editor/core/src/lsp.ts)
 
 ## Adding A New Language Server
 

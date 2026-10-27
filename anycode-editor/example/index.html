@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Anycode Editor Examples</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="/demo.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Anycode Editor Examples</h1>
+      <nav class="tabs" id="tabs">
+        <button class="btn" type="button" data-demo="simple">Simple</button>
+        <button class="btn" type="button" data-demo="ignoreEdits">Ignore edits</button>
+        <button class="btn" type="button" data-demo="diff">Diff</button>
+        <button class="btn" type="button" data-demo="multibuffer">Multibuffer</button>
+        <button class="btn" type="button" data-demo="lsp">LSP</button>
+      </nav>
+    </header>
+    <div class="subbar" id="toolbar"></div>
+    <div class="editor-container" id="host"></div>
+
+    <script type="module" src="/main.js"></script>
+  </body>
+</html>

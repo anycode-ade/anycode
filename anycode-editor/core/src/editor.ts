@@ -27,6 +27,7 @@ import './styles.css';
 import { Search } from "./search";
 import { computeGitChanges, computeGitChangesFromSource, DiffInfo, DiffModel } from "./diff";
 import { getGapElementData } from "./renderer/DiffRenderer";
+import { anycode } from "./theme";
 
 export type ScrollbarStyle = 'rounded' | 'flat';
 
@@ -45,6 +46,7 @@ export interface EditorSettings {
 export interface EditorOptions {
     line?: number;
     column?: number;
+    /** Highlight capture name -> CSS color. Defaults to the `anycode` palette (see theme.ts). */
     theme?: any;
     readOnly?: boolean;
     ignoreEdits?: boolean;
@@ -212,8 +214,11 @@ export class AnycodeEditor {
         }
 
         if (options.theme) {
-            const css = generateCssClasses(options.theme);
-            addCssToDocument(css, 'anyeditor-theme');
+            addCssToDocument(generateCssClasses(options.theme), 'anyeditor-theme');
+        } else if (typeof document !== 'undefined' && !document.getElementById('anyeditor-theme')) {
+            // Default palette. The style element is shared by all editors on the page,
+            // so it is added once and never replaces a custom theme.
+            addCssToDocument(generateCssClasses(anycode), 'anyeditor-theme');
         }
         this.createDomElements();
         this.onScroll = this.onScroll.bind(this);

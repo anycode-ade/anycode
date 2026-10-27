@@ -341,15 +341,15 @@ describe('formatPromptWithQuote', () => {
       text: 'private hide() {\n  this.element.style.display = "none";\n}',
       source: 'editor',
       label: 'StickyHeaderRenderer.ts (L94-105)',
-      filePath: '/Users/max/dev/anycode/anycode-base/src/renderer/StickyHeaderRenderer.ts',
-      displayPath: 'anycode-base/src/renderer/StickyHeaderRenderer.ts',
+      filePath: '/Users/max/dev/anycode/anycode-editor/core/src/renderer/StickyHeaderRenderer.ts',
+      displayPath: 'anycode-editor/core/src/renderer/StickyHeaderRenderer.ts',
       lineRange: [94, 105],
       language: 'typescript',
     };
 
     const result = formatPromptWithQuote('Why is it hidden?', quote);
     expect(result).toBe(
-      '[StickyHeaderRenderer.ts:94-105](anycode-base/src/renderer/StickyHeaderRenderer.ts#L94-L105)\n```typescript\nprivate hide() {\n  this.element.style.display = "none";\n}\n```\n\nWhy is it hidden?',
+      '[StickyHeaderRenderer.ts:94-105](anycode-editor/core/src/renderer/StickyHeaderRenderer.ts#L94-L105)\n```typescript\nprivate hide() {\n  this.element.style.display = "none";\n}\n```\n\nWhy is it hidden?',
     );
   });
 
@@ -464,15 +464,15 @@ describe('formatPromptBlocks', () => {
       text: 'private hide() {\n  this.element.style.display = "none";\n}',
       source: 'editor',
       label: 'StickyHeaderRenderer.ts (L94-105)',
-      filePath: 'anycode-base/src/renderer/StickyHeaderRenderer.ts',
-      displayPath: 'anycode-base/src/renderer/StickyHeaderRenderer.ts',
+      filePath: 'anycode-editor/core/src/renderer/StickyHeaderRenderer.ts',
+      displayPath: 'anycode-editor/core/src/renderer/StickyHeaderRenderer.ts',
       lineRange: [94, 105],
       language: 'typescript',
     };
 
     const result = formatPromptWithQuote('Review this', quote);
     expect(result).toBe(
-      '[StickyHeaderRenderer.ts:94-105](anycode-base/src/renderer/StickyHeaderRenderer.ts#L94-L105)\n```typescript\nprivate hide() {\n  this.element.style.display = "none";\n}\n```\n\nReview this',
+      '[StickyHeaderRenderer.ts:94-105](anycode-editor/core/src/renderer/StickyHeaderRenderer.ts#L94-L105)\n```typescript\nprivate hide() {\n  this.element.style.display = "none";\n}\n```\n\nReview this',
     );
   });
 

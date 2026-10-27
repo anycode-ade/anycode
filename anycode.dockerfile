@@ -8,25 +8,26 @@ RUN npm install -g pnpm
 # Copy workspace files
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
 COPY anycode/package.json ./anycode/
-COPY anycode-base/package.json ./anycode-base/
-COPY anycode-react/package.json ./anycode-react/
+COPY anycode-agent/package.json ./anycode-agent/
+COPY anycode-editor/core/package.json ./anycode-editor/core/
+COPY anycode-editor/react/package.json ./anycode-editor/react/
 
 # Install dependencies
 RUN pnpm install --frozen-lockfile
 
 # Copy source code
 COPY anycode ./anycode/
-COPY anycode-base ./anycode-base/
-COPY anycode-react ./anycode-react/
+COPY anycode-agent ./anycode-agent/
+COPY anycode-editor ./anycode-editor/
 
 # Build frontend
 WORKDIR /app/anycode
 RUN pnpm run build
 
-# Stage 1b: Copy anycode-base langs
-FROM node:alpine AS anycode-base-builder
+# Stage 1b: Copy anycode-editor langs
+FROM node:alpine AS anycode-editor-builder
 WORKDIR /app/base
-COPY anycode-base/src/langs ./langs
+COPY anycode-editor/core/src/langs ./langs
 
 # Stage 2a: Preparation for building Rust backend (base image with cargo-chef)
 FROM rust:alpine AS chef
@@ -57,7 +58,7 @@ WORKDIR /app/backend
 COPY --from=anycode-frontend-builder /app/anycode/dist /app/dist
 COPY --from=anycode-backend-builder /app/backend/target/release/anycode ./
 COPY --from=anycode-backend-builder /app/backend/config.toml ./
-COPY --from=anycode-base-builder /app/base/langs /app/src/backend/langs
+COPY --from=anycode-editor-builder /app/base/langs /app/src/backend/langs
 
 ENV ANYCODE_HOME=/app
 ENV ANYCODE_CONFIG=/app/backend/config.toml
