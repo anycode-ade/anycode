@@ -1,12 +1,14 @@
 # anycode-agent
 
-![anycode-agent screenshot 1](https://i.imgur.com/K6Mx6xe.png)
-
-![anycode-agent screenshot 2](https://i.imgur.com/67zLM2d.png)
-
 AI agent chat and ACP session UI component for React.
 
 `anycode-agent` provides the chat interface, tool call visualization, diff rendering, and prompt queues for the Agent Client Protocol (ACP). It powers the agent panel in Anycode and can be used standalone in any React application.
+
+---
+
+![anycode-agent screenshot 1](https://i.imgur.com/K6Mx6xe.png)
+
+![anycode-agent screenshot 2](https://i.imgur.com/67zLM2d.png)
 
 ---
 
