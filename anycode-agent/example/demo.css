@@ -12,18 +12,25 @@ body {
 }
 
 .app {
+    position: relative;
     display: flex;
     flex-direction: column;
     height: 100%;
 }
 
+/* Floating card in the top-right corner, so the chat gets the full height. */
 .app-header {
+    position: absolute;
+    top: 16px;
+    right: 16px;
+    z-index: 1;
     display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 16px;
-    padding: 12px 20px;
-    border-bottom: 1px solid #333;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px 14px;
+    background: #252526;
+    border: 1px solid #333;
+    border-radius: 8px;
 }
 
 .app-header h1 {
