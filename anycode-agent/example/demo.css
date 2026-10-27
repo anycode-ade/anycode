@@ -88,9 +88,9 @@ body {
 }
 
 /* The library's send button is dark grey, which disappears on the dark demo background.
-   A translucent light disc keeps it readable without the heavy white fill. */
+   Bare light arrow, no disc. */
 .agent-pane .acp-send-btn {
-    background: rgba(255, 255, 255, 0.16);
+    background: transparent;
     color: #e6e6e6;
 }
 
