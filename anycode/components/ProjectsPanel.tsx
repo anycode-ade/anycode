@@ -2,7 +2,7 @@ import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 're
 import type { AcpAgent, AcpSessionState, Terminal } from '../types';
 import type { WorkspaceProject } from '../workspace';
 import type { GitLastCommit } from '../hooks/useGit';
-import { formatRelativeTime, normalizePath } from '../utils';
+import { formatRelativeTimeCompact, getAvatarUrl, normalizePath } from '../utils';
 import { statusTextColors, type ChangedFile } from './ChangesPanel';
 import { Icons } from './Icons';
 import { FileIcon } from './FileIcon';
@@ -63,14 +63,14 @@ const avatarHue = (name: string): number => {
     return Math.abs(hash) % 360;
 };
 
-// Re-renders periodically so "x minutes ago" keeps moving without new git data.
+// Re-renders periodically so "28m" keeps moving without new git data.
 const RelativeCommitTime = ({ timestamp }: { timestamp: number }) => {
     const [, setTick] = useState(0);
     useEffect(() => {
         const id = window.setInterval(() => setTick((tick) => tick + 1), 30_000);
         return () => window.clearInterval(id);
     }, []);
-    return <>{formatRelativeTime(timestamp)}</>;
+    return <>{formatRelativeTimeCompact(timestamp)}</>;
 };
 
 // One bar per day; height scales to the busiest day in the window. Empty days stay as a flat stub.
@@ -226,6 +226,7 @@ export const ProjectsPanel = ({
             {projects.length === 0 && <div className="projects-empty">No projects open</div>}
             {projects.map((project) => {
                 const git = gitByProjectId[project.id];
+                const commitAvatarUrl = git?.lastCommit ? getAvatarUrl(git.lastCommit.authorEmail) : null;
                 const changedFiles = [...(git?.changedFiles ?? [])].sort((a, b) => a.path.localeCompare(b.path));
                 const projectTerminals = terminals.filter((terminal) => terminal.project_id === project.id);
                 const projectAgents = agentSessions.filter((session) => session.projectId === project.id);
@@ -288,13 +289,17 @@ export const ProjectsPanel = ({
                                             </span>
                                             {git.lastCommit.authorName && (
                                                 <>
-                                                    <span
-                                                        className="projects-commit-avatar"
-                                                        aria-hidden="true"
-                                                        style={{ background: `hsl(${avatarHue(git.lastCommit.authorName)} 60% 52%)` }}
-                                                    >
-                                                        {git.lastCommit.authorName.trim().charAt(0).toUpperCase()}
-                                                    </span>
+                                                    {commitAvatarUrl ? (
+                                                        <img className="projects-commit-avatar" src={commitAvatarUrl} alt="" />
+                                                    ) : (
+                                                        <span
+                                                            className="projects-commit-avatar"
+                                                            aria-hidden="true"
+                                                            style={{ background: `hsl(${avatarHue(git.lastCommit.authorName)} 60% 52%)` }}
+                                                        >
+                                                            {git.lastCommit.authorName.trim().charAt(0).toUpperCase()}
+                                                        </span>
+                                                    )}
                                                     <span className="projects-commit-author">{git.lastCommit.authorName}</span>
                                                 </>
                                             )}

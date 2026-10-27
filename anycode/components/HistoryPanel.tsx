@@ -5,6 +5,7 @@ import type { GitHistoryCommit, GitHistoryFile, GitHistorySearchMode } from '../
 import { usePersistedScroll } from '../hooks/usePersistedScroll';
 import type { WorkspaceProject } from '../workspace';
 import type { DistributiveOmit } from '../types';
+import { getAvatarUrl } from '../utils';
 import './HistoryPanel.css';
 
 interface HistoryPanelProps {
@@ -70,22 +71,6 @@ const formatRelativeTime = (timestamp: number): string => {
                     : absoluteSeconds < 31536000 ? 'month' : 'year';
     const divisor = unit === 'second' ? 1 : unit === 'minute' ? 60 : unit === 'hour' ? 3600 : unit === 'day' ? 86400 : unit === 'month' ? 2592000 : 31536000;
     return new Intl.RelativeTimeFormat('en', { numeric: 'auto' }).format(Math.round(seconds / divisor), unit);
-};
-
-const getAvatarUrl = (email: string): string | null => {
-    const match = email.trim().match(
-        /^(?:\d+\+)?([^@]+)@users\.noreply\.github\.com$/i,
-    );
-
-    if (!match) {
-        const normalizedEmail = email.trim();
-        return normalizedEmail
-            ? `https://avatars.githubusercontent.com/u/e?email=${encodeURIComponent(normalizedEmail)}&s=128`
-            : null;
-    }
-
-    const username = match[1];
-    return `https://github.com/${encodeURIComponent(username)}.png?size=128`;
 };
 
 const statusTextColors: Record<GitHistoryFile['status'], string> = {

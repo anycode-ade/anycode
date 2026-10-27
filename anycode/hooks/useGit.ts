@@ -17,6 +17,7 @@ interface ProjectGitUiState {
 export type GitLastCommit = {
     timestamp: number;
     authorName: string;
+    authorEmail: string;
 };
 
 type UseGitParams = {
@@ -509,10 +510,12 @@ export const useGit = ({ wsRef, isConnected, projectId }: UseGitParams) => {
         if (!targetProjectId || !wsRef.current || !isConnected) return;
         wsRef.current.emit('git:history', { offset: 0, limit: COMMIT_ACTIVITY_SAMPLE, project_id: targetProjectId }, (response: any) => {
             if (!response?.success || removedProjectIdsRef.current.has(targetProjectId)) return;
-            const commits: { timestamp: number; author_name?: string }[] = response.commits ?? [];
+            const commits: { timestamp: number; author_name?: string; author_email?: string }[] = response.commits ?? [];
             const head = commits[0];
             updateProjectGitUi(targetProjectId, {
-                lastCommit: head ? { timestamp: head.timestamp, authorName: head.author_name ?? '' } : null,
+                lastCommit: head
+                    ? { timestamp: head.timestamp, authorName: head.author_name ?? '', authorEmail: head.author_email ?? '' }
+                    : null,
                 commitActivity: buildCommitActivity(commits.map((commit) => commit.timestamp)),
             });
         });

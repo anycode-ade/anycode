@@ -192,6 +192,38 @@ export const formatRelativeTime = (timestamp: number): string => {
     return new Intl.RelativeTimeFormat('en', { numeric: 'auto' }).format(Math.round(seconds / divisor), unit);
 };
 
+// Short form for tight spots: "28m", "3h", "2d".
+const COMPACT_TIME_UNITS = [
+    { seconds: 31536000, label: 'y' },
+    { seconds: 2592000, label: 'mo' },
+    { seconds: 86400, label: 'd' },
+    { seconds: 3600, label: 'h' },
+    { seconds: 60, label: 'm' },
+];
+
+export const formatRelativeTimeCompact = (timestamp: number): string => {
+    const elapsed = Math.max(0, Math.floor(Date.now() / 1000 - timestamp));
+    const unit = COMPACT_TIME_UNITS.find((item) => elapsed >= item.seconds);
+    return unit ? `${Math.floor(elapsed / unit.seconds)}${unit.label}` : 'now';
+};
+
+// GitHub avatar for a commit author; noreply emails map to the username.
+export const getAvatarUrl = (email: string): string | null => {
+    const match = email.trim().match(
+        /^(?:\d+\+)?([^@]+)@users\.noreply\.github\.com$/i,
+    );
+
+    if (!match) {
+        const normalizedEmail = email.trim();
+        return normalizedEmail
+            ? `https://avatars.githubusercontent.com/u/e?email=${encodeURIComponent(normalizedEmail)}&s=128`
+            : null;
+    }
+
+    const username = match[1];
+    return `https://github.com/${encodeURIComponent(username)}.png?size=128`;
+};
+
 export const formatBytes = (bytes: number): string => {
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
