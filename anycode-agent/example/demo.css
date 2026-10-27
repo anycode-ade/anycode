@@ -77,6 +77,8 @@ body {
     height: 100%;
     /* Same constrained width the app uses when full-width chat is off; the column stays left-aligned. */
     --acp-chat-max-width: 800px;
+    /* Bigger brand avatars in the chat transcript and input. */
+    --acp-chat-avatar-size: 40px;
     overflow: hidden;
 }
 

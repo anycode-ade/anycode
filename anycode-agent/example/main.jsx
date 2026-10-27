@@ -7,11 +7,9 @@ import { streamReply } from './mock-agent.js';
 
 const noop = () => {};
 
-// Placeholder avatars as SVG data URIs. Replace with real image URLs.
-const svgAvatar = (body) =>
-  `data:image/svg+xml;utf8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">${body}</svg>`)}`;
-const USER_AVATAR = svgAvatar('<rect width="64" height="64" fill="#2f6fb0"/><text x="32" y="43" font-size="30" text-anchor="middle" fill="#fff" font-family="system-ui">V</text>');
-const AGENT_AVATAR = svgAvatar('<rect width="64" height="64" fill="#2e7d4f"/><text x="32" y="40" font-size="22" text-anchor="middle" fill="#fff" font-family="system-ui">AI</text>');
+// Brand logos from public/: Codex mark for the agent, anycode logo for the user.
+const AGENT_AVATAR = '/codex.svg';
+const USER_AVATAR = '/anycode.svg';
 
 function DemoAvatar(props) {
   return <AcpAvatar {...props} avatar={AGENT_AVATAR} userAvatar={USER_AVATAR} />;
