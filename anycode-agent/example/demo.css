@@ -60,17 +60,16 @@ body {
     flex: 1;
     min-height: 0;
     display: flex;
-    justify-content: center;
+    justify-content: flex-start;
     padding: 16px;
 }
 
 .agent-pane {
     display: flex;
-    width: 480px;
-    max-width: 100%;
+    width: 100%;
     height: 100%;
-    border: 1px solid #333;
-    border-radius: 8px;
+    /* Same constrained width the app uses when full-width chat is off; the column stays left-aligned. */
+    --acp-chat-max-width: 800px;
     overflow: hidden;
 }
 
