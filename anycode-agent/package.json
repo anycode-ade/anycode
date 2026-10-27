@@ -5,6 +5,14 @@
   "main": "src/index.ts",
   "types": "src/index.ts",
   "style": "src/styles.css",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./styles.css": "./src/styles.css",
+    "./package.json": "./package.json"
+  },
   "files": [
     "src",
     "README.md",
@@ -30,6 +38,9 @@
   "license": "Apache-2.0",
   "packageManager": "pnpm@10.13.1",
   "dependencies": {
+    "@types/diff": "^7.0.2",
+    "@types/react": "^19.1.8",
+    "@types/react-dom": "^19.1.6",
     "diff": "^9.0.0",
     "react-markdown": "^10.1.0",
     "remark-breaks": "^4.0.0",
@@ -40,9 +51,6 @@
     "react-dom": "^18.0.0 || ^19.0.0"
   },
   "devDependencies": {
-    "@types/diff": "^7.0.2",
-    "@types/react": "^19.1.8",
-    "@types/react-dom": "^19.1.6",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "typescript": "^7.0.2",
