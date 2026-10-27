@@ -575,6 +575,7 @@
 
 .anyeditor .gutter .ln {
   background: inherit;
+  line-height: var(--anycode-line-height);
   min-width: var(--anycode-gutter-width, 48px);
   max-width: var(--anycode-gutter-width, 48px);
   width: var(--anycode-gutter-width, 48px);
