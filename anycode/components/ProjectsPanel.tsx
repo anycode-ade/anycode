@@ -41,6 +41,7 @@ export interface ProjectsPanelProps {
     onOpenChangedFile: (path: string) => void;
     onOpenReview: (projectId: string) => void;
     onSelectTerminal: (terminalId: string) => void;
+    onCloseTerminal: (terminalId: string) => void;
     onSelectAgent: (agentId: string) => void;
     onBranchChange: (projectId: string, branch: string) => void;
     onCloseAgent: (agentId: string) => void;
@@ -124,7 +125,9 @@ interface CardStripProps<T> {
 // near the horizontal viewport are mounted.
 const CardStrip = <T,>({ items, getKey, renderCard, card, rows, compact = false }: CardStripProps<T>) => {
     const boxRef = useRef<HTMLDivElement>(null);
-    const stripHeight = rows * card.height + (rows - 1) * STRIP_GAP;
+    // Reserve only the rows that hold cards: one file in a 2-row strip should not leave an empty row behind.
+    const usedRows = Math.max(1, Math.min(rows, items.length));
+    const stripHeight = usedRows * card.height + (usedRows - 1) * STRIP_GAP;
     const [scrollLeft, setScrollLeft] = useState(0);
     const [viewportWidth, setViewportWidth] = useState(0);
 
@@ -209,6 +212,7 @@ export const ProjectsPanel = ({
     onOpenChangedFile,
     onOpenReview,
     onSelectTerminal,
+    onCloseTerminal,
     onSelectAgent,
     onBranchChange,
     onCloseAgent,
@@ -339,11 +343,32 @@ export const ProjectsPanel = ({
                                     card={TERMINAL_CARD}
                                     rows={1}
                                     renderCard={(terminal) => (
-                                        <button
-                                            type="button"
+                                        <div
+                                            role="button"
+                                            tabIndex={0}
                                             className={`projects-terminal-card ${activeTerminalId === terminal.id ? 'active' : ''}`}
                                             onClick={() => onSelectTerminal(terminal.id)}
+                                            onKeyDown={(event) => {
+                                                if (event.target !== event.currentTarget) return;
+                                                if (event.key === 'Enter' || event.key === ' ') {
+                                                    event.preventDefault();
+                                                    onSelectTerminal(terminal.id);
+                                                }
+                                            }}
                                         >
+                                            <button
+                                                type="button"
+                                                className="projects-terminal-card-close"
+                                                title={`Close term: ${terminal.name}`}
+                                                aria-label={`Close term: ${terminal.name}`}
+                                                onPointerDown={(event) => event.stopPropagation()}
+                                                onClick={(event) => {
+                                                    event.stopPropagation();
+                                                    onCloseTerminal(terminal.id);
+                                                }}
+                                            >
+                                                <Icons.CloseSmall />
+                                            </button>
                                             <span className="projects-terminal-card-name">
                                                 <Icons.Terminal />
                                                 <span>term: {terminal.name}</span>
@@ -358,7 +383,7 @@ export const ProjectsPanel = ({
                                                     {terminalLastCommands[terminal.id]}
                                                 </span>
                                             )}
-                                        </button>
+                                        </div>
                                     )}
                                 />
                             </PanelSection>

@@ -1318,6 +1318,7 @@ const App: React.FC<AppProps> = ({ initialWorkspace }) => {
                         onOpenChangedFile={handleOpenFileDiff}
                         onOpenReview={openProjectReview}
                         onSelectTerminal={handleTerminalTabSelect}
+                        onCloseTerminal={handleTerminalTabClose}
                         onSelectAgent={agentPanes.selectFromToolbar}
                         onCloseAgent={agents.closeAgent}
                         onBranchChange={handleProjectBranchChange}
