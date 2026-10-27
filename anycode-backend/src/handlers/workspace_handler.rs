@@ -169,22 +169,25 @@ pub async fn handle_workspace_remove_project(
                 .lock()
                 .await
                 .retain(|path, _| !PathBuf::from(path).starts_with(&root));
-            let mut sockets = state.socket2data.lock().await;
-            for data in sockets.values_mut() {
-                if data.active_project_id.as_deref() == Some(request.project_id.as_str()) {
-                    data.active_project_id = None;
-                }
-                data.opened_files
-                    .retain(|path| !PathBuf::from(path).starts_with(&root));
-                data.opened_dirs
-                    .retain(|path| !PathBuf::from(path).starts_with(&root));
-                if data.search_project_id.as_deref() == Some(request.project_id.as_str()) {
-                    if let Some(cancel) = data.search_cancel.take() {
-                        cancel.cancel();
+            {
+                // Scoped so the lock is released before workspace_state(), which locks socket2data again.
+                let mut sockets = state.socket2data.lock().await;
+                for data in sockets.values_mut() {
+                    if data.active_project_id.as_deref() == Some(request.project_id.as_str()) {
+                        data.active_project_id = None;
                     }
-                    data.search_project_id = None;
-                    data.search_pattern = None;
-                    data.search_last_file_result = None;
+                    data.opened_files
+                        .retain(|path| !PathBuf::from(path).starts_with(&root));
+                    data.opened_dirs
+                        .retain(|path| !PathBuf::from(path).starts_with(&root));
+                    if data.search_project_id.as_deref() == Some(request.project_id.as_str()) {
+                        if let Some(cancel) = data.search_cancel.take() {
+                            cancel.cancel();
+                        }
+                        data.search_project_id = None;
+                        data.search_pattern = None;
+                        data.search_last_file_result = None;
+                    }
                 }
             }
             let _ = socket
