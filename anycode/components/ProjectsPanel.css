@@ -43,7 +43,6 @@
     gap: 6px;
     min-width: 0;
     margin-bottom: 8px;
-    padding: 0 6px;
 }
 
 .projects-plate {
@@ -84,31 +83,13 @@
     row-gap: 4px;
     align-items: center;
     height: auto;
-    padding: 10px 14px 10px 16px;
+    padding: 10px 14px;
     border-radius: 12px;
-    border-left: 4px solid var(--project-state);
     background:
         linear-gradient(90deg, color-mix(in srgb, var(--project-state) 14%, transparent), transparent 75%),
         var(--theme-card-background, rgba(255, 255, 255, 0.06));
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.04);
     transition: box-shadow 150ms ease;
-}
-
-/* Two lines: name with the commit on the right, branch underneath. */
-.projects-plate-project > :first-child {
-    grid-column: 1;
-    grid-row: 1;
-}
-
-.projects-plate-project > .projects-project-row:not(.projects-project-commit):not(:first-child) {
-    grid-column: 1;
-    grid-row: 2;
-}
-
-.projects-plate-project > .projects-project-commit {
-    grid-column: 2;
-    grid-row: 1 / span 2;
-    justify-self: end;
 }
 
 .projects-plate-project[data-dirty='true'] {
@@ -136,9 +117,100 @@
     min-width: 0;
 }
 
+/* Two columns: name with the commit on the right, branch on the left with the chart under the commit. */
+.projects-plate-project > :first-child {
+    grid-column: 1;
+    grid-row: 1;
+}
+
+.projects-plate-project > .projects-project-row:not(.projects-project-commit):not(:first-child) {
+    grid-column: 1;
+    grid-row: 2;
+}
+
+.projects-plate-project > .projects-project-commit {
+    grid-column: 2;
+    grid-row: 1;
+    justify-self: end;
+}
+
+.projects-plate-project > .projects-commit-chart {
+    grid-column: 2;
+    grid-row: 2;
+    justify-self: end;
+}
+
 .projects-project-commit {
     font-size: 11px;
     font-weight: 400;
+}
+
+.projects-commit-line {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+}
+
+/* Commits per day for the last 14 days: tall bars with a scale underneath; the rightmost bar is today. */
+.projects-commit-chart {
+    display: flex;
+    flex: 0 0 auto;
+    flex-direction: column;
+    width: 110px;
+    gap: 3px;
+    color: var(--theme-tab-foreground, #888);
+    font-size: 9px;
+    font-variant-numeric: tabular-nums;
+}
+
+.projects-commit-bars {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    height: 30px;
+}
+
+.projects-commit-bar {
+    position: relative;
+    flex: 0 0 5px;
+    width: 5px;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.12);
+}
+
+/* Instant tooltip from data-tip. Anchored to the bar's right edge so today's bar (rightmost) stays inside the panel. */
+.projects-commit-bar::after {
+    content: attr(data-tip);
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 0;
+    z-index: 2;
+    padding: 3px 7px;
+    border-radius: 5px;
+    background: var(--theme-tab-background, #1e1e1e);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+    color: var(--theme-foreground, #e0e0e0);
+    font-size: 10px;
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 80ms ease;
+}
+
+.projects-commit-bar:hover::after {
+    opacity: 1;
+}
+
+.projects-commit-bar.has-commits {
+    background: var(--project-state);
+}
+
+.projects-commit-scale {
+    display: flex;
+    justify-content: space-between;
+    gap: 6px;
+    white-space: nowrap;
 }
 
 .projects-plate-stats {
@@ -177,8 +249,13 @@
     min-width: 0;
     flex: 0 1 auto;
     field-sizing: content;
-    padding: 0 2px;
+    /* Native select padding would push the name away from the icon; the chevron is drawn here instead. */
+    appearance: none;
+    padding: 0 14px 0 0;
     background-color: transparent;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m7 15 5 5 5-5M7 9l5-5 5 5'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 2px center;
     color: inherit;
     border: none;
     border-radius: 4px;

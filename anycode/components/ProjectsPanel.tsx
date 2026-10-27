@@ -1,4 +1,4 @@
-import React, { useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { AcpAgent, AcpSessionState, Terminal } from '../types';
 import type { WorkspaceProject } from '../workspace';
 import type { GitLastCommit } from '../hooks/useGit';
@@ -20,6 +20,8 @@ export interface ProjectGitSummary {
     changedFiles: ChangedFile[];
     /** HEAD commit: time and author. */
     lastCommit: GitLastCommit | null;
+    /** Commits per day for the last 14 days, oldest first, today last. */
+    commitActivity: number[];
 }
 
 type FileIconsStyle = 'colored' | 'monochrome' | 'disabled';
@@ -56,6 +58,46 @@ const avatarHue = (name: string): number => {
     let hash = 0;
     for (const char of name) hash = (hash * 31 + char.charCodeAt(0)) | 0;
     return Math.abs(hash) % 360;
+};
+
+// Re-renders periodically so "x minutes ago" keeps moving without new git data.
+const RelativeCommitTime = ({ timestamp }: { timestamp: number }) => {
+    const [, setTick] = useState(0);
+    useEffect(() => {
+        const id = window.setInterval(() => setTick((tick) => tick + 1), 30_000);
+        return () => window.clearInterval(id);
+    }, []);
+    return <>{formatRelativeTime(timestamp)}</>;
+};
+
+// One bar per day; height scales to the busiest day in the window. Empty days stay as a flat stub.
+const CommitActivity = ({ counts }: { counts: number[] }) => {
+    const max = Math.max(1, ...counts);
+    const total = counts.reduce((sum, count) => sum + count, 0);
+    const today = new Date();
+    return (
+        <div className="projects-commit-chart" aria-label={`${total} commits in the last ${counts.length} days`}>
+            <div className="projects-commit-bars">
+                {counts.map((count, index) => {
+                    const daysAgo = counts.length - 1 - index;
+                    const day = new Date(today.getFullYear(), today.getMonth(), today.getDate() - daysAgo);
+                    const dayLabel = day.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
+                    return (
+                        <span
+                            key={index}
+                            className={`projects-commit-bar ${count > 0 ? 'has-commits' : ''}`}
+                            style={{ height: count > 0 ? 4 + Math.round((count / max) * 26) : 2 }}
+                            data-tip={`${dayLabel} · ${count} commit${count === 1 ? '' : 's'}`}
+                        />
+                    );
+                })}
+            </div>
+            <div className="projects-commit-scale" aria-hidden="true">
+                <span>{total} in {counts.length}d</span>
+                <span>today</span>
+            </div>
+        </div>
+    );
 };
 
 const baseName = (path: string): string => {
@@ -197,10 +239,9 @@ export const ProjectsPanel = ({
                         <div className="projects-project-header">
                             <div
                                 className="projects-plate projects-plate-card projects-plate-project"
-                                title={project.root}
                                 data-dirty={changedFiles.length > 0}
                             >
-                                <div className="projects-project-row">
+                                <div className="projects-project-row" title={project.root}>
                                     <span className="projects-project-icon" aria-hidden="true">
                                         <Icons.Folder size={14} />
                                     </span>
@@ -230,26 +271,29 @@ export const ProjectsPanel = ({
                                 )}
                                 {git?.lastCommit && (
                                     <div className="projects-project-row projects-project-commit">
-                                        <span
-                                            className="projects-commit-time"
-                                            title={new Date(git.lastCommit.timestamp * 1000).toLocaleString()}
-                                        >
-                                            {formatRelativeTime(git.lastCommit.timestamp)}
-                                        </span>
-                                        {git.lastCommit.authorName && (
-                                            <>
-                                                <span
-                                                    className="projects-commit-avatar"
-                                                    aria-hidden="true"
-                                                    style={{ background: `hsl(${avatarHue(git.lastCommit.authorName)} 60% 52%)` }}
-                                                >
-                                                    {git.lastCommit.authorName.trim().charAt(0).toUpperCase()}
-                                                </span>
-                                                <span className="projects-commit-author">{git.lastCommit.authorName}</span>
-                                            </>
-                                        )}
+                                        <div className="projects-commit-line">
+                                            <span
+                                                className="projects-commit-time"
+                                                title={new Date(git.lastCommit.timestamp * 1000).toLocaleString()}
+                                            >
+                                                <RelativeCommitTime timestamp={git.lastCommit.timestamp} />
+                                            </span>
+                                            {git.lastCommit.authorName && (
+                                                <>
+                                                    <span
+                                                        className="projects-commit-avatar"
+                                                        aria-hidden="true"
+                                                        style={{ background: `hsl(${avatarHue(git.lastCommit.authorName)} 60% 52%)` }}
+                                                    >
+                                                        {git.lastCommit.authorName.trim().charAt(0).toUpperCase()}
+                                                    </span>
+                                                    <span className="projects-commit-author">{git.lastCommit.authorName}</span>
+                                                </>
+                                            )}
+                                        </div>
                                     </div>
                                 )}
+                                {git && git.commitActivity.length > 0 && <CommitActivity counts={git.commitActivity} />}
                             </div>
                         </div>
 

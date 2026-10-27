@@ -631,6 +631,12 @@ export const useGit = ({ wsRef, isConnected, projectId }: UseGitParams) => {
                 branch: data.branch || '',
             });
         }
+        // Commit summary (HEAD time/author, activity) must refresh for every project, not only the active one.
+        // Patches never move HEAD: the backend sends a full update whenever HEAD changes.
+        if (data.kind !== 'patch') {
+            fetchCommitSummary(data.project_id ?? activeProjectIdRef.current ?? undefined);
+        }
+
         const activeProjectId = activeProjectIdRef.current;
         if (activeProjectId && data.project_id && data.project_id !== activeProjectId) return;
 
@@ -719,7 +725,6 @@ export const useGit = ({ wsRef, isConnected, projectId }: UseGitParams) => {
         });
 
         const statusProjectId = data.project_id ?? activeProjectId;
-        fetchCommitSummary(statusProjectId ?? undefined);
         if (headChanged && statusProjectId === historyProjectIdRef.current) {
             refreshHistory(statusProjectId);
         }

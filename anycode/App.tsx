@@ -728,6 +728,7 @@ const App: React.FC<AppProps> = ({ initialWorkspace }) => {
                 added: changes.reduce((sum, file) => sum + (file.added ?? 0), 0),
                 removed: changes.reduce((sum, file) => sum + (file.removed ?? 0), 0),
                 lastCommit: ui?.lastCommit ?? null,
+                commitActivity: ui?.commitActivity ?? [],
             }];
         }),
     ), [workspaceState.projects, git.gitUiByProject, git.changedFilesByProject]);
