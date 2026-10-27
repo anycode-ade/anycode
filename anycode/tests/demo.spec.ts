@@ -504,21 +504,24 @@ test.describe('Anycode Live Demo Mode E2E Tests', () => {
         // 2. Assert User Prompt Bubble appears
         await expect(page.getByText('hello, scan my workspace').first()).toBeVisible({ timeout: 10000 });
 
-        // 3. Assert Thought reasoning block appears
+        // 3. Wait for the streamed response. Once it arrives the work group becomes historical and
+        // collapses, so the thought and tool call are only reachable after expanding it.
+        await expect(page.getByText(/Demo Mode Notice/i).first()).toBeVisible({ timeout: 10000 });
+
+        // 4. Expand the "Worked" work group and assert the Thought reasoning block
+        const workGroup = page.locator('.acp-work-group').first();
+        await workGroup.locator('.acp-work-group-header').click();
+        await expect(workGroup).toHaveClass(/expanded/);
+        await workGroup.locator('.acp-thought-header').click();
         await expect(page.getByText(/Analyzing workspace VFS files/i).first()).toBeVisible({ timeout: 10000 });
 
-        // 4. Assert Tool Call Card appears and expands in the latest group
+        // 5. Assert Tool Call Card appears and expands in the work group
         const toolToggle = page.locator('.acp-tool-call-toggle').first();
         await expect(toolToggle).toBeVisible({ timeout: 10000 });
         await toolToggle.click();
 
-        // 5. Assert Tool Command details are rendered inside expanded card
+        // 6. Assert Tool Command details are rendered inside expanded card
         await expect(page.locator('.acp-tool-call-expanded, .acp-tool-call-name').getByText(/list_dir|Scanning/i).first()).toBeVisible({ timeout: 10000 });
-
-        // 6. Assert Assistant streaming response with English demo notice appears
-        await expect(
-            page.getByText(/Demo Mode Notice/i).first()
-        ).toBeVisible({ timeout: 10000 });
     });
 
     test('should collapse and expand long user messages', async ({ page }) => {
@@ -585,7 +588,14 @@ test.describe('Anycode Live Demo Mode E2E Tests', () => {
         await promptInput.fill('fix demo.py code');
         await promptInput.press('Enter');
 
-        // Assert Tool Call Card for apply_diff appears
+        // The work group holding the apply_diff tool call collapses once the reply is complete,
+        // so wait for the reply, then expand the group before checking the tool call card.
+        await expect(page.locator('.acp-message-markdown').last().getByText(/Demo Mode Notice/i)).toBeVisible({ timeout: 15000 });
+        const workGroup = page.locator('.acp-work-group').first();
+        await workGroup.locator('.acp-work-group-header').click();
+        await expect(workGroup).toHaveClass(/expanded/);
+
+        // Assert Tool Call Card for apply_diff appears inside the expanded group
         const diffToolCard = page.locator('.acp-message-tool_call').first();
         await expect(diffToolCard).toBeVisible({ timeout: 10000 });
 
