@@ -1324,6 +1324,7 @@ const App: React.FC<AppProps> = ({ initialWorkspace }) => {
                         onSelectAgent={agentPanes.selectFromToolbar}
                         onCloseAgent={agents.closeAgent}
                         onBranchChange={handleProjectBranchChange}
+                        onRemoveProject={handleRemoveProject}
                     />
                 );
             case 'history':

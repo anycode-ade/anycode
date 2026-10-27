@@ -47,6 +47,7 @@ export interface ProjectsPanelProps {
     onSelectAgent: (agentId: string) => void;
     onBranchChange: (projectId: string, branch: string) => void;
     onCloseAgent: (agentId: string) => void;
+    onRemoveProject?: (projectId: string) => void;
 }
 
 // Card strip geometry. Card sizes are passed to each strip and exposed to the CSS as `--strip-card-height`.
@@ -220,6 +221,7 @@ export const ProjectsPanel = ({
     onSelectAgent,
     onBranchChange,
     onCloseAgent,
+    onRemoveProject,
 }: ProjectsPanelProps) => (
     <div className="projects-panel">
         <div className="projects-list">
@@ -251,8 +253,26 @@ export const ProjectsPanel = ({
                                 data-dirty={changedFiles.length > 0}
                             >
                                 <div className="projects-project-row" title={project.root}>
-                                    <span className="projects-project-icon" aria-hidden="true">
-                                        <Icons.Folder size={14} />
+                                    {/* On hover the folder icon swaps for the remove button, when removing is available. */}
+                                    <span className="projects-project-icon-slot">
+                                        <span className="projects-project-icon" aria-hidden="true">
+                                            <Icons.Folder size={14} />
+                                        </span>
+                                        {onRemoveProject && (
+                                            <button
+                                                type="button"
+                                                className="projects-project-remove"
+                                                title="Remove project"
+                                                aria-label={`Remove project ${project.name}`}
+                                                onClick={() => {
+                                                    if (window.confirm(`Remove project "${project.name}" from the workspace?`)) {
+                                                        onRemoveProject(project.id);
+                                                    }
+                                                }}
+                                            >
+                                                <Icons.CloseSmall />
+                                            </button>
+                                        )}
                                     </span>
                                     <span className="projects-project-name">{project.name}</span>
                                 </div>
