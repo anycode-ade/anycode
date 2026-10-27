@@ -281,7 +281,8 @@
 }
 
 .acp-code-content {
-    padding: 5px 28px 5px 8px;
+    --acp-code-inset: 8px;
+    padding: 5px 28px 5px 0;
     max-height: 33vh;
     overflow: auto;
 }
@@ -387,6 +388,10 @@
     font-weight: 500;
 }
 
+.acp-code .anyeditor .gutter {
+    padding: 0 8px 0 var(--acp-code-inset);
+}
+
 .acp-code .anyeditor .gutter .ln {
     font-size: 11px !important;
 }
@@ -412,6 +417,10 @@
     font-family: var(--editor-font-family, monospace);
     font-size: 0.86em;
     line-height: 1.5;
+}
+
+.acp-code-content > .acp-code-block-fallback {
+    padding-left: var(--acp-code-inset);
 }
 
 .acp-code:not(:has(.acp-code-content)) .acp-code-block-fallback {
@@ -764,7 +773,7 @@
 .acp-tool-call-name {
     font-family: var(--editor-font-family, "JetBrains Mono", monospace);
     font-size: inherit;
-    font-weight: 400;
+    font-weight: var(--interface-font-weight, 700);
     color: var(--text-color, #ccc);
     opacity: 0.5;
     min-width: 0;
@@ -973,16 +982,15 @@
     font-family: var(--interface-font-family);
     font-size: 0.86em;
     font-weight: var(--interface-font-weight, 700);
-    color: var(--text-color, #ccc);
-    opacity: 0.5;
+    color: color-mix(in srgb, var(--text-color, #ccc) 50%, transparent);
     cursor: pointer;
     user-select: none;
     -webkit-user-select: none;
-    transition: opacity 120ms ease;
+    transition: color 120ms ease;
 }
 
 .acp-thought-header:hover {
-    opacity: 0.85;
+    color: color-mix(in srgb, var(--text-color, #ccc) 85%, transparent);
 }
 
 .acp-thought-header:focus {
@@ -993,8 +1001,6 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    color: inherit;
-    opacity: 1;
     transition: transform 0.2s ease;
 }
 
@@ -1046,7 +1052,8 @@
 
 @media (max-width: 768px) and (pointer: coarse) {
     .acp-code-content {
-        padding: 5px 28px 5px 6px;
+        --acp-code-inset: 6px;
+        padding: 5px 28px 5px 0;
         max-height: 26vh;
     }
 
