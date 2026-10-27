@@ -87,6 +87,12 @@ body {
     min-width: 0;
 }
 
+/* The library's send button is dark grey, which disappears on the dark demo background. */
+.agent-pane .acp-send-btn {
+    background: #e8e8e8;
+    color: #1e1e1e;
+}
+
 /* Native scrollbars take the system theme, which can be nearly invisible on the dark demo background. */
 .agent-pane * {
     scrollbar-width: thin;
