@@ -3,6 +3,7 @@ import { io, type Socket } from 'socket.io-client';
 import { BACKEND_URL, IS_DEMO_MODE } from '../constants';
 import { DemoSocket } from '../demoSocket';
 import type { ConnectionStatus } from '../types';
+export type { ConnectionStatus };
 
 export const getToken = (): string => {
     if (typeof window === 'undefined') return '';

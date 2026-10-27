@@ -1,5 +1,5 @@
 export { AnycodeEditor } from './editor';
-export { MultiBufferCode } from './multibuffer';
+export { MultiBufferCode, type MultiBufferEntry } from './multibuffer';
 export { Code, LruCache } from './code';
 export { type Edit, type Change, type FoldRange, type Position, type FilePosition } from './code';
 export { Operation } from './code';

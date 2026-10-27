@@ -103,8 +103,8 @@ export const Icons = {
       <path d="M8 10L12 6L16 10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   ),
-  Refresh: () => (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+  Refresh: ({ size = 14 }: { size?: number } = {}) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <path d="M20 5V10H15" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
       <path d="M4 19V14H9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
       <path d="M20 10C18.7 6.9 15.7 5 12.4 5C8.8 5 5.6 7.2 4.3 10.6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />

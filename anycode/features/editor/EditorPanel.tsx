@@ -99,7 +99,7 @@ export const EditorPanel = ({
     const isCurrentReady = Boolean(paneFile && editorState && paneFile.id === paneFileId);
     const currentView: ActivePanelView | null = isCurrentReady
         ? (markdownPreviewOpen && isCurrentFileMarkdown
-            ? { type: 'markdown', file: paneFile!, editor: editorState }
+            ? { type: 'markdown', file: paneFile!, editor: editorState ?? null }
             : { type: 'editor', id: paneFile!.id, state: editorState! })
         : null;
 

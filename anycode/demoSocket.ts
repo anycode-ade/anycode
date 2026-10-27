@@ -303,7 +303,7 @@ const applyEditsToNode = (node: VfsNode, edits: any[]): void => {
 const themeModules = import.meta.glob<Record<string, any>>('../themes/*.json', { eager: true });
 
 const THEME_FILES_MAP: Record<string, any> = {};
-const THEME_LIST: { name: string; fileName: string }[] = [];
+const THEME_LIST: { id?: string; name: string; fileName: string; themeName?: string }[] = [];
 
 Object.entries(themeModules).forEach(([filePath, mod]) => {
     const fileName = filePath.split('/').pop() || '';
@@ -395,7 +395,7 @@ export class DemoSocket {
         return this;
     }
 
-    private emitLocal(event: string, ...args: any[]): void {
+    emitLocal(event: string, ...args: any[]): void {
         const handlers = this.listeners.get(event);
         if (handlers) {
             handlers.forEach((fn) => {

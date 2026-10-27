@@ -686,7 +686,8 @@ export const useAgents = ({
             }
 
             updateSession(data.agent_id, (existing) => {
-                let messages = [...(existing?.messages ?? [])];
+                if (!existing) return existing;
+                let messages = [...existing.messages];
                 let contextUsage = existing?.contextUsage;
                 let availableCommands = existing?.availableCommands;
 
@@ -1273,7 +1274,7 @@ export const useAgents = ({
                 if (!existing) return existing;
                 return {
                     ...existing,
-                    messages: existing.messages.filter((message) => message.client_id !== clientId),
+                    messages: existing.messages.filter((message) => ('client_id' in message ? message.client_id !== clientId : true)),
                     isProcessing: false,
                 };
             });

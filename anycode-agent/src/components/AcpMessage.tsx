@@ -29,7 +29,7 @@ const FileIcon: React.FC<{ path?: string; styleType?: string; className?: string
 
 let codeBlockIdCounter = 0;
 
-interface AcpMessageProps {
+export interface AcpMessageProps {
   message: AcpMessageType;
   toolResult?: AcpToolResultMessage;
   toolUpdates?: AcpToolUpdateMessage[];

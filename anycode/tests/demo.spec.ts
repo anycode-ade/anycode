@@ -1053,7 +1053,7 @@ test.describe('Anycode Live Demo Mode E2E Tests', () => {
 
         const selectionIsInside = async (selector: typeof fileEditorRegion) => selector.evaluate((element) => {
             const anchorNode = window.getSelection()?.anchorNode;
-            return anchorNode !== null && element.contains(anchorNode);
+            return Boolean(anchorNode && element.contains(anchorNode));
         });
         await page.evaluate(() => {
             const testWindow = window as typeof window & {

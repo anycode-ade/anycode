@@ -87,7 +87,7 @@ export interface EditorState {
 
 export class AnycodeEditor {
     private code: Code;
-    private cursor: Point = { row: 0, column: 0 };
+    public cursor: Point = { row: 0, column: 0 };
     private settings: EditorSettings;
     private editorFontSettingsHandler: ((event: Event) => void) | null = null;
     private renderer!: Renderer;
@@ -99,7 +99,7 @@ export class AnycodeEditor {
     private codeContent!: HTMLDivElement;
 
     private isMouseSelecting: boolean = false;
-    private selection: Selection | null = null;
+    public selection: Selection | null = null;
     private autoScrollTimer: number | null = null;
     private isWordSelection: boolean = false;
     private wordSelectionAnchor: Point = { row: 0, column: 0 };

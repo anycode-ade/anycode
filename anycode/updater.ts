@@ -7,7 +7,7 @@ export async function initAutoUpdater() {
     const { check } = await import('@tauri-apps/plugin-updater');
     const update = await check();
 
-    if (update?.available) {
+    if (update) {
       console.log(`[Anycode Updater] Found update ${update.version} (current: ${update.currentVersion})`);
       const shouldUpdate = window.confirm(
         `Доступна новая версия Anycode ${update.version}.\n\nУстановить обновление сейчас?`

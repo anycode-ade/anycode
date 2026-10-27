@@ -86,7 +86,7 @@ const MultibufferPanel: React.FC<MultibufferPanelProps> = ({
     const [deletedEntriesVersion, setDeletedEntriesVersion] = useState(0);
     const fileById = useMemo(() => new Map(openFiles.map((file) => [file.id, file])), [openFiles]);
     const reviewFiles = files;
-    const readyFiles = useMemo<ReadyFile[]>(() => files.flatMap((file) => {
+    const readyFiles = useMemo<ReadyFile[]>(() => files.flatMap((file): ReadyFile[] => {
             const fileState = fileById.get(file.id);
             const editor = editorStates.get(file.id);
             if (fileState && editor) return [{ file, fileState, editor }];
@@ -176,7 +176,7 @@ const MultibufferPanel: React.FC<MultibufferPanelProps> = ({
                     text: selectedText,
                     source: 'editor',
                     label: `${fileName}${linesLabel ? ` (${linesLabel})` : ''}`,
-                    filePath: resolvedFilePath,
+                    filePath: resolvedFilePath ?? undefined,
                     displayPath,
                     lineRange,
                     language: resolvedLanguage,
@@ -395,6 +395,7 @@ const MultibufferPanel: React.FC<MultibufferPanelProps> = ({
                 if (isInternalChangeRef.current) return;
                 const currentCode = currentCodeRef.current;
                 const editor = sharedEditorRef.current;
+                if (!currentCode || !editor) return;
                 const fileId = currentCode.getFileIdAtLine(editor.cursor.row);
                 const localLine = currentCode.getMultibufferLineNumber(editor.cursor.row);
                 const col = editor.cursor.column;

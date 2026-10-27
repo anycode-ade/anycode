@@ -1,13 +1,12 @@
 // Components
 export {
   AgentSession,
-  AgentSession as AcpSession,
   type AgentSessionProps,
   type AgentSessionProps as AcpSessionProps,
   type AcpEmptyStateRenderProps,
 } from './components/AgentSession';
 export { AcpMessages } from './components/AcpMessages';
-export { AcpMessage } from './components/AcpMessage';
+export { AcpMessage as AcpMessageView, type AcpMessageProps } from './components/AcpMessage';
 export { AcpInput } from './components/AcpInput';
 export { AcpQueue, type AcpQueueProps } from './components/AcpQueue';
 export { AcpAvatar, type AcpAvatarProps } from './components/AcpAvatar';

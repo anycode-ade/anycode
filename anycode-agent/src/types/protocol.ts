@@ -253,6 +253,7 @@ export interface AcpSession {
     agentId: string;
     agentName: string;
     profile?: string;
+    avatar?: string;
     sessionId?: string;
     projectId?: string;
     agentConfigId?: string;

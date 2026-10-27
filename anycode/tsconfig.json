@@ -4,6 +4,7 @@
     "outDir": "dist",
     "rootDir": "..",
     "jsx": "react-jsx",
+    "types": ["vite/client", "node"],
     "paths": {
       "anycode-agent": ["../anycode-agent/src"],
       "anycode-agent/*": ["../anycode-agent/src/*"],

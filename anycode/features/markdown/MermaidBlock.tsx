@@ -17,7 +17,6 @@ const getMermaid = (): Promise<Mermaid> => {
                 theme: 'dark',
                 look: 'classic',
                 securityLevel: 'loose',
-                useMaxWidth: false,
                 flowchart: {
                     useMaxWidth: false,
                     htmlLabels: true,
@@ -41,7 +40,6 @@ const getMermaid = (): Promise<Mermaid> => {
                 },
                 class: {
                     useMaxWidth: false,
-                    fontSize: 13,
                 },
                 er: {
                     useMaxWidth: false,

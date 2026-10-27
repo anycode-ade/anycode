@@ -386,7 +386,7 @@ export const useEditors = ({ wsRef, isConnected, onFileClosed }: UseEditorsParam
                 clearTimeout(batch.timerId);
             }
 
-            batch.timerId = setTimeout(() => {
+            batch.timerId = window.setTimeout(() => {
                 flushChanges(filename);
             }, BATCH_DELAY_MS);
         }
@@ -1539,7 +1539,7 @@ export const useEditors = ({ wsRef, isConnected, onFileClosed }: UseEditorsParam
                     if (batch.timerId) {
                         clearTimeout(batch.timerId);
                     }
-                    batch.timerId = setTimeout(() => {
+                    batch.timerId = window.setTimeout(() => {
                         flushChanges(nextKey);
                     }, BATCH_DELAY_MS);
                     pendingChangesRef.current.delete(key);

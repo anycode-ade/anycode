@@ -8,6 +8,8 @@ export type FileSource =
     | { type: 'filesystem'; path: string }
     | { type: 'git'; revision: string; path: string; project_id?: string };
 
+export type ConnectionStatus = 'connecting' | 'connected' | 'reconnecting';
+
 export interface TreeNode {
     id: string;
     name: string;
