@@ -120,7 +120,7 @@ pub async fn local_image_handler(
         return (StatusCode::FORBIDDEN, "image is outside open projects").into_response();
     };
     let workspace_root = match fs::canonicalize(&project.info.root).await {
-        Ok(dir) => dir,
+        Ok(dir) => crate::utils::strip_verbatim_prefix(dir),
         Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "project unavailable").into_response(),
     };
 
@@ -130,7 +130,7 @@ pub async fn local_image_handler(
         resolve_workspace_path(path, &workspace_root)
     };
     let canonical_path = match fs::canonicalize(&requested_path).await {
-        Ok(path) => path,
+        Ok(path) => crate::utils::strip_verbatim_prefix(path),
         Err(_) => return (StatusCode::NOT_FOUND, "image not found").into_response(),
     };
 

@@ -190,26 +190,41 @@ pub fn is_search_ignored_dir(path: &std::path::Path) -> bool {
         .any(|p| SEARCH_IGNORE_DIRS.contains(&p.to_string_lossy().as_ref()))
 }
 
+/// Canonicalizes `path` and removes Windows' verbatim prefix, so the result is
+/// comparable with ordinary paths such as project roots. On Windows, `canonicalize`
+/// returns `\\?\C:\...`, which does not `starts_with`-match `C:\...`.
+pub fn canonicalize_path(path: &Path) -> std::io::Result<PathBuf> {
+    std::fs::canonicalize(path).map(strip_verbatim_prefix)
+}
+
+/// Turns `\\?\C:\x` into `C:\x` and `\\?\UNC\server\share` into `\\server\share`.
+/// Any other path, including verbatim ones without a drive or UNC root, is returned as is.
+pub fn strip_verbatim_prefix(path: PathBuf) -> PathBuf {
+    #[cfg(windows)]
+    {
+        let Some(text) = path.to_str() else {
+            return path;
+        };
+        if let Some(unc) = text.strip_prefix(r"\\?\UNC\") {
+            return PathBuf::from(format!(r"\\{unc}"));
+        }
+        if let Some(drive) = text.strip_prefix(r"\\?\") {
+            let bytes = drive.as_bytes();
+            if bytes.len() >= 3 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':' && bytes[2] == b'\\' {
+                return PathBuf::from(drive);
+            }
+        }
+    }
+    path
+}
+
 pub fn abs_file(input: &str) -> anyhow::Result<String> {
     let srcdir = std::path::PathBuf::from(input);
     if !srcdir.is_absolute() {
         anyhow::bail!("Path must be resolved against a project root before use");
     }
-    match std::fs::canonicalize(&srcdir) {
-        Ok(c) => {
-            #[cfg(windows)]
-            {
-                let s = c.to_string_lossy().to_string();
-                if let Some(stripped) = s.strip_prefix(r"\\?\") {
-                    if !stripped.starts_with("UNC") {
-                        return Ok(stripped.to_string());
-                    }
-                }
-                Ok(s)
-            }
-            #[cfg(not(windows))]
-            Ok(c.to_string_lossy().to_string())
-        }
+    match canonicalize_path(&srcdir) {
+        Ok(c) => Ok(c.to_string_lossy().to_string()),
         Err(e) => {
             if e.kind() == std::io::ErrorKind::NotFound {
                 let normalized = normalize_watch_path(&srcdir);
@@ -314,9 +329,7 @@ pub fn path_to_uri(path: &str) -> anyhow::Result<Uri> {
     if !path_obj.is_absolute() {
         anyhow::bail!("LSP paths must be resolved against a project root");
     }
-    let canonical_path = path_obj
-        .canonicalize()
-        .unwrap_or_else(|_| path_obj.to_path_buf());
+    let canonical_path = canonicalize_path(path_obj).unwrap_or_else(|_| path_obj.to_path_buf());
     let absolute_path = canonical_path;
 
     let url = url::Url::from_file_path(&absolute_path)
@@ -355,6 +368,35 @@ impl FileMeta {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn canonicalized_child_paths_start_with_canonicalized_root() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let file_path = temp_dir.path().join("child.txt");
+        std::fs::write(&file_path, "x").unwrap();
+
+        let root = canonicalize_path(temp_dir.path()).unwrap();
+        let child = canonicalize_path(&file_path).unwrap();
+
+        assert!(child.starts_with(&root));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn strip_verbatim_prefix_yields_ordinary_windows_paths() {
+        assert_eq!(
+            strip_verbatim_prefix(PathBuf::from(r"\\?\C:\proj\src")),
+            PathBuf::from(r"C:\proj\src")
+        );
+        assert_eq!(
+            strip_verbatim_prefix(PathBuf::from(r"\\?\UNC\server\share\proj")),
+            PathBuf::from(r"\\server\share\proj")
+        );
+        assert_eq!(
+            strip_verbatim_prefix(PathBuf::from(r"C:\proj")),
+            PathBuf::from(r"C:\proj")
+        );
+    }
 
     #[test]
     fn test_file_meta_captures_mtime_and_size() {

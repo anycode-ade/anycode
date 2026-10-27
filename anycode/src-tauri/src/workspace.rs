@@ -43,7 +43,7 @@ pub fn save_config(config: &WorkspaceConfig) {
 }
 
 pub fn record_workspace(path: &Path) {
-    let canonical = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+    let canonical = anycode::utils::canonicalize_path(path).unwrap_or_else(|_| path.to_path_buf());
     let path_str = canonical.to_string_lossy().to_string();
     let name = canonical
         .file_name()

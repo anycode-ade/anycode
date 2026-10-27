@@ -278,8 +278,7 @@ pub fn canonical_directory(path: &Path) -> Result<PathBuf> {
     if !path.is_absolute() {
         bail!("Directory path must be absolute");
     }
-    let canonical = path
-        .canonicalize()
+    let canonical = crate::utils::canonicalize_path(path)
         .with_context(|| format!("Directory does not exist or cannot be accessed: {}", path.display()))?;
     if !canonical.is_dir() {
         bail!("Not a directory: {}", canonical.display());
@@ -321,7 +320,7 @@ pub fn list_directory_entries(path: &Path) -> Result<(Vec<(String, String)>, Vec
             continue;
         };
         if entry_path.is_dir() {
-            let Ok(canonical) = entry_path.canonicalize() else {
+            let Ok(canonical) = crate::utils::canonicalize_path(&entry_path) else {
                 continue;
             };
             directories.push((name, canonical.to_string_lossy().into_owned()));
@@ -375,7 +374,10 @@ mod tests {
         );
         let added = manager.add_project(root.path()).unwrap();
         assert_eq!(manager.projects().len(), 1);
-        assert_eq!(added.id, root.path().canonicalize().unwrap().to_string_lossy());
+        assert_eq!(
+            added.id,
+            crate::utils::canonicalize_path(root.path()).unwrap().to_string_lossy()
+        );
     }
 
     #[test]

@@ -537,7 +537,7 @@ pub async fn handle_create(
         let Some(parent) = fp.parent() else {
             error_ack!(ack, &request.name, "Invalid destination path");
         };
-        let canonical_parent = match parent.canonicalize() {
+        let canonical_parent = match crate::utils::canonicalize_path(parent) {
             Ok(parent) => parent,
             Err(error) => error_ack!(ack, &request.name, "Cannot access destination folder: {error}"),
         };

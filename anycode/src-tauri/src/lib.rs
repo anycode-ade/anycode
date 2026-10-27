@@ -19,7 +19,7 @@ async fn open_folder_dialog() -> Result<Option<String>, String> {
   });
 
   if let Ok(Some(folder)) = rx.await {
-    let canonical = folder.canonicalize().unwrap_or_else(|_| folder);
+    let canonical = anycode::utils::canonicalize_path(&folder).unwrap_or_else(|_| folder);
     let path_str = canonical.to_string_lossy().to_string();
     Ok(Some(path_str))
   } else {
@@ -31,7 +31,7 @@ async fn open_folder_dialog() -> Result<Option<String>, String> {
 fn open_workspace(path: String) -> Result<String, String> {
   let p = std::path::PathBuf::from(&path);
   if p.is_dir() {
-    let canonical = p.canonicalize().unwrap_or_else(|_| p);
+    let canonical = anycode::utils::canonicalize_path(&p).unwrap_or_else(|_| p);
     let path_str = canonical.to_string_lossy().to_string();
     Ok(path_str)
   } else {
@@ -108,7 +108,7 @@ pub fn run() {
               .set_title("Open Workspace Folder")
               .pick_folder()
             {
-              let canonical = folder.canonicalize().unwrap_or_else(|_| folder);
+              let canonical = anycode::utils::canonicalize_path(&folder).unwrap_or_else(|_| folder);
               let path_str = canonical.to_string_lossy().to_string();
               let _ = handle_clone.emit("workspace_folder_selected", path_str);
             }
