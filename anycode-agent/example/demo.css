@@ -86,3 +86,9 @@ body {
     flex: 1;
     min-width: 0;
 }
+
+/* Native scrollbars take the system theme, which can be nearly invisible on the dark demo background. */
+.agent-pane * {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
+}
