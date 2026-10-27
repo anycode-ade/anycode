@@ -12,6 +12,15 @@ export default defineConfig({
         find: /^anycode-agent$/,
         replacement: fileURLToPath(new URL("../src/index.ts", import.meta.url)),
       },
+      // Code blocks use the anycode editor source the same way.
+      {
+        find: /^anycode-editor-react$/,
+        replacement: fileURLToPath(new URL("../../anycode-editor/react/src/index.ts", import.meta.url)),
+      },
+      {
+        find: /^anycode-editor$/,
+        replacement: fileURLToPath(new URL("../../anycode-editor/core/src/index.ts", import.meta.url)),
+      },
     ],
     // The source resolves react from anycode-agent/node_modules; keep one copy so hooks work.
     dedupe: ["react", "react-dom"],

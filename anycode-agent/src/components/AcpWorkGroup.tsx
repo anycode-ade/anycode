@@ -2,9 +2,12 @@ import React, { useState, useEffect, useRef } from 'react';
 import { AcpIcons } from './AcpIcons';
 import './AcpWorkGroup.css';
 
+const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? '' : 's'}`;
+
 interface AcpWorkGroupProps {
   isLatest: boolean;
   messageCount: number;
+  editCount: number;
   searchActive?: boolean;
   isSearchMatch?: boolean;
   onExpansionChange?: () => void;
@@ -17,6 +20,7 @@ interface AcpWorkGroupProps {
 export const AcpWorkGroup: React.FC<AcpWorkGroupProps> = ({
   isLatest,
   messageCount,
+  editCount,
   searchActive = false,
   isSearchMatch = false,
   onExpansionChange,
@@ -48,6 +52,8 @@ export const AcpWorkGroup: React.FC<AcpWorkGroupProps> = ({
     return <>{children}</>;
   }
 
+  const edits = editCount > 0 && <span className="acp-work-group-edits">{plural(editCount, 'edit')}</span>;
+
   const collapsedAfterLatestTransition = previousIsLatestRef.current && !isLatest && !isSearchMatch;
   const renderedExpanded = collapsedAfterLatestTransition ? false : isExpanded;
 
@@ -65,7 +71,7 @@ export const AcpWorkGroup: React.FC<AcpWorkGroupProps> = ({
           <AcpIcons.ChevronRight />
         </span>
         <span className="acp-work-group-title">
-          worked ({messageCount} step{messageCount !== 1 ? 's' : ''})
+          Worked ({plural(messageCount, 'step')}{editCount > 0 && ', '}{edits})
         </span>
       </div>
       {renderedExpanded && (

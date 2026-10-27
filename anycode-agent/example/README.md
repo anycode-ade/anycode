@@ -10,6 +10,10 @@ npm run dev        # http://localhost:3003
 
 The `vite.config.js` alias maps `anycode-agent` to `../src/index.ts`, so edits to the component show up on reload. Remove the alias to use the published package from npm instead.
 
+Code blocks and diffs use the anycode editor. Its source is aliased from `../../anycode-editor/` the same way. The editor loads tree-sitter grammars from `public/wasm`, which is a symlink to `anycode-editor/core/wasm`. If the link is missing, recreate it with `ln -s ../../../anycode-editor/core/wasm public/wasm`.
+
+![Example app: transcript with an edit diff](https://i.imgur.com/m9PaaPg.png)
+
 ## Demos
 
 - **Transcript**: a static fixture showing every message role: user, thought, tool calls (read, edit with diff), tool results, and markdown with code. Sending a prompt appends a placeholder reply. Undo truncates the transcript.

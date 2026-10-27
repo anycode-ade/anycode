@@ -16,15 +16,18 @@
   -webkit-user-select: none;
   font-size: 0.86em;
   font-family: var(--interface-font-family);
-  color: var(--anycode-text-tertiary, #777777);
+  /* Muted through alpha rather than opacity, so the edit count can keep its own colour. */
+  color: color-mix(in srgb, var(--text-color, #ccc) 50%, transparent);
   font-weight: var(--interface-font-weight, 700);
-  opacity: 0.7;
-  transition: opacity 0.2s ease, color 0.2s ease;
+  transition: color 120ms ease;
 }
 
 .acp-work-group-header:hover {
-  opacity: 1;
-  color: var(--anycode-text-secondary, #aaaaaa);
+  color: color-mix(in srgb, var(--text-color, #ccc) 85%, transparent);
+}
+
+.acp-work-group-edits {
+  color: #4cc38a;
 }
 
 .acp-work-group-icon {

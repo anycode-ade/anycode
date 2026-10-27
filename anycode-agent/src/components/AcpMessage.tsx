@@ -298,7 +298,7 @@ const ToolCallMessage: React.FC<{
   const endLine = inputDetails?.endLine;
   const cleanInput = inputDetails?.cleanInput ?? {};
   const hasCleanKeys = Object.keys(cleanInput).length > 0;
-  const isEditCall = toolCallView.kind === 'edit' || toolCallView.diffs.length > 0;
+  const isEditCall = isEditToolView(toolCallView);
   const isTerminalCommand = !isEditCall && toolCallView.diffs.length === 0 && !filePath && Boolean(cmd);
   const exitCode = resultDetails?.exitCode;
   const effectiveStatus = message.status || resultDetails?.status;
@@ -1105,6 +1105,15 @@ const getToolCallView = (
   };
 };
 
+const isEditToolView = (view: ReturnType<typeof getToolCallView>) =>
+  view.kind === 'edit' || view.diffs.length > 0;
+
+export const isEditToolCall = (
+  message: AcpToolCallMessage,
+  toolUpdates?: AcpToolUpdateMessage[],
+  toolResult?: AcpToolResultMessage,
+) => isEditToolView(getToolCallView(message, toolUpdates, toolResult));
+
 type ParsedFileLink = {
   path: string;
   line?: number;
@@ -1823,29 +1832,25 @@ const ThoughtMessage: React.FC<{
   if (!message.content || message.content.trim() === '') {
     return null;
   }
-  const shouldToggle = true;
-  const expanded = isExpanded;
-  const lines = message.content.trim().split('\n');
-  const previewLine = lines[0] || '';
-  const previewText = previewLine
-    .replace(/\*\*(.*?)\*\*/g, '$1')
-    .replace(/[`*_~]/g, '');
   return (
-    <div className="acp-message acp-message-thought">
+    <div className={`acp-message acp-message-thought ${isExpanded ? 'expanded' : 'collapsed'}`}>
       <div className="acp-message-content">
-        <div
-          className={`acp-thought-text ${!expanded ? 'acp-thought-text-collapsed' : ''}`}
-          onClick={shouldToggle ? onToggle : undefined}
-          style={shouldToggle ? { cursor: 'pointer' } : undefined}
+        <button
+          type="button"
+          className="acp-thought-header"
+          aria-expanded={isExpanded}
+          onClick={onToggle}
         >
-          {expanded ? (
-            <div className="acp-thought-markdown">
-              <MarkdownTextBlock content={message.content.trim()} />
-            </div>
-          ) : (
-            <span className="acp-thought-preview">{previewText}…</span>
-          )}
-        </div>
+          <span className="acp-toggle-icon acp-thought-chevron">
+            <AcpIcons.ChevronRight />
+          </span>
+          Thinking
+        </button>
+        {isExpanded && (
+          <div className="acp-thought-body">
+            <MarkdownTextBlock content={message.content.trim()} />
+          </div>
+        )}
       </div>
     </div>
   );

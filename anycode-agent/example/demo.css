@@ -9,6 +9,9 @@ body {
     background: #1e1e1e;
     color: #d4d4d4;
     font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --interface-font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --editor-font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    --interface-font-weight: 400;
 }
 
 .app {
@@ -26,6 +29,7 @@ body {
     z-index: 1;
     display: flex;
     flex-direction: column;
+    align-items: center;
     gap: 10px;
     padding: 12px 14px;
     background: #252526;
@@ -37,10 +41,12 @@ body {
     margin: 0;
     font-size: 16px;
     font-weight: 600;
+    text-align: center;
 }
 
 .app-header nav {
     display: flex;
+    flex-direction: column;
     gap: 8px;
 }
 
@@ -59,8 +65,8 @@ body {
 }
 
 .btn.active {
-    background: #0e639c;
-    border-color: #0e639c;
+    background: #3c3c3c;
+    border-color: #666;
 }
 
 .app-main {

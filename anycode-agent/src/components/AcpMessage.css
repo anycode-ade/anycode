@@ -18,6 +18,7 @@
 
 .acp-message-thought {
     align-items: flex-start;
+    margin-bottom: 0px;
 }
 
 .acp-message-role {
@@ -273,6 +274,8 @@
     border-radius: 6px;
     background: var(--assistant-message-bg, #2a2a2a);
     overflow: hidden;
+    /* Gutter and diff tints use this as their opaque backing; match the block so the gutter doesn't look like a separate panel. */
+    --background-color: var(--assistant-message-bg, #2a2a2a);
     --editor-font-size: 12px;
     --editor-font-weight: 500;
 }
@@ -406,6 +409,7 @@
     background-color: transparent;
     color: inherit;
     white-space: pre;
+    font-family: var(--editor-font-family, monospace);
     font-size: 0.86em;
     line-height: 1.5;
 }
@@ -463,7 +467,7 @@
     border: none;
     border-radius: 0;
     padding: 0;
-    color: var(--user-message-fg, var(--theme-foreground, var(--text-color, #ffffff)));
+    color: var(--user-message-fg, var(--theme-foreground, var(--text-color, #e0e0e0)));
     width: 100%;
     box-sizing: border-box;
     backdrop-filter: none;
@@ -514,7 +518,6 @@
 
 .acp-message-attachment-image {
     width: 100%;
-    max-width: 320px;
     height: auto;
     border-radius: 8px;
     display: block;
@@ -761,7 +764,7 @@
 .acp-tool-call-name {
     font-family: var(--editor-font-family, "JetBrains Mono", monospace);
     font-size: inherit;
-    font-weight: 600;
+    font-weight: 400;
     color: var(--text-color, #ccc);
     opacity: 0.5;
     min-width: 0;
@@ -956,50 +959,65 @@
     min-height: 24px;
 }
 
-.acp-thought-text {
-    display: flex;
+.acp-thought-header {
+    display: inline-flex;
     align-items: center;
     gap: 6px;
-    min-height: 24px;
-    line-height: 24px;
-    font-size: 0.79em;
+    height: var(--acp-message-line-height, 24px);
+    min-height: var(--acp-message-line-height, 24px);
+    line-height: var(--acp-message-line-height, 24px);
+    padding: 0;
+    border: 0;
+    background: none;
+    font: inherit;
+    font-family: var(--interface-font-family);
+    font-size: 0.86em;
+    font-weight: var(--interface-font-weight, 700);
     color: var(--text-color, #ccc);
     opacity: 0.5;
-    white-space: pre-wrap;
+    cursor: pointer;
+    user-select: none;
+    -webkit-user-select: none;
     transition: opacity 120ms ease;
 }
 
-.acp-thought-markdown,
-.acp-thought-text > p {
-    flex: 1 1 auto;
-    min-width: 0;
+.acp-thought-header:hover {
+    opacity: 0.85;
+}
+
+.acp-thought-header:focus {
+    outline: none;
+}
+
+.acp-thought-chevron {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: inherit;
+    opacity: 1;
+    transition: transform 0.2s ease;
+}
+
+.acp-message-thought.expanded .acp-thought-chevron {
+    transform: rotate(90deg);
+}
+
+.acp-thought-body {
+    margin-bottom: 8px;
+    /* Chevron (14px) + header gap (6px): text starts under the "T" of Thinking. */
+    padding-left: 20px;
+    font-size: 0.79em;
+    color: var(--text-color, #ccc);
+    opacity: 0.6;
+}
+
+.acp-thought-body > * {
     margin: 0;
 }
 
-.acp-thought-markdown > p {
-    margin: 0;
-}
-
-.acp-thought-text * {
+.acp-thought-body * {
     font-family: inherit;
     font-weight: inherit;
-}
-
-.acp-thought-text-collapsed {
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.acp-thought-text:hover {
-    opacity: 0.85;
-    color: var(--text-color, #ccc);
-}
-
-.acp-thought-preview {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
 }
 
 /* Error Message Styles */

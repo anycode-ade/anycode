@@ -3,12 +3,13 @@ import { flushSync } from 'react-dom';
 import {
   AcpMessage as AcpMessageType,
   AcpToolCall,
+  AcpToolCallMessage,
   AcpToolResultMessage,
   AcpToolUpdateMessage,
   AcpUserMessage,
   type AgentPromptTemplate,
 } from '../types/protocol';
-import { AcpMessage } from './AcpMessage';
+import { AcpMessage, isEditToolCall } from './AcpMessage';
 import { getToolResultImages, type ToolResultImage } from '../utils/acpToolUtils';
 import { AcpWorkGroup } from './AcpWorkGroup';
 import { AcpAvatar } from './AcpAvatar';
@@ -307,6 +308,16 @@ const AcpMessagesComponent: React.FC<AcpMessagesProps> = ({
     return items;
   }, [messages, toolResultIndexesToSkip, toolUpdateIndexesToSkip, agentWorking]);
 
+  // The result and updates that belong to a tool call row, as the row receives them.
+  const getToolCallLinks = (message: AcpToolCallMessage, index: number) => {
+    const toolResultEntry = toolResultsById.get(message.id);
+    const toolResult = toolResultEntry && toolResultEntry.index > index ? toolResultEntry.message : undefined;
+    const toolUpdates = (toolUpdatesById.get(message.id) ?? [])
+      .filter((entry) => entry.index > index)
+      .map((entry) => entry.message);
+    return { toolResult, toolUpdates };
+  };
+
   const renderMessage = (message: AcpMessageType, index: number) => {
     let isExpanded = false;
     let onToggle: (() => void) | undefined = undefined;
@@ -316,14 +327,7 @@ const AcpMessagesComponent: React.FC<AcpMessagesProps> = ({
     if (message.role === 'tool_call') {
       isExpanded = expandedToolCalls.has(index);
       onToggle = () => onToggleToolCall(index);
-      const toolResultEntry = toolResultsById.get(message.id);
-      if (toolResultEntry && toolResultEntry.index > index) {
-        toolResult = toolResultEntry.message;
-      }
-      const toolUpdateEntries = toolUpdatesById.get(message.id) ?? [];
-      toolUpdates = toolUpdateEntries
-        .filter((entry) => entry.index > index)
-        .map((entry) => entry.message);
+      ({ toolResult, toolUpdates } = getToolCallLinks(message, index));
     } else if (message.role === 'tool_result') {
       isExpanded = expandedToolResults.has(index);
       onToggle = () => onToggleToolResult(index);
@@ -372,13 +376,20 @@ const AcpMessagesComponent: React.FC<AcpMessagesProps> = ({
         const workKey = `work-${segment.messages[0].index}`;
         const isSegmentLatest = isLatest && segmentIndex === segments.length - 1;
         const stored = groupExpansionRef.current.get(workKey);
+        const steps = segment.messages.filter(({ message }) => message.role === 'tool_call' || message.role === 'thought').length;
+        const edits = segment.messages.filter(({ index, message }) => {
+          if (message.role !== 'tool_call') return false;
+          const { toolResult, toolUpdates } = getToolCallLinks(message, index);
+          return isEditToolCall(message, toolUpdates, toolResult);
+        }).length;
         return (
           <AcpWorkGroup
             key={workKey}
             storedExpanded={stored?.isLatest === isSegmentLatest ? stored.expanded : undefined}
             onExpandedChange={(expanded) => groupExpansionRef.current.set(workKey, { expanded, isLatest: isSegmentLatest })}
             isLatest={isSegmentLatest}
-            messageCount={segment.messages.filter(({ message }) => message.role === 'tool_call').length}
+            messageCount={steps}
+            editCount={edits}
             searchActive={activeSearchMessageIndex !== undefined}
             isSearchMatch={segment.messages.some(({ index }) => index === activeSearchMessageIndex)}
             onExpansionChange={onWorkGroupExpansionChange}

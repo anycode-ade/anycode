@@ -4,6 +4,7 @@ import { AgentSession, AcpAvatar } from 'anycode-agent';
 import '../src/styles.css';
 import './demo.css';
 import { streamReply } from './mock-agent.js';
+import { EditorCodeBlock, EditorDiffBlock } from './editor-blocks.jsx';
 
 const noop = () => {};
 
@@ -15,7 +16,7 @@ function DemoAvatar(props) {
   return <AcpAvatar {...props} avatar={AGENT_AVATAR} userAvatar={USER_AVATAR} />;
 }
 
-const COMPONENTS = { Avatar: DemoAvatar };
+const COMPONENTS = { Avatar: DemoAvatar, CodeBlock: EditorCodeBlock, DiffBlock: EditorDiffBlock };
 
 const MODEL_OPTIONS = [
   { config_id: 'model', value: 'sonnet', name: 'Claude Sonnet 4.5' },
