@@ -108,7 +108,7 @@ const FIXTURE_MESSAGES = [
   },
   {
     role: 'assistant',
-    content: 'The offset was computed only when `activeId` changed, so a resize left the active tab off-screen. The fix re-centres on every resize:\n\n```ts\nconst observer = new ResizeObserver(() => scrollToActive());\n```\n\nNext step: add a test for a narrow window.',
+    content: 'The offset was computed only when `activeId` changed, so a resize left the active tab off-screen. The fix re-centres on every resize:\n\n```ts\nuseEffect(() => {\n  const observer = new ResizeObserver(() => scrollToActive());\n  observer.observe(ref.current);\n  return () => observer.disconnect();\n}, [activeId]);\n```\n\nNext step: add a test for a narrow window.',
   },
   {
     role: 'user',
