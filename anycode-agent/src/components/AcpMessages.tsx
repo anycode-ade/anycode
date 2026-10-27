@@ -123,20 +123,36 @@ type WorkSegment =
 const isToolMessage = (message: AcpMessageType) =>
   message.role === 'tool_call' || message.role === 'tool_result' || message.role === 'tool_update';
 
-// Only consecutive tool messages collapse into a work group. Other agent messages stay
-// visible, and a tool's images are placed after its work group as their own segment.
+// Thoughts are work too when they sit next to tool messages, so they fold into the group.
+const isWorkMessage = (message: AcpMessageType) =>
+  isToolMessage(message) || message.role === 'thought';
+
+// True when the next non-thought entry from `from` is a tool message.
+const startsToolWork = (entries: WorkEntry[], from: number) => {
+  for (let position = from; position < entries.length; position++) {
+    const { message } = entries[position];
+    if (message.role !== 'thought') return isToolMessage(message);
+  }
+  return false;
+};
+
+// Consecutive work messages collapse into a work group. Other agent messages stay visible,
+// and a tool's images are placed after its work group as their own segment.
 const splitIntoSegments = (
   entries: WorkEntry[],
   toolResultsById: Map<string, { message: AcpToolResultMessage; index: number }>,
 ): WorkSegment[] => {
   const segments: WorkSegment[] = [];
-  for (const entry of entries) {
+  for (let position = 0; position < entries.length; position++) {
+    const entry = entries[position];
     const { index, message } = entry;
-    if (!isToolMessage(message)) {
+    const last = segments[segments.length - 1];
+    const isStandaloneThought =
+      message.role === 'thought' && last?.type !== 'tools' && !startsToolWork(entries, position + 1);
+    if (!isWorkMessage(message) || isStandaloneThought) {
       segments.push({ type: 'message', index, message });
       continue;
     }
-    const last = segments[segments.length - 1];
     if (last?.type === 'tools') {
       last.messages.push(entry);
     } else {
