@@ -2694,3 +2694,37 @@ mod workspace_tests {
         assert_eq!(String::from_utf8(output).unwrap().trim(), expected_root);
     }
 }
+
+#[cfg(all(test, windows))]
+mod windows_workspace_tests {
+    use super::AcpAgent;
+    use tokio::io::AsyncReadExt;
+
+    // npm-installed agents are `.cmd` shims; the agent must start in the
+    // normalized project root and receive its arguments through cmd.exe.
+    #[tokio::test]
+    async fn agent_cmd_shim_starts_in_normalized_project_root() {
+        let project = tempfile::tempdir().unwrap();
+        let shim = project.path().join("fake-agent.cmd");
+        std::fs::write(&shim, "@echo off\r\necho %CD%\r\necho %1\r\n").unwrap();
+        let expected_root = crate::utils::canonicalize_path(project.path())
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+        let (mut child, _stdin, mut stdout, _stderr) = AcpAgent::spawn_agent_process(
+            shim.to_str().unwrap(),
+            &["hello".to_string()],
+            None,
+            project.path(),
+        )
+        .unwrap();
+
+        let mut output = String::new();
+        stdout.read_to_string(&mut output).await.unwrap();
+        let status = child.wait().await.unwrap();
+
+        assert!(status.success());
+        let lines: Vec<&str> = output.lines().collect();
+        assert_eq!(lines, [expected_root.as_str(), "hello"]);
+    }
+}
