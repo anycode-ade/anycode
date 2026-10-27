@@ -101,6 +101,68 @@ const FIXTURE_MESSAGES = [
     role: 'assistant',
     content: 'The offset was computed only when `activeId` changed, so a resize left the active tab off-screen. The fix re-centres on every resize:\n\n```ts\nconst observer = new ResizeObserver(() => scrollToActive());\n```\n\nNext step: add a test for a narrow window.',
   },
+  {
+    role: 'user',
+    content: 'Ok, add that test. Make sure the active tab stays visible at 320px.',
+    checkpoint_id: 'cp-fixture-2',
+  },
+  {
+    role: 'thought',
+    content: 'Existing tests render TabBar at the default width. I need to find where the test helpers set the viewport, then reuse them.',
+  },
+  {
+    role: 'tool_call',
+    id: 'tool-search',
+    name: 'grep',
+    kind: 'search',
+    status: 'completed',
+    title: 'Search for setViewport',
+    arguments: { pattern: 'setViewport' },
+  },
+  {
+    role: 'tool_result',
+    id: 'tool-search',
+    result: {
+      tool_call_id: 'tool-search',
+      status: 'completed',
+      raw_output: 'src/components/TabBar.test.tsx:12: setViewport(320);\nsrc/test/helpers.ts:4: export function setViewport(width: number) {',
+    },
+  },
+  {
+    role: 'tool_call',
+    id: 'tool-test',
+    name: 'run_command',
+    kind: 'execute',
+    status: 'completed',
+    title: 'Run npm test -- TabBar',
+    arguments: { command: 'npm test -- TabBar' },
+  },
+  {
+    role: 'tool_result',
+    id: 'tool-test',
+    result: {
+      tool_call_id: 'tool-test',
+      status: 'completed',
+      raw_output: 'PASS src/components/TabBar.test.tsx\n  ✓ keeps the active tab visible on resize (34 ms)\n\nTests: 1 passed, 1 total',
+    },
+  },
+  {
+    role: 'assistant',
+    content: 'Added `keeps the active tab visible on resize` to `TabBar.test.tsx`. It sets the viewport to 320px, changes the active tab, and checks that its offset is inside the scroll container.\n\nThe test passes. It fails on the old code, so it covers the regression:\n\n- uses the existing `setViewport` helper\n- does not touch the component code\n- runs in about 34 ms',
+  },
+  {
+    role: 'user',
+    content: 'Does the same bug affect the vertical tab list?',
+    checkpoint_id: 'cp-fixture-3',
+  },
+  {
+    role: 'thought',
+    content: 'The vertical list scrolls on the Y axis and uses the same `activeOffset` helper, so it probably has the same stale-measure problem. I will check it.',
+  },
+  {
+    role: 'assistant',
+    content: 'Probably yes. `VerticalTabList` calls `activeOffset` in the same effect, so it has the same stale-measure issue on a height change.\n\nI would apply the same `ResizeObserver` fix there and add a test for a short window height. Want me to do that?',
+  },
 ];
 
 function TranscriptDemo() {
