@@ -180,10 +180,10 @@ function TranscriptDemo() {
   return (
     <Session
       messages={messages}
-      onSendPrompt={(_agentId, prompt) =>
+      onSendPrompt={(_agentId, prompt, attachments = []) =>
         setMessages((prev) => [
           ...prev,
-          { role: 'user', content: prompt },
+          { role: 'user', content: prompt, attachments },
           { role: 'assistant', content: 'This is a static transcript, so nothing was sent to an agent. Open **Live session** to see streaming, queueing and cancel.' },
         ])
       }
@@ -234,16 +234,16 @@ function LiveDemo() {
     const next = queueRef.current[0];
     if (runRef.current || pausedRef.current || !next) return;
     setQueueItems(queueRef.current.slice(1));
-    startReply(next.prompt);
+    startReply(next.prompt, next.attachments);
   }
 
-  function startReply(prompt) {
+  function startReply(prompt, attachments) {
     const run = {};
     runRef.current = run;
     setIsProcessing(true);
     setMessages((prev) => [
       ...prev,
-      { role: 'user', content: prompt, checkpoint_id: nextId('cp') },
+      { role: 'user', content: prompt, attachments, checkpoint_id: nextId('cp') },
       { role: 'assistant', content: '' },
     ]);
 
@@ -270,10 +270,10 @@ function LiveDemo() {
     return true;
   }
 
-  function handleSendPrompt(_agentId, prompt) {
+  function handleSendPrompt(_agentId, prompt, attachments = []) {
     // An empty queue means nothing is being held back, so a new prompt runs right away.
     if (queueRef.current.length === 0) pausedRef.current = false;
-    setQueueItems([...queueRef.current, { id: nextId('q'), prompt, created_at: Date.now() }]);
+    setQueueItems([...queueRef.current, { id: nextId('q'), prompt, attachments, created_at: Date.now() }]);
     startNext();
   }
 
