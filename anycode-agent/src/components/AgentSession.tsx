@@ -19,7 +19,7 @@ import { AcpMessages } from './AcpMessages';
 import { AcpIcons } from './AcpIcons';
 import { AgentIcon } from './AgentIcon';
 import { AcpAvatar } from './AcpAvatar';
-import { usePersistedScroll, hasPersistedScroll } from '../utils/usePersistedScroll';
+import { usePersistedScroll, hasPersistedScroll, isScrollReportSuspended } from '../utils/usePersistedScroll';
 import { selectionQuoteStore } from '../utils/selectionQuoteStore';
 import { useEvent } from '../utils/useEvent';
 import { AcpComponentsContext, type AcpCustomComponents } from '../slots';
@@ -137,7 +137,9 @@ const useAutoScroll = (messages: AcpMessage[], isProcessing: boolean, agentId: s
   };
 
   // Streaming follow: each frame closes a fraction of the gap to the bottom, so frequent
-  // content updates glide instead of jumping. Stops when auto-scroll is disabled or caught up.
+  // content updates glide instead of jumping. A gap larger than a viewport is a jump (session
+  // opened, tab re-shown, history restored), not streaming growth, so it snaps. Stops when
+  // auto-scroll is disabled or caught up.
   const followBottom = () => {
     if (followBottomRafRef.current !== null) return;
 
@@ -155,7 +157,8 @@ const useAutoScroll = (messages: AcpMessage[], isProcessing: boolean, agentId: s
       }
 
       hideScrollbarDuringAutoScroll();
-      element.scrollTop = gap < 2 ? element.scrollHeight : element.scrollTop + gap * FOLLOW_EASE;
+      const isJump = gap > element.clientHeight;
+      element.scrollTop = gap < 2 || isJump ? element.scrollHeight : element.scrollTop + gap * FOLLOW_EASE;
       lastScrollTopRef.current = element.scrollTop;
       followBottomRafRef.current = requestAnimationFrame(step);
     };
@@ -219,6 +222,11 @@ const useAutoScroll = (messages: AcpMessage[], isProcessing: boolean, agentId: s
 
     const handleScroll = () => {
       if (contentElement.clientHeight === 0 || contentElement.clientWidth === 0) {
+        return;
+      }
+      // Browser reset on show (or the restore that follows it): not user intent, only keep the baseline.
+      if (isScrollReportSuspended(contentElement)) {
+        lastScrollTopRef.current = contentElement.scrollTop;
         return;
       }
       const currentScrollTop = contentElement.scrollTop;
