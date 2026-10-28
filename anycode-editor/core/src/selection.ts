@@ -104,6 +104,15 @@ export function hasDiagnosticSelection(): boolean {
     return isInsideDiagnostic(sel.anchorNode) || isInsideDiagnostic(sel.focusNode);
 }
 
+export function hasGhostLineSelection(): boolean {
+    if (typeof window === 'undefined') return false;
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed || sel.rangeCount === 0) return false;
+    const range = sel.getRangeAt(0);
+    return Array.from(document.querySelectorAll<HTMLElement>('.line.line-deleted-ghost'))
+        .some((ghost) => range.intersectsNode(ghost));
+}
+
 function getNodeCharOffset(node: Node, nodeOffset: number): number {
     if (node.nodeType === 3) {
         return nodeOffset;

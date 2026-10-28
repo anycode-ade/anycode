@@ -40,6 +40,12 @@ export function isInsideDiagnostic(node: Node | null): boolean {
     return !!node.parentElement?.closest?.('.diagnostic');
 }
 
+export function isInsideGhostLine(node: Node | null): boolean {
+    if (!node) return false;
+    const element = node instanceof Element ? node : node.parentElement;
+    return !!element?.closest('.line.line-deleted-ghost');
+}
+
 export function isSideLineElement(node: Element | null | undefined): node is SideLineElement {
     return !!node
         && typeof HTMLDivElement !== 'undefined'

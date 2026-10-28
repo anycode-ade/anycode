@@ -3,7 +3,7 @@ import { Code, Change, Position, type FoldRange, WordHighlight, areWordHighlight
 import { applyEditsKeepingPoints } from "./remoteEdits";
 import { Renderer } from './renderer/Renderer';
 import { getPosFromMouse } from './mouse';
-import { Selection, hasDiagnosticSelection, pointsEqual, getSelection } from "./selection";
+import { Selection, hasDiagnosticSelection, hasGhostLineSelection, pointsEqual, getSelection } from "./selection";
 import {
     Completion,
     CompletionRequest,
@@ -20,7 +20,7 @@ import {
     generateCssClasses, addCssToDocument,
     findPrevWord, findNextWord,
     getCompletionRange, scoreMatches,
-    isFoldElement, isInsideDiagnostic
+    isFoldElement, isInsideDiagnostic, isInsideGhostLine
 } from './utils';
 
 import './styles.css';
@@ -1020,6 +1020,8 @@ export class AnycodeEditor {
 
         if (this.selection && this.selection.nonEmpty()) { return; }
         if (isInsideDiagnostic(e.target as Node)) { return; }
+        // A native drag that started on a ghost line ends with a click; keep its DOM selection.
+        if (hasGhostLineSelection()) { return; }
 
         e.preventDefault();
 
@@ -1170,6 +1172,11 @@ export class AnycodeEditor {
         if (this.getDiffGapTarget(e.target)) {
             e.preventDefault();
             e.stopPropagation();
+            return;
+        }
+        if (isInsideGhostLine(e.target as Node)) {
+            this.selection = null;
+            this.renderCursorOrSelection();
             return;
         }
         if (isInsideDiagnostic(e.target as Node)) return;
@@ -1443,6 +1450,9 @@ export class AnycodeEditor {
         if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'c') {
             if (hasDiagnosticSelection()) {
                 console.log('hasDiagnosticSelection');
+                return;
+            }
+            if (hasGhostLineSelection()) {
                 return;
             }
         }
