@@ -66,6 +66,10 @@ function createMockElement(tag: string = 'div'): any {
                 listeners[event] = listeners[event].filter(f => f !== fn);
             }
         },
+        dispatchEvent(event: any) {
+            const evType = typeof event === 'string' ? event : event?.type;
+            listeners[evType]?.forEach(fn => fn(event));
+        },
         appendChild(child: any) {
             children.push(child);
             child.parentElement = this;
@@ -347,5 +351,33 @@ describe('ScrollbarMarkersRenderer', () => {
         expect(modifiedMarker.className).toBe('smrd modified');
         expect(modifiedMarker.style.top).toBe(`${((185 + 6) / 277) * 100}%`);
         expect(modifiedMarker.style.height).toBe(`${(5 / 277) * 100}%`);
+    });
+
+    it('attaches scrollend listener and fades in on scroll without re-creating timers continuously', () => {
+        const renderer = new ScrollbarMarkersRenderer(
+            container,
+            () => {},
+            () => {},
+            () => {},
+            true,
+            wrapper
+        );
+
+        const element = (renderer as any).element;
+        expect(element.classList.contains('visible')).toBe(false);
+
+        // Multiple rapid scrolls
+        renderer.triggerFadeIn();
+        expect(element.classList.contains('visible')).toBe(true);
+
+        renderer.triggerFadeIn();
+        renderer.triggerFadeIn();
+        expect(element.classList.contains('visible')).toBe(true);
+
+        // Dispatch scrollend event
+        container.dispatchEvent({ type: 'scrollend' });
+
+        // Clean up removes listener
+        renderer.clean();
     });
 });

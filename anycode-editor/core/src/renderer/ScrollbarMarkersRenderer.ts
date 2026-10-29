@@ -96,6 +96,10 @@ export class ScrollbarMarkersRenderer {
         );
         if (this.enabled) this.wrapper.appendChild(this.element);
 
+        if (this.container?.addEventListener) {
+            this.container.addEventListener('scrollend', this.handleScrollEnd);
+        }
+
         this.setupResizeObserver();
     }
 
@@ -117,6 +121,25 @@ export class ScrollbarMarkersRenderer {
     }
 
     private fadeTimer: number | null = null;
+    private hasScrollEnd = typeof window !== 'undefined' && 'onscrollend' in window;
+    private lastScheduleTime = 0;
+
+    private handleScrollEnd = () => {
+        this.scheduleHide();
+    };
+
+    public scheduleHide() {
+        if (this.fadeTimer !== null) {
+            globalThis.clearTimeout(this.fadeTimer);
+        }
+
+        this.fadeTimer = globalThis.setTimeout(() => {
+            if (this.element && !this.element.classList.contains("dragging")) {
+                this.element.classList.remove("visible");
+            }
+            this.fadeTimer = null;
+        }, 1000) as unknown as number;
+    }
 
     public triggerFadeIn() {
         if (!this.element) return;
@@ -125,21 +148,26 @@ export class ScrollbarMarkersRenderer {
         }
 
         if (this.fadeTimer !== null) {
-            window.clearTimeout(this.fadeTimer);
+            globalThis.clearTimeout(this.fadeTimer);
+            this.fadeTimer = null;
         }
 
-        this.fadeTimer = window.setTimeout(() => {
-            if (this.element && !this.element.classList.contains("dragging")) {
-                this.element.classList.remove("visible");
+        if (!this.hasScrollEnd) {
+            const now = Date.now();
+            if (now - this.lastScheduleTime >= 250) {
+                this.lastScheduleTime = now;
+                this.scheduleHide();
             }
-            this.fadeTimer = null;
-        }, 1000);
+        }
     }
 
     public clean() {
         if (this.fadeTimer !== null) {
-            window.clearTimeout(this.fadeTimer);
+            globalThis.clearTimeout(this.fadeTimer);
             this.fadeTimer = null;
+        }
+        if (this.container?.removeEventListener) {
+            this.container.removeEventListener('scrollend', this.handleScrollEnd);
         }
         if (this.resizeObserver) {
             this.resizeObserver.disconnect();
@@ -616,6 +644,7 @@ export class ScrollbarMarkersRenderer {
                 this.element.removeEventListener('pointerup', handleThumbUp);
                 this.element.removeEventListener('pointercancel', handleThumbUp);
                 this.updateThumbPosition(this.container.scrollTop, true);
+                this.scheduleHide();
             };
 
             this.element.addEventListener('pointermove', handleThumbMove);
@@ -690,6 +719,7 @@ export class ScrollbarMarkersRenderer {
             this.element.removeEventListener('pointermove', handlePointerMove);
             this.element.removeEventListener('pointerup', handlePointerUp);
             this.element.removeEventListener('pointercancel', handlePointerUp);
+            this.scheduleHide();
         };
 
         revealClosestMarker(event.clientY);
