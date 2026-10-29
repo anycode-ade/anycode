@@ -96,10 +96,6 @@ export class ScrollbarMarkersRenderer {
         );
         if (this.enabled) this.wrapper.appendChild(this.element);
 
-        if (this.container?.addEventListener) {
-            this.container.addEventListener('scrollend', this.handleScrollEnd);
-        }
-
         this.setupResizeObserver();
     }
 
@@ -121,53 +117,40 @@ export class ScrollbarMarkersRenderer {
     }
 
     private fadeTimer: number | null = null;
-    private hasScrollEnd = typeof window !== 'undefined' && 'onscrollend' in window;
-    private lastScheduleTime = 0;
+    private lastScrollTime = 0;
 
-    private handleScrollEnd = () => {
-        this.scheduleHide();
-    };
-
-    public scheduleHide() {
-        if (this.fadeTimer !== null) {
-            globalThis.clearTimeout(this.fadeTimer);
-        }
-
-        this.fadeTimer = globalThis.setTimeout(() => {
+    private checkHide = () => {
+        const elapsed = Date.now() - this.lastScrollTime;
+        if (elapsed >= 1000) {
             if (this.element && !this.element.classList.contains("dragging")) {
                 this.element.classList.remove("visible");
             }
             this.fadeTimer = null;
-        }, 1000) as unknown as number;
-    }
+        } else {
+            const remaining = Math.max(50, 1000 - elapsed);
+            const setTimeoutFn = typeof window !== 'undefined' ? window.setTimeout : globalThis.setTimeout;
+            this.fadeTimer = setTimeoutFn(this.checkHide, remaining) as unknown as number;
+        }
+    };
 
     public triggerFadeIn() {
         if (!this.element) return;
+        this.lastScrollTime = Date.now();
         if (!this.element.classList.contains("visible")) {
             this.element.classList.add("visible");
         }
 
-        if (this.fadeTimer !== null) {
-            globalThis.clearTimeout(this.fadeTimer);
-            this.fadeTimer = null;
-        }
-
-        if (!this.hasScrollEnd) {
-            const now = Date.now();
-            if (now - this.lastScheduleTime >= 250) {
-                this.lastScheduleTime = now;
-                this.scheduleHide();
-            }
+        if (this.fadeTimer === null) {
+            const setTimeoutFn = typeof window !== 'undefined' ? window.setTimeout : globalThis.setTimeout;
+            this.fadeTimer = setTimeoutFn(this.checkHide, 1000) as unknown as number;
         }
     }
 
     public clean() {
         if (this.fadeTimer !== null) {
-            globalThis.clearTimeout(this.fadeTimer);
+            const clearTimeoutFn = typeof window !== 'undefined' ? window.clearTimeout : globalThis.clearTimeout;
+            clearTimeoutFn(this.fadeTimer);
             this.fadeTimer = null;
-        }
-        if (this.container?.removeEventListener) {
-            this.container.removeEventListener('scrollend', this.handleScrollEnd);
         }
         if (this.resizeObserver) {
             this.resizeObserver.disconnect();
@@ -644,7 +627,6 @@ export class ScrollbarMarkersRenderer {
                 this.element.removeEventListener('pointerup', handleThumbUp);
                 this.element.removeEventListener('pointercancel', handleThumbUp);
                 this.updateThumbPosition(this.container.scrollTop, true);
-                this.scheduleHide();
             };
 
             this.element.addEventListener('pointermove', handleThumbMove);
@@ -719,7 +701,6 @@ export class ScrollbarMarkersRenderer {
             this.element.removeEventListener('pointermove', handlePointerMove);
             this.element.removeEventListener('pointerup', handlePointerUp);
             this.element.removeEventListener('pointercancel', handlePointerUp);
-            this.scheduleHide();
         };
 
         revealClosestMarker(event.clientY);

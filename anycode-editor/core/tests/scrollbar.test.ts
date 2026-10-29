@@ -66,10 +66,6 @@ function createMockElement(tag: string = 'div'): any {
                 listeners[event] = listeners[event].filter(f => f !== fn);
             }
         },
-        dispatchEvent(event: any) {
-            const evType = typeof event === 'string' ? event : event?.type;
-            listeners[evType]?.forEach(fn => fn(event));
-        },
         appendChild(child: any) {
             children.push(child);
             child.parentElement = this;
@@ -353,7 +349,8 @@ describe('ScrollbarMarkersRenderer', () => {
         expect(modifiedMarker.style.height).toBe(`${(5 / 277) * 100}%`);
     });
 
-    it('attaches scrollend listener and fades in on scroll without re-creating timers continuously', () => {
+    it('fades in on scroll and hides after elapsed time without rescheduling timers on every scroll', () => {
+        vi.useFakeTimers();
         const renderer = new ScrollbarMarkersRenderer(
             container,
             () => {},
@@ -366,18 +363,25 @@ describe('ScrollbarMarkersRenderer', () => {
         const element = (renderer as any).element;
         expect(element.classList.contains('visible')).toBe(false);
 
-        // Multiple rapid scrolls
+        // Rapid scrolls at t=0, t=100, t=200
         renderer.triggerFadeIn();
         expect(element.classList.contains('visible')).toBe(true);
 
+        vi.advanceTimersByTime(100);
         renderer.triggerFadeIn();
+
+        vi.advanceTimersByTime(100);
         renderer.triggerFadeIn();
+
+        // At t=900 (less than 1000ms from last scroll at t=200): still visible
+        vi.advanceTimersByTime(700);
         expect(element.classList.contains('visible')).toBe(true);
 
-        // Dispatch scrollend event
-        container.dispatchEvent({ type: 'scrollend' });
+        // Advance to t=1300 (>1000ms after last scroll): should now be hidden
+        vi.advanceTimersByTime(400);
+        expect(element.classList.contains('visible')).toBe(false);
 
-        // Clean up removes listener
         renderer.clean();
+        vi.useRealTimers();
     });
 });
