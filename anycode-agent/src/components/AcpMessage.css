@@ -277,7 +277,6 @@
     /* Gutter and diff tints use this as their opaque backing; match the block so the gutter doesn't look like a separate panel. */
     --background-color: var(--assistant-message-bg, #2a2a2a);
     --editor-font-size: 12px;
-    --editor-font-weight: 500;
 }
 
 .acp-code-content {
@@ -385,7 +384,6 @@
     overflow: visible !important;
     contain: none !important;
     font-size: 12px !important;
-    font-weight: 500;
 }
 
 .acp-code .anyeditor .gutter {
