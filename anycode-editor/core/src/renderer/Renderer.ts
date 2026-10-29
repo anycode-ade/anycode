@@ -1036,7 +1036,7 @@ export class Renderer {
         state: EditorState
     ): RowElements {
         const { settings, originalCode } = state;
-        const originalNodes = originalCode?.getLineNodes(originalLineIndex);
+        const binaryTokens = originalCode?.getLineBinaryTokens(originalLineIndex);
         const originalText = originalCode?.line(originalLineIndex) ?? "";
         const multibufferCode = originalCode as (Code & {
             getMultibufferLineNumber?: (line: number) => number | null;
@@ -1049,7 +1049,7 @@ export class Renderer {
             originalLineIndex,
         };
         const elements = this.diffRenderer.createGhostRowElements(
-            ghostRow, settings, originalText, originalNodes, state.wordHighlight, displayLineNumber
+            ghostRow, settings, originalText, binaryTokens, state.wordHighlight, displayLineNumber
         );
         return this.applyVisualIndex(elements, visualIndex);
     }

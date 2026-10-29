@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { DiffRenderer } from '../src/renderer/DiffRenderer';
 import { VisualRow } from '../src/renderer/Renderer';
+import { BinaryTokens } from '../src/tokens';
 
 describe('DiffRenderer.computeVisibleRanges', () => {
     it('should return merged ranges for focused diff', () => {
@@ -84,16 +85,18 @@ describe('DiffRenderer.createGhostRowElements', () => {
         (globalThis as any).document = {
             createElement: (tag: string) => {
                 const classListSet = new Set<string>();
-                return {
+                const element: any = {
                     className: '',
                     textContent: '',
+                    children: [] as any[],
                     classList: {
                         add(...cls: string[]) { cls.forEach(c => classListSet.add(c)); },
                         remove(...cls: string[]) { cls.forEach(c => classListSet.delete(c)); },
                         contains(c: string) { return classListSet.has(c); },
                     },
-                    appendChild() {},
+                    appendChild(child: any) { element.children.push(child); },
                 };
+                return element;
             },
         };
     });
@@ -139,6 +142,40 @@ describe('DiffRenderer.createGhostRowElements', () => {
         );
 
         expect(elements.gutter.textContent).toBe('42');
+    });
+
+    it('should render syntax highlighted spans from binary tokens (Uint32Array)', () => {
+        const renderer = new DiffRenderer({} as any, {} as any, {} as any, {} as any);
+        const ghostRow = {
+            kind: 'ghost' as const,
+            hunkId: 1,
+            anchorLine: 5,
+            originalLineIndex: 8,
+        };
+        const text = 'const x = 42;';
+        const nodes = [
+            { name: 'keyword', text: 'const ' },
+            { name: 'variable', text: 'x' },
+            { name: 'operator', text: ' = ' },
+            { name: 'number', text: '42;' },
+        ];
+        const binaryTokens = BinaryTokens.encode(nodes);
+
+        const elements = renderer.createGhostRowElements(
+            ghostRow,
+            {} as any,
+            text,
+            binaryTokens,
+        );
+
+        const codeChildren = (elements.code as any).children;
+        expect(codeChildren.length).toBe(4);
+        expect(codeChildren[0].textContent).toBe('const ');
+        expect(codeChildren[0].className).toContain('keyword');
+        expect(codeChildren[1].textContent).toBe('x');
+        expect(codeChildren[1].className).toContain('variable');
+        expect(codeChildren[3].textContent).toBe('42;');
+        expect(codeChildren[3].className).toContain('number');
     });
 });
 

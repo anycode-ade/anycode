@@ -4,6 +4,7 @@ import { isGhostElement } from "../utils";
 import { EditorSettings } from "../editor";
 import { DiffInfo, ChangeType, DiffModel } from "../diff";
 import { Code, HighlighedNode, WordHighlight } from "../code";
+import { TokenDictionary } from "../tokens";
 import type { GhostRow, SeparatorRow, VisualRow } from "./Renderer";
 
 export type ExpandDirection = 'up' | 'down' | 'both' | 'all';
@@ -83,7 +84,7 @@ export class DiffRenderer {
         text: string,
         settings: EditorSettings,
         hunkId: number,
-        nodes?: HighlighedNode[],
+        tokens?: Uint32Array | HighlighedNode[],
         wordHighlight?: WordHighlight | null
     ): HTMLDivElement & GhostElement {
         const ghostLine = document.createElement('div') as HTMLDivElement & GhostElement;
@@ -91,27 +92,62 @@ export class DiffRenderer {
         ghostLine.isGhost = true;
         ghostLine.hunkId = hunkId;
 
-        if (nodes && nodes.length > 0) {
-            for (const { name, text: nodeText } of nodes) {
-                const span = document.createElement('span');
-                const classNameParts: string[] = [];
-                if (name) {
-                    // Keep class fallback behavior consistent with normal line rendering.
-                    const parts = name.split('.').filter(Boolean);
-                    classNameParts.push(...Array.from(new Set([name, ...parts])));
+        if (tokens instanceof Uint32Array && tokens.length > 0) {
+            const tokenCount = (tokens.length / 2) | 0;
+            if (tokenCount === 0 || (tokenCount === 1 && (text === "" || text === "\u200B"))) {
+                ghostLine.textContent = '\u00A0';
+            } else {
+                const whToken = wordHighlight?.token;
+                const whText = wordHighlight?.text;
+
+                for (let i = 0; i < tokenCount; i++) {
+                    const word0 = tokens[i * 2];
+                    const word1 = tokens[i * 2 + 1];
+
+                    const tokenId = (word0 >>> 16) & 0xffff;
+                    const startColumn = (word1 >>> 16) & 0xffff;
+                    const textLen = word1 & 0xffff;
+
+                    const nodeText = text.substring(startColumn, startColumn + textLen);
+                    const span = document.createElement('span');
+
+                    let classString = TokenDictionary.getClassString(tokenId);
+                    if (tokenId === 0 && nodeText === '\t') {
+                        classString = classString ? `${classString} indent` : 'indent';
+                    }
+
+                    if (whToken && whText && nodeText === whText && classString.includes(whToken)) {
+                        classString = classString ? `${classString} wh` : 'wh';
+                    }
+
+                    if (classString) {
+                        span.className = classString;
+                    }
+                    span.textContent = nodeText;
+                    ghostLine.appendChild(span);
                 }
-                if (!name && nodeText === '\t') classNameParts.push('indent');
+            }
+        } else if (tokens && Array.isArray(tokens) && tokens.length > 0) {
+            for (const { name, text: nodeText } of tokens) {
+                const span = document.createElement('span');
+                const tokenId = TokenDictionary.getId(name);
+                let classString = TokenDictionary.getClassString(tokenId);
+
+                if (!name && nodeText === '\t') {
+                    classString = classString ? `${classString} indent` : 'indent';
+                }
 
                 if (
                     wordHighlight?.token &&
-                    classNameParts.includes(wordHighlight.token) &&
-                    nodeText === wordHighlight.text
+                    wordHighlight?.text &&
+                    nodeText === wordHighlight.text &&
+                    classString.includes(wordHighlight.token)
                 ) {
-                    classNameParts.push('wh');
+                    classString = classString ? `${classString} wh` : 'wh';
                 }
 
-                if (classNameParts.length > 0) {
-                    span.className = classNameParts.join(' ');
+                if (classString) {
+                    span.className = classString;
                 }
                 span.textContent = nodeText;
                 ghostLine.appendChild(span);
@@ -133,7 +169,7 @@ export class DiffRenderer {
         ghostRow: GhostRow, 
         settings: EditorSettings,
         originalText: string,
-        originalNodes?: HighlighedNode[],
+        binaryTokensOrNodes?: Uint32Array | HighlighedNode[],
         wordHighlight?: WordHighlight | null,
         displayLineNumber?: number | null,
     ): GhostLine {
@@ -143,7 +179,7 @@ export class DiffRenderer {
             originalText,
             settings,
             hunkId,
-            originalNodes,
+            binaryTokensOrNodes,
             wordHighlight
         ) as HTMLDivElement & GhostElement & { originalLineIndex: number };
         ghostLine.originalLineIndex = originalLineIndex;
