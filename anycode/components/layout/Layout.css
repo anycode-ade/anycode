@@ -150,10 +150,9 @@
     flex-direction: row;
     justify-content: flex-end;
     align-items: center;
-    position: absolute;
-    top: 50%;
-    right: 0px;
-    transform: translateY(-50%);
+    position: relative;
+    flex: 0 0 auto;
+    height: 100%;
     z-index: 4;
     box-sizing: border-box;
     pointer-events: auto;
@@ -290,6 +289,12 @@
         overflow: visible;
     }
 
+    /* Touch has no hover reveal: keep the actions in flow and always visible. */
+    .layout-header-actions-overlay {
+        position: static;
+        padding: 0;
+    }
+
     .layout-header-action-btn,
     .layout-header-actions:hover .layout-header-action-btn,
     .layout-header-actions:focus-within .layout-header-action-btn {
@@ -395,22 +400,37 @@
     justify-content: flex-end;
     gap: 2px;
     height: 100%;
-    width: 35px;
-    overflow: hidden;
-}
-
-.layout-header-actions:hover,
-.layout-header-actions:focus-within {
-    background-color: transparent;
     width: max-content;
+    overflow: visible;
+    position: relative;
 }
 
-/* In a sufficiently wide group, reserve the full hit area for all header
-   actions. Narrow groups keep the compact 35px trigger so tabs stay usable. */
-@container (min-width: 360px) {
-    .layout-header-actions {
-        width: max-content;
-    }
+/* Only the close slot takes up space. The other actions open over the tabs to its left on hover. */
+.layout-header-actions-overlay {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    right: 100%;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 0 6px;
+    pointer-events: none;
+}
+
+/* Hovering the tab strip anywhere except on a tab (free space, the actions) reveals the actions.
+   Tabs do not trigger it, so tab labels stay clickable. */
+.layout .dv-tabs-and-actions-container:hover:not(:has(.dv-tab:hover)) .layout-header-actions-overlay,
+.layout .dv-tabs-and-actions-container:has(.layout-header-actions:focus-within) .layout-header-actions-overlay {
+    pointer-events: auto;
+    background: #242424;
+}
+
+.layout .dv-tabs-and-actions-container:hover:not(:has(.dv-tab:hover)) .layout-header-action-btn,
+.layout .dv-tabs-and-actions-container:has(.layout-header-actions:focus-within) .layout-header-action-btn {
+    opacity: 1;
+    pointer-events: auto;
 }
 
 .layout .dv-tabs-and-actions-container .dv-right-actions-container:has(.layout-header-actions:hover),
@@ -420,7 +440,7 @@
 
 .layout-header-action-btn {
     background: transparent;
-    color: #9a9a9a;
+    color: #d0d0d0;
     line-height: 1;
     width: 22px;
     height: 22px;
@@ -449,8 +469,6 @@
     box-shadow: none;
 }
 
-.layout-header-actions:hover .layout-header-action-btn,
-.layout-header-actions:focus-within .layout-header-action-btn,
 .layout-header-action-btn:focus-visible {
     opacity: 1;
     pointer-events: auto;

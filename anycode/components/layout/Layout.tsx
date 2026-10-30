@@ -626,6 +626,7 @@ const LayoutHeaderActions: React.FC<IDockviewHeaderActionsProps & {
 
     return (
         <div className="layout-header-actions">
+            <div className="layout-header-actions-overlay">
             {showResetButton ? (
                 <button
                     className="layout-header-action-btn layout-header-action-btn--back"
@@ -691,6 +692,8 @@ const LayoutHeaderActions: React.FC<IDockviewHeaderActionsProps & {
                     <Icons.Eye />
                 </button>
             ) : null}
+
+            </div>
 
             {canClosePanel ? (
                 <button
