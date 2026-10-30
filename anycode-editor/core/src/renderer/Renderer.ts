@@ -1,10 +1,11 @@
 import { Code, HighlighedNode } from "../code";
 import { BinaryTokens } from "../tokens";
 import { AnycodeLine, Point, RowElements, SparseGhostGroup } from "../types";
-import { isGhostElement, objectHash, minimize } from "../utils";
+import { isGhostElement } from "../utils";
 import { moveCursor, removeCursor } from "../cursor";
 import { EditorState, EditorSettings } from "../editor";
-import { DiffInfo, DiffModel } from "../diff";
+import { DiffModel } from "../diff";
+import { sameTextRanges } from "../wordDiff";
 import { Selection, renderSelection } from "../selection";
 import { Completion } from "../lsp";
 import { Search } from "../search";
@@ -1035,7 +1036,7 @@ export class Renderer {
         visualIndex: number,
         state: EditorState
     ): RowElements {
-        const { settings, originalCode } = state;
+        const { originalCode } = state;
         const binaryTokens = originalCode?.getLineBinaryTokens(originalLineIndex);
         const originalText = originalCode?.line(originalLineIndex) ?? "";
         const multibufferCode = originalCode as (Code & {
@@ -1049,7 +1050,8 @@ export class Renderer {
             originalLineIndex,
         };
         const elements = this.diffRenderer.createGhostRowElements(
-            ghostRow, settings, originalText, binaryTokens, state.wordHighlight, displayLineNumber
+            ghostRow, originalText, binaryTokens, state.wordHighlight, displayLineNumber,
+            state.diffs?.getOldWordDiffRanges(hunkId),
         );
         return this.applyVisualIndex(elements, visualIndex);
     }
@@ -1059,7 +1061,7 @@ export class Renderer {
         visualIndex: number,
         state: EditorState
     ): RowElements {
-        const elements = this.diffRenderer.createGapRowElements(separator, state.settings);
+        const elements = this.diffRenderer.createGapRowElements(separator);
         return this.applyVisualIndex(elements, visualIndex);
     }
 
@@ -1099,7 +1101,9 @@ export class Renderer {
         }
         if (row.kind === "ghost") {
             if (!isGhostElement(existing)) return true;
-            return existing.hunkId !== row.hunkId || existing.originalLineIndex !== row.originalLineIndex;
+            return existing.hunkId !== row.hunkId
+                || existing.originalLineIndex !== row.originalLineIndex
+                || !sameTextRanges(existing.wordDiffRanges, diffs?.getOldWordDiffRanges(row.hunkId));
         }
         if (row.kind === "separator") {
             if (!existing.classList.contains(CSS_CLASS.DIFF_GAP)) return true;
@@ -1116,16 +1120,15 @@ export class Renderer {
         const binaryTokens = code.getLineBinaryTokens(lineIndex);
         if (line.hash !== BinaryTokens.fastHash(binaryTokens, lineText)) return true;
 
-        if (diffs) {
-            const diff = diffs.get(lineIndex + 1);
-            const expectedClass = diff?.changeType === "modified" ? CSS_CLASS.DIFF_CHANGED
-                                : diff?.changeType === "added" ? CSS_CLASS.DIFF_ADDED : null;
-            if (expectedClass ? !line.classList.contains(expectedClass)
-                              : (line.classList.contains(CSS_CLASS.DIFF_CHANGED) || line.classList.contains(CSS_CLASS.DIFF_ADDED))) {
-                return true;
-            }
+        const diff = diffs?.get(lineIndex + 1);
+        const expectedClass = diff?.changeType === "modified" ? CSS_CLASS.DIFF_CHANGED
+                            : diff?.changeType === "added" ? CSS_CLASS.DIFF_ADDED : null;
+        if (expectedClass ? !line.classList.contains(expectedClass)
+                          : (line.classList.contains(CSS_CLASS.DIFF_CHANGED) || line.classList.contains(CSS_CLASS.DIFF_ADDED))) {
+            return true;
         }
-        return false;
+
+        return !sameTextRanges(line.wordDiffRanges, diff?.newWordDiffRanges);
     }
 
     private applyVisualIndex(elements: RowElements, visualIndex: number): RowElements {

@@ -1,9 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { Renderer } from '../src/renderer/Renderer';
-import { EditorState } from '../src/types';
+import { EditorState } from '../src/editor';
 import { Code } from '../src/code';
 import { Search } from '../src/search';
-import { DiffModel, DiffHunk } from '../src/diff';
+import { DiffModel, DiffHunk, computeGitChanges } from '../src/diff';
+import { BinaryTokens } from '../src/tokens';
 
 function createMockElement(tag: string = 'div'): any {
     const classListSet = new Set<string>();
@@ -114,6 +115,58 @@ describe('Renderer Sparse Visual Model', () => {
         expect(renderer.getVisualRow(500_000)).toEqual({ kind: 'real', lineIndex: 500_000 });
         expect(renderer.getVisualRow(999_999)).toEqual({ kind: 'real', lineIndex: 999_999 });
         expect(elapsed).toBeLessThan(30);
+    });
+
+    it('rerenders a line when its word-diff ranges are cleared', () => {
+        const renderer = new Renderer(
+            createMockElement('div'),
+            createMockElement('div'),
+            createMockElement('div'),
+            createMockElement('div'),
+            createMockElement('div'),
+            false
+        );
+        const code = new Code('const newName = 1;');
+        const lineText = code.line(0);
+        const binaryTokens = code.getLineBinaryTokens(0);
+        const line = createMockElement('div');
+        line.lineNumber = 0;
+        line.hash = BinaryTokens.fastHash(binaryTokens, lineText);
+        line.wordDiffRanges = [{ start: 6, end: 13 }];
+
+        expect((renderer as any).isLineChanged(line, 0, code, undefined)).toBe(true);
+    });
+
+    it('rerenders a ghost row when its deleted-word ranges change', () => {
+        const renderer = new Renderer(
+            createMockElement('div'),
+            createMockElement('div'),
+            createMockElement('div'),
+            createMockElement('div'),
+            createMockElement('div'),
+            false
+        );
+        const diffs = computeGitChanges('foo(a, b)', 'foo(a)');
+        const hunkId = diffs.getHunks()[0].hunkId;
+        const originalHTMLElement = (globalThis as any).HTMLElement;
+        class FakeHTMLElement {}
+        (globalThis as any).HTMLElement = FakeHTMLElement;
+        const ghost = Object.setPrototypeOf(createMockElement('div'), FakeHTMLElement.prototype);
+        ghost.isGhost = true;
+        ghost.hunkId = hunkId;
+        ghost.originalLineIndex = 0;
+        const row = { kind: 'ghost', hunkId, anchorLine: 1, originalLineIndex: 0 };
+        const code = new Code('foo(a)');
+
+        try {
+            ghost.wordDiffRanges = diffs.getOldWordDiffRanges(hunkId);
+            expect((renderer as any).isRowChanged(ghost, row, code, diffs)).toBe(false);
+
+            ghost.wordDiffRanges = [{ start: 0, end: 3 }];
+            expect((renderer as any).isRowChanged(ghost, row, code, diffs)).toBe(true);
+        } finally {
+            (globalThis as any).HTMLElement = originalHTMLElement;
+        }
     });
 
     it('does not scan every line for a normal diff with one ghost hunk', () => {

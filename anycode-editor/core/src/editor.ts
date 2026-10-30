@@ -25,7 +25,7 @@ import {
 
 import './styles.css';
 import { Search } from "./search";
-import { computeGitChanges, computeGitChangesFromSource, DiffInfo, DiffModel } from "./diff";
+import { computeGitChangesFromSource, DiffModel } from "./diff";
 import { getGapElementData } from "./renderer/DiffRenderer";
 import { anycode } from "./theme";
 

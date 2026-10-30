@@ -53,6 +53,45 @@ describe('computeGitChanges', () => {
         });
     });
 
+    it('attaches new-word ranges to single-line replacements but not multi-line replacements', () => {
+        const singleLine = computeGitChanges('let value = oldName;\n', 'let value = newName;\n');
+        const wordRanges = singleLine.get(1)?.newWordDiffRanges;
+        expect(wordRanges?.map(({ start, end }) => 'let value = newName;'.slice(start, end))).toEqual(['newName']);
+
+        const multiLine = computeGitChanges('let oldName = 1;', 'let newName = 1;\nlet extra = 2;');
+        expect(multiLine.get(1)?.newWordDiffRanges).toBeUndefined();
+    });
+
+    it('computes word ranges lazily for line replacements beyond 250 pairs', () => {
+        const original: string[] = [];
+        const current: string[] = [];
+        for (let i = 0; i < 251; i++) {
+            original.push(`const value${i} = old;`, `stable anchor ${i}`);
+            current.push(`const value${i} = new;`, `stable anchor ${i}`);
+        }
+
+        const result = computeGitChanges(original, current);
+
+        expect(result.get(1)?.changeType).toBe('modified');
+        expect(result.get(1)?.newWordDiffRanges?.map(({ start, end }) => 'const value0 = new;'.slice(start, end))).toEqual(['new']);
+        expect(result.get(501)?.newWordDiffRanges).toBeDefined();
+    });
+
+    it('does not retain line text for replacements too long to word-diff', () => {
+        const result = computeGitChanges(`${'a'.repeat(600)}x`, `${'a'.repeat(600)}y`);
+
+        expect(result.getHunks()[0].changeType).toBe('modified');
+        expect(result.getHunks()[0].wordDiff).toBeUndefined();
+    });
+
+    it('returns the same word-range array reference on repeated get calls', () => {
+        const result = computeGitChanges('let value = oldName;\n', 'let value = newName;\n');
+
+        const first = result.get(1)?.newWordDiffRanges;
+        expect(first).toBeDefined();
+        expect(result.get(1)?.newWordDiffRanges).toBe(first);
+    });
+
     it('should handle multiple consecutive additions', () => {
         const original = 'line1\nline2';
         const current = 'line1\nadded1\nadded2\nline2';

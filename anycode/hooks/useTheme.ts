@@ -191,11 +191,15 @@ export const useTheme = ({ wsRef, isConnected }: UseThemeParams) => {
 
         const addedBg = getHighlightColorSafe('created.background', toRgba(added, isLight ? 0.60 : 0.15));
         const deletedBg = getHighlightColorSafe('deleted.background', toRgba(deleted, isLight ? 0.60 : 0.15));
+        const addedWordHighlight = toRgba(added, isLight ? 0.52 : 0.48);
+        const deletedWordHighlight = toRgba(deleted, isLight ? 0.50 : 0.48);
 
         root.style.setProperty('--diff-added-gutter', added);
         root.style.setProperty('--diff-added-bg', addedBg);
+        root.style.setProperty('--diff-added-word-highlight', addedWordHighlight);
         root.style.setProperty('--diff-deleted-gutter', deleted);
         root.style.setProperty('--diff-deleted-bg', deletedBg);
+        root.style.setProperty('--diff-deleted-word-highlight', deletedWordHighlight);
 
         root.style.setProperty('--theme-git-added', added);
         root.style.setProperty('--theme-git-added-strong', added);

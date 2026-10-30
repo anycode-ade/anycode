@@ -1,6 +1,9 @@
+import type { TextRange } from "./wordDiff";
+
 export interface AnycodeLine extends HTMLDivElement {
     lineNumber: number;
     hash: number | string;
+    wordDiffRanges?: readonly TextRange[];
 }
 
 export interface GutterElement extends HTMLDivElement {
@@ -41,6 +44,7 @@ export interface GhostElement extends HTMLElement {
     isGhost: true;
     hunkId: number;
     originalLineIndex?: number;
+    wordDiffRanges?: readonly TextRange[];
 }
 
 export interface SparseGhostGroup {

@@ -1,7 +1,7 @@
-import { Code, type Change, type Edit, type EditState, type FoldRange, type HighlighedNode, type Position, type WordHighlight, type FilePosition, Operation, type Point } from './code';
+import { Code, type Change, type EditState, type FoldRange, type HighlighedNode, type Position, type WordHighlight, type FilePosition, type Point } from './code';
 import { BinaryTokens } from './tokens';
 import { Selection } from './selection';
-import { computeGitChangesWithStats, type DiffInfo, type DiffHunk, DiffModel } from './diff';
+import { computeGitChangesWithStats, type DiffHunk, DiffModel } from './diff';
 
 export type MultiBufferEntry = {
     id: string;

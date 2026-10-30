@@ -28,6 +28,8 @@ export const CSS_CLASS = {
     DIFF_CHANGED: "diff-changed",
     DIFF_ADDED: "diff-added",
     DIFF_DELETED: "diff-deleted",
+    DIFF_WORD_ADDED: "diff-word-added",
+    DIFF_WORD_DELETED: "diff-word-deleted",
 
     // Scrollbar Markers
     SMR: "smr",

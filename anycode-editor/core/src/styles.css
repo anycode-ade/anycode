@@ -473,10 +473,6 @@
   color: transparent;
 }
 
-.anyeditor .buttons .bt.multibuffer-file-header-gutter {
-  /*border-radius: 5px 0 0 5px;*/
-}
-
 .anyeditor .gutter .ln,
 .anyeditor .buttons .bt,
 .anyeditor .folds .fd {
@@ -645,6 +641,14 @@
 .diff-added {
   background-color: var(--diff-added-bg, rgba(51, 115, 64, 0.28));
   position: relative;
+}
+
+.diff-word-added {
+  background-color: var(--diff-added-word-highlight, rgba(64, 166, 89, 0.48));
+}
+
+.diff-word-deleted {
+  background-color: var(--diff-deleted-word-highlight, rgba(199, 51, 66, 0.48));
 }
 
 .anyeditor .buttons .bt.diff-changed,

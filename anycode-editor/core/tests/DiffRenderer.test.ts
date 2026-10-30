@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { DiffRenderer } from '../src/renderer/DiffRenderer';
-import { VisualRow } from '../src/renderer/Renderer';
 import { BinaryTokens } from '../src/tokens';
+import { computeGitChanges } from '../src/diff';
 
 describe('DiffRenderer.computeVisibleRanges', () => {
     it('should return merged ranges for focused diff', () => {
@@ -115,7 +115,6 @@ describe('DiffRenderer.createGhostRowElements', () => {
         };
         const elements = renderer.createGhostRowElements(
             ghostRow,
-            {} as any,
             'deleted line text',
         );
 
@@ -134,7 +133,6 @@ describe('DiffRenderer.createGhostRowElements', () => {
         };
         const elements = renderer.createGhostRowElements(
             ghostRow,
-            {} as any,
             'deleted line text',
             undefined,
             undefined,
@@ -163,7 +161,6 @@ describe('DiffRenderer.createGhostRowElements', () => {
 
         const elements = renderer.createGhostRowElements(
             ghostRow,
-            {} as any,
             text,
             binaryTokens,
         );
@@ -176,6 +173,34 @@ describe('DiffRenderer.createGhostRowElements', () => {
         expect(codeChildren[1].className).toContain('variable');
         expect(codeChildren[3].textContent).toBe('42;');
         expect(codeChildren[3].className).toContain('number');
+    });
+
+    it('highlights deleted words in a modified hunk ghost line, across token boundaries', () => {
+        const renderer = new DiffRenderer({} as any, {} as any, {} as any, {} as any);
+        const oldText = 'foo(a, b)';
+        const diffs = computeGitChanges(oldText, 'foo(a)');
+        const hunkId = diffs.getHunks()[0].hunkId;
+        const oldRanges = diffs.getOldWordDiffRanges(hunkId);
+        const binaryTokens = BinaryTokens.encode([
+            { name: null, text: 'foo(a' },
+            { name: null, text: ', ' },
+            { name: null, text: 'b)' },
+        ]);
+
+        const elements = renderer.createGhostRowElements(
+            { kind: 'ghost' as const, hunkId, anchorLine: 1, originalLineIndex: 0 },
+            oldText,
+            binaryTokens,
+            undefined,
+            undefined,
+            oldRanges,
+        );
+
+        const children = (elements.code as any).children;
+        expect(children.map((span: any) => span.textContent).join('')).toBe(oldText);
+        const deleted = children.filter((span: any) => span.className.includes('diff-word-deleted'));
+        expect(deleted.map((span: any) => span.textContent)).toEqual([', ', 'b']);
+        expect((elements.code as any).wordDiffRanges).toBe(oldRanges);
     });
 });
 

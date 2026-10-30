@@ -1,11 +1,12 @@
 import { CSS_CLASS } from "../constants";
 import { AnycodeLine, GhostElement, GutterElement } from "../types";
 import { isGhostElement } from "../utils";
-import { EditorSettings } from "../editor";
 import { DiffInfo, ChangeType, DiffModel } from "../diff";
 import { Code, HighlighedNode, WordHighlight } from "../code";
 import { TokenDictionary } from "../tokens";
-import type { GhostRow, SeparatorRow, VisualRow } from "./Renderer";
+import type { GhostRow, SeparatorRow } from "./Renderer";
+import type { TextRange } from "../wordDiff";
+import { appendTokenSpans } from "./tokenSpans";
 
 export type ExpandDirection = 'up' | 'down' | 'both' | 'all';
 
@@ -82,15 +83,17 @@ export class DiffRenderer {
 
     private createDeletedGhostLine(
         text: string,
-        settings: EditorSettings,
         hunkId: number,
         tokens?: Uint32Array | HighlighedNode[],
-        wordHighlight?: WordHighlight | null
+        wordHighlight?: WordHighlight | null,
+        wordDiffRanges?: readonly TextRange[],
     ): HTMLDivElement & GhostElement {
         const ghostLine = document.createElement('div') as HTMLDivElement & GhostElement;
         ghostLine.className = `${CSS_CLASS.LINE} ${CSS_CLASS.LINE_DELETED_GHOST}`;
         ghostLine.isGhost = true;
         ghostLine.hunkId = hunkId;
+        ghostLine.wordDiffRanges = wordDiffRanges;
+        let rangeIndex = 0;
 
         if (tokens instanceof Uint32Array && tokens.length > 0) {
             const tokenCount = (tokens.length / 2) | 0;
@@ -109,7 +112,6 @@ export class DiffRenderer {
                     const textLen = word1 & 0xffff;
 
                     const nodeText = text.substring(startColumn, startColumn + textLen);
-                    const span = document.createElement('span');
 
                     let classString = TokenDictionary.getClassString(tokenId);
                     if (tokenId === 0 && nodeText === '\t') {
@@ -120,16 +122,15 @@ export class DiffRenderer {
                         classString = classString ? `${classString} wh` : 'wh';
                     }
 
-                    if (classString) {
-                        span.className = classString;
-                    }
-                    span.textContent = nodeText;
-                    ghostLine.appendChild(span);
+                    rangeIndex = appendTokenSpans(
+                        ghostLine, nodeText, classString, startColumn,
+                        wordDiffRanges, rangeIndex, CSS_CLASS.DIFF_WORD_DELETED,
+                    );
                 }
             }
         } else if (tokens && Array.isArray(tokens) && tokens.length > 0) {
+            let offset = 0;
             for (const { name, text: nodeText } of tokens) {
-                const span = document.createElement('span');
                 const tokenId = TokenDictionary.getId(name);
                 let classString = TokenDictionary.getClassString(tokenId);
 
@@ -146,14 +147,16 @@ export class DiffRenderer {
                     classString = classString ? `${classString} wh` : 'wh';
                 }
 
-                if (classString) {
-                    span.className = classString;
-                }
-                span.textContent = nodeText;
-                ghostLine.appendChild(span);
+                rangeIndex = appendTokenSpans(
+                    ghostLine, nodeText, classString, offset,
+                    wordDiffRanges, rangeIndex, CSS_CLASS.DIFF_WORD_DELETED,
+                );
+                offset += nodeText.length;
             }
         } else if (text === '') {
             ghostLine.textContent = '\u00A0'; // non-breaking space
+        } else if (wordDiffRanges) {
+            appendTokenSpans(ghostLine, text, '', 0, wordDiffRanges, 0, CSS_CLASS.DIFF_WORD_DELETED);
         } else {
             ghostLine.textContent = text;
         }
@@ -167,20 +170,20 @@ export class DiffRenderer {
      */
     public createGhostRowElements(
         ghostRow: GhostRow, 
-        settings: EditorSettings,
         originalText: string,
         binaryTokensOrNodes?: Uint32Array | HighlighedNode[],
         wordHighlight?: WordHighlight | null,
         displayLineNumber?: number | null,
+        wordDiffRanges?: readonly TextRange[],
     ): GhostLine {
         const { hunkId, originalLineIndex } = ghostRow;
         
         const ghostLine = this.createDeletedGhostLine(
             originalText,
-            settings,
             hunkId,
             binaryTokensOrNodes,
-            wordHighlight
+            wordHighlight,
+            wordDiffRanges,
         ) as HTMLDivElement & GhostElement & { originalLineIndex: number };
         ghostLine.originalLineIndex = originalLineIndex;
 
@@ -435,7 +438,6 @@ export class DiffRenderer {
 
     public createGapRowElements(
         row: SeparatorRow,
-        settings: EditorSettings
     ): { code: HTMLElement; gutter: HTMLElement; btn: HTMLElement; fold: HTMLElement } {
         const code = document.createElement('div');
         code.className = `${CSS_CLASS.LINE} ${CSS_CLASS.DIFF_GAP}`;

@@ -1,4 +1,5 @@
 import * as JsDiff from 'diff';
+import { LineWordDiff, type TextRange } from './wordDiff';
 
 export enum EditKind {
     Insert = 'insert',
@@ -19,6 +20,7 @@ export type DiffInfo = {
     oldLineNumbers?: number[];
     ghostAnchorLine?: number;
     hunkId: number;
+    newWordDiffRanges?: TextRange[];
 };
 
 export interface DiffHunk {
@@ -28,12 +30,15 @@ export interface DiffHunk {
     changeType: ChangeType;    // 'added' | 'modified' | 'deleted'
     oldLineNumbers?: number[]; // 1-indexed line numbers from original code (for modified/deleted)
     ghostAnchorLine?: number;  // 1-indexed anchor line for ghost lines
+    wordDiff?: LineWordDiff;   // set only for 1->1 modified hunks; ranges are computed lazily
 }
 
 export class DiffModel {
     public readonly hunks: readonly DiffHunk[];
     public readonly added: number;
     public readonly removed: number;
+    // Built on first ghost-row lookup; hunk IDs are not array indexes in multibuffer diffs.
+    private wordDiffsByHunkId?: Map<number, LineWordDiff>;
 
     constructor(hunks: readonly DiffHunk[] = [], added: number = 0, removed: number = 0) {
         this.hunks = hunks;
@@ -55,6 +60,17 @@ export class DiffModel {
 
     public hasChanges(): boolean {
         return this.hunks.length > 0;
+    }
+
+    /** Changed spans in the original line of a 1->1 modified hunk, for its ghost row. */
+    public getOldWordDiffRanges(hunkId: number): TextRange[] | undefined {
+        if (!this.wordDiffsByHunkId) {
+            this.wordDiffsByHunkId = new Map();
+            for (const hunk of this.hunks) {
+                if (hunk.wordDiff) this.wordDiffsByHunkId.set(hunk.hunkId, hunk.wordDiff);
+            }
+        }
+        return this.wordDiffsByHunkId.get(hunkId)?.oldRanges;
     }
 
     public getHunks(): readonly DiffHunk[] {
@@ -81,15 +97,22 @@ export class DiffModel {
                     return { changeType: 'added', hunkId: hunk.hunkId };
                 }
                 if (hunk.changeType === 'modified') {
-                    return { changeType: 'modified', oldLineNumbers: hunk.oldLineNumbers, hunkId: hunk.hunkId };
+                    const info: DiffInfo = {
+                        changeType: 'modified',
+                        oldLineNumbers: hunk.oldLineNumbers,
+                        hunkId: hunk.hunkId,
+                        newWordDiffRanges: hunk.wordDiff?.newRanges,
+                    };
+                    return info;
                 }
                 if (hunk.changeType === 'deleted') {
-                    return {
+                    const info: DiffInfo = {
                         changeType: 'deleted',
                         oldLineNumbers: hunk.oldLineNumbers,
                         ghostAnchorLine: hunk.ghostAnchorLine,
                         hunkId: hunk.hunkId,
                     };
+                    return info;
                 }
             }
         }
@@ -167,12 +190,16 @@ function buildHunksFromJsDiff(
                 if (next?.added) {
                     const addedCount = next.count ?? next.value.length;
                     added += addedCount;
+                    const wordDiff = count === 1 && addedCount === 1
+                        ? LineWordDiff.create(diff.value[0], next.value[0])
+                        : undefined;
                     hunks.push({
                         hunkId: hunkId++,
                         startLine: newLine,
                         lineCount: addedCount,
                         changeType: 'modified',
                         oldLineNumbers: deletedLineNumbers,
+                        wordDiff,
                     });
                     newLine += addedCount;
                     i++; // skip the added block

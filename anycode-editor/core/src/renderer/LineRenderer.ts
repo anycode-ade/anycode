@@ -11,8 +11,9 @@ import {
 } from "../types";
 import { objectHash } from "../utils";
 import { EditorSettings } from "../editor";
-import { DiffInfo, DiffModel } from "../diff";
+import { DiffModel } from "../diff";
 import { DiagnosticRenderer } from "./DiagnosticRenderer";
+import { appendTokenSpans } from "./tokenSpans";
 
 import { setGapElementData } from "./DiffRenderer";
 
@@ -52,14 +53,15 @@ export class LineRenderer {
         wrapper.hash = hash;
 
         // Check if this line was changed in diff mode
-        if (diffs) {
-            const diffInfo = diffs.get(lineNumber + 1);
-            if (diffInfo?.changeType === 'modified') {
-                wrapper.classList.add(CSS_CLASS.DIFF_CHANGED);
-            } else if (diffInfo?.changeType === 'added') {
-                wrapper.classList.add(CSS_CLASS.DIFF_ADDED);
-            }
+        const diffInfo = diffs?.get(lineNumber + 1);
+        if (diffInfo?.changeType === 'modified') {
+            wrapper.classList.add(CSS_CLASS.DIFF_CHANGED);
+        } else if (diffInfo?.changeType === 'added') {
+            wrapper.classList.add(CSS_CLASS.DIFF_ADDED);
         }
+        const wordDiffRanges = diffInfo?.newWordDiffRanges;
+        wrapper.wordDiffRanges = wordDiffRanges;
+        let rangeIndex = 0;
 
         if (binaryTokens && lineText !== undefined) {
             const tokenCount = (binaryTokens.length / 2) | 0;
@@ -78,8 +80,6 @@ export class LineRenderer {
                     const textLen = word1 & 0xffff;
 
                     const text = lineText.substring(startColumn, startColumn + textLen);
-                    const span = document.createElement('span');
-
                     let classString = TokenDictionary.getClassString(tokenId);
                     if (tokenId === 0 && text === '\t') {
                         classString = classString ? `${classString} indent` : 'indent';
@@ -89,18 +89,22 @@ export class LineRenderer {
                         classString = classString ? `${classString} wh` : 'wh';
                     }
 
-                    if (classString) {
-                        span.className = classString;
-                    }
-                    span.textContent = text;
-                    wrapper.appendChild(span);
+                    rangeIndex = appendTokenSpans(
+                        wrapper,
+                        text,
+                        classString,
+                        startColumn,
+                        wordDiffRanges,
+                        rangeIndex,
+                        CSS_CLASS.DIFF_WORD_ADDED,
+                    );
                 }
             }
         } else if (nodes.length === 0 || (nodes.length === 1 && nodes[0].text === "\u200B")) {
             wrapper.appendChild(document.createElement('br'));
         } else {
+            let offset = 0;
             for (const { name, text } of nodes) {
-                const span = document.createElement('span');
                 const tokenId = TokenDictionary.getId(name);
                 let classString = TokenDictionary.getClassString(tokenId);
 
@@ -117,11 +121,16 @@ export class LineRenderer {
                   classString = classString ? `${classString} wh` : 'wh';
                 }
 
-                if (classString) {
-                    span.className = classString;
-                }
-                span.textContent = text;
-                wrapper.appendChild(span);
+                rangeIndex = appendTokenSpans(
+                    wrapper,
+                    text,
+                    classString,
+                    offset,
+                    wordDiffRanges,
+                    rangeIndex,
+                    CSS_CLASS.DIFF_WORD_ADDED,
+                );
+                offset += text.length;
             }
         }
 
