@@ -56,6 +56,7 @@ import { ServerFolderPicker } from './components/ServerFolderPicker';
 const toMultibufferFiles = (files: ChangedFile[]): MultibufferFile[] => files.map((file) => ({
     id: file.path,
     path: file.path,
+    displayPath: file.displayPath ?? file.path,
     added: file.added,
     removed: file.removed,
     status: file.status,
@@ -74,6 +75,7 @@ type ReviewSession = {
 const ACTIVE_PROJECT_SESSION_KEY = 'anycode.activeProjectId';
 const SEARCH_PROJECT_SESSION_KEY = 'anycode.searchProjectId';
 const CHANGES_PROJECT_SESSION_KEY = 'anycode.changesProjectId';
+const REVIEW_PROJECT_SESSION_KEY = 'anycode.reviewProjectId';
 const HISTORY_PROJECT_SESSION_KEY = 'anycode.historyProjectId';
 
 /** Project selection for a panel, restored from sessionStorage so it survives a page reload. */
@@ -696,6 +698,9 @@ const App: React.FC<AppProps> = ({ initialWorkspace }) => {
             delete next[paneId];
             return next;
         });
+        if (!Object.keys(multibufferReviews).some((otherPaneId) => otherPaneId !== paneId)) {
+            sessionStorage.removeItem(REVIEW_PROJECT_SESSION_KEY);
+        }
         editors.setEditorDiffMode(paneId, 'plain');
     });
 
@@ -709,9 +714,12 @@ const App: React.FC<AppProps> = ({ initialWorkspace }) => {
             const path = /^[A-Za-z]:[\\/]|^\//.test(file.path)
                 ? file.path
                 : (projectRoot === '.' ? relativePath : `${projectRoot}/${relativePath}`);
+            const normalizedPath = normalizePath(path);
+            const rootPrefix = `${normalizePath(projectRoot)}/`;
             return {
                 ...file,
-                path: normalizePath(path),
+                path: normalizedPath,
+                displayPath: normalizedPath.startsWith(rootPrefix) ? normalizedPath.slice(rootPrefix.length) : normalizedPath,
                 project_id: project.id,
             };
         }))
@@ -766,14 +774,15 @@ const App: React.FC<AppProps> = ({ initialWorkspace }) => {
         git.fetchBranches(projectId);
     }, [git.fetchGitStatus, git.fetchBranches]);
 
-    const openProjectReview = useEvent((projectId: string) => {
+    const openProjectReview = useEvent((projectId: string): boolean => {
         const changedFiles = workspaceChangedFiles.filter((file) => file.project_id === projectId);
-        if (changedFiles.length === 0) return;
+        if (changedFiles.length === 0) return false;
 
         const paneId = layoutActionsRef.current?.ensureEditorPanel(editors.activeEditorPaneId);
-        if (!paneId) return;
+        if (!paneId) return false;
 
         closeReview(paneId);
+        sessionStorage.setItem(REVIEW_PROJECT_SESSION_KEY, projectId);
         editors.setActiveEditorPaneId(paneId);
         editors.setEditorDiffMode(paneId, 'diff');
         const files = toMultibufferFiles(changedFiles);
@@ -792,7 +801,21 @@ const App: React.FC<AppProps> = ({ initialWorkspace }) => {
                     .map((file) => file.id),
             },
         }));
+        return true;
     });
+
+    const reviewRestoreDoneRef = React.useRef(false);
+    useEffect(() => {
+        if (reviewRestoreDoneRef.current) return;
+        const projectId = sessionStorage.getItem(REVIEW_PROJECT_SESSION_KEY);
+        if (!projectId || Object.keys(multibufferReviews).length > 0) {
+            reviewRestoreDoneRef.current = true;
+            return;
+        }
+        if (!workspaceState.projects.some((project) => project.id === projectId)) return;
+        // Retry on later renders until git changes and the editor layout are ready.
+        if (openProjectReview(projectId)) reviewRestoreDoneRef.current = true;
+    }, [workspaceState.projects, workspaceChangedFiles, multibufferReviews, openProjectReview]);
 
     const handleOpenMultibuffer = useEvent(() => {
         if (selectedChangesProjectId) openProjectReview(selectedChangesProjectId);
@@ -1371,6 +1394,7 @@ const App: React.FC<AppProps> = ({ initialWorkspace }) => {
                         panelKey={panelKey}
                         editors={editors}
                         multibufferOpen={multibufferReview !== undefined}
+                        fileIconsStyle={fileIconsStyle}
                         multibufferFiles={multibufferReview?.files ?? []}
                         multibufferTitle={multibufferReview?.title}
                         multibufferIgnoreEdits={multibufferReview?.ignoreEdits ?? false}

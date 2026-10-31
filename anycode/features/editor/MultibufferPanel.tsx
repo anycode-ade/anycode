@@ -2,6 +2,8 @@ import React, { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { AnycodeEditorReact } from 'anycode-editor-react';
 import { AnycodeEditor, Code, MultiBufferCode, type MultiBufferEntry, type DefinitionRequest, type DefinitionResponse, type HoverRequest, type CompletionRequest, type Completion, type ReferencesRequest } from 'anycode-editor';
 import type { DockviewPanelApi } from 'dockview';
+import { Icons } from '../../components/Icons';
+import { type FileIconStyle, getFileIconClassName, useFileIconStyleSheet } from '../../components/FileIcon';
 import { LayoutPanelApiContext, LayoutVersionContext } from '../../components/layout/Layout';
 import type { FileState } from '../../types';
 import type { DiffMode } from '../../types/diffMode';
@@ -12,6 +14,8 @@ import './MultibufferPanel.css';
 export type MultibufferFile = {
     id: string;
     path: string;
+    /** Project-relative path shown in the file header. */
+    displayPath?: string;
     added?: number;
     removed?: number;
     status?: string;
@@ -21,6 +25,7 @@ type MultibufferPanelProps = {
     panelKey: string;
     active: boolean;
     diffMode?: DiffMode;
+    fileIconsStyle?: FileIconStyle;
     files: MultibufferFile[];
     openFiles: FileState[];
     editorStates: ReadonlyMap<string, AnycodeEditor>;
@@ -53,6 +58,7 @@ const MultibufferPanel: React.FC<MultibufferPanelProps> = ({
     panelKey,
     active,
     diffMode,
+    fileIconsStyle = 'colored',
     files,
     openFiles,
     editorStates,
@@ -69,7 +75,14 @@ const MultibufferPanel: React.FC<MultibufferPanelProps> = ({
 }) => {
     const panel = useContext(LayoutPanelApiContext) as DockviewPanelApi | null;
     const layoutVersion = useContext(LayoutVersionContext);
+    useFileIconStyleSheet(fileIconsStyle);
+    // Read by `toEntry` without making every entry rebuild on an icon style change.
+    const iconsEnabledRef = useRef(fileIconsStyle !== 'disabled');
+    useEffect(() => {
+        iconsEnabledRef.current = fileIconsStyle !== 'disabled';
+    }, [fileIconsStyle]);
     const [sharedEditor, setSharedEditor] = useState<AnycodeEditor | null>(null);
+    const [allFilesExpanded, setAllFilesExpanded] = useState(false);
     const sharedEditorRef = useRef<AnycodeEditor | null>(null);
     const currentCodeRef = useRef<MultiBufferCode | null>(null);
     const originalCodeRef = useRef<MultiBufferCode | null>(null);
@@ -338,10 +351,13 @@ const MultibufferPanel: React.FC<MultibufferPanelProps> = ({
     useEffect(() => {
         const generation = generationRef.current;
         const toEntry = ({ file, fileState, editor, code, originalCode }: ReadyFile): MultiBufferEntry => {
+            const iconClassName = iconsEnabledRef.current ? getFileIconClassName(file.path) : undefined;
             if (code && originalCode) {
                 return {
                     id: file.id,
                     path: file.path,
+                    displayPath: file.displayPath,
+                    iconClassName,
                     added: file.added,
                     removed: file.removed,
                     readOnly: true,
@@ -360,6 +376,8 @@ const MultibufferPanel: React.FC<MultibufferPanelProps> = ({
             return {
                 id: file.id,
                 path: file.path,
+                displayPath: file.displayPath,
+                iconClassName,
                 added: file.added,
                 removed: file.removed,
                 readOnly: file.status === 'deleted',
@@ -464,6 +482,7 @@ const MultibufferPanel: React.FC<MultibufferPanelProps> = ({
                         handleCheckSelectionRef.current();
                     });
                     editor.setOnMultibufferToggle(() => {
+                        setAllFilesExpanded(sharedEditorRef.current?.areAllMultibufferFilesExpanded() ?? false);
                         updateMultibufferErrors();
                     });
                     initialFiles.forEach(subscribeToFile);
@@ -478,6 +497,7 @@ const MultibufferPanel: React.FC<MultibufferPanelProps> = ({
                     }
                     editor.setDiffMode(initialMode);
                     setSharedEditor(editor);
+                    setAllFilesExpanded(editor.areAllMultibufferFilesExpanded());
                     initialFiles.forEach(({ file }) => loadedFileIdsRef.current.add(file.id));
                     updateMultibufferErrors();
                 }
@@ -544,16 +564,6 @@ const MultibufferPanel: React.FC<MultibufferPanelProps> = ({
                 <div className="multibuffer-toolbar-title">
                     <span>{title}</span>
                     <span className="multibuffer-toolbar-count">{files.length} files</span>
-                </div>
-                <div className="multibuffer-toolbar-actions">
-                    <button
-                        className="multibuffer-close-button search-close-button"
-                        onClick={onClose}
-                        title="Close review"
-                        aria-label="Close review"
-                    >
-                        &times;
-                    </button>
                     {(totalAdded > 0 || totalRemoved > 0) && (
                         <span className="multibuffer-toolbar-stats">
                             {totalAdded > 0 && (
@@ -564,6 +574,25 @@ const MultibufferPanel: React.FC<MultibufferPanelProps> = ({
                             )}
                         </span>
                     )}
+                </div>
+                <div className="multibuffer-toolbar-actions">
+                    <button
+                        className="multibuffer-toolbar-button multibuffer-toggle-all-button search-close-button"
+                        onClick={() => sharedEditor?.setAllMultibufferFilesCollapsed(allFilesExpanded)}
+                        disabled={!sharedEditor || files.length === 0}
+                        title={allFilesExpanded ? 'Collapse all files' : 'Expand all files'}
+                        aria-label={allFilesExpanded ? 'Collapse all files' : 'Expand all files'}
+                    >
+                        <Icons.ToggleAllFiles expanded={allFilesExpanded} />
+                    </button>
+                    <button
+                        className="multibuffer-toolbar-button multibuffer-close-button search-close-button"
+                        onClick={onClose}
+                        title="Close review"
+                        aria-label="Close review"
+                    >
+                        &times;
+                    </button>
                 </div>
             </div>
 

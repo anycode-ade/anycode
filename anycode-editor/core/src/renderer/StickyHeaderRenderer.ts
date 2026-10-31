@@ -14,7 +14,9 @@ export class StickyHeaderRenderer {
     private contentEl: HTMLDivElement;
     private titleEl: HTMLSpanElement;
     private chevronEl: HTMLSpanElement;
+    private iconEl: HTMLSpanElement;
     private fileNameEl: HTMLSpanElement;
+    private dirNameEl: HTMLSpanElement;
     private addedEl: HTMLSpanElement;
     private removedEl: HTMLSpanElement;
     private enabled: boolean = true;
@@ -49,7 +51,14 @@ export class StickyHeaderRenderer {
         this.fileNameEl.className = 'sticky-header-path';
 
         this.titleEl.appendChild(this.chevronEl);
+        this.iconEl = document.createElement('span');
+        this.iconEl.className = 'multibuffer-header-icon';
+        this.titleEl.appendChild(this.iconEl);
+        this.dirNameEl = document.createElement('span');
+        this.dirNameEl.className = 'multibuffer-header-dir';
+
         this.titleEl.appendChild(this.fileNameEl);
+        this.titleEl.appendChild(this.dirNameEl);
 
         this.addedEl = document.createElement('span');
         this.addedEl.className = 'multibuffer-header-added';
@@ -183,8 +192,22 @@ export class StickyHeaderRenderer {
             this.chevronEl.textContent = '';
         }
 
+        const iconClass = `multibuffer-header-icon ${current.header.iconClassName ?? ''}`.trim();
+        if (this.iconEl.className !== iconClass) {
+            this.iconEl.className = iconClass;
+        }
+        const iconDisplay = current.header.iconClassName ? '' : 'none';
+        if (this.iconEl.style.display !== iconDisplay) {
+            this.iconEl.style.display = iconDisplay;
+        }
+
         if (this.fileNameEl.textContent !== current.header.fileName) {
             this.fileNameEl.textContent = current.header.fileName;
+        }
+
+        const dirText = current.header.dirName ? `  ${current.header.dirName}` : '';
+        if (this.dirNameEl.textContent !== dirText) {
+            this.dirNameEl.textContent = dirText;
         }
 
         if (this.element.title !== current.header.path) {

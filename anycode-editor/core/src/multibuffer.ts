@@ -6,6 +6,8 @@ import { computeGitChangesWithStats, type DiffHunk, DiffModel } from './diff';
 export type MultiBufferEntry = {
     id: string;
     path: string;
+    displayPath?: string;
+    iconClassName?: string;
     added?: number;
     removed?: number;
     readOnly?: boolean;
@@ -23,6 +25,8 @@ export type MultiBufferHeaderInfo = {
     fileId: string;
     path: string;
     fileName: string;
+    dirName: string;
+    iconClassName?: string;
     line: number;
     collapsed: boolean;
     added: number;
@@ -43,6 +47,7 @@ interface FileRange {
     bodyStartOffset: number;
     bodyCharLength: number;
     nextStartOffset: number;
+    headerNodes: HighlighedNode[];
     headerBinaryTokens: Uint32Array;
 }
 
@@ -66,6 +71,20 @@ const getFileName = (path: string): string => {
     return normalized.split('/').pop() || path;
 };
 
+const getDirName = (path: string): string => {
+    const normalized = path.replace(/\\/g, '/');
+    const separatorIndex = normalized.lastIndexOf('/');
+    return separatorIndex > 0 ? normalized.slice(0, separatorIndex) : '';
+};
+
+/** `dirText` is the padded directory suffix shown after the file name; empty when the file is at the root. */
+const formatEntryHeaderPath = (entry: MultiBufferEntry) => {
+    const path = entry.displayPath ?? entry.path;
+    const fileName = getFileName(path);
+    const dirName = getDirName(path);
+    return { fileName, dirName, dirText: dirName ? `  ${dirName}` : '' };
+};
+
 const formatFileStats = (added: number, removed: number) => ({
     added: added > 0 ? `  +${added}` : '',
     removed: removed > 0 ? `${added > 0 ? ' ' : '  '}−${removed}` : '',
@@ -79,6 +98,7 @@ const formatFileStats = (added: number, removed: number) => ({
 export class MultiBufferCode extends Code {
     private readonly entries: MultiBufferEntry[];
     private readonly fileVersions: number[];
+    private readonly headerPaths: ReturnType<typeof formatEntryHeaderPath>[];
     private readonly fileDiffs = new Map<string, CachedFileDiff>();
     private readonly collapsedFiles = new Set<string>();
     private fileRanges: FileRange[] = [];
@@ -96,6 +116,7 @@ export class MultiBufferCode extends Code {
         super('', 'multibuffer', '');
         this.entries = entries;
         this.fileVersions = entries.map(() => 0);
+        this.headerPaths = entries.map(formatEntryHeaderPath);
         this.filename = entries[0]?.path ?? 'multibuffer';
     }
 
@@ -113,6 +134,7 @@ export class MultiBufferCode extends Code {
         const insertionIndex = Math.max(0, Math.min(atIndex, this.entries.length));
         this.entries.splice(insertionIndex, 0, ...entries);
         this.fileVersions.splice(insertionIndex, 0, ...entries.map(() => 0));
+        this.headerPaths.splice(insertionIndex, 0, ...entries.map(formatEntryHeaderPath));
         const baselines = new Set(entries.map((entry) => entry.originalCode));
         await Promise.all([...baselines].map((code) => code.init()));
         this.indexDirty = true;
@@ -126,6 +148,7 @@ export class MultiBufferCode extends Code {
             if (!ids.has(this.entries[index].id)) continue;
             this.entries.splice(index, 1);
             this.fileVersions.splice(index, 1);
+            this.headerPaths.splice(index, 1);
         }
 
         this.fileDiffs.clear();
@@ -262,6 +285,18 @@ export class MultiBufferCode extends Code {
         }
         this.indexDirty = true;
         return true;
+    }
+
+    public setAllFilesCollapsed(collapsed: boolean): void {
+        this.collapsedFiles.clear();
+        if (collapsed) {
+            for (const entry of this.entries) this.collapsedFiles.add(entry.id);
+        }
+        this.indexDirty = true;
+    }
+
+    public areAllFilesExpanded(): boolean {
+        return this.entries.length > 0 && this.entries.every((entry) => !this.collapsedFiles.has(entry.id));
     }
 
     public getFileText(fileId: string): string | null {
@@ -459,24 +494,7 @@ export class MultiBufferCode extends Code {
         this.ensureIndex();
         const fileRange = this.findFileRangeByLine(line);
         if (!fileRange) return [{ name: null, text: EMPTY_LINE }];
-        if (line === fileRange.headerLine) {
-            const entry = this.entries[fileRange.fileIndex];
-            const { added, removed } = this.getCachedFileDiff(fileRange.fileIndex);
-            const stats = formatFileStats(added, removed);
-            const collapsed = this.collapsedFiles.has(entry.id);
-            return [
-                {
-                    name: `multibuffer-header-chevron ${collapsed ? 'collapsed' : 'expanded'}`,
-                    text: '  ',
-                },
-                {
-                    name: 'multibuffer-header',
-                    text: getFileName(entry.path),
-                },
-                { name: 'multibuffer-header-added', text: stats.added },
-                { name: 'multibuffer-header-removed', text: stats.removed },
-            ];
-        }
+        if (line === fileRange.headerLine) return fileRange.headerNodes;
         return this.entries[fileRange.fileIndex]?.code.getLineNodes(line - fileRange.bodyStartLine) ?? [{ name: null, text: EMPTY_LINE }];
     }
 
@@ -867,7 +885,26 @@ export class MultiBufferCode extends Code {
             const { added, removed } = this.getCachedFileDiff(fileIndex);
             const stats = formatFileStats(added, removed);
             const collapsed = this.collapsedFiles.has(entry.id);
-            const headerText = `  ${getFileName(entry.path)}${stats.added}${stats.removed}`;
+            const { fileName, dirName, dirText } = this.headerPaths[fileIndex];
+            // The icon slot is omitted (not left blank) when the entry has no icon.
+            const headerNodes: HighlighedNode[] = [
+                {
+                    name: `multibuffer-header-chevron ${collapsed ? 'collapsed' : 'expanded'}`,
+                    text: '  ',
+                },
+                ...(entry.iconClassName
+                    ? [{ name: `multibuffer-header-icon ${entry.iconClassName}`, text: '  ' }]
+                    : []),
+                {
+                    name: 'multibuffer-header',
+                    text: fileName,
+                },
+                { name: 'multibuffer-header-dir', text: dirText },
+                { name: 'multibuffer-header-added', text: stats.added },
+                { name: 'multibuffer-header-removed', text: stats.removed },
+            ];
+            const headerText = headerNodes.map((node) => node.text).join('');
+            const headerBinaryTokens = BinaryTokens.encode(headerNodes);
 
             const headerLine = line;
             const headerStartOffset = offset;
@@ -878,7 +915,9 @@ export class MultiBufferCode extends Code {
                 fileIndex,
                 fileId: entry.id,
                 path: entry.path,
-                fileName: getFileName(entry.path),
+                fileName,
+                dirName,
+                iconClassName: entry.iconClassName,
                 line: headerLine,
                 collapsed,
                 added,
@@ -898,19 +937,6 @@ export class MultiBufferCode extends Code {
             }
 
             const totalLines = 1 + bodyLineCount;
-            const headerNodes: HighlighedNode[] = [
-                {
-                    name: `multibuffer-header-chevron ${collapsed ? 'collapsed' : 'expanded'}`,
-                    text: '  ',
-                },
-                {
-                    name: 'multibuffer-header',
-                    text: getFileName(entry.path),
-                },
-                { name: 'multibuffer-header-added', text: stats.added },
-                { name: 'multibuffer-header-removed', text: stats.removed },
-            ];
-            const headerBinaryTokens = BinaryTokens.encode(headerNodes);
 
             this.fileRanges.push({
                 fileIndex,
@@ -926,6 +952,7 @@ export class MultiBufferCode extends Code {
                 bodyStartOffset,
                 bodyCharLength,
                 nextStartOffset: offset,
+                headerNodes,
                 headerBinaryTokens,
             });
         }

@@ -287,4 +287,13 @@ export const Icons = {
       <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
     </svg>
   ),
+  /** Up/down chevrons: outward when collapsed, inward when expanded; both sets are animated via `.is-hidden-*` classes. */
+  ToggleAllFiles: ({ expanded = false, size = 14 }: { expanded?: boolean; size?: number }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path className={expanded ? 'is-hidden-top' : undefined} d="m7 9 5-5 5 5" />
+      <path className={expanded ? 'is-hidden-bottom' : undefined} d="m7 15 5 5 5-5" />
+      <path className={expanded ? undefined : 'is-hidden-top'} d="m7 4 5 5 5-5" />
+      <path className={expanded ? undefined : 'is-hidden-bottom'} d="m7 20 5-5 5 5" />
+    </svg>
+  ),
 };

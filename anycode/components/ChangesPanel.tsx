@@ -17,6 +17,8 @@ export enum GitActionState {
 
 export interface ChangedFile {
     path: string;
+    /** Project-relative path for display; `path` stays absolute for file access. */
+    displayPath?: string;
     project_id?: string;
     status: 'modified' | 'added' | 'deleted' | 'renamed' | 'conflict';
     staged?: boolean;

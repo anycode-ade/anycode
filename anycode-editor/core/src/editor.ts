@@ -354,6 +354,27 @@ export class AnycodeEditor {
         return false;
     }
 
+    public setAllMultibufferFilesCollapsed(collapsed: boolean): void {
+        const multibufferCode = this.code as Code & {
+            setAllFilesCollapsed?: (collapsed: boolean) => void;
+        };
+        if (!multibufferCode.setAllFilesCollapsed) return;
+        multibufferCode.setAllFilesCollapsed(collapsed);
+        this.renderer.clearExpandedDiffRanges();
+        this.selection = null;
+        this.recomputeDiffs();
+        this.cursor = this.code.clampPoint(this.cursor);
+        this.onMultibufferToggleCallback?.();
+        this.renderer.render(this.getEditorState());
+    }
+
+    public areAllMultibufferFilesExpanded(): boolean {
+        const multibufferCode = this.code as Code & {
+            areAllFilesExpanded?: () => boolean;
+        };
+        return multibufferCode.areAllFilesExpanded?.() ?? false;
+    }
+
     public jumpToMultibufferHeader(line: number): void {
         const visualIndex = this.renderer.getVisualIndexForLine(line);
         const targetScrollTop = visualIndex * this.settings.lineHeight;

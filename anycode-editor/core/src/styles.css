@@ -371,6 +371,37 @@
   line-height: 1;
 }
 
+.anyeditor .multibuffer-file-header-row .multibuffer-header-icon,
+.anyeditor-wrapper .anyeditor-sticky-header .multibuffer-header-icon {
+  display: inline-block;
+  flex: none;
+  width: 14px;
+  height: 14px;
+  /* Gap to the name matches the gap after the chevron (its margin-right plus the glyph's inset). */
+  margin-right: 12px;
+  vertical-align: middle;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: 14px 14px;
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-size: 14px 14px;
+  mask-size: 14px 14px;
+}
+
+.anyeditor .multibuffer-file-header-row .multibuffer-header-dir,
+.anyeditor-wrapper .anyeditor-sticky-header .multibuffer-header-dir {
+  color: var(--theme-muted-foreground, #888);
+  font-family: inherit;
+  font-size: 0.9em;
+  font-weight: inherit;
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
+}
+
 .anyeditor,
 .anyeditor-wrapper {
   --multibuffer-header-background: var(--background-color, #1e1e1e);

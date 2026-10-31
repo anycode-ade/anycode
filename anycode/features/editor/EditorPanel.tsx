@@ -5,6 +5,7 @@ import type { DefinitionRequest, DefinitionResponse, HoverRequest } from 'anycod
 import type { FileState, ReferencesPeekState } from '../../types';
 import type { DiffMode } from '../../types/diffMode';
 import { ReferencesPeek } from './ReferencesPeek';
+import type { FileIconStyle } from '../../components/FileIcon';
 import MultibufferPanel, { type MultibufferFile } from './MultibufferPanel';
 import { MarkdownPreview } from '../markdown/MarkdownPreview';
 import { getFileName, getLanguageFromFileName, toRelativeDisplayPath } from '../../utils';
@@ -33,6 +34,7 @@ type EditorPanelProps = {
         editorDiffModeByPane?: Readonly<Record<string, DiffMode>>;
     };
     multibufferOpen?: boolean;
+    fileIconsStyle?: FileIconStyle;
     multibufferFiles?: MultibufferFile[];
     multibufferTitle?: string;
     multibufferIgnoreEdits?: boolean;
@@ -49,6 +51,7 @@ export const EditorPanel = ({
     panelKey,
     editors,
     multibufferOpen = false,
+    fileIconsStyle,
     multibufferFiles = [],
     multibufferTitle,
     multibufferIgnoreEdits = false,
@@ -210,6 +213,7 @@ export const EditorPanel = ({
                     panelKey={panelKey}
                     active={editors.activeEditorPaneId === panelKey}
                     diffMode={diffMode}
+                    fileIconsStyle={fileIconsStyle}
                     files={multibufferFiles}
                     openFiles={editors.files}
                     editorStates={editors.editorStates}
