@@ -145,6 +145,8 @@ export class StickyHeaderRenderer {
         }
 
         const lineHeight = state.settings.lineHeight || 20;
+        // Same height as the in-flow header rows, so the overlay covers them exactly.
+        const headerHeight = lineHeight * (state.code.getHeaderLayout()?.rows ?? 1);
         const getVisualIndex = this.callbacks.getVisualIndexForLine ?? ((line: number) => line);
 
         const headerPositions = headers.map(header => ({
@@ -177,8 +179,8 @@ export class StickyHeaderRenderer {
         let translateY = 0;
         if (next) {
             const distanceToNext = next.y - scrollTop;
-            if (distanceToNext < lineHeight && distanceToNext >= 0) {
-                translateY = distanceToNext - lineHeight;
+            if (distanceToNext < headerHeight && distanceToNext >= 0) {
+                translateY = distanceToNext - headerHeight;
             }
         }
 
@@ -234,7 +236,12 @@ export class StickyHeaderRenderer {
             this.element.style.transform = targetTransform;
         }
 
-        const progress = Math.max(0, Math.min(1, (lineHeight + translateY) / lineHeight));
+        const heightPx = `${headerHeight}px`;
+        if (this.element.style.height !== heightPx) {
+            this.element.style.height = heightPx;
+        }
+
+        const progress = Math.max(0, Math.min(1, (headerHeight + translateY) / headerHeight));
         const opacity = translateY !== 0 ? Math.pow(progress, 2.5) : 1;
         const opacityStr = opacity < 1 ? String(Math.round(opacity * 1000) / 1000) : '';
         if (this.contentEl.style.opacity !== opacityStr) {

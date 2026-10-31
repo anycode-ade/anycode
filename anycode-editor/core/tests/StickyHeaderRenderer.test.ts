@@ -176,7 +176,7 @@ describe('StickyHeaderRenderer & MultiBufferCode headers', () => {
         const multibuffer = new MultiBufferCode([
             { id: 'src/file1.ts', path: 'src/file1.ts', code: file1, originalCode: new Code('', 'src/file1.ts', '') },
             { id: 'src/file2.ts', path: 'src/file2.ts', code: file2, originalCode: new Code('', 'src/file2.ts', '') },
-        ]);
+        ], { headerRows: 1 });
 
         const mockState: EditorState = {
             code: multibuffer,
@@ -242,6 +242,49 @@ describe('StickyHeaderRenderer & MultiBufferCode headers', () => {
 
         path.click();
         expect(onJumpToFile).toHaveBeenCalledWith(4);
+    });
+
+    it('sizes and pushes the sticky header by the multi-row header height', () => {
+        const container = document.createElement('div');
+        const wrapper = document.createElement('div');
+        wrapper.appendChild(container);
+
+        const file1 = new Code('line 1\nline 2\nline 3', 'src/file1.ts', '');
+        const file2 = new Code('line A\nline B', 'src/file2.ts', '');
+        const multibuffer = new MultiBufferCode([
+            { id: 'src/file1.ts', path: 'src/file1.ts', code: file1, originalCode: new Code('', 'src/file1.ts', '') },
+            { id: 'src/file2.ts', path: 'src/file2.ts', code: file2, originalCode: new Code('', 'src/file2.ts', '') },
+        ], { headerRows: 2 });
+
+        // Header lines 0 and 4 each take one pad row: line 0 -> row 0, lines 1-3 -> rows 2-4, line 4 -> row 5.
+        const renderer = new StickyHeaderRenderer(
+            container,
+            wrapper,
+            { getVisualIndexForLine: (line: number) => (line === 0 ? 0 : line + 1) },
+            true
+        );
+
+        const state = {
+            code: multibuffer,
+            settings: { lineHeight: 20, buffer: 25 },
+        } as unknown as EditorState;
+
+        const el = renderer.getElement();
+        const content = el.querySelector('.sticky-header-content') as HTMLElement;
+
+        renderer.render(state, 30);
+        expect(el.style.display).toBe('flex');
+        expect(el.style.height).toBe('40px');
+        expect(el.style.transform).toBe('');
+
+        // Next header at y = 100; distance 30 < header height 40 -> pushed up by 10px.
+        renderer.render(state, 70);
+        expect(el.style.transform).toBe('translateY(-10px)');
+        expect(content.style.opacity).toBe('0.487');
+
+        renderer.render(state, 105);
+        expect(renderer.getActiveLine()).toBe(4);
+        expect(el.style.transform).toBe('');
     });
 
     it('hides sticky header when disabled or for non-multibuffer code', () => {

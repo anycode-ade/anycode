@@ -504,3 +504,49 @@ describe('MultiBufferCode', () => {
         expect(ranges4.length).toBeLessThan(ranges3.length);
     });
 });
+
+describe('MultiBufferCode header layout', () => {
+    beforeAll(() => {
+        setWasmBasePath(path.resolve(__dirname, '../wasm') + '/');
+    });
+
+    const makeEntries = () => ['a.ts', 'b.ts'].map((file) => {
+        const text = 'x\ny\nz\n';
+        return { id: file, path: file, code: new Code(text, file, ''), originalCode: new Code(text, file, '') };
+    });
+
+    it('reports each file header line with two rows by default', () => {
+        const layout = new MultiBufferCode(makeEntries()).getHeaderLayout();
+
+        expect(layout).not.toBeNull();
+        expect(layout!.rows).toBe(2);
+        expect(layout!.lines).toHaveLength(2);
+        expect(layout!.lines[0]).toBe(0);
+        expect(layout!.lines[1]).toBeGreaterThan(layout!.lines[0]);
+    });
+
+    it('marks the reported lines as file headers', () => {
+        const multibuffer = new MultiBufferCode(makeEntries());
+        for (const line of multibuffer.getHeaderLayout()!.lines) {
+            expect(multibuffer.getLineNodes(line).map((node) => node.name)).toContain('multibuffer-header');
+        }
+    });
+
+    it('uses the headerRows option and never allows fewer than one row', () => {
+        expect(new MultiBufferCode(makeEntries(), { headerRows: 1 }).getHeaderLayout()!.rows).toBe(1);
+        expect(new MultiBufferCode(makeEntries(), { headerRows: 0 }).getHeaderLayout()!.rows).toBe(1);
+    });
+
+    it('returns null without file entries', () => {
+        expect(new MultiBufferCode([]).getHeaderLayout()).toBeNull();
+    });
+
+    it('returns the same layout object while the index is unchanged', () => {
+        const multibuffer = new MultiBufferCode(makeEntries());
+        expect(multibuffer.getHeaderLayout()).toBe(multibuffer.getHeaderLayout());
+    });
+
+    it('is null for plain code', () => {
+        expect(new Code('a\nb', 'plain.ts', '').getHeaderLayout()).toBeNull();
+    });
+});

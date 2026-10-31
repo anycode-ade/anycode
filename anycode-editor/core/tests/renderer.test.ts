@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { Renderer } from '../src/renderer/Renderer';
 import { EditorState } from '../src/editor';
 import { Code } from '../src/code';
+import { MultiBufferCode } from '../src/multibuffer';
 import { Search } from '../src/search';
 import { DiffModel, DiffHunk, computeGitChanges } from '../src/diff';
 import { BinaryTokens } from '../src/tokens';
@@ -348,5 +349,116 @@ describe('Renderer Sparse Visual Model', () => {
         expect(renderer.getVisualRow(0)).toEqual({ kind: 'real', lineIndex: 0 });
         expect(renderer.getVisualRow(999_999)).toEqual({ kind: 'real', lineIndex: 999_999 });
         expect(elapsed).toBeLessThan(30);
+    });
+});
+
+describe('Renderer multi-row file headers', () => {
+    let originalDocument: any;
+
+    beforeEach(() => {
+        originalDocument = (globalThis as any).document;
+        (globalThis as any).document = {
+            createElement: (tag: string) => createMockElement(tag),
+            createDocumentFragment: () => createMockElement('fragment'),
+        };
+    });
+
+    afterEach(() => {
+        (globalThis as any).document = originalDocument;
+    });
+
+    const settings = { lineHeight: 20, fontSize: 14, buffer: 5 } as any;
+
+    function setup(headerRows: number) {
+        const bodyA = Array.from({ length: 100 }, (_, i) => `a${i}`).join('\n');
+        const bodyB = Array.from({ length: 100 }, (_, i) => `b${i}`).join('\n');
+        const multibuffer = new MultiBufferCode([
+            { id: 'a.ts', path: 'a.ts', code: new Code(bodyA, 'a.ts', ''), originalCode: new Code(bodyA, 'a.ts', '') },
+            { id: 'b.ts', path: 'b.ts', code: new Code(bodyB, 'b.ts', ''), originalCode: new Code(bodyB, 'b.ts', '') },
+        ], { headerRows });
+        const renderer = new Renderer(
+            createMockElement('div'),
+            createMockElement('div'),
+            createMockElement('div'),
+            createMockElement('div'),
+            createMockElement('div'),
+            false
+        );
+        renderer.render({
+            code: multibuffer,
+            settings,
+            errorLines: new Map(),
+            runLines: [],
+            search: new Search(),
+            diffs: new DiffModel([]),
+            foldRanges: [],
+            collapsedFoldStarts: new Set(),
+            scrollbarMarkersEnabled: true,
+        } as any);
+        return { multibuffer, renderer };
+    }
+
+    // The mock DOM keeps a replaced fragment as one child, where a real DOM splices its rows in.
+    // The fragment holds a spacer first and last, so the rows are the slice between them.
+    function renderedRows(renderer: Renderer): any[] {
+        const [fragment] = renderer['codeContent'].children;
+        return fragment.children.slice(1, -1);
+    }
+
+    it('gives each header rows-1 pad rows after its own row', () => {
+        const { multibuffer, renderer } = setup(2);
+        const { lines } = multibuffer.getHeaderLayout()!;
+        expect(renderer.getVisualRowCount()).toBe(multibuffer.linesLength() + lines.length);
+
+        lines.forEach((headerLine, i) => {
+            // Each earlier header adds one pad row above this one.
+            const header = headerLine + i;
+            expect(renderer.getVisualRow(header)).toEqual({ kind: 'real', lineIndex: headerLine });
+            expect(renderer.getVisualRow(header + 1)).toEqual({ kind: 'headerPad', headerLine, offset: 1 });
+            expect(renderer.getLineForVisualRow(header + 1)).toBe(headerLine);
+            expect(renderer.getVisualRow(header + 2)).toEqual({ kind: 'real', lineIndex: headerLine + 1 });
+        });
+    });
+
+    it('renders DOM rows for real rows only', () => {
+        const { renderer } = setup(2);
+        const rendered = renderedRows(renderer);
+        const indices: number[] = rendered.map((el: HTMLElement) => renderer['getVisualIndex'](el));
+        const first = indices[0];
+        const last = indices[indices.length - 1];
+        const expected: number[] = [];
+        for (let v = first; v <= last; v++) {
+            if (renderer.getVisualRow(v).kind !== 'headerPad') expected.push(v);
+        }
+
+        expect(first).toBe(0);
+        expect(indices).toEqual(expected);
+    });
+
+    it('sizes a header element to cover its pad rows', () => {
+        const { renderer } = setup(2);
+        const rendered = renderedRows(renderer);
+        const header = rendered.find((el: HTMLElement) => renderer['getVisualIndex'](el) === 0);
+
+        expect(header.style.height).toBe('40px');
+    });
+
+    it('keeps single-row headers when headerRows is 1', () => {
+        const { multibuffer, renderer } = setup(1);
+        const firstRow = renderedRows(renderer)[0];
+
+        expect(renderer.getVisualRowCount()).toBe(multibuffer.linesLength());
+        expect(firstRow.style.height).toBe('');
+    });
+
+    it('keeps a header with its pad rows when the viewport starts on a pad row', () => {
+        const { multibuffer, renderer } = setup(2);
+        const secondHeaderVisual = multibuffer.getHeaderLayout()!.lines[1] + 1;
+        // rawStart = floor(scrollTop / lineHeight) - buffer lands on the pad row below that header.
+        const scrollTop = (secondHeaderVisual + 1 + settings.buffer) * settings.lineHeight;
+
+        const range = renderer['getVisibleRange'](renderer.getVisualRowCount(), settings, undefined, scrollTop, 200);
+
+        expect(range.startIndex).toBe(secondHeaderVisual);
     });
 });

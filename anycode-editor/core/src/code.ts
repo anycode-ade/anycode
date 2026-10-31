@@ -123,6 +123,16 @@ export interface FoldRange {
     kind: string;
 }
 
+/**
+ * Lines rendered as multi-row headers. `lines` are sorted 0-based line indices.
+ * Each listed line occupies `rows` visual rows: its own row followed by
+ * `rows - 1` pad rows that have no line of their own.
+ */
+export interface HeaderLayout {
+    readonly lines: readonly number[];
+    readonly rows: number;
+}
+
 var langsCache: Map<string, Language> = new Map();
 var pendingLangsCache: Map<string, Promise<Language>> = new Map();
 var queriesCache: Map<string, Query> = new Map();
@@ -1153,6 +1163,10 @@ export class Code {
     }
 
     public getAlwaysVisibleLines(_totalLines: number): Set<number> | null {
+        return null;
+    }
+
+    public getHeaderLayout(): HeaderLayout | null {
         return null;
     }
 

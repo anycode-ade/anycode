@@ -1,4 +1,4 @@
-import { Code, type Change, type EditState, type FoldRange, type HighlighedNode, type Position, type WordHighlight, type FilePosition, type Point } from './code';
+import { Code, type Change, type EditState, type FoldRange, type HeaderLayout, type HighlighedNode, type Position, type WordHighlight, type FilePosition, type Point } from './code';
 import { BinaryTokens } from './tokens';
 import { Selection } from './selection';
 import { computeGitChangesWithStats, type DiffHunk, DiffModel } from './diff';
@@ -105,6 +105,8 @@ export class MultiBufferCode extends Code {
     private totalLineCount = 0;
     private totalCharLength = 0;
     private headerInfos: MultiBufferHeaderInfo[] = [];
+    private headerLayout: HeaderLayout | null = null;
+    private readonly headerRows: number;
     private indexDirty = true;
     private cachedFoldRanges: FoldRange[] | null = null;
     private activeFileIndex = 0;
@@ -112,9 +114,14 @@ export class MultiBufferCode extends Code {
     private onChangeCallback: ((change: Change) => void) | null = null;
     private onFileChangeCallback: ((change: MultiBufferFileChange) => void) | null = null;
 
-    constructor(entries: MultiBufferEntry[]) {
+    /**
+     * `headerRows` is how many visual rows each file header occupies (default 2).
+     * A value of 1 keeps headers single-row.
+     */
+    constructor(entries: MultiBufferEntry[], options: { headerRows?: number } = {}) {
         super('', 'multibuffer', '');
         this.entries = entries;
+        this.headerRows = Math.max(1, Math.floor(options.headerRows ?? 2));
         this.fileVersions = entries.map(() => 0);
         this.headerPaths = entries.map(formatEntryHeaderPath);
         this.filename = entries[0]?.path ?? 'multibuffer';
@@ -376,6 +383,11 @@ export class MultiBufferCode extends Code {
             headers.add(fileRange.headerLine);
         }
         return headers;
+    }
+
+    public override getHeaderLayout(): HeaderLayout | null {
+        this.ensureIndex();
+        return this.headerLayout;
     }
 
     public getMultibufferAlwaysVisibleLines(totalLines: number): Set<number> {
@@ -962,6 +974,9 @@ export class MultiBufferCode extends Code {
         }
         this.totalLineCount = line;
         this.totalCharLength = offset;
+        this.headerLayout = this.fileRanges.length > 0
+            ? { lines: this.fileRanges.map((range) => range.headerLine), rows: this.headerRows }
+            : null;
         this.indexDirty = false;
     }
 

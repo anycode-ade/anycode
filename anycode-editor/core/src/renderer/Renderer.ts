@@ -1,4 +1,4 @@
-import { Code, HighlighedNode } from "../code";
+import { Code, HeaderLayout, HighlighedNode } from "../code";
 import { BinaryTokens } from "../tokens";
 import { AnycodeLine, Point, RowElements, SparseGhostGroup } from "../types";
 import { isGhostElement } from "../utils";
@@ -20,6 +20,7 @@ import { ScrollbarMarkersRenderer } from "./ScrollbarMarkersRenderer";
 import { WordHighlightRenderer } from "./WordHighlightRenderer";
 import { BracketMatchRenderer } from "./BracketMatchRenderer";
 import { StickyHeaderRenderer } from "./StickyHeaderRenderer";
+import { insertHeaderPads } from "./headerRows";
 
 const MAX_SCROLLBAR_MARKER_LINES = 5000;
 
@@ -48,12 +49,23 @@ export interface SeparatorRow {
     hiddenCount: number;
 }
 
-export type VisualRow = RealRow | GhostRow | SeparatorRow;
+/**
+ * A row below a multi-row header. It has no DOM of its own: the header element
+ * covers it. `offset` is 1-based, counted from the header's own row.
+ */
+export interface HeaderPadRow {
+    kind: 'headerPad';
+    headerLine: number;
+    offset: number;
+}
+
+export type VisualRow = RealRow | GhostRow | SeparatorRow | HeaderPadRow;
 
 export type VisualSegment =
     | { kind: 'real'; startLine: number; count: number; startVisualIndex: number }
     | { kind: 'ghost'; hunkId: number; anchorLine: number; oldLineNumbers: number[]; ghostCount: number; startVisualIndex: number }
-    | { kind: 'separator'; hiddenStart: number; hiddenEnd: number; startVisualIndex: number };
+    | { kind: 'separator'; hiddenStart: number; hiddenEnd: number; startVisualIndex: number }
+    | { kind: 'headerPad'; headerLine: number; padCount: number; startVisualIndex: number };
 
 export class Renderer {
     private container: HTMLDivElement;
@@ -90,6 +102,10 @@ export class Renderer {
     private cursorRafId: number | null = null;
     private gapBeforeMap: Map<number, { hiddenStart: number; hiddenEnd: number }> = new Map();
     private gapAfterMap: Map<number, { hiddenStart: number; hiddenEnd: number }> = new Map();
+    // Rows per header line (1 = single-row headers, no pads). Header lines take
+    // `headerRowCount` visual rows, and the rows after the first have no DOM.
+    private headerRowCount: number = 1;
+    private headerLineSet: Set<number> = new Set();
 
     constructor(
         container: HTMLDivElement,
@@ -189,6 +205,10 @@ export class Renderer {
         const totalRealLines = code.linesLength();
         this.lastTotalLines = totalRealLines;
 
+        const headerLayout = code.getHeaderLayout();
+        this.headerRowCount = headerLayout?.rows ?? 1;
+        this.headerLineSet = new Set(headerLayout?.lines ?? []);
+
         // 1. Ghost groups from diffs (only deleted / modified)
         const ghostGroups: SparseGhostGroup[] = [];
         let totalGhosts = 0;
@@ -242,7 +262,7 @@ export class Renderer {
         const isFocusedDiffActive = focusedRanges !== undefined && !(focusedRanges.length === 1 && focusedRanges[0].start === 0 && focusedRanges[0].end === totalRealLines - 1);
         const hasGhosts = ghostGroups.length > 0;
 
-        if (!hasFolds && !isFocusedDiffActive && !hasGhosts && !alwaysVisible) {
+        if (!hasFolds && !isFocusedDiffActive && !hasGhosts && !alwaysVisible && this.headerRowCount === 1) {
             this.visualSegments = null;
             this.totalVisualRows = totalRealLines;
             return;
@@ -253,8 +273,7 @@ export class Renderer {
         // can be built in O(H), where H is the number of ghost groups.
         if (!hasFolds && !isFocusedDiffActive) {
             const result = this.buildSegmentsAroundGhosts(totalRealLines, ghostGroups);
-            this.visualSegments = result.segments;
-            this.totalVisualRows = result.totalRows;
+            this.setVisualSegments(result.segments, result.totalRows, headerLayout);
             return;
         }
 
@@ -422,8 +441,15 @@ export class Renderer {
 
         this.gapBeforeMap = gapBeforeMap;
         this.gapAfterMap = gapAfterMap;
-        this.visualSegments = segments;
-        this.totalVisualRows = currentVisualIndex;
+        this.setVisualSegments(segments, currentVisualIndex, headerLayout);
+    }
+
+    private setVisualSegments(segments: VisualSegment[], totalRows: number, headerLayout: HeaderLayout | null): void {
+        const padded = headerLayout && headerLayout.rows > 1
+            ? insertHeaderPads(segments, headerLayout)
+            : { segments, totalRows };
+        this.visualSegments = padded.segments;
+        this.totalVisualRows = padded.totalRows;
     }
 
     private buildSegmentsAroundGhosts(
@@ -481,47 +507,80 @@ export class Renderer {
     }
 
     public getVisualRow(visualIndex: number): VisualRow {
-        if (!this.visualSegments || this.visualSegments.length === 0) {
+        const seg = this.findSegment(visualIndex);
+        if (seg === null) {
             return { kind: 'real', lineIndex: visualIndex };
         }
+        if (seg.kind === 'real') {
+            return { kind: 'real', lineIndex: seg.startLine + (visualIndex - seg.startVisualIndex) };
+        }
+        if (seg.kind === 'ghost') {
+            const offset = visualIndex - seg.startVisualIndex;
+            return {
+                kind: 'ghost',
+                hunkId: seg.hunkId,
+                anchorLine: seg.anchorLine,
+                originalLineIndex: seg.oldLineNumbers[offset] - 1,
+            };
+        }
+        if (seg.kind === 'headerPad') {
+            return { kind: 'headerPad', headerLine: seg.headerLine, offset: visualIndex - seg.startVisualIndex + 1 };
+        }
+        return {
+            kind: 'separator',
+            hiddenStart: seg.hiddenStart,
+            hiddenEnd: seg.hiddenEnd,
+            hiddenCount: seg.hiddenEnd - seg.hiddenStart + 1,
+        };
+    }
+
+    /** Segment containing `visualIndex`, or null when none does. Binary search, no allocation. */
+    private findSegment(visualIndex: number): VisualSegment | null {
+        const segments = this.visualSegments;
+        if (!segments || segments.length === 0) return null;
 
         let low = 0;
-        let high = this.visualSegments.length - 1;
-
+        let high = segments.length - 1;
         while (low <= high) {
             const mid = (low + high) >> 1;
-            const seg = this.visualSegments[mid];
-            const segCount = seg.kind === 'real' ? seg.count : seg.kind === 'ghost' ? seg.ghostCount : 1;
+            const seg = segments[mid];
+            const segCount = seg.kind === 'real' ? seg.count : seg.kind === 'ghost' ? seg.ghostCount : seg.kind === 'headerPad' ? seg.padCount : 1;
 
             if (visualIndex < seg.startVisualIndex) {
                 high = mid - 1;
             } else if (visualIndex >= seg.startVisualIndex + segCount) {
                 low = mid + 1;
             } else {
-                if (seg.kind === 'real') {
-                    return { kind: 'real', lineIndex: seg.startLine + (visualIndex - seg.startVisualIndex) };
-                }
-                if (seg.kind === 'ghost') {
-                    const offset = visualIndex - seg.startVisualIndex;
-                    return {
-                        kind: 'ghost',
-                        hunkId: seg.hunkId,
-                        anchorLine: seg.anchorLine,
-                        originalLineIndex: seg.oldLineNumbers[offset] - 1,
-                    };
-                }
-                if (seg.kind === 'separator') {
-                    return {
-                        kind: 'separator',
-                        hiddenStart: seg.hiddenStart,
-                        hiddenEnd: seg.hiddenEnd,
-                        hiddenCount: seg.hiddenEnd - seg.hiddenStart + 1,
-                    };
-                }
+                return seg;
             }
         }
+        return null;
+    }
 
-        return { kind: 'real', lineIndex: visualIndex };
+    /**
+     * Visual rows taken by the element at `visualIndex`: a header takes its full height.
+     * Allocation-free, since the render loops call it once per row.
+     */
+    private getElementSpan(visualIndex: number): number {
+        if (this.headerRowCount === 1) return 1;
+        const seg = this.findSegment(visualIndex);
+        if (seg === null) return this.headerLineSet.has(visualIndex) ? this.headerRowCount : 1;
+        if (seg.kind !== 'real') return 1;
+        const lineIndex = seg.startLine + (visualIndex - seg.startVisualIndex);
+        return this.headerLineSet.has(lineIndex) ? this.headerRowCount : 1;
+    }
+
+    /** First visual row of the element containing `visualIndex`. Pad rows belong to their header, one row up. */
+    private getElementStart(visualIndex: number): number {
+        const seg = this.findSegment(visualIndex);
+        return seg !== null && seg.kind === 'headerPad' ? seg.startVisualIndex - 1 : visualIndex;
+    }
+
+    /** Exclusive end of the element containing `visualIndex - 1`, so a partly visible header is kept whole. */
+    private getElementEndAfter(visualIndex: number): number {
+        if (visualIndex <= 0) return visualIndex;
+        const start = this.getElementStart(visualIndex - 1);
+        return start + this.getElementSpan(start);
     }
 
     public getVisualRows(startIndex: number, endIndex: number): VisualRow[] {
@@ -597,7 +656,7 @@ export class Renderer {
         codeFrag.appendChild(this.lineRenderer.createSpacer(topPx));
 
         // Render visible slice of visual rows directly on the fly (Zero Alloc)
-        for (let visualIndex = startIndex; visualIndex < endIndex; visualIndex++) {
+        for (let visualIndex = startIndex; visualIndex < endIndex; visualIndex += this.getElementSpan(visualIndex)) {
             const elements = this.renderRowAt(visualIndex, state);
             codeFrag.appendChild(elements.code);
             gutterFrag.appendChild(elements.gutter);
@@ -728,6 +787,7 @@ export class Renderer {
     public getLineForVisualRow(visualIndex: number): number {
         const row = this.getVisualRow(visualIndex);
         if (row.kind === 'real') return row.lineIndex;
+        if (row.kind === 'headerPad') return row.headerLine;
         if (row.kind === 'ghost') return Math.max(0, row.anchorLine - 1);
         return Math.max(0, Math.round((row.hiddenStart + row.hiddenEnd) / 2));
     }
@@ -785,8 +845,11 @@ export class Renderer {
             visibleCount = Math.min(Math.floor(fallbackHeight / itemHeight), totalVisualRows);
         }
 
-        const startIndex = Math.max(0, Math.floor(scrollTop / itemHeight) - visibleBuffer);
-        const endIndex = Math.min(totalVisualRows, startIndex + visibleCount + visibleBuffer * 2);
+        const rawStart = Math.max(0, Math.floor(scrollTop / itemHeight) - visibleBuffer);
+        const rawEnd = Math.min(totalVisualRows, rawStart + visibleCount + visibleBuffer * 2);
+        // Snap to whole elements so a header partly in view is rendered with its pad rows.
+        const startIndex = this.getElementStart(rawStart);
+        const endIndex = this.getElementEndAfter(rawEnd);
 
         return { startIndex, endIndex };
     }
@@ -895,7 +958,7 @@ export class Renderer {
             if (this.foldsColumn.children[1]) {
                 this.foldsColumn.removeChild(this.foldsColumn.children[1]);
             }
-            currentStartIndex++;
+            currentStartIndex += this.getElementSpan(currentStartIndex);
             changed = true;
         }
 
@@ -912,13 +975,13 @@ export class Renderer {
             if (this.foldsColumn.children[index]) {
                 this.foldsColumn.removeChild(this.foldsColumn.children[index]);
             }
-            currentEndIndex--;
+            currentEndIndex = this.getElementStart(currentEndIndex - 1);
             changed = true;
         }
 
         // Add rows above directly (Zero Alloc)
         while (currentStartIndex > startIndex) {
-            currentStartIndex--;
+            currentStartIndex = this.getElementStart(currentStartIndex - 1);
             const elements = this.renderRowAt(currentStartIndex, state);
 
             this.codeContent.insertBefore(elements.code, this.codeContent.children[1]);
@@ -938,7 +1001,7 @@ export class Renderer {
             this.buttonsColumn.insertBefore(elements.btn, btnBottomSpacer);
             this.foldsColumn.insertBefore(elements.fold, foldsBottomSpacer);
 
-            currentEndIndex++;
+            currentEndIndex += this.getElementSpan(currentEndIndex);
             changed = true;
         }
 
@@ -989,6 +1052,10 @@ export class Renderer {
         if (row.kind === 'ghost') {
             return this.createGhostRow(row.hunkId, row.anchorLine, row.originalLineIndex, visualIndex, state);
         }
+        if (row.kind === 'headerPad') {
+            // A pad row has no element of its own; its header's element covers it.
+            return this.renderRowAt(visualIndex - row.offset, state, precomputedNodes);
+        }
         return this.createSeparatorRow(row, visualIndex, state);
     }
 
@@ -1025,6 +1092,13 @@ export class Renderer {
             elements.gutter.textContent = "";
             elements.btn.classList.add("multibuffer-file-header-gutter");
             elements.fold.classList.add("multibuffer-file-header-gutter");
+            if (this.headerRowCount > 1) {
+                // Cover the pad rows; the row's flex layout centers the text vertically.
+                const height = `${this.headerRowCount * settings.lineHeight}px`;
+                for (const cell of [elements.code, elements.gutter, elements.btn, elements.fold]) {
+                    cell.style.height = height;
+                }
+            }
         }
         return this.applyVisualIndex(elements, visualIndex);
     }
@@ -1154,7 +1228,7 @@ export class Renderer {
 
         return {
             startIndex,
-            endIndex: endIndex + 1,
+            endIndex: endIndex + this.getElementSpan(endIndex),
         };
     }
 
@@ -1195,15 +1269,17 @@ export class Renderer {
             return;
         }
 
-        // Update changed rows in viewport (Zero-Alloc)
-        for (let i = visible.startIndex; i < visible.endIndex; i++) {
-            const childIndex = i - renderedRange.startIndex + 1;
+        // Update changed rows in viewport (Zero-Alloc). Pad rows have no DOM,
+        // so step by element and keep the DOM child index in step with it.
+        let childIndex = 1;
+        for (let i = visible.startIndex; i < visible.endIndex; i += this.getElementSpan(i)) {
             const existing = this.codeContent.children[childIndex] as HTMLElement | undefined;
             const row = this.getVisualRow(i);
 
             if (!existing || this.isRowChanged(existing, row, code, diffs)) {
                 this.replaceRowAt(childIndex, this.renderRowAt(i, state));
             }
+            childIndex++;
         }
 
         // Render search highlights
@@ -1396,18 +1472,14 @@ export class Renderer {
             ? focusLine
             : cursor.row;
 
-        // For plain files without folds or diffs, visual and source line
-        // indices are identical. Avoid scanning all rendered rows.
-        const visualIndex = !this.diffEnabled && state.foldRanges.length === 0
-            ? line
-            : this.getVisualIndexForLine(line);
+        const visualIndex = this.getVisualIndexForLine(line);
         const cursorTop = visualIndex * settings.lineHeight;
         const cursorBottom = cursorTop + settings.lineHeight;
 
-        const topPadding = (state.stickyHeaderEnabled && typeof (state.code as any)?.getFileHeaders === 'function')
-            ? settings.lineHeight
+        const topPaddingLines = (state.stickyHeaderEnabled && typeof (state.code as any)?.getFileHeaders === 'function')
+            ? this.headerRowCount
             : 0;
-        const topPaddingLines = topPadding > 0 ? 1 : 0;
+        const topPadding = topPaddingLines * settings.lineHeight;
 
         const renderedRange = this.getRenderedRange();
         const isFarInsideRenderedRange = renderedRange !== null
