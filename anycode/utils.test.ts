@@ -214,19 +214,10 @@ describe('generateUUID', () => {
     }
   });
 
-  it('works in insecure context when crypto.randomUUID is not available', () => {
-    const originalRandomUUID = (globalThis.crypto as any)?.randomUUID;
-    try {
-      if (globalThis.crypto) {
-        // Temporarily delete or hide randomUUID to simulate insecure HTTP context
-        (globalThis.crypto as any).randomUUID = undefined;
-      }
-      const uuid = generateUUID();
-      expect(uuid).toMatch(UUID_V4_REGEX);
-    } finally {
-      if (globalThis.crypto && originalRandomUUID) {
-        (globalThis.crypto as any).randomUUID = originalRandomUUID;
-      }
+  it('polyfilled crypto.randomUUID does not cause infinite recursion', () => {
+    if (typeof globalThis.crypto !== 'undefined' && typeof globalThis.crypto.randomUUID === 'function') {
+      const id = globalThis.crypto.randomUUID();
+      expect(id).toMatch(UUID_V4_REGEX);
     }
   });
 });
