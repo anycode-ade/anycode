@@ -1,5 +1,6 @@
 mod workspace;
 
+#[cfg(target_os = "macos")]
 use tauri::Emitter;
 use tokio_util::sync::CancellationToken;
 
@@ -68,55 +69,59 @@ pub fn run() {
       app.handle().plugin(tauri_plugin_process::init())?;
       app.handle().plugin(tauri_plugin_updater::Builder::new().build())?;
 
-      // Setup native menu
-      let handle = app.handle();
-      let app_menu = tauri::menu::Submenu::with_items(handle, "Anycode", true, &[
-        &tauri::menu::PredefinedMenuItem::about(handle, Some("About Anycode"), None)?,
-        &tauri::menu::PredefinedMenuItem::separator(handle)?,
-        &tauri::menu::PredefinedMenuItem::services(handle, None)?,
-        &tauri::menu::PredefinedMenuItem::separator(handle)?,
-        &tauri::menu::PredefinedMenuItem::hide(handle, None)?,
-        &tauri::menu::PredefinedMenuItem::hide_others(handle, None)?,
-        &tauri::menu::PredefinedMenuItem::show_all(handle, None)?,
-        &tauri::menu::PredefinedMenuItem::separator(handle)?,
-        &tauri::menu::PredefinedMenuItem::quit(handle, None)?,
-      ])?;
+      // Setup native menu for macOS global menu bar only.
+      // On Windows and Linux, in-window menu bars conflict with Anycode's dark UI.
+      #[cfg(target_os = "macos")]
+      {
+        let handle = app.handle();
+        let app_menu = tauri::menu::Submenu::with_items(handle, "Anycode", true, &[
+          &tauri::menu::PredefinedMenuItem::about(handle, Some("About Anycode"), None)?,
+          &tauri::menu::PredefinedMenuItem::separator(handle)?,
+          &tauri::menu::PredefinedMenuItem::services(handle, None)?,
+          &tauri::menu::PredefinedMenuItem::separator(handle)?,
+          &tauri::menu::PredefinedMenuItem::hide(handle, None)?,
+          &tauri::menu::PredefinedMenuItem::hide_others(handle, None)?,
+          &tauri::menu::PredefinedMenuItem::show_all(handle, None)?,
+          &tauri::menu::PredefinedMenuItem::separator(handle)?,
+          &tauri::menu::PredefinedMenuItem::quit(handle, None)?,
+        ])?;
 
-      let file_menu = tauri::menu::Submenu::with_items(handle, "File", true, &[
-        &tauri::menu::MenuItem::with_id(handle, "open_folder", "Open Folder...", true, Some("CmdOrCtrl+O"))?,
-        &tauri::menu::MenuItem::with_id(handle, "close_workspace", "Close Workspace", true, None::<&str>)?,
-      ])?;
+        let file_menu = tauri::menu::Submenu::with_items(handle, "File", true, &[
+          &tauri::menu::MenuItem::with_id(handle, "open_folder", "Open Folder...", true, Some("CmdOrCtrl+O"))?,
+          &tauri::menu::MenuItem::with_id(handle, "close_workspace", "Close Workspace", true, None::<&str>)?,
+        ])?;
 
-      let edit_menu = tauri::menu::Submenu::with_items(handle, "Edit", true, &[
-        &tauri::menu::PredefinedMenuItem::undo(handle, None)?,
-        &tauri::menu::PredefinedMenuItem::redo(handle, None)?,
-        &tauri::menu::PredefinedMenuItem::separator(handle)?,
-        &tauri::menu::PredefinedMenuItem::cut(handle, None)?,
-        &tauri::menu::PredefinedMenuItem::copy(handle, None)?,
-        &tauri::menu::PredefinedMenuItem::paste(handle, None)?,
-        &tauri::menu::PredefinedMenuItem::select_all(handle, None)?,
-      ])?;
+        let edit_menu = tauri::menu::Submenu::with_items(handle, "Edit", true, &[
+          &tauri::menu::PredefinedMenuItem::undo(handle, None)?,
+          &tauri::menu::PredefinedMenuItem::redo(handle, None)?,
+          &tauri::menu::PredefinedMenuItem::separator(handle)?,
+          &tauri::menu::PredefinedMenuItem::cut(handle, None)?,
+          &tauri::menu::PredefinedMenuItem::copy(handle, None)?,
+          &tauri::menu::PredefinedMenuItem::paste(handle, None)?,
+          &tauri::menu::PredefinedMenuItem::select_all(handle, None)?,
+        ])?;
 
-      let menu = tauri::menu::Menu::with_items(handle, &[&app_menu, &file_menu, &edit_menu])?;
-      app.set_menu(menu)?;
+        let menu = tauri::menu::Menu::with_items(handle, &[&app_menu, &file_menu, &edit_menu])?;
+        app.set_menu(menu)?;
 
-      app.on_menu_event(move |app_handle, event| {
-        if event.id() == "open_folder" {
-          let handle_clone = app_handle.clone();
-          std::thread::spawn(move || {
-            if let Some(folder) = rfd::FileDialog::new()
-              .set_title("Open Workspace Folder")
-              .pick_folder()
-            {
-              let canonical = anycode::utils::canonicalize_path(&folder).unwrap_or_else(|_| folder);
-              let path_str = canonical.to_string_lossy().to_string();
-              let _ = handle_clone.emit("workspace_folder_selected", path_str);
-            }
-          });
-        } else if event.id() == "close_workspace" {
-          let _ = app_handle.emit("workspace_close_requested", ());
-        }
-      });
+        app.on_menu_event(move |app_handle, event| {
+          if event.id() == "open_folder" {
+            let handle_clone = app_handle.clone();
+            std::thread::spawn(move || {
+              if let Some(folder) = rfd::FileDialog::new()
+                .set_title("Open Workspace Folder")
+                .pick_folder()
+              {
+                let canonical = anycode::utils::canonicalize_path(&folder).unwrap_or_else(|_| folder);
+                let path_str = canonical.to_string_lossy().to_string();
+                let _ = handle_clone.emit("workspace_folder_selected", path_str);
+              }
+            });
+          } else if event.id() == "close_workspace" {
+            let _ = app_handle.emit("workspace_close_requested", ());
+          }
+        });
+      }
 
       // Generate random secret token for this application run
       let secret_token = uuid::Uuid::new_v4().to_string();
