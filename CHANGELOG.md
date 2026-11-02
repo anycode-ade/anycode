@@ -2,6 +2,18 @@
 
 All notable changes are documented here by release tag.
 
+## v0.3.1 - 2026-11-02
+
+### Highlights
+- Fixed Windows background process console popups by applying Win32 `CREATE_NO_WINDOW` (`0x0800_0000`) across ACP agent spawning, ACP terminal commands, LSP language servers, and Git status/log invocations.
+- Fixed Linux musl release binary compatibility for older x86-64 CPU architectures by enforcing generic x86-64 baseline flags.
+- Relaxed unit test performance thresholds in sparse renderer tests to 100ms to eliminate CI runner virtualization flakiness.
+
+### Commits
+- `131533d` test(renderer): relax timing threshold to 100ms for CI virtualization noise
+- `f781f80` fix(backend): hide console windows on Windows using CREATE_NO_WINDOW
+- `f4f16a6` fix(ci): fix linux musl release binary and enforce x86-64 baseline
+
 ## v0.3.0 - 2026-11-02
 
 ### Highlights
