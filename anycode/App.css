@@ -83,6 +83,14 @@
     border: 1px solid color-mix(in srgb, var(--theme-foreground, #ffffff) 10%, transparent);
 }
 
+.app-container.app-with-dynamic-bg .layout-header-actions-overlay,
+.app-container[data-dynamic-bg="global"] .layout-header-actions-overlay,
+[data-dynamic-bg="global"] .layout-header-actions-overlay {
+    background: color-mix(in srgb, var(--background-color, #0a0a0a) 75%, transparent 25%) !important;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+}
+
 .app-container.app-with-dynamic-bg .layout-panel-picker-item:hover,
 .app-container[data-dynamic-bg="global"] .layout-panel-picker-item:hover {
     background: color-mix(

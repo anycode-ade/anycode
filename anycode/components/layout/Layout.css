@@ -424,7 +424,7 @@
 .layout .dv-tabs-and-actions-container:hover:not(:has(.dv-tab:hover)) .layout-header-actions-overlay,
 .layout .dv-tabs-and-actions-container:has(.layout-header-actions:focus-within) .layout-header-actions-overlay {
     pointer-events: auto;
-    background: #242424;
+    background: var(--background-color, var(--theme-background, #0a0a0a));
 }
 
 .layout .dv-tabs-and-actions-container:hover:not(:has(.dv-tab:hover)) .layout-header-action-btn,
