@@ -75,14 +75,18 @@ jobs:
       
       - name: Build Linux x86_64 musl binary
         working-directory: ./anycode-backend
+        env:
+          RUSTFLAGS: "-C target-cpu=x86-64 -C target-feature=-avx,-avx2,-bmi,-bmi2"
+          CFLAGS: "-march=x86-64 -mtune=generic"
         run: cargo build --release --target x86_64-unknown-linux-musl
       
       - name: Package as tar.gz
         working-directory: ./anycode-backend
         run: |
           mkdir -p dist-release
-          strip target/x86_64-unknown-linux-musl/release/anycode
           cp target/x86_64-unknown-linux-musl/release/anycode dist-release/
+          ./dist-release/anycode --help
+          ./dist-release/anycode --version
           tar -czf anycode-linux-x86_64-musl.tar.gz -C dist-release anycode
       
       - name: Upload to release
@@ -235,7 +239,8 @@ jobs:
       - name: Package as tar.gz
         working-directory: ./anycode-backend
         run: |
-          strip dist-release/anycode
+          ./dist-release/anycode --help
+          ./dist-release/anycode --version
           tar -czf anycode-universal-apple-darwin.tar.gz -C dist-release anycode
       
       - name: Upload to release
