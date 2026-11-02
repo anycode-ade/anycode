@@ -952,6 +952,8 @@ impl AcpAgent {
         tokio::process::ChildStderr,
     )> {
         let mut command = Self::agent_command(cmd);
+        #[cfg(windows)]
+        command.creation_flags(0x0800_0000);
         command.args(args);
         command.current_dir(project_root);
         if let Some(env_map) = env {
@@ -994,6 +996,7 @@ impl AcpAgent {
             // on Windows. Run them through cmd.exe so they work with the
             // same agent configuration used on Unix-like platforms.
             let mut command = Command::new("cmd.exe");
+            command.creation_flags(0x0800_0000);
             command.arg("/D").arg("/S").arg("/C").arg(cmd);
             command
         }

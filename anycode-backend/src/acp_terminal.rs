@@ -68,6 +68,8 @@ impl AcpTerminalManager {
         );
 
         let mut cmd = tokio::process::Command::new(&args.command);
+        #[cfg(windows)]
+        cmd.creation_flags(0x0800_0000);
         cmd.args(&args.args);
         cmd.current_dir(&resolved_cwd);
         for env_var in &args.env {

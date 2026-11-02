@@ -22,6 +22,8 @@ use crate::utils::path_to_uri;
 
 fn lsp_command(program: &str, args: &[&str]) -> Command {
     let mut command = Command::new(program);
+    #[cfg(windows)]
+    command.creation_flags(0x0800_0000);
     command
         .args(args)
         .stdin(Stdio::piped())
@@ -36,6 +38,7 @@ fn spawn_lsp(program: &str, args: &[&str]) -> io::Result<tokio::process::Child> 
         #[cfg(windows)]
         Err(error) if error.kind() == io::ErrorKind::NotFound => {
             let mut command = Command::new("cmd.exe");
+            command.creation_flags(0x0800_0000);
             command
                 .arg("/C")
                 .arg(program)

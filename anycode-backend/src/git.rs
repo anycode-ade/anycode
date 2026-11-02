@@ -11,6 +11,20 @@ use tracing::info;
 
 use crate::utils::format_path;
 
+fn git_command() -> Command {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        let mut command = Command::new("git");
+        command.creation_flags(0x0800_0000);
+        command
+    }
+    #[cfg(not(windows))]
+    {
+        Command::new("git")
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum FileStatus {
@@ -602,7 +616,7 @@ impl GitManager {
             });
         }
         let max_count = offset.saturating_add(limit).saturating_add(1).to_string();
-        let output = Command::new("git")
+        let output = git_command()
             .arg("-C")
             .arg(&root)
             .args(["log", "--no-color", "--date=default"])
@@ -1962,7 +1976,7 @@ impl GitManager {
                 .unwrap_or_else(|| self.workdir.clone())
         };
 
-        let output = std::process::Command::new("git")
+        let output = git_command()
             .arg("status")
             .arg("--porcelain=v1")
             .arg("--untracked-files=all")
