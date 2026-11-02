@@ -2,6 +2,77 @@
 
 All notable changes are documented here by release tag.
 
+## v0.3.0 - 2026-11-02
+
+### Highlights
+- Major multibuffer review update: multi-row file headers with pad visual segments for uniform scrolling, project-relative folder paths, file icons, and a global collapse/expand-all toggle button.
+- Enhanced diff rendering with word-level highlight inside modified lines, and zero-DOM-overhead binary token rendering for deleted ghost lines.
+- Optimized multibuffer index from O(N) line scans to O(log M) file ranges with binary search.
+- Rich project cards in Projects panel with commit activity charts, latest commit details, GitHub avatars, direct branch switching, and quick project root addition/removal.
+- Disabled redundant in-window native menu bar on Linux and Windows, maintaining Anycode's sleek dark UI while keeping the native macOS system menu bar.
+- Published modular anycode-agent npm package (1.0.1) with interactive showcase demo app, model selector, transcript fixtures, and folded thought groups next to tool calls.
+- Trailing scrollbar timer replacement for smooth, reliable scrollbar fade-in behavior across browsers.
+- Stabilized Windows agent shims, canonical root paths, and workspace socket lock synchronization.
+
+### Commits
+- `6fa08dd` fix(desktop): disable in-window native menu bar on Linux and Windows
+- `1894c7c` feat(editor): support multi-row file headers in multibuffer
+- `a3fc46d` feat(review): file icons, directory paths and collapse-all in multibuffer headers
+- `3ee0b87` feat(layout): reveal tab header actions on strip free-space hover
+- `c749c43` feat(diff): highlight changed words in modified lines
+- `b39b58c` perf(scrollbar): replace scrollend event with trailing timer
+- `569a166` perf(scrollbar): optimize fade-in timer using scrollend event
+- `9be10fb` perf(diff): render deleted ghost lines directly from binary tokens
+- `162a876` perf(multibuffer): replace O(N) line rows with O(log M) file ranges and binary search
+- `0f8c430` style(agent): remove custom font-weight in AcpMessage editor
+- `3d64583` fix(editor): make deleted diff lines and multibuffer headers selectable correctly
+- `92bb0a4` style(agent): adjust code gutter inset, thought header and tool name styling
+- `956d21e` ci: upgrade actions/upload-artifact to v7
+- `21ef59e` chore: remove DIAGRAMS_TEST.md
+- `c082521` test(demo): wait for work group before asserting collapsed agent steps
+- `d82cae9` perf(editor): move container-type to wrapper to preserve smooth scrolling
+- `9896980` fix(workspace): release socket lock before building workspace state
+- `e63a6ad` feat(projects): remove project from Projects panel
+- `f6a0b25` fix(types): resolve TypeScript compiler errors across anycode and workspace packages
+- `8ea91a5` anycode-agent: 1.0.1
+- `bf16dae` anycode-agent: exports map for styles.css, ship @types as dependencies
+- `88de310` anycode-agent: move README screenshots above Features
+- `b533c2f` anycode-agent: npm package metadata, license and README screenshots
+- `c0d46e2` anycode-agent example: editor-backed code blocks and diffs
+- `2ed0538` anycode-editor: align gutter line numbers with code rows
+- `ed4444d` anycode-agent: fold thoughts next to tool calls into the work group
+- `6796d0f` anycode-agent example: keep attachments on sent prompts and queue items
+- `cc00938` anycode-agent example: bare arrow for the send button
+- `238488d` anycode-agent example: subtler send button disc
+- `87e7ce1` anycode-agent example: light send button so it is visible on the dark background
+- `73c998d` anycode-agent example: thin light scrollbars on the dark demo background
+- `aa7bf2e` anycode-agent example: full useEffect in transcript fixture; Codex knot avatar on white
+- `09f4d57` anycode-agent example: use Codex and anycode logos as avatars at 40px
+- `b4db756` feat(agent-example): show the model selector in the demo
+- `554aa41` chore(agent-example): add more messages to the transcript fixture
+- `1bac0a0` style(agent-example): move header into a floating top-right card
+- `b532b90` style(agent-example): left-align chat at 800px max width
+- `b8b828d` feat(agent): add example app for anycode-agent
+- `5bbbd60` chore(editor): bump anycode-editor to 1.0.8
+- `59338ce` refactor(editor): move editor packages into anycode-editor
+- `da35532` feat(projects): compact commit time and GitHub avatar in project cards
+- `ee06a7e` feat(projects): add project button in Projects panel
+- `7243063` feat(projects): adapt project cards to narrow panels and add terminal close button
+- `b28e8cd` feat(projects): show commit activity chart in project cards
+- `3fb38ea` fix(agent): keep session scroll position when panel is hidden
+- `4956a25` test(windows): start agent shim from canonical project root
+- `290401c` test(windows): cover agent cmd shim startup in normalized project root
+- `5eb3e74` fix(windows): keep project roots and requested paths in the same form
+- `8339abb` test(windows): reproduce verbatim project root path mismatch
+- `cb23169` feat(projects): single project card with last commit
+- `9096e9b` feat(projects): show last commit and switch branch from projects panel
+- `ef12ed3` fix(editor): let multibuffer file header chevron toggle after text selection
+- `c88bd67` fix(editor): keep multibuffer file headers pinned on horizontal scroll
+- `510c2b4` fix(agent): keep start and opened agent cards inside narrow panes
+- `75f3977` fix(types): distribute Omit over row unions in list panels
+- `7574997` Move commit block behind toggle in ChangesPanel
+- `67747c0` Rename editor packages and move agent UI to anycode-agent
+
 ## v0.2.0 - 2026-10-26
 
 ### Highlights
