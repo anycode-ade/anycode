@@ -119,6 +119,30 @@ jobs:
           name: anycode-cli-linux-x86_64
           path: anycode-backend/anycode-linux-x86_64-musl.tar.gz
 
+      - name: Set commit vars
+        id: vars
+        run: echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
+      - name: Publish Linux x86_64 to Commit Release
+        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: commit-${{ steps.vars.outputs.sha_short }}
+          target_commitish: ${{ github.sha }}
+          name: "Build ${{ steps.vars.outputs.sha_short }}"
+          prerelease: true
+          files: anycode-backend/anycode-linux-x86_64-musl.tar.gz
+
+      - name: Publish Linux x86_64 to Nightly Release
+        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: nightly
+          target_commitish: ${{ github.sha }}
+          name: "Nightly Build"
+          prerelease: true
+          files: anycode-backend/anycode-linux-x86_64-musl.tar.gz
+
   test-build-linux-arm64:
     name: Test Build Linux ARM64
     runs-on: ubuntu-latest
@@ -182,6 +206,30 @@ jobs:
         with:
           name: anycode-cli-linux-aarch64
           path: anycode-backend/anycode-linux-aarch64-musl.tar.gz
+
+      - name: Set commit vars
+        id: vars
+        run: echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
+      - name: Publish Linux ARM64 to Commit Release
+        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: commit-${{ steps.vars.outputs.sha_short }}
+          target_commitish: ${{ github.sha }}
+          name: "Build ${{ steps.vars.outputs.sha_short }}"
+          prerelease: true
+          files: anycode-backend/anycode-linux-aarch64-musl.tar.gz
+
+      - name: Publish Linux ARM64 to Nightly Release
+        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: nightly
+          target_commitish: ${{ github.sha }}
+          name: "Nightly Build"
+          prerelease: true
+          files: anycode-backend/anycode-linux-aarch64-musl.tar.gz
 
   test-build-macos:
     name: Test Build macOS CLI
@@ -262,6 +310,30 @@ jobs:
         with:
           name: anycode-cli-macos-universal
           path: anycode-backend/anycode-universal-apple-darwin.tar.gz
+
+      - name: Set commit vars
+        id: vars
+        run: echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
+      - name: Publish macOS to Commit Release
+        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: commit-${{ steps.vars.outputs.sha_short }}
+          target_commitish: ${{ github.sha }}
+          name: "Build ${{ steps.vars.outputs.sha_short }}"
+          prerelease: true
+          files: anycode-backend/anycode-universal-apple-darwin.tar.gz
+
+      - name: Publish macOS to Nightly Release
+        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: nightly
+          target_commitish: ${{ github.sha }}
+          name: "Nightly Build"
+          prerelease: true
+          files: anycode-backend/anycode-universal-apple-darwin.tar.gz
 
   test-build-windows:
     name: Test Build Windows
@@ -363,6 +435,31 @@ jobs:
         with:
           name: anycode-cli-windows-x86_64
           path: anycode-backend/anycode-windows-x86_64.zip
+
+      - name: Set commit vars
+        id: vars
+        shell: bash
+        run: echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
+      - name: Publish Windows x64 to Commit Release
+        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: commit-${{ steps.vars.outputs.sha_short }}
+          target_commitish: ${{ github.sha }}
+          name: "Build ${{ steps.vars.outputs.sha_short }}"
+          prerelease: true
+          files: anycode-backend/anycode-windows-x86_64.zip
+
+      - name: Publish Windows x64 to Nightly Release
+        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: nightly
+          target_commitish: ${{ github.sha }}
+          name: "Nightly Build"
+          prerelease: true
+          files: anycode-backend/anycode-windows-x86_64.zip
 
   test-desktop:
     name: Test Desktop (${{ matrix.platform }})
@@ -494,70 +591,3 @@ jobs:
         with:
           name: anycode-desktop-${{ matrix.arch }}-${{ runner.os }}
           path: dist-desktop/*
-
-  publish-commit-build:
-    name: Publish Commit Build
-    needs: [test-build-linux, test-build-linux-arm64, test-build-macos, test-build-windows]
-    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Set commit vars
-        id: vars
-        run: |
-          echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
-
-      - name: Download all CLI artifacts
-        uses: actions/download-artifact@v7
-        with:
-          pattern: anycode-cli-*
-          path: dist-release
-          merge-multiple: true
-
-      - name: Inspect release files
-        run: |
-          ls -la dist-release/
-
-      - name: Publish Commit Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: commit-${{ steps.vars.outputs.sha_short }}
-          target_commitish: ${{ github.sha }}
-          name: "Build ${{ steps.vars.outputs.sha_short }}"
-          body: |
-            Automated build for commit [`${{ steps.vars.outputs.sha_short }}`](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}).
-
-            ### Quick Install
-
-            **Linux / macOS:**
-            ```bash
-            curl -fsSL https://raw.githubusercontent.com/${{ github.repository }}/main/install.sh | sh -s -- --commit ${{ steps.vars.outputs.sha_short }}
-            ```
-
-            **Windows (PowerShell):**
-            ```powershell
-            & ([scriptblock]::Create((irm https://raw.githubusercontent.com/${{ github.repository }}/main/install.ps1))) -Commit ${{ steps.vars.outputs.sha_short }}
-            ```
-          prerelease: true
-          files: dist-release/*
-
-      - name: Update Nightly Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: nightly
-          target_commitish: ${{ github.sha }}
-          name: "Nightly Build (${{ steps.vars.outputs.sha_short }})"
-          body: |
-            Latest build from `main` branch.
-            Commit: [`${{ steps.vars.outputs.sha_short }}`](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}).
-
-            ### Quick Install
-
-            ```bash
-            curl -fsSL https://raw.githubusercontent.com/${{ github.repository }}/main/install.sh | sh -s -- --version nightly
-            ```
-          prerelease: true
-          files: dist-release/*
