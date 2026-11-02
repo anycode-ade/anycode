@@ -3,6 +3,7 @@ import type { Socket } from 'socket.io-client';
 import type { Terminal } from '../types';
 import { loadTerminals } from '../storage';
 import { applyTerminalInput } from '../terminalInput';
+import { generateUUID } from '../utils';
 
 type UseTerminalsParams = {
     wsRef: React.RefObject<Socket | null>;
@@ -202,7 +203,7 @@ export const useTerminals = ({ wsRef, isConnected }: UseTerminalsParams) => {
         const newTerminal: Terminal = {
             id,
             name: id,
-            session: crypto.randomUUID(),
+            session: generateUUID(),
             cols: 60,
             rows: 20,
             project_id: projectId,

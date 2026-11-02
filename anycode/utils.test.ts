@@ -10,6 +10,7 @@ import {
   getWorkspaceRoot,
   toRelativeDisplayPath,
   toFileUri,
+  generateUUID,
 } from './utils';
 
 describe('uriToFilePath', () => {
@@ -192,5 +193,40 @@ describe('language and path edge cases', () => {
 
   it('toRelativeDisplayPath returns empty string for empty input', () => {
     expect(toRelativeDisplayPath('')).toBe('');
+  });
+});
+
+describe('generateUUID', () => {
+  const UUID_V4_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+  it('generates a valid UUID v4 format', () => {
+    const uuid = generateUUID();
+    expect(uuid).toMatch(UUID_V4_REGEX);
+  });
+
+  it('generates unique values across multiple calls', () => {
+    const set = new Set<string>();
+    for (let i = 0; i < 100; i++) {
+      const id = generateUUID();
+      expect(id).toMatch(UUID_V4_REGEX);
+      expect(set.has(id)).toBe(false);
+      set.add(id);
+    }
+  });
+
+  it('works in insecure context when crypto.randomUUID is not available', () => {
+    const originalRandomUUID = (globalThis.crypto as any)?.randomUUID;
+    try {
+      if (globalThis.crypto) {
+        // Temporarily delete or hide randomUUID to simulate insecure HTTP context
+        (globalThis.crypto as any).randomUUID = undefined;
+      }
+      const uuid = generateUUID();
+      expect(uuid).toMatch(UUID_V4_REGEX);
+    } finally {
+      if (globalThis.crypto && originalRandomUUID) {
+        (globalThis.crypto as any).randomUUID = originalRandomUUID;
+      }
+    }
   });
 });

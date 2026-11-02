@@ -5,6 +5,7 @@ import { Icons } from '../Icons';
 import { AcpAvatar } from './AcpAvatar';
 import { AcpIcons } from './AcpIcons';
 import type { WorkspaceProject } from '../../workspace';
+import { copyTextToClipboard } from '../../utils';
 
 function getFirstMessagePreview(session: AcpSession): string | null {
   if (!session.messages || session.messages.length === 0) return null;
@@ -74,7 +75,7 @@ export const AcpOpenedAgentCard: React.FC<AcpOpenedAgentCardProps> = ({
     event.preventDefault();
     if (!displaySessionId) return;
 
-    navigator.clipboard.writeText(displaySessionId).then(() => {
+    copyTextToClipboard(displaySessionId).then(() => {
       setIsCopied(true);
       if (copyTimeoutRef.current !== null) {
         window.clearTimeout(copyTimeoutRef.current);

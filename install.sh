@@ -4,15 +4,17 @@ set -eu
 
 REPO="${ANYCODE_REPO:-anycode-ade/anycode}"
 VERSION="${ANYCODE_VERSION:-latest}"
+COMMIT="${ANYCODE_COMMIT:-}"
 PREFIX="${ANYCODE_INSTALL_DIR:-}"
 
 usage() {
   cat <<'EOF'
-Usage: install.sh [--version TAG] [--prefix DIR] [--repo OWNER/REPO]
+Usage: install.sh [--version TAG] [--commit SHA] [--prefix DIR] [--repo OWNER/REPO]
 
 Environment variables:
   ANYCODE_REPO           GitHub repository, default: anycode-ade/anycode
-  ANYCODE_VERSION        Release tag to install, default: latest
+  ANYCODE_VERSION        Release tag to install, default: latest (or nightly)
+  ANYCODE_COMMIT         Commit SHA to install (e.g. 582dd95)
   ANYCODE_INSTALL_DIR    Installation directory, default: ~/.local/bin or /usr/local/bin for root
 EOF
 }
@@ -21,6 +23,10 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --version)
       VERSION="${2:?missing value for --version}"
+      shift 2
+      ;;
+    --commit)
+      COMMIT="${2:?missing value for --commit}"
       shift 2
       ;;
     --prefix)
@@ -42,6 +48,26 @@ while [ $# -gt 0 ]; do
       ;;
   esac
 done
+
+# Resolve commit or version tag
+if [ -n "$COMMIT" ]; then
+  clean_commit="${COMMIT#commit-}"
+  short_commit="$(echo "$clean_commit" | cut -c1-7)"
+  VERSION="commit-$short_commit"
+elif [ "$VERSION" != "latest" ] && [ "$VERSION" != "nightly" ] && [ "$VERSION" != "dev" ]; then
+  case "$VERSION" in
+    commit-*)
+      ;;
+    v*)
+      ;;
+    *)
+      if echo "$VERSION" | grep -Eq '^[0-9a-fA-F]{7,40}$'; then
+        short_commit="$(echo "$VERSION" | cut -c1-7)"
+        VERSION="commit-$short_commit"
+      fi
+      ;;
+  esac
+fi
 
 os="$(uname -s)"
 arch="$(uname -m)"
@@ -100,12 +126,26 @@ fi
 
 echo "Downloading $asset from $download_url"
 
+download_failed=0
 if command -v curl >/dev/null 2>&1; then
-  curl -fsSL "$download_url" -o "$archive"
+  if ! curl -fsSL "$download_url" -o "$archive"; then
+    download_failed=1
+  fi
 elif command -v wget >/dev/null 2>&1; then
-  wget -qO "$archive" "$download_url"
+  if ! wget -qO "$archive" "$download_url"; then
+    download_failed=1
+  fi
 else
   echo "Need either curl or wget to download the release" >&2
+  exit 1
+fi
+
+if [ "$download_failed" -eq 1 ]; then
+  echo "Error: Failed to download $asset from $download_url" >&2
+  if [ -n "$COMMIT" ] || [ "${VERSION#commit-}" != "$VERSION" ]; then
+    echo "Make sure the Test Build workflow for this commit has completed successfully on GitHub:" >&2
+    echo "  https://github.com/$REPO/actions" >&2
+  fi
   exit 1
 fi
 

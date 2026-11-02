@@ -1,5 +1,6 @@
 param(
     [string]$Version = $env:ANYCODE_VERSION,
+    [string]$Commit = $env:ANYCODE_COMMIT,
     [string]$InstallDir = $env:ANYCODE_INSTALL_DIR,
     [string]$Repo = $(if ($env:ANYCODE_REPO) { $env:ANYCODE_REPO } else { "anycode-ade/anycode" }),
     [string]$ArchivePath = $env:ANYCODE_ARCHIVE_PATH
@@ -7,6 +8,17 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+
+if (-not [string]::IsNullOrWhiteSpace($Commit)) {
+    $cleanCommit = $Commit -replace '^commit-', ''
+    $shortCommit = if ($cleanCommit.Length -gt 7) { $cleanCommit.Substring(0, 7) } else { $cleanCommit }
+    $Version = "commit-$shortCommit"
+} elseif (-not [string]::IsNullOrWhiteSpace($Version) -and $Version -ne "latest" -and $Version -ne "nightly" -and $Version -ne "dev") {
+    if ($Version -match '^[0-9a-fA-F]{7,40}$') {
+        $shortCommit = $Version.Substring(0, [Math]::Min(7, $Version.Length))
+        $Version = "commit-$shortCommit"
+    }
+}
 
 if ([string]::IsNullOrWhiteSpace($Version)) {
     $Version = "latest"
@@ -71,7 +83,15 @@ New-Item -ItemType Directory -Force -Path $extractDir | Out-Null
 try {
     if ([string]::IsNullOrWhiteSpace($ArchivePath)) {
         Write-Host "Downloading $asset from $downloadUrl"
-        Invoke-WebRequest -Uri $downloadUrl -OutFile $tempArchivePath
+        try {
+            Invoke-WebRequest -Uri $downloadUrl -OutFile $tempArchivePath
+        } catch {
+            Write-Error "Failed to download $asset from $downloadUrl"
+            if (-not [string]::IsNullOrWhiteSpace($Commit) -or $Version.StartsWith("commit-")) {
+                Write-Host "Make sure the Test Build workflow for this commit has completed successfully on GitHub: https://github.com/$Repo/actions"
+            }
+            throw
+        }
     } else {
         Write-Host "Using local archive $ArchivePath"
         Copy-Item -Path $ArchivePath -Destination $tempArchivePath -Force

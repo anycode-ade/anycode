@@ -72,10 +72,25 @@ Run anycode as a lightweight local or remote web server.
 curl -fsSL https://raw.githubusercontent.com/anycode-ade/anycode/main/install.sh | sh
 ```
 
+To install a specific commit build (e.g. to test a bugfix before an official release):
+```bash
+curl -fsSL https://raw.githubusercontent.com/anycode-ade/anycode/main/install.sh | sh -s -- --commit <COMMIT_SHA>
+```
+
+Or install the latest nightly build from `main`:
+```bash
+curl -fsSL https://raw.githubusercontent.com/anycode-ade/anycode/main/install.sh | sh -s -- --version nightly
+```
+
 ### Windows (PowerShell x64)
 
 ```powershell
 irm https://raw.githubusercontent.com/anycode-ade/anycode/main/install.ps1 | iex
+```
+
+To install a specific commit build on Windows:
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/anycode-ade/anycode/main/install.ps1))) -Commit <COMMIT_SHA>
 ```
 
 #### Windows installer details:

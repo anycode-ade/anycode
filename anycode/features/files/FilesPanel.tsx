@@ -4,7 +4,7 @@ import { TreeNodeComponent, type ChangedFile } from '../../components';
 import type { TreeNode } from '../../types';
 import { Icons } from '../../components/Icons';
 import { usePersistedScroll } from '../../hooks/usePersistedScroll';
-import { normalizePath } from '../../utils';
+import { normalizePath, copyTextToClipboard } from '../../utils';
 import type { WorkspaceProject } from '../../workspace';
 
 type FilesPanelProps = {
@@ -181,7 +181,7 @@ export const FilesPanel = ({
         e.stopPropagation();
         closeContextMenu();
         if (!contextMenu) return;
-        navigator.clipboard.writeText(contextMenu.node.name);
+        void copyTextToClipboard(contextMenu.node.name);
     };
 
     const handleCopyRelativePath = (e: React.MouseEvent) => {
@@ -189,14 +189,14 @@ export const FilesPanel = ({
         closeContextMenu();
         if (!contextMenu) return;
         const relativePath = getRelativePath(contextMenu.node.path);
-        navigator.clipboard.writeText(relativePath);
+        void copyTextToClipboard(relativePath);
     };
 
     const handleCopyFullPath = (e: React.MouseEvent) => {
         e.stopPropagation();
         closeContextMenu();
         if (!contextMenu) return;
-        navigator.clipboard.writeText(contextMenu.node.path);
+        void copyTextToClipboard(contextMenu.node.path);
     };
 
     const handleRenameClick = (e: React.MouseEvent) => {

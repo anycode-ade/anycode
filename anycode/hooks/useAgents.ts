@@ -32,6 +32,7 @@ import {
 } from '../agents';
 import { loadReadMessageCounts, saveReadMessageCounts } from '../storage';
 import { toolOutputCache } from '../features/agents/toolOutputCache';
+import { generateUUID } from '../utils';
 
 const MESSAGE_FLUSH_MS = 25;
 
@@ -209,7 +210,7 @@ const projectRawUpdate = (rawMessage: AcpRawUpdateMessage): AcpMessage[] => {
     }
 
     if ((kind === 'tool_call') && payload) {
-        const id = asString(getAnyField(payload, 'tool_call_id', 'toolCallId', 'id')) ?? crypto.randomUUID();
+        const id = asString(getAnyField(payload, 'tool_call_id', 'toolCallId', 'id')) ?? generateUUID();
         const title = asString(getAnyField(payload, 'title', 'name')) ?? 'tool';
         const rawInput = asRecord(getAnyField(payload, 'raw_input', 'rawInput', 'input', 'arguments'));
         const content = getAnyField(payload, 'content');

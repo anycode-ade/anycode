@@ -12,7 +12,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   test-build-linux:
@@ -106,6 +106,163 @@ jobs:
         run: |
           ./target/x86_64-unknown-linux-musl/release/anycode --help
 
+      - name: Package Linux x86_64 CLI
+        working-directory: ./anycode-backend
+        run: |
+          mkdir -p dist-cli
+          cp target/x86_64-unknown-linux-musl/release/anycode dist-cli/
+          tar -czf anycode-linux-x86_64-musl.tar.gz -C dist-cli anycode
+
+      - name: Upload Linux x86_64 CLI Artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: anycode-cli-linux-x86_64
+          path: anycode-backend/anycode-linux-x86_64-musl.tar.gz
+
+  test-build-linux-arm64:
+    name: Test Build Linux ARM64
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+      
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+      
+      - name: Get pnpm store directory
+        shell: bash
+        run: |
+          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+      
+      - name: Setup pnpm cache
+        uses: actions/cache@v5
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+      
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      
+      - name: Build frontend
+        working-directory: ./anycode
+        run: pnpm build
+      
+      - name: Verify frontend build
+        working-directory: ./anycode-backend
+        run: |
+          if [ ! -d "dist" ] || [ -z "$(ls -A dist)" ]; then
+            echo "Error: dist directory is empty or missing"
+            exit 1
+          fi
+          echo "Frontend build verified: $(ls -la dist | head -5)"
+      
+      - name: Build Linux aarch64 musl binary
+        uses: houseabsolute/actions-rust-cross@v1
+        with:
+          command: build
+          target: aarch64-unknown-linux-musl
+          args: "--release --manifest-path anycode-backend/Cargo.toml"
+          working-directory: .
+      
+      - name: Package as tar.gz
+        working-directory: ./anycode-backend
+        run: |
+          mkdir -p dist-cli
+          cp target/aarch64-unknown-linux-musl/release/anycode dist-cli/
+          tar -czf anycode-linux-aarch64-musl.tar.gz -C dist-cli anycode
+
+      - name: Upload Linux ARM64 CLI Artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: anycode-cli-linux-aarch64
+          path: anycode-backend/anycode-linux-aarch64-musl.tar.gz
+
+  test-build-macos:
+    name: Test Build macOS CLI
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v6
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+      
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+      
+      - name: Get pnpm store directory
+        shell: bash
+        run: |
+          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+      
+      - name: Setup pnpm cache
+        uses: actions/cache@v5
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+      
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      
+      - name: Build frontend
+        working-directory: ./anycode
+        run: pnpm build
+      
+      - name: Verify frontend build
+        working-directory: ./anycode-backend
+        run: |
+          if [ ! -d "dist" ] || [ -z "$(ls -A dist)" ]; then
+            echo "Error: dist directory is empty or missing"
+            exit 1
+          fi
+          echo "Frontend build verified: $(ls -la dist | head -5)"
+      
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.96.0
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: v1-rust
+          workspaces: |
+            anycode-backend -> target
+      
+      - name: Build macOS binaries
+        working-directory: ./anycode-backend
+        run: |
+          cargo build --release --target aarch64-apple-darwin
+          cargo build --release --target x86_64-apple-darwin
+      
+      - name: Create universal binary and package
+        working-directory: ./anycode-backend
+        run: |
+          mkdir -p dist-cli
+          lipo -create \
+            target/aarch64-apple-darwin/release/anycode \
+            target/x86_64-apple-darwin/release/anycode \
+            -output dist-cli/anycode
+          ./dist-cli/anycode --help
+          ./dist-cli/anycode --version
+          tar -czf anycode-universal-apple-darwin.tar.gz -C dist-cli anycode
+
+      - name: Upload macOS CLI Artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: anycode-cli-macos-universal
+          path: anycode-backend/anycode-universal-apple-darwin.tar.gz
+
   test-build-windows:
     name: Test Build Windows
     runs-on: windows-latest
@@ -192,6 +349,20 @@ jobs:
       - name: Test binary help
         working-directory: ./anycode-backend
         run: .\target\release\anycode.exe --help
+
+      - name: Package Windows x64 CLI
+        working-directory: ./anycode-backend
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist-cli | Out-Null
+          Copy-Item target/release/anycode.exe dist-cli/anycode.exe
+          Compress-Archive -Path dist-cli/anycode.exe -DestinationPath anycode-windows-x86_64.zip -Force
+
+      - name: Upload Windows x64 CLI Artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: anycode-cli-windows-x86_64
+          path: anycode-backend/anycode-windows-x86_64.zip
 
   test-desktop:
     name: Test Desktop (${{ matrix.platform }})
@@ -323,3 +494,70 @@ jobs:
         with:
           name: anycode-desktop-${{ matrix.arch }}-${{ runner.os }}
           path: dist-desktop/*
+
+  publish-commit-build:
+    name: Publish Commit Build
+    needs: [test-build-linux, test-build-linux-arm64, test-build-macos, test-build-windows]
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set commit vars
+        id: vars
+        run: |
+          echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
+      - name: Download all CLI artifacts
+        uses: actions/download-artifact@v7
+        with:
+          pattern: anycode-cli-*
+          path: dist-release
+          merge-multiple: true
+
+      - name: Inspect release files
+        run: |
+          ls -la dist-release/
+
+      - name: Publish Commit Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: commit-${{ steps.vars.outputs.sha_short }}
+          target_commitish: ${{ github.sha }}
+          name: "Build ${{ steps.vars.outputs.sha_short }}"
+          body: |
+            Automated build for commit [`${{ steps.vars.outputs.sha_short }}`](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}).
+
+            ### Quick Install
+
+            **Linux / macOS:**
+            ```bash
+            curl -fsSL https://raw.githubusercontent.com/${{ github.repository }}/main/install.sh | sh -s -- --commit ${{ steps.vars.outputs.sha_short }}
+            ```
+
+            **Windows (PowerShell):**
+            ```powershell
+            & ([scriptblock]::Create((irm https://raw.githubusercontent.com/${{ github.repository }}/main/install.ps1))) -Commit ${{ steps.vars.outputs.sha_short }}
+            ```
+          prerelease: true
+          files: dist-release/*
+
+      - name: Update Nightly Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: nightly
+          target_commitish: ${{ github.sha }}
+          name: "Nightly Build (${{ steps.vars.outputs.sha_short }})"
+          body: |
+            Latest build from `main` branch.
+            Commit: [`${{ steps.vars.outputs.sha_short }}`](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}).
+
+            ### Quick Install
+
+            ```bash
+            curl -fsSL https://raw.githubusercontent.com/${{ github.repository }}/main/install.sh | sh -s -- --version nightly
+            ```
+          prerelease: true
+          files: dist-release/*
