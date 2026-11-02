@@ -71,7 +71,6 @@ const useAutoScroll = (messages: AcpMessage[], isProcessing: boolean, agentId: s
   const userScrollUpIntentRef = useRef(false);
   const isProgrammaticScrollRef = useRef(false);
   const pendingAutoScrollRafRef = useRef<number | null>(null);
-  const autoScrollScrollbarTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const forceScrollAfterUpdateRef = useRef(false);
   const followBottomRafRef = useRef<number | null>(null);
   const wasProcessingRef = useRef(isProcessing);
@@ -99,32 +98,12 @@ const useAutoScroll = (messages: AcpMessage[], isProcessing: boolean, agentId: s
     autoScrollEnabledRef.current = false;
     stopFollowBottom();
     setAutoScrollEnabled((prev) => (prev ? false : prev));
-    contentRef.current?.classList.remove('acp-messages-auto-scrolling');
-    if (autoScrollScrollbarTimerRef.current !== null) {
-      clearTimeout(autoScrollScrollbarTimerRef.current);
-      autoScrollScrollbarTimerRef.current = null;
-    }
-  }, [contentRef, stopFollowBottom]);
-
-  const hideScrollbarDuringAutoScroll = () => {
-    const element = contentRef.current;
-    if (!element) return;
-
-    element.classList.add('acp-messages-auto-scrolling');
-    if (autoScrollScrollbarTimerRef.current !== null) {
-      clearTimeout(autoScrollScrollbarTimerRef.current);
-    }
-    autoScrollScrollbarTimerRef.current = setTimeout(() => {
-      element.classList.remove('acp-messages-auto-scrolling');
-      autoScrollScrollbarTimerRef.current = null;
-    }, 180);
-  };
+  }, [stopFollowBottom]);
 
   const scrollToBottom = (behavior: ScrollBehavior = 'auto') => {
     const element = contentRef.current;
     if (!element) return;
 
-    hideScrollbarDuringAutoScroll();
     isProgrammaticScrollRef.current = true;
     element.scrollTo({
       top: element.scrollHeight,
@@ -156,7 +135,6 @@ const useAutoScroll = (messages: AcpMessage[], isProcessing: boolean, agentId: s
         return;
       }
 
-      hideScrollbarDuringAutoScroll();
       const isJump = gap > element.clientHeight;
       element.scrollTop = gap < 2 || isJump ? element.scrollHeight : element.scrollTop + gap * FOLLOW_EASE;
       lastScrollTopRef.current = element.scrollTop;
@@ -359,11 +337,6 @@ const useAutoScroll = (messages: AcpMessage[], isProcessing: boolean, agentId: s
       cancelAnimationFrame(pendingAutoScrollRafRef.current);
       pendingAutoScrollRafRef.current = null;
     }
-    if (autoScrollScrollbarTimerRef.current !== null) {
-      clearTimeout(autoScrollScrollbarTimerRef.current);
-      autoScrollScrollbarTimerRef.current = null;
-    }
-    contentRef.current?.classList.remove('acp-messages-auto-scrolling');
   }, []);
 
   // Every scrollTop write that isn't the user's (scrollToBottom, followBottom, row measurement) must move

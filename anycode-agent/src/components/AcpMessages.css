@@ -9,6 +9,8 @@
     font-size: var(--interface-font-size, 14px);
     font-weight: var(--interface-font-weight, 700);
     outline: none !important;
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar-thumb, rgba(255, 255, 255, 0.2)) transparent;
 }
 
 /* Chrome makes scrollable containers focusable; don't draw the focus ring around the whole message list. */
@@ -22,12 +24,17 @@
     box-shadow: none !important;
 }
 
-.acp-messages.acp-messages-auto-scrolling {
-    scrollbar-width: none;
+.acp-messages::-webkit-scrollbar {
+    width: 6px;
 }
 
-.acp-messages.acp-messages-auto-scrolling::-webkit-scrollbar {
-    display: none;
+.acp-messages::-webkit-scrollbar-thumb {
+    background: var(--scrollbar-thumb, rgba(255, 255, 255, 0.2));
+    border-radius: 3px;
+}
+
+.acp-messages::-webkit-scrollbar-track {
+    background: transparent;
 }
 
 /* While the agent works, its avatar pulses instead of a separate dots row. */
