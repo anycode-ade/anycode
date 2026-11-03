@@ -169,10 +169,13 @@ export const useTheme = ({ wsRef, isConnected }: UseThemeParams) => {
                 for (const [key, value] of Object.entries(theme.highlight.syntax)) {
                     if (value && typeof value === 'object' && 'color' in value) {
                         flatSyntax[key] = (value as any).color;
+                    } else if (typeof value === 'string') {
+                        flatSyntax[key] = value;
                     }
                 }
                 const css = generateCssClasses(flatSyntax);
                 addCssToDocument(css, 'theme-highlight-styles');
+                addCssToDocument(css, 'anyeditor-theme');
             }
         }
 

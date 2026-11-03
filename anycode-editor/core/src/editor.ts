@@ -215,7 +215,11 @@ export class AnycodeEditor {
 
         if (options.theme) {
             addCssToDocument(generateCssClasses(options.theme), 'anyeditor-theme');
-        } else if (typeof document !== 'undefined' && !document.getElementById('anyeditor-theme')) {
+        } else if (
+            typeof document !== 'undefined' &&
+            !document.getElementById('anyeditor-theme') &&
+            !document.getElementById('theme-highlight-styles')
+        ) {
             // Default palette. The style element is shared by all editors on the page,
             // so it is added once and never replaces a custom theme.
             addCssToDocument(generateCssClasses(anycode), 'anyeditor-theme');
