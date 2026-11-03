@@ -114,10 +114,12 @@ fn print_help() {
     println!();
     println!("USAGE:");
     println!("    anycode [OPTIONS]");
+    println!("    anycode update [--version <TAG> | --commit <SHA> | --check]");
     println!();
     println!("OPTIONS:");
     println!("    -h, --help           Print help information");
     println!("    -v, -V, --version    Print version information");
+    println!("    -u, --update         Update anycode to the latest release");
     println!("    -p, --port <PORT>    Port to listen on (default: 3000)");
     println!("    -t, --token <TOKEN>  Require authentication token to access anycode");
     println!();
@@ -128,6 +130,55 @@ fn print_help() {
     println!("    ANYCODE_ACP_PERMISSION_MODE   ACP permission mode: full_access (default) or ask");
     println!();
     println!("Start the anycode server. The server will be available at http://localhost:<port>");
+}
+
+pub fn parse_update_cli_args<I>(args: I) -> Result<Option<crate::updater::UpdateOptions>>
+where
+    I: IntoIterator<Item = String>,
+{
+    let mut iter = args.into_iter().peekable();
+    let Some(first) = iter.peek() else {
+        return Ok(None);
+    };
+
+    if first != "update" && first != "self-update" && first != "--update" && first != "-u" {
+        return Ok(None);
+    }
+    let _ = iter.next();
+
+    let mut opts = crate::updater::UpdateOptions::default();
+
+    while let Some(arg) = iter.next() {
+        match arg.as_str() {
+            "--check" | "-c" => {
+                opts.check_only = true;
+            }
+            "--version" | "--commit" => {
+                let val = iter
+                    .next()
+                    .ok_or_else(|| anyhow::anyhow!("Missing value for {arg}"))?;
+                opts.target_tag = Some(val);
+            }
+            "--repo" => {
+                let val = iter
+                    .next()
+                    .ok_or_else(|| anyhow::anyhow!("Missing value for {arg}"))?;
+                opts.repo = val;
+            }
+            "--help" | "-h" => {
+                println!("Usage: anycode update [--version <TAG>] [--commit <SHA>] [--check] [--repo <OWNER/REPO>]");
+                std::process::exit(0);
+            }
+            _ if !arg.starts_with('-') && opts.target_tag.is_none() => {
+                opts.target_tag = Some(arg);
+            }
+            _ => {
+                anyhow::bail!("Unknown update argument: {arg}");
+            }
+        }
+    }
+
+    Ok(Some(opts))
 }
 
 pub fn handle_early_cli_flags() {

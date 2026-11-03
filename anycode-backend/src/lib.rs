@@ -24,6 +24,7 @@ pub mod history;
 pub mod lsp;
 pub mod search;
 pub mod terminal;
+pub mod updater;
 pub mod utils;
 pub mod workspace;
 

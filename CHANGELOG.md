@@ -6,8 +6,9 @@ All notable changes are documented here by release tag.
 
 ### Highlights
 - Fixed `SIGILL` (illegal instruction) startup crashes in Linux Desktop (`anycode-desktop`) on older `x86-64` CPUs and virtual machines by enforcing the generic `x86-64` baseline across Rust and bundled C/C++ dependencies (`libsqlite3-sys`, etc.).
-- Pinned Linux CI and release runners to `ubuntu-24.04` LTS for long-term `glibc` and compiler stability.
-- Added automated `objdump` ISA verification steps in CI for both CLI and Desktop Linux binaries to guarantee zero `AVX2`/`FMA`/`BMI2` instructions in release artifacts.
+- Added `anycode update` (`--update` / `-u`) CLI self-update command supporting `--check`, `--version <TAG>`, and `--commit <SHA>`.
+- Added automated `latest.json` updater manifest generation in release workflow for Desktop auto-updates.
+- Pinned Linux CI and release runners to `ubuntu-24.04` LTS and added automated `objdump` FMA instruction verification in CI.
 
 ### Commits
 - `9c4370d` fix(ci): enforce x86-64 baseline for desktop builds and verify ISA in CI

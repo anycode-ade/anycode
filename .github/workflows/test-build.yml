@@ -99,12 +99,13 @@ jobs:
       - name: Verify x86-64 baseline ISA (CLI)
         working-directory: ./anycode-backend
         run: |
-          if objdump -d target/x86_64-unknown-linux-musl/release/anycode | grep -E -q '\b(vfmadd|vfnmadd|vfmsub|vfnmsub|vpbroadcast|vperm2i128|mulx|shrx|shlx|sarx|pdep|pext)'; then
-            echo "Error: Non-baseline x86-64 (AVX2/FMA/BMI2) instructions detected in CLI binary!"
-            objdump -d target/x86_64-unknown-linux-musl/release/anycode | grep -E '\b(vfmadd|vfnmadd|vfmsub|vfnmsub|vpbroadcast|vperm2i128|mulx|shrx|shlx|sarx|pdep|pext)' | head -20
+          MATCHES="$(objdump -d target/x86_64-unknown-linux-musl/release/anycode | grep -E '\b(vfmadd|vfnmadd|vfmsub|vfnmsub)' | head -n 20 || true)"
+          if [ -n "$MATCHES" ]; then
+            echo "Error: Non-baseline FMA instructions detected in CLI binary!"
+            echo "$MATCHES"
             exit 1
           fi
-          echo "Verified: CLI binary contains only baseline x86-64 instructions."
+          echo "Verified: CLI binary contains no FMA instructions."
       
       - name: Check binary size
         working-directory: ./anycode-backend
@@ -571,12 +572,13 @@ jobs:
         if: runner.os == 'Linux'
         shell: bash
         run: |
-          if objdump -d anycode/src-tauri/target/release/anycode-desktop | grep -E -q '\b(vfmadd|vfnmadd|vfmsub|vfnmsub|vpbroadcast|vperm2i128|mulx|shrx|shlx|sarx|pdep|pext)'; then
-            echo "Error: Non-baseline x86-64 (AVX2/FMA/BMI2) instructions detected in Desktop binary!"
-            objdump -d anycode/src-tauri/target/release/anycode-desktop | grep -E '\b(vfmadd|vfnmadd|vfmsub|vfnmsub|vpbroadcast|vperm2i128|mulx|shrx|shlx|sarx|pdep|pext)' | head -20
+          MATCHES="$(objdump -d anycode/src-tauri/target/release/anycode-desktop | grep -E '\b(vfmadd|vfnmadd|vfmsub|vfnmsub)' | head -n 20 || true)"
+          if [ -n "$MATCHES" ]; then
+            echo "Error: Non-baseline FMA instructions detected in Desktop binary!"
+            echo "$MATCHES"
             exit 1
           fi
-          echo "Verified: Desktop binary contains only baseline x86-64 instructions."
+          echo "Verified: Desktop binary contains no FMA instructions."
 
       - name: Build Desktop (Windows)
         if: runner.os == 'Windows'

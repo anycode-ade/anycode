@@ -3,6 +3,10 @@ use anycode::{config, start_server, ServerOptions};
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    if let Some(update_opts) = config::parse_update_cli_args(std::env::args().skip(1))? {
+        return anycode::updater::run_self_update(update_opts).await;
+    }
+
     config::handle_early_cli_flags();
 
     tracing_subscriber::fmt()

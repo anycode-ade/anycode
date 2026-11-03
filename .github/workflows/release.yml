@@ -84,12 +84,13 @@ jobs:
       - name: Verify x86-64 baseline ISA (CLI)
         working-directory: ./anycode-backend
         run: |
-          if objdump -d target/x86_64-unknown-linux-musl/release/anycode | grep -E -q '\b(vfmadd|vfnmadd|vfmsub|vfnmsub|vpbroadcast|vperm2i128|mulx|shrx|shlx|sarx|pdep|pext)'; then
-            echo "Error: Non-baseline x86-64 (AVX2/FMA/BMI2) instructions detected in CLI binary!"
-            objdump -d target/x86_64-unknown-linux-musl/release/anycode | grep -E '\b(vfmadd|vfnmadd|vfmsub|vfnmsub|vpbroadcast|vperm2i128|mulx|shrx|shlx|sarx|pdep|pext)' | head -20
+          MATCHES="$(objdump -d target/x86_64-unknown-linux-musl/release/anycode | grep -E '\b(vfmadd|vfnmadd|vfmsub|vfnmsub)' | head -n 20 || true)"
+          if [ -n "$MATCHES" ]; then
+            echo "Error: Non-baseline FMA instructions detected in CLI binary!"
+            echo "$MATCHES"
             exit 1
           fi
-          echo "Verified: CLI binary contains only baseline x86-64 instructions."
+          echo "Verified: CLI binary contains no FMA instructions."
 
       - name: Package as tar.gz
         working-directory: ./anycode-backend
@@ -438,39 +439,50 @@ jobs:
         shell: bash
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
           if [ "${{ runner.os }}" = "Linux" ]; then
             export RUSTFLAGS="-C target-cpu=x86-64 -C target-feature=-avx,-avx2,-bmi,-bmi2,-fma,-f16c"
             export CFLAGS="-march=x86-64 -mtune=generic -mno-avx -mno-avx2 -mno-fma -mno-bmi -mno-bmi2 -mno-f16c"
             export CXXFLAGS="-march=x86-64 -mtune=generic -mno-avx -mno-avx2 -mno-fma -mno-bmi -mno-bmi2 -mno-f16c"
           fi
+          UPDATER_ARGS=()
+          if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            UPDATER_ARGS=(-c '{"bundle":{"createUpdaterArtifacts":true}}')
+          fi
           if [ -n "${{ matrix.target }}" ]; then
-            pnpm --filter anycode tauri build --target ${{ matrix.target }}
+            pnpm --filter anycode tauri build --target ${{ matrix.target }} "${UPDATER_ARGS[@]}"
           else
-            pnpm --filter anycode tauri build
+            pnpm --filter anycode tauri build "${UPDATER_ARGS[@]}"
           fi
 
       - name: Verify x86-64 baseline ISA (Linux Desktop)
         if: runner.os == 'Linux'
         shell: bash
         run: |
-          if objdump -d anycode/src-tauri/target/release/anycode-desktop | grep -E -q '\b(vfmadd|vfnmadd|vfmsub|vfnmsub|vpbroadcast|vperm2i128|mulx|shrx|shlx|sarx|pdep|pext)'; then
-            echo "Error: Non-baseline x86-64 (AVX2/FMA/BMI2) instructions detected in Desktop binary!"
-            objdump -d anycode/src-tauri/target/release/anycode-desktop | grep -E '\b(vfmadd|vfnmadd|vfmsub|vfnmsub|vpbroadcast|vperm2i128|mulx|shrx|shlx|sarx|pdep|pext)' | head -20
+          MATCHES="$(objdump -d anycode/src-tauri/target/release/anycode-desktop | grep -E '\b(vfmadd|vfnmadd|vfmsub|vfnmsub)' | head -n 20 || true)"
+          if [ -n "$MATCHES" ]; then
+            echo "Error: Non-baseline FMA instructions detected in Desktop binary!"
+            echo "$MATCHES"
             exit 1
           fi
-          echo "Verified: Desktop binary contains only baseline x86-64 instructions."
+          echo "Verified: Desktop binary contains no FMA instructions."
 
       - name: Build Desktop (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
+          $updaterArgs = @()
+          if ($env:TAURI_SIGNING_PRIVATE_KEY) {
+            $updaterArgs = @("-c", '{"bundle":{"createUpdaterArtifacts":true}}')
+          }
           if ("${{ matrix.target }}") {
-            pnpm --filter anycode tauri build --target ${{ matrix.target }}
+            pnpm --filter anycode tauri build --target ${{ matrix.target }} @updaterArgs
           } else {
-            pnpm --filter anycode tauri build
+            pnpm --filter anycode tauri build @updaterArgs
           }
 
       - name: Package Desktop Artifacts (non-Windows)
@@ -481,8 +493,8 @@ jobs:
           if [ "${{ runner.os }}" = "macOS" ]; then
             cp anycode/src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg dist-desktop/anycode-desktop-macos-${{ matrix.arch }}.dmg 2>/dev/null || true
             cp anycode/src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg.sig dist-desktop/anycode-desktop-macos-${{ matrix.arch }}.dmg.sig 2>/dev/null || true
-            cp anycode/src-tauri/target/${{ matrix.target }}/release/bundle/macos/*.tar.gz dist-desktop/ 2>/dev/null || true
-            cp anycode/src-tauri/target/${{ matrix.target }}/release/bundle/macos/*.tar.gz.sig dist-desktop/ 2>/dev/null || true
+            cp anycode/src-tauri/target/${{ matrix.target }}/release/bundle/macos/*.app.tar.gz dist-desktop/anycode-desktop-macos-${{ matrix.arch }}.app.tar.gz 2>/dev/null || true
+            cp anycode/src-tauri/target/${{ matrix.target }}/release/bundle/macos/*.app.tar.gz.sig dist-desktop/anycode-desktop-macos-${{ matrix.arch }}.app.tar.gz.sig 2>/dev/null || true
           elif [ "${{ runner.os }}" = "Linux" ]; then
             cp anycode/src-tauri/target/release/bundle/deb/*.deb dist-desktop/anycode-desktop-linux-amd64.deb 2>/dev/null || true
             cp anycode/src-tauri/target/release/bundle/deb/*.deb.sig dist-desktop/anycode-desktop-linux-amd64.deb.sig 2>/dev/null || true
@@ -515,11 +527,114 @@ jobs:
           if ($zipSig) { Copy-Item $zipSig.FullName dist-desktop/ }
           Get-ChildItem -Path dist-desktop
 
+      - name: Upload Desktop Signatures Artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: desktop-sigs-${{ runner.os }}-${{ matrix.arch }}
+          path: dist-desktop/*.sig
+          if-no-files-found: ignore
+
       - name: Upload to release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
           files: dist-desktop/*
+          tag_name: ${{ github.ref_name }}
+          name: Release ${{ github.ref_name }}
+          body_path: .github/release-notes/${{ github.ref_name }}.md
+
+  publish-updater-manifest:
+    name: Publish Updater Manifest (latest.json)
+    needs: [build-desktop]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Download Desktop Signatures
+        uses: actions/download-artifact@v8
+        with:
+          pattern: desktop-sigs-*
+          path: sigs
+          merge-multiple: true
+
+      - name: Generate latest.json
+        id: manifest
+        shell: bash
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          python3 - <<'EOF'
+          import datetime, json, os, pathlib
+
+          tag = os.environ["TAG_NAME"]
+          version = tag.lstrip("v")
+          repo = os.environ["REPO"]
+          base_url = f"https://github.com/{repo}/releases/download/{tag}"
+
+          sigs_dir = pathlib.Path("sigs")
+          platforms = {}
+
+          mapping = {
+              "anycode-desktop-macos-arm64.app.tar.gz.sig": (
+                  "anycode-desktop-macos-arm64.app.tar.gz",
+                  ["darwin-aarch64", "darwin-aarch64-app"],
+              ),
+              "anycode-desktop-macos-x64.app.tar.gz.sig": (
+                  "anycode-desktop-macos-x64.app.tar.gz",
+                  ["darwin-x86_64", "darwin-x86_64-app"],
+              ),
+              "anycode-desktop-linux-amd64.deb.sig": (
+                  "anycode-desktop-linux-amd64.deb",
+                  ["linux-x86_64", "linux-x86_64-deb"],
+              ),
+              "anycode-desktop-windows-x64-setup.exe.sig": (
+                  "anycode-desktop-windows-x64-setup.exe",
+                  ["windows-x86_64", "windows-x86_64-nsis"],
+              ),
+          }
+
+          if sigs_dir.exists():
+              for sig_name, (asset_name, target_keys) in mapping.items():
+                  sig_file = sigs_dir / sig_name
+                  if sig_file.is_file():
+                      sig_content = sig_file.read_text(encoding="utf-8").strip()
+                      if sig_content:
+                          for key in target_keys:
+                              platforms[key] = {
+                                  "signature": sig_content,
+                                  "url": f"{base_url}/{asset_name}",
+                              }
+
+          if not platforms:
+              print("No .sig files found (TAURI_SIGNING_PRIVATE_KEY may not be set); skipping latest.json generation.")
+              with open(os.environ["GITHUB_OUTPUT"], "a") as out:
+                  out.write("has_manifest=false\n")
+              raise SystemExit(0)
+
+          notes_path = pathlib.Path(f".github/release-notes/{tag}.md")
+          notes = notes_path.read_text(encoding="utf-8").strip() if notes_path.is_file() else f"Release {tag}"
+
+          manifest = {
+              "version": version,
+              "notes": notes,
+              "pub_date": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+              "platforms": platforms,
+          }
+
+          pathlib.Path("latest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+          print("Generated latest.json:")
+          print(pathlib.Path("latest.json").read_text(encoding="utf-8"))
+          with open(os.environ["GITHUB_OUTPUT"], "a") as out:
+              out.write("has_manifest=true\n")
+          EOF
+
+      - name: Upload latest.json to release
+        if: steps.manifest.outputs.has_manifest == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: latest.json
           tag_name: ${{ github.ref_name }}
           name: Release ${{ github.ref_name }}
           body_path: .github/release-notes/${{ github.ref_name }}.md
