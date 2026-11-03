@@ -2,6 +2,24 @@
 
 All notable changes are documented here by release tag.
 
+## v0.3.2 - 2026-11-03
+
+### Highlights
+- Fixed agent auto-scroll layout thrashing and infinite loops on Windows by removing dynamic scrollbar toggling and introducing stable thin scrollbar styles.
+- Fixed terminal execution to guarantee stdout and stderr reader streams are fully drained and joined before signaling command completion.
+- Supported running Anycode in insecure HTTP contexts (e.g. LAN IP access) with a resilient `crypto.randomUUID` polyfill and protocol fallback.
+- Fixed layout tab header actions overlay to adapt to active theme backgrounds and blur with dynamic backgrounds.
+- Added `--commit` flag to `install.sh` and `install.ps1` to download and install commit builds directly from CI.
+- Optimized CI test builds to publish CLI artifacts per-platform as soon as they complete.
+
+### Commits
+- `579e3a0` fix(backend): wait for stdout/stderr drain before reporting terminal exit
+- `f9967f7` fix(layout): use theme background for tab header actions overlay
+- `8b4668d` fix(agent): prevent auto-scroll layout thrashing and infinite loop on Windows
+- `00aab01` fix: prevent recursive call in crypto.randomUUID polyfill
+- `8bf5cac` ci: publish CLI artifacts directly per platform without blocking on macOS
+- `eaf9100` fix: support insecure HTTP contexts and add commit builds to CI installer
+
 ## v0.3.1 - 2026-11-02
 
 ### Highlights
