@@ -103,43 +103,47 @@ impl AcpTerminalManager {
         let exit_notify = Arc::new(Notify::new());
         let (kill_tx, mut kill_rx) = mpsc::channel::<()>(1);
 
-        if let Some(mut stdout) = stdout {
+        let stdout_handle = tokio::spawn({
             let output_state = output_state.clone();
-            tokio::spawn(async move {
-                let mut buf = [0u8; 4096];
-                while let Ok(n) = stdout.read(&mut buf).await {
-                    if n == 0 {
-                        break;
-                    }
-                    let mut state = output_state.lock().await;
-                    state.original_len += n;
-                    let limit = state.output_byte_limit.unwrap_or(usize::MAX);
-                    if state.buffer.len() < limit {
-                        let to_take = n.min(limit - state.buffer.len());
-                        state.buffer.extend_from_slice(&buf[..to_take]);
+            async move {
+                if let Some(mut stdout) = stdout {
+                    let mut buf = [0u8; 4096];
+                    while let Ok(n) = stdout.read(&mut buf).await {
+                        if n == 0 {
+                            break;
+                        }
+                        let mut state = output_state.lock().await;
+                        state.original_len += n;
+                        let limit = state.output_byte_limit.unwrap_or(usize::MAX);
+                        if state.buffer.len() < limit {
+                            let to_take = n.min(limit - state.buffer.len());
+                            state.buffer.extend_from_slice(&buf[..to_take]);
+                        }
                     }
                 }
-            });
-        }
+            }
+        });
 
-        if let Some(mut stderr) = stderr {
+        let stderr_handle = tokio::spawn({
             let output_state = output_state.clone();
-            tokio::spawn(async move {
-                let mut buf = [0u8; 4096];
-                while let Ok(n) = stderr.read(&mut buf).await {
-                    if n == 0 {
-                        break;
-                    }
-                    let mut state = output_state.lock().await;
-                    state.original_len += n;
-                    let limit = state.output_byte_limit.unwrap_or(usize::MAX);
-                    if state.buffer.len() < limit {
-                        let to_take = n.min(limit - state.buffer.len());
-                        state.buffer.extend_from_slice(&buf[..to_take]);
+            async move {
+                if let Some(mut stderr) = stderr {
+                    let mut buf = [0u8; 4096];
+                    while let Ok(n) = stderr.read(&mut buf).await {
+                        if n == 0 {
+                            break;
+                        }
+                        let mut state = output_state.lock().await;
+                        state.original_len += n;
+                        let limit = state.output_byte_limit.unwrap_or(usize::MAX);
+                        if state.buffer.len() < limit {
+                            let to_take = n.min(limit - state.buffer.len());
+                            state.buffer.extend_from_slice(&buf[..to_take]);
+                        }
                     }
                 }
-            });
-        }
+            }
+        });
 
         let output_state_for_task = output_state.clone();
         let exit_notify_for_task = exit_notify.clone();
@@ -147,6 +151,8 @@ impl AcpTerminalManager {
         tokio::spawn(async move {
             tokio::select! {
                 status = child.wait() => {
+                    let _ = stdout_handle.await;
+                    let _ = stderr_handle.await;
                     let mut es = acp::TerminalExitStatus::new();
                     match status {
                         Ok(s) => {
@@ -174,6 +180,8 @@ impl AcpTerminalManager {
                     info!("Killing terminal process pid {:?}", pid);
                     let _ = child.kill().await;
                     let _ = child.wait().await;
+                    let _ = stdout_handle.await;
+                    let _ = stderr_handle.await;
 
                     let es = acp::TerminalExitStatus::new()
                         .exit_code(Some(137u32))
