@@ -2,6 +2,11 @@
 
 All notable changes are documented here by release tag.
 
+## v0.3.5 - 2026-11-03
+
+### Highlights
+- Fixed `.layout-header-actions-overlay` background and `backdrop-filter` blur showing over rightmost dock tabs (`SETTINGS`) when dynamic background is active without hovering.
+
 ## v0.3.4 - 2026-11-03
 
 ### Highlights

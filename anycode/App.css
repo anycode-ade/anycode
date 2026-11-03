@@ -83,9 +83,12 @@
     border: 1px solid color-mix(in srgb, var(--theme-foreground, #ffffff) 10%, transparent);
 }
 
-.app-container.app-with-dynamic-bg .layout-header-actions-overlay,
-.app-container[data-dynamic-bg="global"] .layout-header-actions-overlay,
-[data-dynamic-bg="global"] .layout-header-actions-overlay {
+.app-container.app-with-dynamic-bg .layout .dv-tabs-and-actions-container:hover:not(:has(.dv-tab:hover)) .layout-header-actions-overlay,
+.app-container.app-with-dynamic-bg .layout .dv-tabs-and-actions-container:has(.layout-header-actions:focus-within) .layout-header-actions-overlay,
+.app-container[data-dynamic-bg="global"] .layout .dv-tabs-and-actions-container:hover:not(:has(.dv-tab:hover)) .layout-header-actions-overlay,
+.app-container[data-dynamic-bg="global"] .layout .dv-tabs-and-actions-container:has(.layout-header-actions:focus-within) .layout-header-actions-overlay,
+[data-dynamic-bg="global"] .layout .dv-tabs-and-actions-container:hover:not(:has(.dv-tab:hover)) .layout-header-actions-overlay,
+[data-dynamic-bg="global"] .layout .dv-tabs-and-actions-container:has(.layout-header-actions:focus-within) .layout-header-actions-overlay {
     background: color-mix(in srgb, var(--background-color, #0a0a0a) 75%, transparent 25%) !important;
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
