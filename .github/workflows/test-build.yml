@@ -137,7 +137,7 @@ jobs:
 
       - name: Publish Linux x86_64 to Commit Release
         if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: commit-${{ steps.vars.outputs.sha_short }}
           target_commitish: ${{ github.sha }}
@@ -147,7 +147,7 @@ jobs:
 
       - name: Publish Linux x86_64 to Nightly Release
         if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: nightly
           target_commitish: ${{ github.sha }}
@@ -225,7 +225,7 @@ jobs:
 
       - name: Publish Linux ARM64 to Commit Release
         if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: commit-${{ steps.vars.outputs.sha_short }}
           target_commitish: ${{ github.sha }}
@@ -235,7 +235,7 @@ jobs:
 
       - name: Publish Linux ARM64 to Nightly Release
         if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: nightly
           target_commitish: ${{ github.sha }}
@@ -329,7 +329,7 @@ jobs:
 
       - name: Publish macOS to Commit Release
         if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: commit-${{ steps.vars.outputs.sha_short }}
           target_commitish: ${{ github.sha }}
@@ -339,7 +339,7 @@ jobs:
 
       - name: Publish macOS to Nightly Release
         if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: nightly
           target_commitish: ${{ github.sha }}
@@ -455,7 +455,7 @@ jobs:
 
       - name: Publish Windows x64 to Commit Release
         if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: commit-${{ steps.vars.outputs.sha_short }}
           target_commitish: ${{ github.sha }}
@@ -465,7 +465,7 @@ jobs:
 
       - name: Publish Windows x64 to Nightly Release
         if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: nightly
           target_commitish: ${{ github.sha }}

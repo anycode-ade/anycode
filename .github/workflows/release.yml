@@ -103,7 +103,7 @@ jobs:
       
       - name: Upload to release
         if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: anycode-backend/anycode-linux-x86_64-musl.tar.gz
           tag_name: ${{ github.ref_name }}
@@ -170,7 +170,7 @@ jobs:
       
       - name: Upload to release
         if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: anycode-backend/anycode-linux-aarch64-musl.tar.gz
           tag_name: ${{ github.ref_name }}
@@ -257,7 +257,7 @@ jobs:
       
       - name: Upload to release
         if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: anycode-backend/anycode-universal-apple-darwin.tar.gz
           tag_name: ${{ github.ref_name }}
@@ -343,7 +343,7 @@ jobs:
 
       - name: Upload to release
         if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: anycode-backend/anycode-windows-x86_64.zip
           tag_name: ${{ github.ref_name }}
@@ -616,7 +616,7 @@ jobs:
 
       - name: Upload to release
         if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: dist-desktop/*
           tag_name: ${{ github.ref_name }}
@@ -712,7 +712,7 @@ jobs:
 
       - name: Upload latest.json to release
         if: steps.manifest.outputs.has_manifest == 'true'
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: latest.json
           tag_name: ${{ github.ref_name }}
