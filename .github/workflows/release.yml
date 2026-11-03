@@ -434,6 +434,22 @@ jobs:
             anycode-backend -> target
             anycode/src-tauri -> target
 
+      - name: Enable Tauri updater artifacts when signing key is present
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            node -e '
+              const fs = require("fs");
+              const p = "anycode/src-tauri/tauri.conf.json";
+              const cfg = JSON.parse(fs.readFileSync(p, "utf8"));
+              cfg.bundle = cfg.bundle || {};
+              cfg.bundle.createUpdaterArtifacts = true;
+              fs.writeFileSync(p, JSON.stringify(cfg, null, 2) + "\n");
+            '
+          fi
+
       - name: Build Desktop (non-Windows)
         if: runner.os != 'Windows'
         shell: bash
@@ -446,14 +462,10 @@ jobs:
             export CFLAGS="-march=x86-64 -mtune=generic -mno-avx -mno-avx2 -mno-fma -mno-bmi -mno-bmi2 -mno-f16c"
             export CXXFLAGS="-march=x86-64 -mtune=generic -mno-avx -mno-avx2 -mno-fma -mno-bmi -mno-bmi2 -mno-f16c"
           fi
-          UPDATER_ARGS=()
-          if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ]; then
-            UPDATER_ARGS=(-c '{"bundle":{"createUpdaterArtifacts":true}}')
-          fi
           if [ -n "${{ matrix.target }}" ]; then
-            pnpm --filter anycode tauri build --target ${{ matrix.target }} "${UPDATER_ARGS[@]}"
+            pnpm --filter anycode tauri build --target ${{ matrix.target }}
           else
-            pnpm --filter anycode tauri build "${UPDATER_ARGS[@]}"
+            pnpm --filter anycode tauri build
           fi
 
       - name: Verify x86-64 baseline ISA (Linux Desktop)
@@ -475,14 +487,10 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
-          $updaterArgs = @()
-          if ($env:TAURI_SIGNING_PRIVATE_KEY) {
-            $updaterArgs = @("-c", '{"bundle":{"createUpdaterArtifacts":true}}')
-          }
           if ("${{ matrix.target }}") {
-            pnpm --filter anycode tauri build --target ${{ matrix.target }} @updaterArgs
+            pnpm --filter anycode tauri build --target ${{ matrix.target }}
           } else {
-            pnpm --filter anycode tauri build @updaterArgs
+            pnpm --filter anycode tauri build
           }
 
       - name: Package Desktop Artifacts (non-Windows)
