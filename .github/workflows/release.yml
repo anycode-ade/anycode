@@ -12,7 +12,7 @@ permissions:
 jobs:
   build-linux:
     name: Build for Linux
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
       
@@ -69,17 +69,28 @@ jobs:
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
-          prefix-key: v1-rust
+          prefix-key: v2-rust
           workspaces: |
             anycode-backend -> target
       
       - name: Build Linux x86_64 musl binary
         working-directory: ./anycode-backend
         env:
-          RUSTFLAGS: "-C target-cpu=x86-64 -C target-feature=-avx,-avx2,-bmi,-bmi2"
-          CFLAGS: "-march=x86-64 -mtune=generic"
+          RUSTFLAGS: "-C target-cpu=x86-64 -C target-feature=-avx,-avx2,-bmi,-bmi2,-fma,-f16c"
+          CFLAGS: "-march=x86-64 -mtune=generic -mno-avx -mno-avx2 -mno-fma -mno-bmi -mno-bmi2 -mno-f16c"
+          CXXFLAGS: "-march=x86-64 -mtune=generic -mno-avx -mno-avx2 -mno-fma -mno-bmi -mno-bmi2 -mno-f16c"
         run: cargo build --release --target x86_64-unknown-linux-musl
       
+      - name: Verify x86-64 baseline ISA (CLI)
+        working-directory: ./anycode-backend
+        run: |
+          if objdump -d target/x86_64-unknown-linux-musl/release/anycode | grep -E -q '\b(vfmadd|vfnmadd|vfmsub|vfnmsub|vpbroadcast|vperm2i128|mulx|shrx|shlx|sarx|pdep|pext)'; then
+            echo "Error: Non-baseline x86-64 (AVX2/FMA/BMI2) instructions detected in CLI binary!"
+            objdump -d target/x86_64-unknown-linux-musl/release/anycode | grep -E '\b(vfmadd|vfnmadd|vfmsub|vfnmsub|vpbroadcast|vperm2i128|mulx|shrx|shlx|sarx|pdep|pext)' | head -20
+            exit 1
+          fi
+          echo "Verified: CLI binary contains only baseline x86-64 instructions."
+
       - name: Package as tar.gz
         working-directory: ./anycode-backend
         run: |
@@ -100,7 +111,7 @@ jobs:
 
   build-linux-arm64:
     name: Build for Linux ARM64
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
       
@@ -358,7 +369,7 @@ jobs:
             arch: x64
             target: ""
           - platform: Linux x64
-            os: ubuntu-latest
+            os: ubuntu-24.04
             arch: x64
             target: ""
     steps:
@@ -417,7 +428,7 @@ jobs:
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
-          prefix-key: v1-rust
+          prefix-key: v2-rust
           workspaces: |
             anycode-backend -> target
             anycode/src-tauri -> target
@@ -428,11 +439,27 @@ jobs:
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
         run: |
+          if [ "${{ runner.os }}" = "Linux" ]; then
+            export RUSTFLAGS="-C target-cpu=x86-64 -C target-feature=-avx,-avx2,-bmi,-bmi2,-fma,-f16c"
+            export CFLAGS="-march=x86-64 -mtune=generic -mno-avx -mno-avx2 -mno-fma -mno-bmi -mno-bmi2 -mno-f16c"
+            export CXXFLAGS="-march=x86-64 -mtune=generic -mno-avx -mno-avx2 -mno-fma -mno-bmi -mno-bmi2 -mno-f16c"
+          fi
           if [ -n "${{ matrix.target }}" ]; then
             pnpm --filter anycode tauri build --target ${{ matrix.target }}
           else
             pnpm --filter anycode tauri build
           fi
+
+      - name: Verify x86-64 baseline ISA (Linux Desktop)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          if objdump -d anycode/src-tauri/target/release/anycode-desktop | grep -E -q '\b(vfmadd|vfnmadd|vfmsub|vfnmsub|vpbroadcast|vperm2i128|mulx|shrx|shlx|sarx|pdep|pext)'; then
+            echo "Error: Non-baseline x86-64 (AVX2/FMA/BMI2) instructions detected in Desktop binary!"
+            objdump -d anycode/src-tauri/target/release/anycode-desktop | grep -E '\b(vfmadd|vfnmadd|vfmsub|vfnmsub|vpbroadcast|vperm2i128|mulx|shrx|shlx|sarx|pdep|pext)' | head -20
+            exit 1
+          fi
+          echo "Verified: Desktop binary contains only baseline x86-64 instructions."
 
       - name: Build Desktop (Windows)
         if: runner.os == 'Windows'
