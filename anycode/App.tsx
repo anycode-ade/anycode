@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import 'dockview-react/dist/styles/dockview.css';
-import { ChangesPanel, HistoryPanel, ProjectsPanel, type ChangedFile, type ProjectGitSummary, SettingsPanel, DynamicBackground } from './components';
+import { ChangesPanel, HistoryPanel, ProjectsPanel, type ChangedFile, type ProjectGitSummary, SettingsPanel, DynamicBackground, UpdaterToast } from './components';
 import Search from './components/Search';
 import { Layout, type LayoutActions, type PanelId } from './components/layout/Layout';
 import { Toolbar } from './components/toolbar/Toolbar';
@@ -1669,6 +1669,7 @@ const App: React.FC<AppProps> = ({ initialWorkspace }) => {
                     }}
                 />
             )}
+            <UpdaterToast />
         </div>
     );
 };

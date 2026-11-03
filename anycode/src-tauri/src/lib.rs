@@ -76,6 +76,7 @@ pub fn run() {
         let handle = app.handle();
         let app_menu = tauri::menu::Submenu::with_items(handle, "Anycode", true, &[
           &tauri::menu::PredefinedMenuItem::about(handle, Some("About Anycode"), None)?,
+          &tauri::menu::MenuItem::with_id(handle, "check_for_updates", "Check for Updates...", true, None::<&str>)?,
           &tauri::menu::PredefinedMenuItem::separator(handle)?,
           &tauri::menu::PredefinedMenuItem::services(handle, None)?,
           &tauri::menu::PredefinedMenuItem::separator(handle)?,
@@ -119,6 +120,8 @@ pub fn run() {
             });
           } else if event.id() == "close_workspace" {
             let _ = app_handle.emit("workspace_close_requested", ());
+          } else if event.id() == "check_for_updates" {
+            let _ = app_handle.emit("check_for_updates", ());
           }
         });
       }

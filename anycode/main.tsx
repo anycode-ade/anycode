@@ -3,16 +3,12 @@ import ReactDOM from "react-dom/client";
 import App from "./App";
 import './index.css'
 import { setWasmBasePath } from 'anycode-editor-react';
-import { initAutoUpdater } from './updater';
 import { getWorkspaceState } from './workspace';
 
 // In demo mode (GitHub Pages), set WASM base path relative to the deployed subpath.
 // import.meta.env.BASE_URL is automatically set to './' by Vite when base: './' is configured.
 // This ensures tree-sitter-*.wasm files are loaded from the correct path, not from '/'.
 setWasmBasePath(import.meta.env.BASE_URL);
-
-// Check for updates when running in Tauri desktop environment
-initAutoUpdater();
 
 const root = ReactDOM.createRoot(document.getElementById("root")!);
 

@@ -12,6 +12,7 @@ export type { ProjectGitSummary } from './ProjectsPanel';
 export { SettingsPanel } from './SettingsPanel';
 export { FileIcon } from './FileIcon';
 export { DynamicBackground } from './DynamicBackground';
+export { UpdaterToast } from './UpdaterToast';
 
 export * from '../types';
 
