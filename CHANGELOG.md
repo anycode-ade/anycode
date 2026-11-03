@@ -2,6 +2,11 @@
 
 All notable changes are documented here by release tag.
 
+## v0.3.4 - 2026-11-03
+
+### Highlights
+- Verification release for Desktop (`latest.json`) and CLI (`anycode update`) auto-updates.
+
 ## v0.3.3 - 2026-11-03
 
 ### Highlights

@@ -542,6 +542,78 @@ jobs:
           path: dist-desktop/*.sig
           if-no-files-found: ignore
 
+      - name: Update latest.json with current platform signature
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          python3 - <<'EOF'
+          import datetime, json, os, pathlib, urllib.request
+
+          tag = os.environ["TAG_NAME"]
+          version = tag.lstrip("v")
+          repo = os.environ["REPO"]
+          base_url = f"https://github.com/{repo}/releases/download/{tag}"
+
+          dist_dir = pathlib.Path("dist-desktop")
+          platforms = {}
+
+          # Try fetching existing latest.json from this release if another matrix job already uploaded it
+          try:
+              with urllib.request.urlopen(f"{base_url}/latest.json", timeout=5) as resp:
+                  existing = json.loads(resp.read().decode("utf-8"))
+                  if isinstance(existing.get("platforms"), dict):
+                      platforms.update(existing["platforms"])
+          except Exception:
+              pass
+
+          mapping = {
+              "anycode-desktop-macos-arm64.app.tar.gz.sig": (
+                  "anycode-desktop-macos-arm64.app.tar.gz",
+                  ["darwin-aarch64", "darwin-aarch64-app"],
+              ),
+              "anycode-desktop-macos-x64.app.tar.gz.sig": (
+                  "anycode-desktop-macos-x64.app.tar.gz",
+                  ["darwin-x86_64", "darwin-x86_64-app"],
+              ),
+              "anycode-desktop-linux-amd64.deb.sig": (
+                  "anycode-desktop-linux-amd64.deb",
+                  ["linux-x86_64", "linux-x86_64-deb"],
+              ),
+              "anycode-desktop-windows-x64-setup.exe.sig": (
+                  "anycode-desktop-windows-x64-setup.exe",
+                  ["windows-x86_64", "windows-x86_64-nsis"],
+              ),
+          }
+
+          added = False
+          for sig_name, (asset_name, target_keys) in mapping.items():
+              sig_file = dist_dir / sig_name
+              if sig_file.is_file():
+                  sig_content = sig_file.read_text(encoding="utf-8").strip()
+                  if sig_content:
+                      for key in target_keys:
+                          platforms[key] = {
+                              "signature": sig_content,
+                              "url": f"{base_url}/{asset_name}",
+                          }
+                      added = True
+
+          if added:
+              notes_path = pathlib.Path(f".github/release-notes/{tag}.md")
+              notes = notes_path.read_text(encoding="utf-8").strip() if notes_path.is_file() else f"Release {tag}"
+              manifest = {
+                  "version": version,
+                  "notes": notes,
+                  "pub_date": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                  "platforms": platforms,
+              }
+              (dist_dir / "latest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+              print("Prepared incremental latest.json with keys:", list(platforms.keys()))
+          EOF
+
       - name: Upload to release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
