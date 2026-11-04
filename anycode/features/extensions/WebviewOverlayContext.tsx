@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useRef, useEffect, useCallback } from 'react';
 import type { Socket } from 'socket.io-client';
 import { WebviewPanel } from './WebviewPanel';
+import { LayoutPanelApiContext } from '../../components/layout/Layout';
 
 export interface OverlayWebviewItem {
   panelId: string;
@@ -82,6 +83,7 @@ export const WebviewOverlayProvider: React.FC<WebviewOverlayProviderProps> = ({ 
     if (!isVisible || rect.width <= 0 || rect.height <= 0) {
       dom.style.visibility = 'hidden';
       dom.style.pointerEvents = 'none';
+      dom.style.transform = 'translate3d(-99999px, -99999px, 0)';
       return;
     }
     dom.style.transform = `translate3d(${Math.round(rect.left)}px, ${Math.round(rect.top)}px, 0)`;
@@ -220,6 +222,7 @@ export const WebviewAnchor: React.FC<{
 }> = ({ panelId, viewType, title, className, style }) => {
   const anchorRef = useRef<HTMLDivElement>(null);
   const { attachAnchor, detachAnchor, syncRect } = useWebviewOverlay();
+  const panelApi = useContext(LayoutPanelApiContext);
 
   useEffect(() => {
     const el = anchorRef.current;
@@ -228,9 +231,22 @@ export const WebviewAnchor: React.FC<{
     attachAnchor(panelId, el, { viewType, title });
 
     const update = () => {
-      if (!el || !document.contains(el)) return;
+      if (!el || !document.contains(el)) {
+        syncRect(panelId, new DOMRect(), false);
+        return;
+      }
+      if (panelApi && !panelApi.isVisible) {
+        syncRect(panelId, new DOMRect(), false);
+        return;
+      }
       const rect = el.getBoundingClientRect();
-      const isVisible = rect.width > 0 && rect.height > 0 && el.offsetParent !== null;
+      const compStyle = window.getComputedStyle(el);
+      const isVisible =
+        rect.width > 0 &&
+        rect.height > 0 &&
+        el.offsetParent !== null &&
+        compStyle.display !== 'none' &&
+        compStyle.visibility !== 'hidden';
       syncRect(panelId, rect, isVisible);
     };
 
@@ -242,17 +258,41 @@ export const WebviewAnchor: React.FC<{
     });
     ro.observe(el);
 
+    const io = new IntersectionObserver(([entry]) => {
+      if (!entry.isIntersecting) {
+        syncRect(panelId, new DOMRect(), false);
+      } else {
+        update();
+      }
+    });
+    io.observe(el);
+
+    const panelDisposables: { dispose: () => void }[] = [];
+    if (panelApi) {
+      panelDisposables.push(
+        panelApi.onDidVisibilityChange((event) => {
+          if (!event.isVisible) {
+            syncRect(panelId, new DOMRect(), false);
+          } else {
+            update();
+          }
+        })
+      );
+    }
+
     window.addEventListener('resize', update);
     window.addEventListener('scroll', update, true);
 
     return () => {
       cancelAnimationFrame(rafId);
       ro.disconnect();
+      io.disconnect();
+      panelDisposables.forEach((d) => d.dispose());
       window.removeEventListener('resize', update);
       window.removeEventListener('scroll', update, true);
       detachAnchor(panelId, el);
     };
-  }, [panelId, viewType, title, attachAnchor, detachAnchor, syncRect]);
+  }, [panelId, viewType, title, panelApi, attachAnchor, detachAnchor, syncRect]);
 
   return (
     <div
