@@ -401,6 +401,9 @@ impl ExtHostManager {
                             let _ = io.emit("ext:window:message", &data).await;
                         }
                     }
+                    if msg.id.is_some() {
+                        return;
+                    }
                 }
                 "window/showQuickPick" => {
                     if let Some(id) = msg.id {
@@ -413,6 +416,7 @@ impl ExtHostManager {
                                 })).await;
                             }
                         }
+                        return;
                     }
                 }
                 "window/showInputBox" => {
@@ -425,6 +429,7 @@ impl ExtHostManager {
                                 })).await;
                             }
                         }
+                        return;
                     }
                 }
                 "window/setStatusBar" => {
