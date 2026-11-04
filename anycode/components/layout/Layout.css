@@ -802,3 +802,85 @@
 .dv-tabs-overflow-dropdown-root {
     display: none !important;
 }
+
+/* Webview Sash Proxy (ensures splitters remain visible and draggable over webview overlays) */
+.webview-sash-proxy {
+    position: fixed;
+    z-index: 10;
+    pointer-events: auto;
+    background-color: transparent !important;
+}
+
+.webview-sash-proxy.is-vertical {
+    cursor: ew-resize;
+}
+
+.webview-sash-proxy.is-horizontal {
+    cursor: ns-resize;
+}
+
+.webview-sash-proxy::after {
+    content: '';
+    position: absolute;
+    pointer-events: none;
+    transition: background-color 0.15s ease;
+}
+
+/* Vertical sashes (separating panels horizontally) */
+.webview-sash-proxy.is-vertical::after {
+    left: 50%;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    transform: translateX(-50%);
+    background: linear-gradient(to bottom, transparent, var(--theme-border, #555), transparent);
+}
+
+/* Horizontal sashes (separating panels vertically) */
+.webview-sash-proxy.is-horizontal::after {
+    left: 0;
+    right: 0;
+    top: 50%;
+    height: 2px;
+    transform: translateY(-50%);
+    background: linear-gradient(to right, transparent, var(--theme-border, #555), transparent);
+}
+
+/* Highlight active/dragging sashes */
+.webview-sash-proxy:hover::after,
+.webview-sash-proxy:active::after {
+    background: var(--theme-accent-background, #007acc) !important;
+}
+
+/* Expanded hit area for sashes to make resizing easier */
+.webview-sash-proxy::before {
+    content: '';
+    position: absolute;
+    background: transparent;
+}
+
+.webview-sash-proxy.is-vertical::before {
+    top: 0;
+    bottom: 0;
+    left: calc(-1 * var(--sash-hit-margin-left, 2px));
+    right: calc(-1 * var(--sash-hit-margin-right, 2px));
+}
+
+.webview-sash-proxy.is-horizontal::before {
+    left: 0;
+    right: 0;
+    top: calc(-1 * var(--sash-hit-margin-left, 2px));
+    bottom: calc(-1 * var(--sash-hit-margin-right, 2px));
+}
+
+@media (pointer: coarse) {
+    .webview-sash-proxy.is-vertical::before {
+        left: -4px;
+        right: -4px;
+    }
+    .webview-sash-proxy.is-horizontal::before {
+        top: -4px;
+        bottom: -4px;
+    }
+}
+

@@ -208,8 +208,167 @@ export const WebviewOverlayProvider: React.FC<WebviewOverlayProviderProps> = ({ 
             ) : null}
           </div>
         ))}
+        <WebviewSashProxies />
       </div>
     </WebviewOverlayContext.Provider>
+  );
+};
+
+interface SashProxyItem {
+  id: string;
+  el: HTMLElement;
+  rect: DOMRect;
+  isVertical: boolean;
+}
+
+const WebviewSashProxies: React.FC = () => {
+  const [sashList, setSashList] = useState<SashProxyItem[]>([]);
+  const isDraggingRef = useRef(false);
+  const rafRef = useRef<number | null>(null);
+
+  const updateSashes = useCallback(() => {
+    const layoutEl = document.querySelector('.layout');
+    if (!layoutEl) {
+      setSashList((prev) => (prev.length === 0 ? prev : []));
+      return;
+    }
+    const domSashes = Array.from(layoutEl.querySelectorAll<HTMLElement>('.dv-sash:not(.disabled):not(.dv-disabled)'));
+    const items: SashProxyItem[] = domSashes.map((el, index) => {
+      const rect = el.getBoundingClientRect();
+      const isVertical = rect.height >= rect.width;
+      return {
+        id: `sash-${index}`,
+        el,
+        rect,
+        isVertical,
+      };
+    }).filter((item) => item.rect.width > 0 && item.rect.height > 0);
+
+    setSashList((prev) => {
+      if (prev.length === items.length) {
+        const matches = prev.every((p, i) => {
+          const n = items[i];
+          return (
+            p.el === n.el &&
+            Math.abs(p.rect.left - n.rect.left) < 0.5 &&
+            Math.abs(p.rect.top - n.rect.top) < 0.5 &&
+            Math.abs(p.rect.width - n.rect.width) < 0.5 &&
+            Math.abs(p.rect.height - n.rect.height) < 0.5 &&
+            p.isVertical === n.isVertical
+          );
+        });
+        if (matches) return prev;
+      }
+      return items;
+    });
+  }, []);
+
+  useEffect(() => {
+    updateSashes();
+
+    const startRaf = () => {
+      if (isDraggingRef.current) return;
+      isDraggingRef.current = true;
+      const loop = () => {
+        updateSashes();
+        if (isDraggingRef.current) {
+          rafRef.current = requestAnimationFrame(loop);
+        }
+      };
+      rafRef.current = requestAnimationFrame(loop);
+    };
+
+    const stopRaf = () => {
+      isDraggingRef.current = false;
+      if (rafRef.current) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
+      updateSashes();
+    };
+
+    const handlePointerDown = (e: PointerEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target?.closest('.dv-sash') || target?.closest('.webview-sash-proxy')) {
+        startRaf();
+      }
+    };
+
+    document.addEventListener('pointerdown', handlePointerDown, true);
+    document.addEventListener('pointerup', stopRaf, true);
+    document.addEventListener('pointercancel', stopRaf, true);
+    window.addEventListener('resize', updateSashes);
+
+    const ro = new ResizeObserver(() => {
+      if (!isDraggingRef.current) updateSashes();
+    });
+    ro.observe(document.body);
+
+    const mo = new MutationObserver(() => {
+      if (!isDraggingRef.current) updateSashes();
+    });
+    mo.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['style', 'class'],
+    });
+
+    const t1 = setTimeout(updateSashes, 100);
+    const t2 = setTimeout(updateSashes, 500);
+
+    return () => {
+      stopRaf();
+      clearTimeout(t1);
+      clearTimeout(t2);
+      document.removeEventListener('pointerdown', handlePointerDown, true);
+      document.removeEventListener('pointerup', stopRaf, true);
+      document.removeEventListener('pointercancel', stopRaf, true);
+      window.removeEventListener('resize', updateSashes);
+      ro.disconnect();
+      mo.disconnect();
+    };
+  }, [updateSashes]);
+
+  if (sashList.length === 0) {
+    return null;
+  }
+
+  return (
+    <>
+      {sashList.map((item) => (
+        <div
+          key={item.id}
+          className={`webview-sash-proxy ${item.isVertical ? 'is-vertical' : 'is-horizontal'}`}
+          style={{
+            position: 'fixed',
+            left: `${Math.round(item.rect.left)}px`,
+            top: `${Math.round(item.rect.top)}px`,
+            width: `${Math.round(item.rect.width)}px`,
+            height: `${Math.round(item.rect.height)}px`,
+            pointerEvents: 'auto',
+            zIndex: 10,
+          }}
+          onPointerDown={(e) => {
+            e.preventDefault();
+            const evt = new PointerEvent('pointerdown', {
+              bubbles: true,
+              cancelable: true,
+              clientX: e.clientX,
+              clientY: e.clientY,
+              screenX: e.screenX,
+              screenY: e.screenY,
+              pointerId: e.pointerId,
+              pointerType: e.pointerType,
+              isPrimary: e.isPrimary,
+              buttons: e.buttons,
+              button: e.button,
+            });
+            item.el.dispatchEvent(evt);
+          }}
+        />
+      ))}
+    </>
   );
 };
 

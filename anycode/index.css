@@ -150,13 +150,15 @@ button:focus-visible {
   user-select: none !important;
 }
 
-/* Prevent iframes from intercepting pointer events during layout resize or tab drag */
+/* Prevent iframes and proxies from intercepting pointer events during layout resize or tab drag */
 .is-layout-resizing .webview-overlay-root,
 .is-layout-dragging .webview-overlay-root,
 .is-layout-resizing .webview-overlay-item,
 .is-layout-dragging .webview-overlay-item,
 .is-layout-resizing iframe,
-.is-layout-dragging iframe {
+.is-layout-dragging iframe,
+.is-layout-resizing .webview-sash-proxy,
+.is-layout-dragging .webview-sash-proxy {
   pointer-events: none !important;
 }
 
