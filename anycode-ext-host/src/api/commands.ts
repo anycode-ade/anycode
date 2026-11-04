@@ -1,6 +1,7 @@
 import { Disposable } from './types';
 import type { ExtHostWindow } from './window';
 import type { RpcConnection } from '../rpc';
+import { extHostLog } from '../logger';
 
 export class ExtHostCommands {
   private _commands = new Map<string, (...args: any[]) => any>();
@@ -38,6 +39,7 @@ export class ExtHostCommands {
   }
 
   registerCommand(command: string, callback: (...args: any[]) => any, thisArg?: any): Disposable {
+    extHostLog('commands', `registerCommand: ${command}`);
     const bound = thisArg ? callback.bind(thisArg) : callback;
     this._commands.set(command, bound);
     this._rpc.sendNotification('commands/registerCommand', { command });
@@ -67,9 +69,15 @@ export class ExtHostCommands {
   }
 
   async executeCommand<T = any>(command: string, ...rest: any[]): Promise<T | undefined> {
+    extHostLog('commands', `executeCommand: ${command}`, rest);
     const handler = this._commands.get(command);
     if (handler) {
-      return handler(...rest);
+      try {
+        return await handler(...rest);
+      } catch (err) {
+        extHostLog('commands', `executeCommand ${command} threw:`, err);
+        throw err;
+      }
     }
 
     // Forward to backend

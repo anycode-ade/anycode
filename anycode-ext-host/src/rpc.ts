@@ -1,4 +1,5 @@
 import { EventEmitter } from 'events';
+import { extHostLog } from './logger';
 
 export interface JsonRpcRequest {
   jsonrpc: '2.0';
@@ -97,8 +98,10 @@ export class RpcConnection {
     if ('method' in msg) {
       // It's a request or notification
       if ('id' in msg && msg.id !== undefined && msg.id !== null) {
+        extHostLog('rpc', `<< REQ [${msg.id}] ${msg.method}`, msg.params);
         const handler = this._requestHandlers.get(msg.method);
         if (!handler) {
+          extHostLog('rpc', `!! Method not found: ${msg.method}`);
           this._sendResponse({
             jsonrpc: '2.0',
             id: msg.id,
@@ -115,6 +118,7 @@ export class RpcConnection {
             result: result !== undefined ? result : null,
           });
         } catch (err: any) {
+          extHostLog('rpc', `!! Handler error for ${msg.method}:`, err?.stack || err);
           this._sendResponse({
             jsonrpc: '2.0',
             id: msg.id,
@@ -123,17 +127,19 @@ export class RpcConnection {
         }
       } else {
         // Notification
+        extHostLog('rpc', `<< NOTIFY ${msg.method}`, msg.params);
         const handler = this._notificationHandlers.get(msg.method);
         if (handler) {
           try {
             handler(msg.params);
           } catch (err) {
-            console.error(`Notification handler error for ${msg.method}:`, err);
+            extHostLog('rpc', `!! Notification handler error for ${msg.method}:`, err);
           }
         }
       }
     } else if ('id' in msg && ('result' in msg || 'error' in msg)) {
       // Response to a pending request
+      extHostLog('rpc', `<< RESP [${msg.id}]`, msg.error ? `ERR: ${msg.error.message}` : 'OK');
       const pending = this._pendingRequests.get(msg.id);
       if (pending) {
         this._pendingRequests.delete(msg.id);
@@ -148,6 +154,7 @@ export class RpcConnection {
 
   sendRequest(method: string, params?: any): Promise<any> {
     const id = this._nextId++;
+    extHostLog('rpc', `>> REQ [${id}] ${method}`, params);
     return new Promise((resolve, reject) => {
       this._pendingRequests.set(id, { resolve, reject });
       const msg: JsonRpcRequest = {
@@ -161,6 +168,7 @@ export class RpcConnection {
   }
 
   sendNotification(method: string, params?: any): void {
+    extHostLog('rpc', `>> NOTIFY ${method}`, params);
     const msg: JsonRpcRequest = {
       jsonrpc: '2.0',
       method,

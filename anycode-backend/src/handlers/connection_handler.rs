@@ -52,6 +52,7 @@ pub async fn setup_socket(socket: &SocketRef, state: &AppState) {
     socket.on("ext:window:message:reply", handle_ext_window_message_reply);
     socket.on("ext:webview:message", handle_ext_webview_message);
     socket.on("ext:webview_view:resolve", handle_ext_webview_view_resolve);
+    socket.on("ext:handle_uri", handle_ext_handle_uri);
 
     socket.on("search:start", handle_search);
     socket.on("search:cancel", handle_search_cancel);

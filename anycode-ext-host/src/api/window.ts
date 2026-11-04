@@ -16,6 +16,7 @@ import {
 } from './types';
 import type { ExtHostTextDocument, ExtHostWorkspace } from './workspace';
 import type { RpcConnection } from '../rpc';
+import { extHostLog } from '../logger';
 
 export interface TextEditorDecorationType extends Disposable {
   readonly key: string;
@@ -153,6 +154,8 @@ export class ExtHostQuickPick implements Disposable {
   private _onDidHideEmitter = new EventEmitter<void>();
   readonly onDidHide = this._onDidHideEmitter.event;
 
+  constructor(private _rpc?: RpcConnection) {}
+
   get value(): string {
     return this._value;
   }
@@ -162,7 +165,35 @@ export class ExtHostQuickPick implements Disposable {
     this._onDidChangeValueEmitter.fire(v);
   }
 
-  show(): void {}
+  show(): void {
+    extHostLog('window', `QuickPick.show title="${this.title}" items=${this.items.length}`);
+    if (this._rpc) {
+      this._rpc
+        .sendRequest('window/showQuickPick', {
+          items: this.items,
+          options: {
+            title: this.title,
+            placeHolder: this.placeholder,
+            canPickMany: this.canSelectMany,
+          },
+        })
+        .then((chosen: any) => {
+          extHostLog('window', `QuickPick result:`, chosen);
+          if (chosen !== undefined && chosen !== null) {
+            this.selectedItems = Array.isArray(chosen) ? chosen : [chosen];
+            this._onDidChangeSelectionEmitter.fire(this.selectedItems);
+            this._onDidAcceptEmitter.fire();
+          } else {
+            this._onDidHideEmitter.fire();
+          }
+        })
+        .catch((err) => {
+          extHostLog('window', `QuickPick error:`, err);
+          this._onDidHideEmitter.fire();
+        });
+    }
+  }
+
   hide(): void {
     this._onDidHideEmitter.fire();
   }
@@ -197,6 +228,8 @@ export class ExtHostInputBox implements Disposable {
   private _onDidHideEmitter = new EventEmitter<void>();
   readonly onDidHide = this._onDidHideEmitter.event;
 
+  constructor(private _rpc?: RpcConnection) {}
+
   get value(): string {
     return this._value;
   }
@@ -206,7 +239,35 @@ export class ExtHostInputBox implements Disposable {
     this._onDidChangeValueEmitter.fire(v);
   }
 
-  show(): void {}
+  show(): void {
+    extHostLog('window', `InputBox.show title="${this.title}" prompt="${this.prompt}"`);
+    if (this._rpc) {
+      this._rpc
+        .sendRequest('window/showInputBox', {
+          options: {
+            title: this.title,
+            prompt: this.prompt,
+            placeHolder: this.placeholder,
+            value: this._value,
+            password: this.password,
+          },
+        })
+        .then((val: any) => {
+          extHostLog('window', `InputBox result: "${val}"`);
+          if (val !== undefined && val !== null) {
+            this.value = val;
+            this._onDidAcceptEmitter.fire();
+          } else {
+            this._onDidHideEmitter.fire();
+          }
+        })
+        .catch((err) => {
+          extHostLog('window', `InputBox error:`, err);
+          this._onDidHideEmitter.fire();
+        });
+    }
+  }
+
   hide(): void {
     this._onDidHideEmitter.fire();
   }
@@ -373,6 +434,7 @@ export class ExtHostWebview {
 
   set html(val: string) {
     this._html = val;
+    extHostLog('webview', `setWebviewHtml [${this.panelId}] length: ${val?.length || 0}`);
     this._rpc.sendNotification('window/setWebviewHtml', {
       panelId: this.panelId,
       html: val,
@@ -392,6 +454,7 @@ export class ExtHostWebview {
   }
 
   async postMessage(message: any): Promise<boolean> {
+    extHostLog('webview', `postWebviewMessage to [${this.panelId}]:`, message);
     const safeMessage = prepareForJson(message);
     const res = await this._rpc.sendRequest('window/postWebviewMessage', {
       panelId: this.panelId,
@@ -564,11 +627,11 @@ export class ExtHostWindow {
   }
 
   createQuickPick<T = any>(): ExtHostQuickPick {
-    return new ExtHostQuickPick();
+    return new ExtHostQuickPick(this._rpc);
   }
 
   createInputBox(): ExtHostInputBox {
-    return new ExtHostInputBox();
+    return new ExtHostInputBox(this._rpc);
   }
 
   async withProgress<R>(options: { location: ProgressLocation; title?: string; cancellable?: boolean }, task: (progress: any, token: CancellationToken) => Promise<R>): Promise<R> {
@@ -790,10 +853,6 @@ export class ExtHostWindow {
     return term;
   }
 
-  registerUriHandler(handler: any): Disposable {
-    return new Disposable(() => {});
-  }
-
   registerTerminalLinkProvider(provider: any): Disposable {
     return new Disposable(() => {});
   }
@@ -814,7 +873,30 @@ export class ExtHostWindow {
     return new Disposable(() => {});
   }
 
+  private _uriHandlers = new Set<any>();
+
+  registerUriHandler(handler: any): Disposable {
+    extHostLog('window', 'registerUriHandler registered');
+    this._uriHandlers.add(handler);
+    return new Disposable(() => {
+      this._uriHandlers.delete(handler);
+    });
+  }
+
+  handleUri(uriStr: string): void {
+    extHostLog('window', `handleUri: ${uriStr}`);
+    const uri = Uri.parse(uriStr);
+    for (const h of this._uriHandlers) {
+      try {
+        h.handleUri(uri);
+      } catch (e) {
+        extHostLog('window', 'Error in UriHandler:', e);
+      }
+    }
+  }
+
   registerWebviewViewProvider(viewId: string, provider: any, options?: any): Disposable {
+    extHostLog('webview', `registerWebviewViewProvider: ${viewId}`);
     this._webviewViewProviders.set(viewId, provider);
     this._rpc.sendNotification('window/registerWebviewView', { viewId });
     return new Disposable(() => {
@@ -823,9 +905,10 @@ export class ExtHostWindow {
   }
 
   async resolveWebviewView(viewId: string, panelId: string): Promise<{ success: boolean; html?: string }> {
+    extHostLog('webview', `resolveWebviewView [${viewId}] for panel [${panelId}]`);
     const provider = this._webviewViewProviders.get(viewId);
     if (!provider) {
-      console.warn(`[ext-host] no webview view provider registered for ${viewId}`);
+      extHostLog('webview', `no webview view provider registered for ${viewId}`);
       return { success: false };
     }
     const existing = this._webviews.get(panelId);
@@ -851,14 +934,16 @@ export class ExtHostWindow {
         {},
         { isCancellationRequested: false, onCancellationRequested: new EventEmitter().event }
       );
+      extHostLog('webview', `resolveWebviewView [${viewId}] SUCCESS, HTML length: ${webview.html?.length || 0}`);
       return { success: true, html: webview.html };
     } catch (e) {
-      console.warn(`[ext-host] resolveWebviewView failed for ${viewId}:`, e);
+      extHostLog('webview', `resolveWebviewView failed for ${viewId}:`, e);
       return { success: false };
     }
   }
 
   handleWebviewMessage(panelId: string, message: any): void {
+    extHostLog('webview', `handleWebviewMessage [${panelId}]:`, message);
     const revived = reviveBytes(message);
     const panel = this._webviewPanels.get(panelId);
     if (panel) {
@@ -868,6 +953,8 @@ export class ExtHostWindow {
     const webview = this._webviews.get(panelId);
     if (webview) {
       webview.handleMessageReceived(revived);
+    } else {
+      extHostLog('webview', `handleWebviewMessage: no webview or panel found for [${panelId}]`);
     }
   }
 }

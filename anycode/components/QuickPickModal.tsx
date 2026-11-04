@@ -39,6 +39,7 @@ export const QuickPickModal: React.FC<QuickPickModalProps> = ({ wsRef }) => {
     if (!ws) return;
 
     const onQuickPick = (req: QuickPickRequest) => {
+      console.log('[Extension UI] 📋 ext:window:quick_pick received:', req);
       setFilter('');
       setSelectedIndex(0);
       setQuickPick(req);
@@ -46,12 +47,14 @@ export const QuickPickModal: React.FC<QuickPickModalProps> = ({ wsRef }) => {
     };
 
     const onInputBox = (req: InputBoxRequest) => {
+      console.log('[Extension UI] ✏️ ext:window:input_box received:', req);
       setInputValue(req.options?.value || '');
       setInputBox(req);
       setTimeout(() => inputRef.current?.focus(), 50);
     };
 
     const onWindowMessage = (data: { severity?: number; message: string; items?: string[]; requestId?: string }) => {
+      console.log('[Extension UI] 💬 ext:window:message received:', data);
       const id = String(Date.now() + Math.random());
       setMessages((prev) => [
         ...prev,
@@ -173,10 +176,12 @@ export const QuickPickModal: React.FC<QuickPickModalProps> = ({ wsRef }) => {
     if (!inputBox) return;
     if (e.key === 'Escape') {
       e.preventDefault();
+      console.log('[Extension UI] 📤 ext:window:input_box:reply (cancelled):', { requestId: inputBox.requestId, value: null });
       wsRef.current?.emit('ext:window:input_box:reply', { requestId: inputBox.requestId, value: null });
       setInputBox(null);
     } else if (e.key === 'Enter') {
       e.preventDefault();
+      console.log('[Extension UI] 📤 ext:window:input_box:reply:', { requestId: inputBox.requestId, value: inputValue });
       wsRef.current?.emit('ext:window:input_box:reply', { requestId: inputBox.requestId, value: inputValue });
       setInputBox(null);
     }
@@ -193,6 +198,7 @@ export const QuickPickModal: React.FC<QuickPickModalProps> = ({ wsRef }) => {
     if (!quickPick) return;
     if (e.key === 'Escape') {
       e.preventDefault();
+      console.log('[Extension UI] 📤 ext:window:quick_pick:reply (cancelled):', { requestId: quickPick.requestId, selected: null });
       wsRef.current?.emit('ext:window:quick_pick:reply', { requestId: quickPick.requestId, selected: null });
       setQuickPick(null);
     } else if (e.key === 'ArrowDown') {
@@ -204,6 +210,7 @@ export const QuickPickModal: React.FC<QuickPickModalProps> = ({ wsRef }) => {
     } else if (e.key === 'Enter') {
       e.preventDefault();
       const chosen = filteredQuickPick[selectedIndex];
+      console.log('[Extension UI] 📤 ext:window:quick_pick:reply:', { requestId: quickPick.requestId, selected: chosen });
       wsRef.current?.emit('ext:window:quick_pick:reply', { requestId: quickPick.requestId, selected: chosen });
       setQuickPick(null);
     }

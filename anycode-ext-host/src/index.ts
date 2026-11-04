@@ -239,6 +239,10 @@ rpc.onNotification('webview/onMessage', (params: { panelId: string; message: any
   window.handleWebviewMessage(params.panelId, params.message);
 });
 
+rpc.onNotification('window/handleUri', (params: { uri: string }) => {
+  window.handleUri(params.uri);
+});
+
 rpc.onNotification('workspace/didChangeWorkspaceFolders', (params: { workspaceRoot: string }) => {
   if (params.workspaceRoot) {
     workspace.setWorkspaceRoot(params.workspaceRoot);

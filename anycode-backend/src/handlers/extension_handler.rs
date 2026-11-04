@@ -308,6 +308,7 @@ pub async fn handle_ext_webview_message(
     ack: AckSender,
     state: State<AppState>,
 ) {
+    info!("[backend:ext] ext:webview:message panel_id='{}' message={:?}", req.panel_id, req.message);
     if let Some(ext_host) = state.ext_host_manager.read().await.as_ref() {
         let _ = ext_host
             .send_notification(
@@ -336,6 +337,7 @@ pub async fn handle_ext_webview_view_resolve(
     ack: AckSender,
     state: State<AppState>,
 ) {
+    info!("[backend:ext] ext:webview_view:resolve view_id='{}' panel_id='{}'", req.view_id, req.panel_id);
     if let Some(ext_host) = state.ext_host_manager.read().await.as_ref() {
         // Ensure any extension providing this view is activated first
         let installed = state.extension_manager.storage.load_installed().unwrap_or_default();
@@ -470,4 +472,22 @@ pub async fn ext_asset_handler(
     }
 
     StatusCode::NOT_FOUND.into_response()
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ExtHandleUriRequest {
+    pub uri: String,
+}
+
+pub async fn handle_ext_handle_uri(
+    _socket: SocketRef,
+    Data(req): Data<ExtHandleUriRequest>,
+    ack: AckSender,
+    state: State<AppState>,
+) {
+    info!("[backend:ext] ext:handle_uri uri='{}'", req.uri);
+    if let Some(ext_host) = state.ext_host_manager.read().await.as_ref() {
+        let _ = ext_host.send_notification("window/handleUri", json!({ "uri": req.uri })).await;
+    }
+    ack.send(&json!({ "success": true })).ok();
 }

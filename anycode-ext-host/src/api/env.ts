@@ -1,11 +1,12 @@
 import { EventEmitter, Uri } from './types';
 import type { RpcConnection } from '../rpc';
+import { extHostLog } from '../logger';
 
 export class ExtHostEnv {
   readonly appName = 'Anycode';
   readonly appRoot = process.cwd();
   readonly language = 'en';
-  readonly uriScheme = 'anycode';
+  readonly uriScheme = 'vscode';
   readonly machineId = 'anycode-machine-id-0000-0000-0000';
   readonly sessionId = 'anycode-session-id-0000-0000-0000';
   readonly uiKind = 1; // UIKind.Desktop
@@ -32,11 +33,20 @@ export class ExtHostEnv {
     },
   };
 
-  async openExternal(target: Uri): Promise<boolean> {
-    return this._rpc.sendRequest('env/openExternal', { uri: target.toString() });
+  async openExternal(target: Uri | string): Promise<boolean> {
+    const uriStr = typeof target === 'string' ? target : target.toString();
+    extHostLog('env', `openExternal called with: ${uriStr}`);
+    try {
+      const res = await this._rpc.sendRequest('env/openExternal', { uri: uriStr });
+      return res !== false;
+    } catch (e) {
+      extHostLog('env', `openExternal failed:`, e);
+      return false;
+    }
   }
 
   async asExternalUri(target: Uri): Promise<Uri> {
+    extHostLog('env', `asExternalUri called with: ${target?.toString?.() || target}`);
     return target;
   }
 

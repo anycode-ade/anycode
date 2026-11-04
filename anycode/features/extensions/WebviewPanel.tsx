@@ -61,15 +61,24 @@ export const WebviewPanel: React.FC<WebviewPanelProps> = ({
 
     const onIncomingMessage = (data: { panelId: string; message: any }) => {
       if (data.panelId === panelId && iframeRef.current?.contentWindow) {
-        console.log('[WebviewPanel] incoming message to iframe:', data.panelId, data.message?.type || '(capn/binary)');
+        console.log('[WebviewPanel] 📥 [INCOMING]', data.panelId, data.message);
         const revived = reviveBytes(data.message);
         iframeRef.current.contentWindow.postMessage(revived, '*');
       }
     };
 
+    const onOpenExternal = (data: { uri: string }) => {
+      console.log('[Extension] 🌐 ext:env:open_external received:', data?.uri);
+      if (data?.uri) {
+        window.open(data.uri, '_blank', 'noopener,noreferrer');
+      }
+    };
+
     ws.on('ext:webview:message', onIncomingMessage);
+    ws.on('ext:env:open_external', onOpenExternal);
     return () => {
       ws.off('ext:webview:message', onIncomingMessage);
+      ws.off('ext:env:open_external', onOpenExternal);
     };
   }, [panelId, wsRef]);
 
@@ -82,7 +91,7 @@ export const WebviewPanel: React.FC<WebviewPanelProps> = ({
     const handleWindowMessage = (event: MessageEvent) => {
       if (event.source === iframeRef.current?.contentWindow) {
         if (event.data?.__vscode_ext_msg) {
-          console.log('[WebviewPanel] outgoing message from iframe:', panelId, event.data.payload?.type || '(capn/binary)');
+          console.log('[WebviewPanel] 📤 [OUTGOING]', panelId, event.data.payload);
           const safePayload = prepareForJson(event.data.payload);
           const ws = wsRef.current;
           if (!ws) return;

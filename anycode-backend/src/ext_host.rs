@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{ChildStdin, Command};
 use tokio::sync::{Mutex, mpsc, oneshot};
-use tracing::{debug, error, info};
+use tracing::{error, info, warn};
 
 use crate::extensions::manifest::VsCodeManifest;
 
@@ -257,6 +257,8 @@ impl ExtHostManager {
         let id = self.next_id.fetch_add(1, Ordering::SeqCst);
         let (tx, rx) = oneshot::channel();
 
+        info!("[backend -> ext-host] REQ [{}] method='{}' params={:?}", id, method, params);
+
         {
             let mut pending = self.pending_requests.lock().await;
             pending.insert(id, tx);
@@ -283,6 +285,7 @@ impl ExtHostManager {
     }
 
     pub async fn send_notification(&self, method: &str, params: Value) -> Result<()> {
+        info!("[backend -> ext-host] NOTIFY method='{}' params={:?}", method, params);
         let msg = json!({
             "jsonrpc": "2.0",
             "method": method,
@@ -334,7 +337,51 @@ impl ExtHostManager {
 
         // 2. Incoming notification/request from Extension Host
         if let Some(ref method) = msg.method {
+            info!("[ext-host -> backend] method='{}' id={:?} params={:?}", method, msg.id, msg.params);
             match method.as_str() {
+                "env/openExternal" => {
+                    let uri_str = msg.params.as_ref()
+                        .and_then(|p| p.get("uri"))
+                        .and_then(|u| u.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    info!("[backend:ext-host] env/openExternal URL='{}'", uri_str);
+                    if !uri_str.is_empty() {
+                        let u = uri_str.clone();
+                        tokio::spawn(async move {
+                            #[cfg(target_os = "macos")]
+                            {
+                                let _ = tokio::process::Command::new("open").arg(&u).spawn();
+                            }
+                            #[cfg(target_os = "linux")]
+                            {
+                                let _ = tokio::process::Command::new("xdg-open").arg(&u).spawn();
+                            }
+                            #[cfg(target_os = "windows")]
+                            {
+                                let _ = tokio::process::Command::new("cmd").args(["/c", "start", &u]).spawn();
+                            }
+                        });
+
+                        if let Some(io) = self.io.lock().await.as_ref() {
+                            let _ = io.emit("ext:env:open_external", &serde_json::json!({ "uri": uri_str })).await;
+                        }
+                    }
+                    if let Some(id) = msg.id {
+                        let _ = self.send_response(id, Some(serde_json::json!(true)), None).await;
+                        return;
+                    }
+                }
+                "env/asExternalUri" => {
+                    let uri = msg.params.as_ref()
+                        .and_then(|p| p.get("uri"))
+                        .cloned()
+                        .unwrap_or(Value::Null);
+                    if let Some(id) = msg.id {
+                        let _ = self.send_response(id, Some(uri), None).await;
+                        return;
+                    }
+                }
                 "languages/publishDiagnostics" => {
                     if let Some(ref params) = msg.params {
                         if let Ok(diag_params) = serde_json::from_value::<PublishDiagnosticsParams>(params.clone()) {
@@ -437,7 +484,7 @@ impl ExtHostManager {
                     }
                 }
                 _ => {
-                    debug!("Unhandled extension host request/notification: {}", method);
+                    warn!("[backend:ext-host] Unhandled request/notification from ext-host: {}", method);
                 }
             }
 

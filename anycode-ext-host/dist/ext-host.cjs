@@ -30,6 +30,24 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 var path3 = __toESM(require("path"));
 var fs3 = __toESM(require("fs"));
 
+// src/logger.ts
+var rawStderrWrite = process.stderr.write.bind(process.stderr);
+function extHostLog(category, ...args) {
+  const timestamp = (/* @__PURE__ */ new Date()).toISOString().slice(11, 23);
+  const formatted = args.map((a) => {
+    if (typeof a === "object" && a !== null) {
+      try {
+        return a.stack || JSON.stringify(a);
+      } catch {
+        return String(a);
+      }
+    }
+    return String(a);
+  }).join(" ");
+  rawStderrWrite(`[ext-host:${category}] ${timestamp} ${formatted}
+`);
+}
+
 // src/rpc.ts
 var RpcConnection = class {
   constructor(_input = process.stdin, _output = process.stdout) {
@@ -101,8 +119,10 @@ var RpcConnection = class {
   async _handleMessage(msg) {
     if ("method" in msg) {
       if ("id" in msg && msg.id !== void 0 && msg.id !== null) {
+        extHostLog("rpc", `<< REQ [${msg.id}] ${msg.method}`, msg.params);
         const handler = this._requestHandlers.get(msg.method);
         if (!handler) {
+          extHostLog("rpc", `!! Method not found: ${msg.method}`);
           this._sendResponse({
             jsonrpc: "2.0",
             id: msg.id,
@@ -118,6 +138,7 @@ var RpcConnection = class {
             result: result !== void 0 ? result : null
           });
         } catch (err) {
+          extHostLog("rpc", `!! Handler error for ${msg.method}:`, err?.stack || err);
           this._sendResponse({
             jsonrpc: "2.0",
             id: msg.id,
@@ -125,16 +146,18 @@ var RpcConnection = class {
           });
         }
       } else {
+        extHostLog("rpc", `<< NOTIFY ${msg.method}`, msg.params);
         const handler = this._notificationHandlers.get(msg.method);
         if (handler) {
           try {
             handler(msg.params);
           } catch (err) {
-            console.error(`Notification handler error for ${msg.method}:`, err);
+            extHostLog("rpc", `!! Notification handler error for ${msg.method}:`, err);
           }
         }
       }
     } else if ("id" in msg && ("result" in msg || "error" in msg)) {
+      extHostLog("rpc", `<< RESP [${msg.id}]`, msg.error ? `ERR: ${msg.error.message}` : "OK");
       const pending = this._pendingRequests.get(msg.id);
       if (pending) {
         this._pendingRequests.delete(msg.id);
@@ -148,6 +171,7 @@ var RpcConnection = class {
   }
   sendRequest(method, params) {
     const id = this._nextId++;
+    extHostLog("rpc", `>> REQ [${id}] ${method}`, params);
     return new Promise((resolve, reject) => {
       this._pendingRequests.set(id, { resolve, reject });
       const msg = {
@@ -160,6 +184,7 @@ var RpcConnection = class {
     });
   }
   sendNotification(method, params) {
+    extHostLog("rpc", `>> NOTIFY ${method}`, params);
     const msg = {
       jsonrpc: "2.0",
       method,
@@ -2134,6 +2159,9 @@ var ExtHostTextEditor = class {
   }
 };
 var ExtHostQuickPick = class {
+  constructor(_rpc) {
+    this._rpc = _rpc;
+  }
   _value = "";
   placeholder = void 0;
   items = [];
@@ -2171,6 +2199,29 @@ var ExtHostQuickPick = class {
     this._onDidChangeValueEmitter.fire(v);
   }
   show() {
+    extHostLog("window", `QuickPick.show title="${this.title}" items=${this.items.length}`);
+    if (this._rpc) {
+      this._rpc.sendRequest("window/showQuickPick", {
+        items: this.items,
+        options: {
+          title: this.title,
+          placeHolder: this.placeholder,
+          canPickMany: this.canSelectMany
+        }
+      }).then((chosen) => {
+        extHostLog("window", `QuickPick result:`, chosen);
+        if (chosen !== void 0 && chosen !== null) {
+          this.selectedItems = Array.isArray(chosen) ? chosen : [chosen];
+          this._onDidChangeSelectionEmitter.fire(this.selectedItems);
+          this._onDidAcceptEmitter.fire();
+        } else {
+          this._onDidHideEmitter.fire();
+        }
+      }).catch((err) => {
+        extHostLog("window", `QuickPick error:`, err);
+        this._onDidHideEmitter.fire();
+      });
+    }
   }
   hide() {
     this._onDidHideEmitter.fire();
@@ -2180,6 +2231,9 @@ var ExtHostQuickPick = class {
   }
 };
 var ExtHostInputBox = class {
+  constructor(_rpc) {
+    this._rpc = _rpc;
+  }
   _value = "";
   placeholder = void 0;
   password = false;
@@ -2208,6 +2262,29 @@ var ExtHostInputBox = class {
     this._onDidChangeValueEmitter.fire(v);
   }
   show() {
+    extHostLog("window", `InputBox.show title="${this.title}" prompt="${this.prompt}"`);
+    if (this._rpc) {
+      this._rpc.sendRequest("window/showInputBox", {
+        options: {
+          title: this.title,
+          prompt: this.prompt,
+          placeHolder: this.placeholder,
+          value: this._value,
+          password: this.password
+        }
+      }).then((val) => {
+        extHostLog("window", `InputBox result: "${val}"`);
+        if (val !== void 0 && val !== null) {
+          this.value = val;
+          this._onDidAcceptEmitter.fire();
+        } else {
+          this._onDidHideEmitter.fire();
+        }
+      }).catch((err) => {
+        extHostLog("window", `InputBox error:`, err);
+        this._onDidHideEmitter.fire();
+      });
+    }
   }
   hide() {
     this._onDidHideEmitter.fire();
@@ -2349,6 +2426,7 @@ var ExtHostWebview = class {
   }
   set html(val) {
     this._html = val;
+    extHostLog("webview", `setWebviewHtml [${this.panelId}] length: ${val?.length || 0}`);
     this._rpc.sendNotification("window/setWebviewHtml", {
       panelId: this.panelId,
       html: val
@@ -2364,6 +2442,7 @@ var ExtHostWebview = class {
     return "https://file+.vscode-resource.vscode-cdn.net";
   }
   async postMessage(message) {
+    extHostLog("webview", `postWebviewMessage to [${this.panelId}]:`, message);
     const safeMessage = prepareForJson(message);
     const res = await this._rpc.sendRequest("window/postWebviewMessage", {
       panelId: this.panelId,
@@ -2505,10 +2584,10 @@ var ExtHostWindow = class {
     return this._rpc.sendRequest("window/showInputBox", { options });
   }
   createQuickPick() {
-    return new ExtHostQuickPick();
+    return new ExtHostQuickPick(this._rpc);
   }
   createInputBox() {
-    return new ExtHostInputBox();
+    return new ExtHostInputBox(this._rpc);
   }
   async withProgress(options, task) {
     const cts = new CancellationTokenSource();
@@ -2706,10 +2785,6 @@ var ExtHostWindow = class {
     };
     return term;
   }
-  registerUriHandler(handler) {
-    return new Disposable(() => {
-    });
-  }
   registerTerminalLinkProvider(provider) {
     return new Disposable(() => {
     });
@@ -2730,7 +2805,27 @@ var ExtHostWindow = class {
     return new Disposable(() => {
     });
   }
+  _uriHandlers = /* @__PURE__ */ new Set();
+  registerUriHandler(handler) {
+    extHostLog("window", "registerUriHandler registered");
+    this._uriHandlers.add(handler);
+    return new Disposable(() => {
+      this._uriHandlers.delete(handler);
+    });
+  }
+  handleUri(uriStr) {
+    extHostLog("window", `handleUri: ${uriStr}`);
+    const uri = Uri.parse(uriStr);
+    for (const h of this._uriHandlers) {
+      try {
+        h.handleUri(uri);
+      } catch (e) {
+        extHostLog("window", "Error in UriHandler:", e);
+      }
+    }
+  }
   registerWebviewViewProvider(viewId, provider, options) {
+    extHostLog("webview", `registerWebviewViewProvider: ${viewId}`);
     this._webviewViewProviders.set(viewId, provider);
     this._rpc.sendNotification("window/registerWebviewView", { viewId });
     return new Disposable(() => {
@@ -2738,9 +2833,10 @@ var ExtHostWindow = class {
     });
   }
   async resolveWebviewView(viewId, panelId) {
+    extHostLog("webview", `resolveWebviewView [${viewId}] for panel [${panelId}]`);
     const provider = this._webviewViewProviders.get(viewId);
     if (!provider) {
-      console.warn(`[ext-host] no webview view provider registered for ${viewId}`);
+      extHostLog("webview", `no webview view provider registered for ${viewId}`);
       return { success: false };
     }
     const existing = this._webviews.get(panelId);
@@ -2767,13 +2863,15 @@ var ExtHostWindow = class {
         {},
         { isCancellationRequested: false, onCancellationRequested: new EventEmitter().event }
       );
+      extHostLog("webview", `resolveWebviewView [${viewId}] SUCCESS, HTML length: ${webview.html?.length || 0}`);
       return { success: true, html: webview.html };
     } catch (e) {
-      console.warn(`[ext-host] resolveWebviewView failed for ${viewId}:`, e);
+      extHostLog("webview", `resolveWebviewView failed for ${viewId}:`, e);
       return { success: false };
     }
   }
   handleWebviewMessage(panelId, message) {
+    extHostLog("webview", `handleWebviewMessage [${panelId}]:`, message);
     const revived = reviveBytes(message);
     const panel = this._webviewPanels.get(panelId);
     if (panel) {
@@ -2783,6 +2881,8 @@ var ExtHostWindow = class {
     const webview = this._webviews.get(panelId);
     if (webview) {
       webview.handleMessageReceived(revived);
+    } else {
+      extHostLog("webview", `handleWebviewMessage: no webview or panel found for [${panelId}]`);
     }
   }
 };
@@ -2820,6 +2920,7 @@ var ExtHostCommands = class {
     });
   }
   registerCommand(command, callback, thisArg) {
+    extHostLog("commands", `registerCommand: ${command}`);
     const bound = thisArg ? callback.bind(thisArg) : callback;
     this._commands.set(command, bound);
     this._rpc.sendNotification("commands/registerCommand", { command });
@@ -2842,9 +2943,15 @@ var ExtHostCommands = class {
     );
   }
   async executeCommand(command, ...rest) {
+    extHostLog("commands", `executeCommand: ${command}`, rest);
     const handler = this._commands.get(command);
     if (handler) {
-      return handler(...rest);
+      try {
+        return await handler(...rest);
+      } catch (err) {
+        extHostLog("commands", `executeCommand ${command} threw:`, err);
+        throw err;
+      }
     }
     return this._rpc.sendRequest("commands/executeCommand", { command, args: rest });
   }
@@ -2875,7 +2982,7 @@ var ExtHostEnv = class {
   appName = "Anycode";
   appRoot = process.cwd();
   language = "en";
-  uriScheme = "anycode";
+  uriScheme = "vscode";
   machineId = "anycode-machine-id-0000-0000-0000";
   sessionId = "anycode-session-id-0000-0000-0000";
   uiKind = 1;
@@ -2898,9 +3005,18 @@ var ExtHostEnv = class {
     }
   };
   async openExternal(target) {
-    return this._rpc.sendRequest("env/openExternal", { uri: target.toString() });
+    const uriStr = typeof target === "string" ? target : target.toString();
+    extHostLog("env", `openExternal called with: ${uriStr}`);
+    try {
+      const res = await this._rpc.sendRequest("env/openExternal", { uri: uriStr });
+      return res !== false;
+    } catch (e) {
+      extHostLog("env", `openExternal failed:`, e);
+      return false;
+    }
   }
   async asExternalUri(target) {
+    extHostLog("env", `asExternalUri called with: ${target?.toString?.() || target}`);
     return target;
   }
   createTelemetryLogger(sender, options) {
@@ -3183,20 +3299,20 @@ function createVsCodeApi(workspace2, languages2, window2, commands2, env2, getEx
 }
 
 // src/index.ts
-var rawStderrWrite = process.stderr.write.bind(process.stderr);
-function extHostLog(...args) {
-  rawStderrWrite(args.map((a) => typeof a === "object" ? a?.stack || JSON.stringify(a) : String(a)).join(" ") + "\n");
+var rawStderrWrite2 = process.stderr.write.bind(process.stderr);
+function extHostLog2(...args) {
+  rawStderrWrite2(args.map((a) => typeof a === "object" ? a?.stack || JSON.stringify(a) : String(a)).join(" ") + "\n");
 }
 process.on("uncaughtException", (err) => {
   if (err?.code === "EPIPE") return;
-  extHostLog("[ext-host] Uncaught exception in extension host:", err?.stack || err);
+  extHostLog2("[ext-host] Uncaught exception in extension host:", err?.stack || err);
 });
 process.on("unhandledRejection", (reason) => {
-  extHostLog("[ext-host] Unhandled promise rejection in extension host:", reason?.stack || reason);
+  extHostLog2("[ext-host] Unhandled promise rejection in extension host:", reason?.stack || reason);
 });
 process.stdout.on("error", (err) => {
   if (err?.code === "EPIPE") return;
-  extHostLog("[ext-host] stdout error:", err);
+  extHostLog2("[ext-host] stdout error:", err);
 });
 process.stderr.on("error", (err) => {
   if (err?.code === "EPIPE") return;
@@ -3291,7 +3407,7 @@ rpc.onRequest("extHost/activateExtension", async (params) => {
     return { success: true };
   } catch (err) {
     activeExtensions.delete(id);
-    extHostLog(`[ext-host] Failed to activate extension ${id}:`, err?.stack || err);
+    extHostLog2(`[ext-host] Failed to activate extension ${id}:`, err?.stack || err);
     throw new Error(`Failed to activate ${id}: ${err?.message || String(err)}`);
   }
 });
@@ -3355,6 +3471,9 @@ rpc.onRequest("webviewView/resolve", async (params) => {
 });
 rpc.onNotification("webview/onMessage", (params) => {
   window.handleWebviewMessage(params.panelId, params.message);
+});
+rpc.onNotification("window/handleUri", (params) => {
+  window.handleUri(params.uri);
 });
 rpc.onNotification("workspace/didChangeWorkspaceFolders", (params) => {
   if (params.workspaceRoot) {
