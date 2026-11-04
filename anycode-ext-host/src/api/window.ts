@@ -115,6 +115,106 @@ export class ExtHostTextEditor {
   }
 }
 
+export class ExtHostQuickPick implements Disposable {
+  private _value = '';
+  placeholder: string | undefined = undefined;
+  items: readonly any[] = [];
+  canSelectMany = false;
+  matchOnDescription = true;
+  matchOnDetail = true;
+  activeItems: readonly any[] = [];
+  selectedItems: readonly any[] = [];
+  title: string | undefined = undefined;
+  step: number | undefined = undefined;
+  totalSteps: number | undefined = undefined;
+  enabled = true;
+  busy = false;
+  ignoreFocusOut = false;
+  buttons: readonly any[] = [];
+
+  private _onDidChangeValueEmitter = new EventEmitter<string>();
+  readonly onDidChangeValue = this._onDidChangeValueEmitter.event;
+
+  private _onDidAcceptEmitter = new EventEmitter<void>();
+  readonly onDidAccept = this._onDidAcceptEmitter.event;
+
+  private _onDidChangeActiveEmitter = new EventEmitter<readonly any[]>();
+  readonly onDidChangeActive = this._onDidChangeActiveEmitter.event;
+
+  private _onDidChangeSelectionEmitter = new EventEmitter<readonly any[]>();
+  readonly onDidChangeSelection = this._onDidChangeSelectionEmitter.event;
+
+  private _onDidTriggerButtonEmitter = new EventEmitter<any>();
+  readonly onDidTriggerButton = this._onDidTriggerButtonEmitter.event;
+
+  private _onDidTriggerItemButtonEmitter = new EventEmitter<any>();
+  readonly onDidTriggerItemButton = this._onDidTriggerItemButtonEmitter.event;
+
+  private _onDidHideEmitter = new EventEmitter<void>();
+  readonly onDidHide = this._onDidHideEmitter.event;
+
+  get value(): string {
+    return this._value;
+  }
+
+  set value(v: string) {
+    this._value = v;
+    this._onDidChangeValueEmitter.fire(v);
+  }
+
+  show(): void {}
+  hide(): void {
+    this._onDidHideEmitter.fire();
+  }
+  dispose(): void {
+    this.hide();
+  }
+}
+
+export class ExtHostInputBox implements Disposable {
+  private _value = '';
+  placeholder: string | undefined = undefined;
+  password = false;
+  prompt: string | undefined = undefined;
+  title: string | undefined = undefined;
+  step: number | undefined = undefined;
+  totalSteps: number | undefined = undefined;
+  enabled = true;
+  busy = false;
+  ignoreFocusOut = false;
+  validationMessage: any = undefined;
+  buttons: readonly any[] = [];
+
+  private _onDidChangeValueEmitter = new EventEmitter<string>();
+  readonly onDidChangeValue = this._onDidChangeValueEmitter.event;
+
+  private _onDidAcceptEmitter = new EventEmitter<void>();
+  readonly onDidAccept = this._onDidAcceptEmitter.event;
+
+  private _onDidTriggerButtonEmitter = new EventEmitter<any>();
+  readonly onDidTriggerButton = this._onDidTriggerButtonEmitter.event;
+
+  private _onDidHideEmitter = new EventEmitter<void>();
+  readonly onDidHide = this._onDidHideEmitter.event;
+
+  get value(): string {
+    return this._value;
+  }
+
+  set value(v: string) {
+    this._value = v;
+    this._onDidChangeValueEmitter.fire(v);
+  }
+
+  show(): void {}
+  hide(): void {
+    this._onDidHideEmitter.fire();
+  }
+  dispose(): void {
+    this.hide();
+  }
+}
+
 export class ExtHostStatusBarItem implements Disposable {
   text = '';
   tooltip: string | undefined;
@@ -461,6 +561,14 @@ export class ExtHostWindow {
 
   async showInputBox(options?: any): Promise<string | undefined> {
     return this._rpc.sendRequest('window/showInputBox', { options });
+  }
+
+  createQuickPick<T = any>(): ExtHostQuickPick {
+    return new ExtHostQuickPick();
+  }
+
+  createInputBox(): ExtHostInputBox {
+    return new ExtHostInputBox();
   }
 
   async withProgress<R>(options: { location: ProgressLocation; title?: string; cancellable?: boolean }, task: (progress: any, token: CancellationToken) => Promise<R>): Promise<R> {

@@ -9,19 +9,24 @@ import { ExtHostEnv } from './api/env';
 import { ExtHostExtensionContext } from './api/context';
 import { createVsCodeApi } from './api/vscode';
 
+const rawStderrWrite = process.stderr.write.bind(process.stderr);
+function extHostLog(...args: any[]) {
+  rawStderrWrite(args.map(a => typeof a === 'object' ? (a?.stack || JSON.stringify(a)) : String(a)).join(' ') + '\n');
+}
+
 // Catch unhandled errors in extensions to prevent crashing the extension host process
 process.on('uncaughtException', (err: any) => {
   if (err?.code === 'EPIPE') return;
-  console.error('[ext-host] Uncaught exception in extension host:', err?.stack || err);
+  extHostLog('[ext-host] Uncaught exception in extension host:', err?.stack || err);
 });
 
 process.on('unhandledRejection', (reason: any) => {
-  console.error('[ext-host] Unhandled promise rejection in extension host:', reason?.stack || reason);
+  extHostLog('[ext-host] Unhandled promise rejection in extension host:', reason?.stack || reason);
 });
 
 process.stdout.on('error', (err: any) => {
   if (err?.code === 'EPIPE') return;
-  console.error('[ext-host] stdout error:', err);
+  extHostLog('[ext-host] stdout error:', err);
 });
 
 process.stderr.on('error', (err: any) => {
@@ -147,7 +152,7 @@ rpc.onRequest('extHost/activateExtension', async (params: { id: string; extensio
     return { success: true };
   } catch (err: any) {
     activeExtensions.delete(id);
-    console.error(`Failed to activate extension ${id}:`, err);
+    extHostLog(`[ext-host] Failed to activate extension ${id}:`, err?.stack || err);
     throw new Error(`Failed to activate ${id}: ${err?.message || String(err)}`);
   }
 });

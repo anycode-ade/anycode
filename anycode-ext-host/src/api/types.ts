@@ -632,6 +632,31 @@ export class CompletionList {
   }
 }
 
+export enum InlineCompletionTriggerKind {
+  Invoke = 0,
+  Automatic = 1,
+}
+
+export class InlineCompletionItem {
+  insertText: string | SnippetString;
+  range?: Range;
+  command?: any;
+
+  constructor(insertText: string | SnippetString, range?: Range, command?: any) {
+    this.insertText = insertText;
+    this.range = range;
+    this.command = command;
+  }
+}
+
+export class InlineCompletionList {
+  items: InlineCompletionItem[];
+
+  constructor(items: InlineCompletionItem[] = []) {
+    this.items = items;
+  }
+}
+
 export class Hover {
   contents: (MarkdownString | string)[];
   range?: Range;

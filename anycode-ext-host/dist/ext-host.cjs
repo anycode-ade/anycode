@@ -233,6 +233,9 @@ __export(types_exports, {
   Hover: () => Hover,
   InlayHint: () => InlayHint,
   InlayHintKind: () => InlayHintKind,
+  InlineCompletionItem: () => InlineCompletionItem,
+  InlineCompletionList: () => InlineCompletionList,
+  InlineCompletionTriggerKind: () => InlineCompletionTriggerKind,
   InputBoxValidationSeverity: () => InputBoxValidationSeverity,
   Location: () => Location,
   LogLevel: () => LogLevel,
@@ -790,6 +793,27 @@ var CompletionList = class {
   constructor(items = [], isIncomplete = false) {
     this.items = items;
     this.isIncomplete = isIncomplete;
+  }
+};
+var InlineCompletionTriggerKind = /* @__PURE__ */ ((InlineCompletionTriggerKind2) => {
+  InlineCompletionTriggerKind2[InlineCompletionTriggerKind2["Invoke"] = 0] = "Invoke";
+  InlineCompletionTriggerKind2[InlineCompletionTriggerKind2["Automatic"] = 1] = "Automatic";
+  return InlineCompletionTriggerKind2;
+})(InlineCompletionTriggerKind || {});
+var InlineCompletionItem = class {
+  insertText;
+  range;
+  command;
+  constructor(insertText, range, command) {
+    this.insertText = insertText;
+    this.range = range;
+    this.command = command;
+  }
+};
+var InlineCompletionList = class {
+  items;
+  constructor(items = []) {
+    this.items = items;
   }
 };
 var Hover = class {
@@ -2109,6 +2133,89 @@ var ExtHostTextEditor = class {
     });
   }
 };
+var ExtHostQuickPick = class {
+  _value = "";
+  placeholder = void 0;
+  items = [];
+  canSelectMany = false;
+  matchOnDescription = true;
+  matchOnDetail = true;
+  activeItems = [];
+  selectedItems = [];
+  title = void 0;
+  step = void 0;
+  totalSteps = void 0;
+  enabled = true;
+  busy = false;
+  ignoreFocusOut = false;
+  buttons = [];
+  _onDidChangeValueEmitter = new EventEmitter();
+  onDidChangeValue = this._onDidChangeValueEmitter.event;
+  _onDidAcceptEmitter = new EventEmitter();
+  onDidAccept = this._onDidAcceptEmitter.event;
+  _onDidChangeActiveEmitter = new EventEmitter();
+  onDidChangeActive = this._onDidChangeActiveEmitter.event;
+  _onDidChangeSelectionEmitter = new EventEmitter();
+  onDidChangeSelection = this._onDidChangeSelectionEmitter.event;
+  _onDidTriggerButtonEmitter = new EventEmitter();
+  onDidTriggerButton = this._onDidTriggerButtonEmitter.event;
+  _onDidTriggerItemButtonEmitter = new EventEmitter();
+  onDidTriggerItemButton = this._onDidTriggerItemButtonEmitter.event;
+  _onDidHideEmitter = new EventEmitter();
+  onDidHide = this._onDidHideEmitter.event;
+  get value() {
+    return this._value;
+  }
+  set value(v) {
+    this._value = v;
+    this._onDidChangeValueEmitter.fire(v);
+  }
+  show() {
+  }
+  hide() {
+    this._onDidHideEmitter.fire();
+  }
+  dispose() {
+    this.hide();
+  }
+};
+var ExtHostInputBox = class {
+  _value = "";
+  placeholder = void 0;
+  password = false;
+  prompt = void 0;
+  title = void 0;
+  step = void 0;
+  totalSteps = void 0;
+  enabled = true;
+  busy = false;
+  ignoreFocusOut = false;
+  validationMessage = void 0;
+  buttons = [];
+  _onDidChangeValueEmitter = new EventEmitter();
+  onDidChangeValue = this._onDidChangeValueEmitter.event;
+  _onDidAcceptEmitter = new EventEmitter();
+  onDidAccept = this._onDidAcceptEmitter.event;
+  _onDidTriggerButtonEmitter = new EventEmitter();
+  onDidTriggerButton = this._onDidTriggerButtonEmitter.event;
+  _onDidHideEmitter = new EventEmitter();
+  onDidHide = this._onDidHideEmitter.event;
+  get value() {
+    return this._value;
+  }
+  set value(v) {
+    this._value = v;
+    this._onDidChangeValueEmitter.fire(v);
+  }
+  show() {
+  }
+  hide() {
+    this._onDidHideEmitter.fire();
+  }
+  dispose() {
+    this.hide();
+  }
+};
 var ExtHostStatusBarItem = class {
   constructor(id, alignment = 1 /* Left */, priority = 0, _rpc) {
     this.id = id;
@@ -2396,6 +2503,12 @@ var ExtHostWindow = class {
   }
   async showInputBox(options) {
     return this._rpc.sendRequest("window/showInputBox", { options });
+  }
+  createQuickPick() {
+    return new ExtHostQuickPick();
+  }
+  createInputBox() {
+    return new ExtHostInputBox();
   }
   async withProgress(options, task) {
     const cts = new CancellationTokenSource();
@@ -2790,6 +2903,36 @@ var ExtHostEnv = class {
   async asExternalUri(target) {
     return target;
   }
+  createTelemetryLogger(sender, options) {
+    const emitter = new EventEmitter();
+    return {
+      logUsage: (eventName, data) => {
+        try {
+          sender?.sendEventData?.(eventName, data);
+        } catch {
+        }
+      },
+      logError: (errorOrEventName, data) => {
+        try {
+          if (typeof errorOrEventName === "string") {
+            sender?.sendEventData?.(errorOrEventName, data);
+          } else {
+            sender?.sendErrorData?.(errorOrEventName, data);
+          }
+        } catch {
+        }
+      },
+      onDidChangeEnableStates: emitter.event,
+      isUsageEnabled: true,
+      isErrorsEnabled: true,
+      dispose: () => {
+        try {
+          sender?.flush?.();
+        } catch {
+        }
+      }
+    };
+  }
 };
 
 // src/api/context.ts
@@ -2925,7 +3068,7 @@ var ExtHostExtensionContext = class {
 
 // src/api/vscode.ts
 function createVsCodeApi(workspace2, languages2, window2, commands2, env2, getExtension, getAllExtensions) {
-  return {
+  const api = {
     ...types_exports,
     workspace: workspace2,
     languages: languages2,
@@ -3034,19 +3177,26 @@ function createVsCodeApi(workspace2, languages2, window2, commands2, env2, getEx
       CRLF: 2
     }
   };
+  api.default = api;
+  api.__esModule = true;
+  return api;
 }
 
 // src/index.ts
+var rawStderrWrite = process.stderr.write.bind(process.stderr);
+function extHostLog(...args) {
+  rawStderrWrite(args.map((a) => typeof a === "object" ? a?.stack || JSON.stringify(a) : String(a)).join(" ") + "\n");
+}
 process.on("uncaughtException", (err) => {
   if (err?.code === "EPIPE") return;
-  console.error("[ext-host] Uncaught exception in extension host:", err?.stack || err);
+  extHostLog("[ext-host] Uncaught exception in extension host:", err?.stack || err);
 });
 process.on("unhandledRejection", (reason) => {
-  console.error("[ext-host] Unhandled promise rejection in extension host:", reason?.stack || reason);
+  extHostLog("[ext-host] Unhandled promise rejection in extension host:", reason?.stack || reason);
 });
 process.stdout.on("error", (err) => {
   if (err?.code === "EPIPE") return;
-  console.error("[ext-host] stdout error:", err);
+  extHostLog("[ext-host] stdout error:", err);
 });
 process.stderr.on("error", (err) => {
   if (err?.code === "EPIPE") return;
@@ -3141,7 +3291,7 @@ rpc.onRequest("extHost/activateExtension", async (params) => {
     return { success: true };
   } catch (err) {
     activeExtensions.delete(id);
-    console.error(`Failed to activate extension ${id}:`, err);
+    extHostLog(`[ext-host] Failed to activate extension ${id}:`, err?.stack || err);
     throw new Error(`Failed to activate ${id}: ${err?.message || String(err)}`);
   }
 });

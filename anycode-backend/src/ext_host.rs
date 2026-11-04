@@ -201,6 +201,7 @@ impl ExtHostManager {
         {
             Ok(r) => r,
             Err(e) => {
+                error!("Failed to activate extension {}: {:#}", ext_id, e);
                 let mut active = self.active_extensions.lock().await;
                 active.remove(ext_id);
                 return Err(e);
@@ -210,6 +211,7 @@ impl ExtHostManager {
         if resp.get("success").and_then(|v| v.as_bool()).unwrap_or(false) {
             info!("Extension {} activated successfully", ext_id);
         } else {
+            error!("Extension {} activation failed: {:?}", ext_id, resp);
             let mut active = self.active_extensions.lock().await;
             active.remove(ext_id);
         }

@@ -39,4 +39,32 @@ export class ExtHostEnv {
   async asExternalUri(target: Uri): Promise<Uri> {
     return target;
   }
+
+  createTelemetryLogger(sender?: any, options?: any) {
+    const emitter = new EventEmitter<any>();
+    return {
+      logUsage: (eventName: string, data?: Record<string, any>) => {
+        try {
+          sender?.sendEventData?.(eventName, data);
+        } catch {}
+      },
+      logError: (errorOrEventName: any, data?: Record<string, any>) => {
+        try {
+          if (typeof errorOrEventName === 'string') {
+            sender?.sendEventData?.(errorOrEventName, data);
+          } else {
+            sender?.sendErrorData?.(errorOrEventName, data);
+          }
+        } catch {}
+      },
+      onDidChangeEnableStates: emitter.event,
+      isUsageEnabled: true,
+      isErrorsEnabled: true,
+      dispose: () => {
+        try {
+          sender?.flush?.();
+        } catch {}
+      },
+    };
+  }
 }

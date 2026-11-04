@@ -14,7 +14,7 @@ export function createVsCodeApi(
   getExtension?: (id: string) => any,
   getAllExtensions?: () => any[]
 ): any {
-  return {
+  const api: any = {
     ...types,
     workspace,
     languages,
@@ -115,4 +115,7 @@ export function createVsCodeApi(
       CRLF: 2,
     },
   };
+  api.default = api;
+  api.__esModule = true;
+  return api;
 }
