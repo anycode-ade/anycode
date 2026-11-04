@@ -1976,6 +1976,7 @@ const App: React.FC<AppProps> = ({ initialWorkspace }) => {
                         getEditorDiffMode={editors.getEditorDiffMode}
                         onActionsReady={(actions) => {
                             layoutActionsRef.current = actions;
+                            (window as any).__ANYCODE_LAYOUT_ACTIONS__ = actions;
                         }}
                         canResetPanel={canResetPanel}
                         onResetPanel={handleResetPanel}

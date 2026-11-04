@@ -1107,3 +1107,36 @@ export class NotebookEdit {
   }
   constructor(readonly range: NotebookRange, readonly newCells: NotebookCellData[]) {}
 }
+
+export class NotebookCellOutputItem {
+  static text(value: string, mime?: string): NotebookCellOutputItem {
+    return new NotebookCellOutputItem(new TextEncoder().encode(value), mime || 'text/plain');
+  }
+  static json(value: any, mime?: string): NotebookCellOutputItem {
+    return new NotebookCellOutputItem(new TextEncoder().encode(JSON.stringify(value)), mime || 'application/json');
+  }
+  static bytes(value: Uint8Array, mime?: string): NotebookCellOutputItem {
+    return new NotebookCellOutputItem(value, mime || 'application/octet-stream');
+  }
+  static error(err: Error): NotebookCellOutputItem {
+    return new NotebookCellOutputItem(
+      new TextEncoder().encode(JSON.stringify({ name: err?.name || 'Error', message: err?.message || '', stack: err?.stack || '' })),
+      'application/vnd.code.notebook.error'
+    );
+  }
+  static stdout(value: string): NotebookCellOutputItem {
+    return new NotebookCellOutputItem(new TextEncoder().encode(value), 'application/vnd.code.notebook.stdout');
+  }
+  static stderr(value: string): NotebookCellOutputItem {
+    return new NotebookCellOutputItem(new TextEncoder().encode(value), 'application/vnd.code.notebook.stderr');
+  }
+
+  constructor(readonly data: Uint8Array, readonly mime: string) {}
+}
+
+export class NotebookCellOutput {
+  id: string;
+  constructor(readonly items: NotebookCellOutputItem[], readonly metadata?: Record<string, any>) {
+    this.id = Math.random().toString(36).substring(2);
+  }
+}

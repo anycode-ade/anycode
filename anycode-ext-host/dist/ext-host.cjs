@@ -267,6 +267,8 @@ __export(types_exports, {
   MarkdownString: () => MarkdownString,
   NotebookCellData: () => NotebookCellData,
   NotebookCellKind: () => NotebookCellKind,
+  NotebookCellOutput: () => NotebookCellOutput,
+  NotebookCellOutputItem: () => NotebookCellOutputItem,
   NotebookData: () => NotebookData,
   NotebookEdit: () => NotebookEdit,
   NotebookRange: () => NotebookRange,
@@ -1262,6 +1264,41 @@ var NotebookEdit = class _NotebookEdit {
   static replaceCells(range, newCells) {
     return new _NotebookEdit(range, newCells);
   }
+};
+var NotebookCellOutputItem = class _NotebookCellOutputItem {
+  constructor(data, mime) {
+    this.data = data;
+    this.mime = mime;
+  }
+  static text(value, mime) {
+    return new _NotebookCellOutputItem(new TextEncoder().encode(value), mime || "text/plain");
+  }
+  static json(value, mime) {
+    return new _NotebookCellOutputItem(new TextEncoder().encode(JSON.stringify(value)), mime || "application/json");
+  }
+  static bytes(value, mime) {
+    return new _NotebookCellOutputItem(value, mime || "application/octet-stream");
+  }
+  static error(err) {
+    return new _NotebookCellOutputItem(
+      new TextEncoder().encode(JSON.stringify({ name: err?.name || "Error", message: err?.message || "", stack: err?.stack || "" })),
+      "application/vnd.code.notebook.error"
+    );
+  }
+  static stdout(value) {
+    return new _NotebookCellOutputItem(new TextEncoder().encode(value), "application/vnd.code.notebook.stdout");
+  }
+  static stderr(value) {
+    return new _NotebookCellOutputItem(new TextEncoder().encode(value), "application/vnd.code.notebook.stderr");
+  }
+};
+var NotebookCellOutput = class {
+  constructor(items, metadata) {
+    this.items = items;
+    this.metadata = metadata;
+    this.id = Math.random().toString(36).substring(2);
+  }
+  id;
 };
 
 // src/api/workspace.ts
