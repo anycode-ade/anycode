@@ -24,7 +24,9 @@ export const ExtensionsPanel: React.FC<ExtensionsPanelProps> = ({ wsRef, isConne
     installed,
     searchResults,
     searchError,
+    searchTotal,
     isSearching,
+    isLoadingMore,
     isLoadingInstalled,
     installingIds,
     activeTab,
@@ -34,6 +36,7 @@ export const ExtensionsPanel: React.FC<ExtensionsPanelProps> = ({ wsRef, isConne
     selectedExtension,
     setSelectedExtension,
     searchMarketplace,
+    loadMoreMarketplace,
     installExtension,
     installFromVsix,
     uninstallExtension,
@@ -295,6 +298,17 @@ export const ExtensionsPanel: React.FC<ExtensionsPanelProps> = ({ wsRef, isConne
                 </div>
               );
             })}
+            {searchResults.length < searchTotal && (
+              <div style={{ display: 'flex', justifyContent: 'center', padding: '8px 0 12px' }}>
+                <button
+                  className="ext-btn-secondary"
+                  disabled={isLoadingMore}
+                  onClick={loadMoreMarketplace}
+                >
+                  {isLoadingMore ? 'Loading...' : `Load more (${searchResults.length} of ${searchTotal})`}
+                </button>
+              </div>
+            )}
           </>
         )}
       </div>

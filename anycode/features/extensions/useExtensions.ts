@@ -2,10 +2,23 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import type { Socket } from 'socket.io-client';
 import type { ExtensionSummary, OpenVsxExtension } from './types';
 
+const MARKETPLACE_PAGE_SIZE = 30;
+
+const mapOpenVsxExtension = (ext: any) => ({
+  ...ext,
+  id: `${ext.namespace}.${ext.name}`,
+  iconUrl: ext.files?.icon,
+});
+
 export function useExtensions(wsRef: React.RefObject<Socket | null>, isConnected: boolean) {
   const [installed, setInstalled] = useState<ExtensionSummary[]>([]);
   const [searchResults, setSearchResults] = useState<OpenVsxExtension[]>([]);
   const [searchError, setSearchError] = useState<string | null>(null);
+  const [searchTotal, setSearchTotal] = useState(0);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  // Bumped on every new search so responses from superseded requests are ignored.
+  const searchRequestRef = useRef(0);
+  const activeQueryRef = useRef('');
   const [isSearching, setIsSearching] = useState(false);
   const [isLoadingInstalled, setIsLoadingInstalled] = useState(false);
   const [installingIds, setInstallingIds] = useState<Set<string>>(new Set());
@@ -31,20 +44,21 @@ export function useExtensions(wsRef: React.RefObject<Socket | null>, isConnected
         setSearchError(null);
         return;
       }
+      const requestId = ++searchRequestRef.current;
+      const trimmed = query.trim();
+      activeQueryRef.current = trimmed;
       setIsSearching(true);
+      setIsLoadingMore(false);
       setSearchError(null);
-      wsRef.current.emit('ext:search', { query: query.trim(), offset: 0, size: 30 }, (res: any) => {
+      wsRef.current.emit('ext:search', { query: trimmed, offset: 0, size: MARKETPLACE_PAGE_SIZE }, (res: any) => {
+        if (requestId !== searchRequestRef.current) return;
         setIsSearching(false);
         if (res?.success && res.data?.extensions) {
-          setSearchResults(
-            res.data.extensions.map((ext: any) => ({
-              ...ext,
-              id: `${ext.namespace}.${ext.name}`,
-              iconUrl: ext.files?.icon,
-            }))
-          );
+          setSearchResults(res.data.extensions.map(mapOpenVsxExtension));
+          setSearchTotal(res.data.totalSize ?? 0);
         } else {
           setSearchResults([]);
+          setSearchTotal(0);
           if (!res?.success && res?.error) {
             setSearchError(res.error);
           }
@@ -53,6 +67,27 @@ export function useExtensions(wsRef: React.RefObject<Socket | null>, isConnected
     },
     [wsRef, isConnected]
   );
+
+  const loadMoreMarketplace = useCallback(() => {
+    if (!wsRef.current || !isConnected || isSearching || isLoadingMore) return;
+    if (searchResults.length >= searchTotal) return;
+    const requestId = searchRequestRef.current;
+    setIsLoadingMore(true);
+    wsRef.current.emit(
+      'ext:search',
+      { query: activeQueryRef.current, offset: searchResults.length, size: MARKETPLACE_PAGE_SIZE },
+      (res: any) => {
+        if (requestId !== searchRequestRef.current) return;
+        setIsLoadingMore(false);
+        if (res?.success && res.data?.extensions) {
+          setSearchResults((prev) => [...prev, ...res.data.extensions.map(mapOpenVsxExtension)]);
+          setSearchTotal(res.data.totalSize ?? 0);
+        } else {
+          alert(`Failed to load more extensions: ${res?.error || 'Unknown error'}`);
+        }
+      }
+    );
+  }, [wsRef, isConnected, isSearching, isLoadingMore, searchResults.length, searchTotal]);
 
   useEffect(() => {
     if (isConnected) {
@@ -143,7 +178,9 @@ export function useExtensions(wsRef: React.RefObject<Socket | null>, isConnected
     installed,
     searchResults,
     searchError,
+    searchTotal,
     isSearching,
+    isLoadingMore,
     isLoadingInstalled,
     installingIds,
     activeTab,
@@ -153,6 +190,7 @@ export function useExtensions(wsRef: React.RefObject<Socket | null>, isConnected
     selectedExtension,
     setSelectedExtension,
     searchMarketplace,
+    loadMoreMarketplace,
     installExtension,
     installFromVsix,
     uninstallExtension,
