@@ -1209,7 +1209,39 @@ const App: React.FC<AppProps> = ({ initialWorkspace }) => {
         });
     }, [editors, wsRef]);
 
+    useEffect(() => {
+        const handleFocus = async () => {
+            try {
+                if (navigator.clipboard?.readText) {
+                    const text = await navigator.clipboard.readText();
+                    if (text && (text.startsWith('vscode://') || text.startsWith('anycode://')) && text.includes('oauth/callback')) {
+                        console.log('[Extension] 📋 Auto-detected OAuth callback in clipboard:', text);
+                        wsRef.current?.emit('ext:handle_uri', { uri: text.trim() }, (res: any) => {
+                            console.log('[Extension] ext:handle_uri result:', res);
+                        });
+                    }
+                }
+            } catch {}
+        };
+        window.addEventListener('focus', handleFocus);
+        return () => window.removeEventListener('focus', handleFocus);
+    }, [wsRef]);
+
     const builtInCommands: CommandItem[] = useMemo(() => [
+        {
+            id: 'workbench.action.handleUri',
+            title: 'Extensions: Open / Handle OAuth Callback URL (vscode://...)',
+            category: 'Extensions',
+            handler: () => {
+                const url = window.prompt('Paste extension authorization URL (vscode://...):');
+                if (url && url.trim()) {
+                    console.log('[Extension] Handling OAuth URI:', url.trim());
+                    wsRef.current?.emit('ext:handle_uri', { uri: url.trim() }, (res: any) => {
+                        console.log('[Extension] ext:handle_uri result:', res);
+                    });
+                }
+            },
+        },
         {
             id: 'ext.extensions',
             title: 'View: Extensions',
