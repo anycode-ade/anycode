@@ -2,6 +2,7 @@ pub mod acp_handler;
 pub mod acp_registry_handler;
 pub mod auth_handler;
 pub mod connection_handler;
+pub mod extension_handler;
 pub mod git_handler;
 pub mod io_handler;
 pub mod lsp_handler;

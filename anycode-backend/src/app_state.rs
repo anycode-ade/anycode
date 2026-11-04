@@ -32,6 +32,8 @@ pub struct AppState {
     pub workspace: Arc<Mutex<crate::workspace::WorkspaceManager>>,
     pub workspace_lifecycle: Arc<Mutex<()>>,
     pub watcher_control: Arc<std::sync::Mutex<Option<tokio::sync::mpsc::UnboundedSender<crate::background_tasks::ProjectWatchCommand>>>>,
+    pub extension_manager: Arc<crate::extensions::ExtensionManager>,
+    pub ext_host_manager: Arc<tokio::sync::RwLock<Option<Arc<crate::ext_host::ExtHostManager>>>>,
 }
 
 #[derive(Clone, Default)]
@@ -155,6 +157,8 @@ impl AppState {
         };
         let mut git_manager = GitManager::new(startup_root);
         let _ = git_manager.refresh_status_cache();
+        let extension_manager = Arc::new(crate::extensions::ExtensionManager::new(None));
+        let ext_host_manager = Arc::new(tokio::sync::RwLock::new(None));
 
         Self {
             config: Arc::new(config),
@@ -171,6 +175,8 @@ impl AppState {
             workspace: Arc::new(Mutex::new(workspace)),
             workspace_lifecycle: Arc::new(Mutex::new(())),
             watcher_control: Arc::new(std::sync::Mutex::new(None)),
+            extension_manager,
+            ext_host_manager,
         }
     }
 

@@ -1,0 +1,22 @@
+{
+  "name": "anycode-ext-host",
+  "version": "1.0.0",
+  "description": "Node.js Extension Host Sidecar for VS Code extensions in Anycode",
+  "main": "dist/ext-host.cjs",
+  "scripts": {
+    "build": "esbuild src/index.ts --bundle --platform=node --target=node20 --outfile=dist/ext-host.cjs",
+    "test": "vitest run"
+  },
+  "keywords": [
+    "vscode",
+    "extension-host",
+    "anycode"
+  ],
+  "license": "Apache-2.0",
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.0.0",
+    "vitest": "^4.1.2"
+  }
+}

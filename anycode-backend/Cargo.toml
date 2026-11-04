@@ -45,6 +45,7 @@ mime_guess = "2"
 dirs = "6"
 lsp-types = "0.97"
 url = "2.5"
+percent-encoding = "2.3"
 similar = "2"
 agent-client-protocol = { version = "2.2.0" }
 agent-client-protocol-schema = { version = "1.9.1" }

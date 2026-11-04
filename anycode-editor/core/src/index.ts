@@ -18,3 +18,4 @@ export type {
     ReferencesRequest,
     Range,
 } from './lsp';
+export { type InlineDecoration, DecorationRenderer } from './renderer/DecorationRenderer';

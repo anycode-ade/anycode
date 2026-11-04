@@ -1,9 +1,11 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{self, Value, json};
-use socketioxide::extract::{AckSender, Data, SocketRef};
+use socketioxide::extract::{AckSender, Data, SocketRef, State};
 use std::fs;
 use std::path::PathBuf;
 use tracing::info;
+
+use crate::app_state::AppState;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ThemeListResponseItem {
@@ -43,7 +45,7 @@ fn get_themes_dir() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("themes"))
 }
 
-pub async fn handle_theme_list(_socket: SocketRef, ack: AckSender) {
+pub async fn handle_theme_list(_socket: SocketRef, ack: AckSender, state: State<AppState>) {
     info!("theme:list requested");
     let mut list = Vec::new();
     let themes_dir = get_themes_dir();
@@ -96,6 +98,16 @@ pub async fn handle_theme_list(_socket: SocketRef, ack: AckSender) {
         }
     }
 
+    // Add themes from active VS Code extensions
+    for ext_theme in state.extension_manager.get_contributed_themes().await {
+        list.push(ThemeListResponseItem {
+            id: format!("{}:{}", ext_theme.file_name, ext_theme.theme_name),
+            name: format!("{} ({})", ext_theme.label, ext_theme.ui_theme),
+            file_name: ext_theme.file_name,
+            theme_name: ext_theme.theme_name,
+        });
+    }
+
     // Sort list by name for nicer presentation
     list.sort_by(|a, b| a.name.cmp(&b.name));
 
@@ -106,10 +118,34 @@ pub async fn handle_theme_get(
     _socket: SocketRef,
     Data(request): Data<ThemeGetRequest>,
     ack: AckSender,
+    state: State<AppState>,
 ) {
     info!("theme:get requested: {:?}", request);
-    let themes_dir = get_themes_dir();
 
+    // Check if this is a theme from an extension: e.g. ext:dracula-theme.theme-dracula
+    if request.file_name.starts_with("ext:") {
+        let ext_id = request.file_name.trim_start_matches("ext:");
+        match state.extension_manager.get_theme_definition(ext_id, &request.theme_name).await {
+            Ok(converted) => {
+                let _ = ack.send(&json!({
+                    "success": true,
+                    "theme": {
+                        "name": converted.name,
+                        "mode": converted.mode,
+                        "colors": converted.colors,
+                        "highlight": converted.highlight,
+                    }
+                }));
+                return;
+            }
+            Err(e) => {
+                let _ = ack.send(&json!({ "success": false, "error": e.to_string() }));
+                return;
+            }
+        }
+    }
+
+    let themes_dir = get_themes_dir();
     let theme_file_path = themes_dir.join(&request.file_name);
     // Basic security check to avoid path traversal
     if theme_file_path.parent() != Some(&themes_dir) {

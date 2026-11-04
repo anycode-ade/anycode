@@ -1083,7 +1083,7 @@ export class Renderer {
             lineIndex, syntaxNodes, rowErrorLines, settings,
             diffs, runLines, this.getFoldIndicator(lineIndex), state.wordHighlight,
             displayLineNumber, binaryTokens, lineText,
-            gapBefore, gapAfter
+            gapBefore, gapAfter, state.inlineDecorations
         );
         if (isHeader) {
             elements.code.classList.add("multibuffer-file-header-row");
@@ -1565,6 +1565,19 @@ export class Renderer {
         }
         this.renderScrollbarMarkers(state);
         this.updateContentMinWidth(state);
+    }
+
+    public renderDecorations(state: EditorState) {
+        const { inlineDecorations } = state;
+        const lines = this.getLines();
+        if (lines.length) {
+            for (let i = 0; i < lines.length; i++) {
+                const lineDiv = lines[i];
+                const lineNumber = lineDiv.lineNumber;
+                const decs = inlineDecorations?.get(lineNumber);
+                this.lineRenderer.renderDecorations(lineDiv, decs);
+            }
+        }
     }
 
     public renderCompletion(

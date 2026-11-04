@@ -1,0 +1,42 @@
+import { EventEmitter, Uri } from './types';
+import type { RpcConnection } from '../rpc';
+
+export class ExtHostEnv {
+  readonly appName = 'Anycode';
+  readonly appRoot = process.cwd();
+  readonly language = 'en';
+  readonly uriScheme = 'anycode';
+  readonly machineId = 'anycode-machine-id-0000-0000-0000';
+  readonly sessionId = 'anycode-session-id-0000-0000-0000';
+  readonly uiKind = 1; // UIKind.Desktop
+  readonly isTelemetryEnabled = false;
+  readonly isNewAppInstall = false;
+  readonly appHost = 'desktop';
+  readonly shell = process.env.SHELL || '/bin/zsh';
+  readonly remoteName = undefined;
+
+  private _onDidChangeTelemetryEnabled = new EventEmitter<boolean>();
+  readonly onDidChangeTelemetryEnabled = this._onDidChangeTelemetryEnabled.event;
+
+  private _onDidChangeShell = new EventEmitter<string>();
+  readonly onDidChangeShell = this._onDidChangeShell.event;
+
+  constructor(private _rpc: RpcConnection) {}
+
+  readonly clipboard = {
+    readText: async (): Promise<string> => {
+      return this._rpc.sendRequest('env/readClipboard');
+    },
+    writeText: async (value: string): Promise<void> => {
+      await this._rpc.sendRequest('env/writeClipboard', { value });
+    },
+  };
+
+  async openExternal(target: Uri): Promise<boolean> {
+    return this._rpc.sendRequest('env/openExternal', { uri: target.toString() });
+  }
+
+  async asExternalUri(target: Uri): Promise<Uri> {
+    return target;
+  }
+}

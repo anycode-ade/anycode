@@ -203,7 +203,7 @@ export const createLayoutState = (
 
 export const createDockviewLayout = (
     layout: LayoutState,
-    getPanelTitle: (panelId: LayoutPanelId) => string,
+    getPanelTitle: (panelId: LayoutPanelId, panelKey?: string) => string,
 ): DockviewLayout => {
     let groupIndex = 0;
     const panels: DockviewLayout['panels'] = {};
@@ -213,7 +213,7 @@ export const createDockviewLayout = (
 
     Object.values(panels).forEach((panel) => {
         const panelId = panel.title as LayoutPanelId;
-        panel.title = getPanelTitle(panelId);
+        panel.title = getPanelTitle(panelId, panel.id);
     });
 
     return {
@@ -229,7 +229,7 @@ export const createDockviewLayout = (
 
 export const getDockviewLayout = (
     layout: LayoutStorageValue,
-    getPanelTitle: (panelId: LayoutPanelId) => string,
+    getPanelTitle: (panelId: LayoutPanelId, panelKey?: string) => string,
 ): DockviewLayout => (
     isLayoutState(layout) ? createDockviewLayout(layout, getPanelTitle) : layout
 );

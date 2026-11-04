@@ -1,0 +1,205 @@
+.ext-container-panel {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  background-color: var(--panel-background, #161616);
+  color: var(--text-color, #cccccc);
+  font-family: var(--interface-font-family, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif);
+  overflow: hidden;
+  user-select: none;
+}
+
+.ext-container-body {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* Accordion sections */
+.ext-view-section {
+  border-bottom: 1px solid var(--border-color, #232323);
+  display: flex;
+  flex-direction: column;
+}
+
+.ext-view-section.single-view,
+.ext-view-section.expanded-webview {
+  flex: 1;
+  min-height: 0;
+  border-bottom: none;
+}
+
+.ext-view-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  background-color: var(--section-header-bg, #1a1a1a);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: #aaa;
+  text-transform: uppercase;
+  transition: background-color 0.1s, color 0.1s;
+}
+
+.ext-view-section-header:hover {
+  background-color: #222;
+  color: #eee;
+}
+
+.ext-view-section-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ext-view-chevron {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  color: #777;
+  transition: transform 0.15s ease;
+}
+
+.ext-view-chevron.open {
+  transform: rotate(90deg);
+}
+
+.ext-view-section-title {
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.ext-view-section-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.ext-view-section-content {
+  background-color: var(--panel-background, #161616);
+  max-height: 480px;
+  overflow-y: auto;
+}
+
+.ext-view-section.single-view .ext-view-section-content,
+.ext-view-section.expanded-webview .ext-view-section-content {
+  flex: 1;
+  height: 100%;
+  max-height: none;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* TreeView Nodes */
+.ext-treeview-container {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  padding: 2px 0 6px 0;
+}
+
+.ext-tree-node-wrapper {
+  display: flex;
+  flex-direction: column;
+}
+
+.ext-tree-node {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding-right: 10px;
+  cursor: pointer;
+  font-size: 12px;
+  color: #ccc;
+  transition: background-color 0.1s, color 0.1s;
+}
+
+.ext-tree-node:hover {
+  background-color: rgba(255, 255, 255, 0.05);
+  color: #fff;
+}
+
+.ext-tree-node:active {
+  background-color: rgba(255, 255, 255, 0.09);
+}
+
+.ext-tree-node-chevron {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+}
+
+.ext-tree-arrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #888;
+  transition: transform 0.15s ease;
+}
+
+.ext-tree-arrow.open {
+  transform: rotate(90deg);
+}
+
+.ext-tree-bullet {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background-color: #555;
+}
+
+.ext-tree-node-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.ext-tree-node-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-shrink: 1;
+}
+
+.ext-tree-node-desc {
+  font-size: 11px;
+  color: #777;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-left: 6px;
+  flex-shrink: 2;
+}
+
+.ext-tree-node-loading {
+  font-size: 10px;
+  color: #888;
+  margin-left: 4px;
+}
+
+.ext-tree-empty-state {
+  padding: 12px 16px;
+  font-size: 11px;
+  color: #666;
+  font-style: italic;
+}

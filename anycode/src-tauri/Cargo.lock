@@ -142,6 +142,7 @@ dependencies = [
  "notify",
  "openssl",
  "pathdiff",
+ "percent-encoding",
  "portable-pty",
  "rayon",
  "reqwest 0.12.28",

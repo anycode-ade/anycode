@@ -2,6 +2,7 @@ import { CSS_CLASS } from "./constants";
 import { Code, Change, Position, type FoldRange, WordHighlight, areWordHighlightsEqual, type Point } from "./code";
 import { applyEditsKeepingPoints } from "./remoteEdits";
 import { Renderer } from './renderer/Renderer';
+import { InlineDecoration } from './renderer/DecorationRenderer';
 import { getPosFromMouse } from './mouse';
 import { Selection, hasDiagnosticSelection, hasGhostLineSelection, pointsEqual, getSelection } from "./selection";
 import {
@@ -83,6 +84,7 @@ export interface EditorState {
     stickyHeaderEnabled: boolean;
     wordHighlight: WordHighlight | null;
     search: Search;
+    inlineDecorations?: Map<number, InlineDecoration[]>;
 }
 
 export class AnycodeEditor {
@@ -114,6 +116,8 @@ export class AnycodeEditor {
     private runLines: number[] = [];
     private errorLines: Map<number, string> = new Map();
     private errorListeners: Set<() => void> = new Set();
+    private inlineDecorations: Map<number, InlineDecoration[]> = new Map();
+    private decorationTypes: Map<string, any[]> = new Map();
 
     private pendingOriginalContent: string | null = null;
     private isCompletionOpen = false;
@@ -731,6 +735,50 @@ export class AnycodeEditor {
         }
     }
 
+    public setDecorations(key: string, decorations: Array<{ range: { start: { line?: number; row?: number; character?: number; col?: number }; end: { line?: number; row?: number; character?: number; col?: number } }; renderOptions?: any }>): void {
+        if (!decorations || decorations.length === 0) {
+            this.decorationTypes.delete(key);
+        } else {
+            this.decorationTypes.set(key, decorations);
+        }
+
+        this.inlineDecorations.clear();
+        for (const decList of this.decorationTypes.values()) {
+            for (const item of decList) {
+                const line = item.range?.start?.line ?? (item.range?.start as any)?.row;
+                if (line === undefined) continue;
+                const after = item.renderOptions?.after;
+                const before = item.renderOptions?.before;
+                if (after?.contentText) {
+                    const list = this.inlineDecorations.get(line) || [];
+                    list.push({
+                        type: 'after',
+                        contentText: after.contentText,
+                        color: after.color,
+                        backgroundColor: after.backgroundColor,
+                        fontStyle: after.fontStyle,
+                        margin: after.margin,
+                    });
+                    this.inlineDecorations.set(line, list);
+                }
+                if (before?.contentText) {
+                    const list = this.inlineDecorations.get(line) || [];
+                    list.push({
+                        type: 'before',
+                        contentText: before.contentText,
+                        color: before.color,
+                        backgroundColor: before.backgroundColor,
+                        fontStyle: before.fontStyle,
+                        margin: before.margin,
+                    });
+                    this.inlineDecorations.set(line, list);
+                }
+            }
+        }
+
+        this.renderer.renderDecorations(this.getEditorState());
+    }
+
     public setCompletions(completions: Completion[]) {
         this.completions = completions;
     }
@@ -959,6 +1007,7 @@ export class AnycodeEditor {
             stickyHeaderEnabled: this.stickyHeaderEnabled,
             wordHighlight: this.wordHighlight,
             search: this.search,
+            inlineDecorations: this.inlineDecorations,
         };
     }
 

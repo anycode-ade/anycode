@@ -248,7 +248,7 @@ export const Split: React.FC<SplitProps> = ({ direction, panes, className }) => 
     );
 };
 
-export type PanelId = 'files' | 'search' | 'changes' | 'history' | 'projects' | 'editor' | 'agent' | 'terminal' | 'browser' | 'toolbar' | 'settings';
+export type PanelId = 'files' | 'search' | 'changes' | 'history' | 'projects' | 'editor' | 'agent' | 'terminal' | 'browser' | 'toolbar' | 'settings' | 'extensions' | 'extensionView' | 'extensionWebview';
 
 type PanelParams = {
     panelKey: string;
@@ -299,6 +299,9 @@ export type LayoutActions = {
     ensureEditorPanel: (preferredPanelId?: string | null) => string | null;
     isEditorPanelVisible: (preferredPanelId?: string | null) => boolean;
     ensurePanel: (panelId: PanelId, preferredPanelId?: string | null) => string | null;
+    ensureExtensionPanel: (containerId: string, customTitle?: string) => string | null;
+    ensureWebviewPanel: (panelId: string, customTitle?: string) => string | null;
+    closePanel: (panelKey: string) => void;
 };
 
 export const LayoutVersionContext = React.createContext<number>(0);
@@ -327,6 +330,44 @@ const getPanelBaseId = (panelKey: string): PanelId | null => {
     }
 
     return null;
+};
+
+const formatExtensionTitle = (panelKey: string): string => {
+    const separatorIndex = panelKey.indexOf(PANEL_INSTANCE_SEPARATOR);
+    const raw = separatorIndex === -1
+        ? panelKey
+        : panelKey.slice(separatorIndex + PANEL_INSTANCE_SEPARATOR.length);
+
+    const lower = raw.toLowerCase();
+    if (lower.includes('zoo-code') || lower.includes('zoocode')) return 'Zoo Code';
+    if (lower.includes('gitlensinspect')) return 'Inspect';
+    if (lower.includes('gitlens')) return 'GitLens';
+    if (lower.includes('claude')) return 'Claude Dev';
+    if (lower.includes('cline')) return 'Cline';
+    if (lower.includes('opencode')) return 'OpenCode';
+    if (lower.includes('codex') || lower.includes('chatgpt')) return 'Codex';
+    if (lower.includes('copilot')) return 'GitHub Copilot';
+    if (lower.includes('continue')) return 'Continue';
+
+    // Strip common prefixes like workbench.view.extension.
+    let cleaned = raw
+        .replace(/^workbench\.view\.extension\./i, '')
+        .replace(/^workbench\.view\./i, '')
+        .replace(/^[a-z0-9_-]+\./i, ''); // strip publisher/namespace prefix if any
+
+    // Strip common suffixes
+    cleaned = cleaned
+        .replace(/(?:[-_]?(?:view)?container|[-_]?activitybar|[-_]?sidebar(?:provider)?|[-_]?view)$/i, '')
+        .replace(/[-_.]+/g, ' ')
+        // Split camelCase words (e.g. codexView -> codex View)
+        .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+        .trim();
+
+    if (!cleaned) return 'Extension';
+    return cleaned
+        .split(/\s+/)
+        .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+        .join(' ');
 };
 
 const createPanelKey = (panelId: PanelId): string => (
@@ -437,6 +478,33 @@ const panelDefinitions = [
             { direction: 'within', referenceIds: ['files', 'search', 'changes', 'history'] },
         ],
     },
+    {
+        id: 'extensions',
+        title: 'Extensions',
+        pickerVisible: true,
+        defaultPlacements: [
+            { direction: 'within', referenceIds: ['files', 'search', 'changes', 'history'] },
+        ],
+    },
+    {
+        id: 'extensionView',
+        title: 'Extension View',
+        pickerVisible: false,
+        allowMultiple: true,
+        defaultPlacements: [
+            { direction: 'within', referenceIds: ['files', 'search', 'changes', 'history'] },
+        ],
+    },
+    {
+        id: 'extensionWebview',
+        title: 'Webview',
+        pickerVisible: false,
+        allowMultiple: true,
+        defaultPlacements: [
+            { direction: 'within', referenceIds: ['editor'] },
+            { direction: 'right', referenceIds: ['files', 'search', 'changes', 'history'] },
+        ],
+    },
 ] as const satisfies readonly PanelDefinition[];
 
 const panelDefinitionById = Object.fromEntries(
@@ -447,9 +515,11 @@ const panelTitles: Record<PanelId, string> = Object.fromEntries(
     panelDefinitions.map((definition) => [definition.id, definition.title]),
 ) as Record<PanelId, string>;
 
-const getLayoutPanelTitle = (panelId: LayoutPanelId): string => (
-    panelId === 'picker' ? 'Empty' : panelTitles[panelId]
-);
+const getLayoutPanelTitle = (panelId: LayoutPanelId, panelKey?: string): string => {
+    if (panelId === 'picker') return 'Empty';
+    if (panelId === 'extensionView' && panelKey) return formatExtensionTitle(panelKey);
+    return panelTitles[panelId] || panelId;
+};
 
 const panelSyncOrder: PanelId[] = ['files', 'editor', 'agent', 'search', 'changes', 'history', 'projects', 'terminal', 'browser', 'settings'];
 const loadPanelVisibility = (): PanelVisibility => ({
@@ -463,6 +533,8 @@ const loadPanelVisibility = (): PanelVisibility => ({
     terminal: loadTerminalPanelVisible(),
     browser: (loadItem<boolean>('browserPanelVisible') ?? false),
     settings: (loadItem<boolean>('settingsPanelVisible') ?? false),
+    extensions: (loadItem<boolean>('extensionsPanelVisible') ?? false),
+    extensionView: (loadItem<boolean>('extensionViewPanelVisible') ?? false),
     toolbar: true,
 });
 
@@ -545,6 +617,8 @@ const pickerIconMap: Record<PanelId, React.ComponentType | undefined> = {
     terminal: Icons.Terminal,
     browser: Icons.Browser,
     settings: Icons.Settings,
+    extensions: Icons.Extensions,
+    extensionView: Icons.Extensions,
     toolbar: undefined,
 };
 
@@ -736,6 +810,7 @@ const addPanel = (
     panelKey: string,
     panelId: PanelId,
     content?: React.ReactNode,
+    customTitle?: string,
 ): IDockviewPanel => {
     const definition = panelDefinitionById[panelId];
     const existing = api.getPanel(panelKey);
@@ -743,10 +818,12 @@ const addPanel = (
         return existing;
     }
 
+    const title = customTitle || (panelId === 'extensionView' ? formatExtensionTitle(panelKey) : definition.title);
+
     const panel = api.addPanel({
         id: panelKey,
         component: 'layoutPanel',
-        title: definition.title,
+        title,
         params: { panelId, panelKey, content },
         minimumWidth: 0,
         minimumHeight: panelId === 'agent' ? 200 : 0,
@@ -995,7 +1072,7 @@ export const Layout: React.FC<LayoutProps> = ({
                 return existing.id;
             }
 
-            const panelKey = createPanelKey(panelId);
+            const panelKey = preferredPanelId || createPanelKey(panelId);
             const panel = addPanel(api, panelKey, panelId, resolvePanelContent(panelId, panelKey));
             panel.api.setActive();
             setVisibility((prev) => ({ ...prev, [panelId]: true }));
@@ -1015,17 +1092,77 @@ export const Layout: React.FC<LayoutProps> = ({
         return panel.id;
     }, [resolvePanelContent]);
 
+    const ensureExtensionPanel = useCallback((containerId: string, customTitle?: string): string | null => {
+        const api = apiRef.current;
+        if (!api) return null;
+        const panelKey = `extensionView${PANEL_INSTANCE_SEPARATOR}${containerId}`;
+        const existing = api.getPanel(panelKey);
+        const title = customTitle || formatExtensionTitle(panelKey);
+        if (existing) {
+            existing.api.setTitle(title);
+            existing.api.setActive();
+            return existing.id;
+        }
+        const panel = addPanel(api, panelKey, 'extensionView', resolvePanelContent('extensionView', panelKey), title);
+        panel.api.setActive();
+        setVisibility((prev) => ({ ...prev, extensionView: true }));
+        return panel.id;
+    }, [resolvePanelContent]);
+
+    const ensureWebviewPanel = useCallback((panelId: string, customTitle?: string): string | null => {
+        const api = apiRef.current;
+        if (!api) return null;
+        const panelKey = `extensionWebview${PANEL_INSTANCE_SEPARATOR}${panelId}`;
+        const existing = api.getPanel(panelKey);
+        const title = customTitle || 'Webview';
+        if (existing) {
+            existing.api.setTitle(title);
+            existing.api.setActive();
+            return existing.id;
+        }
+        const editorPanel = findEditorPanel();
+        const filesPanel = api.getPanel('files');
+        const panel = api.addPanel({
+            id: panelKey,
+            component: 'layoutPanel',
+            title,
+            params: {
+                panelId: 'extensionWebview',
+                panelKey,
+                content: resolvePanelContent('extensionWebview', panelKey),
+            },
+            position: editorPanel
+                ? { referencePanel: editorPanel, direction: 'within' }
+                : (filesPanel ? { referencePanel: filesPanel, direction: 'right' } : undefined),
+        });
+        panel.api.setActive();
+        setVisibility((prev) => ({ ...prev, extensionWebview: true }));
+        return panel.id;
+    }, [findEditorPanel, resolvePanelContent]);
+
+    const closePanel = useCallback((panelKey: string) => {
+        const api = apiRef.current;
+        if (!api) return;
+        const panel = api.getPanel(panelKey);
+        if (panel) {
+            api.removePanel(panel);
+        }
+    }, []);
+
     useEffect(() => {
         onActionsReady?.({
             ensureEditorPanel,
             isEditorPanelVisible,
             ensurePanel,
+            ensureExtensionPanel,
+            ensureWebviewPanel,
+            closePanel,
         });
 
         return () => {
             onActionsReady?.(null);
         };
-    }, [ensureEditorPanel, ensurePanel, isEditorPanelVisible, onActionsReady]);
+    }, [closePanel, ensureEditorPanel, ensureExtensionPanel, ensurePanel, ensureWebviewPanel, isEditorPanelVisible, onActionsReady]);
 
     const disposeListeners = useCallback(() => {
         for (const listener of listenersRef.current) {
@@ -1093,6 +1230,9 @@ export const Layout: React.FC<LayoutProps> = ({
                 }
 
                 if (existingPanels.length === 0) {
+                    if (panel.id === 'extensionView' || panel.id === 'extensionWebview') {
+                        continue;
+                    }
                     addPanel(api, panel.id, panel.id, resolvePanelContent(panel.id, panel.id));
                     continue;
                 }
@@ -1133,6 +1273,9 @@ export const Layout: React.FC<LayoutProps> = ({
                 });
             } else {
                 panel.group.api.setConstraints(PANEL_CONSTRAINTS);
+            }
+            if (panelId === 'extensionView') {
+                panel.api.setTitle(formatExtensionTitle(panel.id));
             }
             panel.api.updateParameters({
                 panelId,
@@ -1417,6 +1560,13 @@ export const Layout: React.FC<LayoutProps> = ({
     const handleReady = useCallback(({ api }: DockviewReadyEvent) => {
         disposeListeners();
         apiRef.current = api;
+
+        // Clean up stale extensionWebview panels and any dummy bare extensionView panels
+        for (const panel of api.panels) {
+            if (panel.id.startsWith(`extensionWebview${PANEL_INSTANCE_SEPARATOR}`) || panel.id === 'extensionView') {
+                api.removePanel(panel);
+            }
+        }
 
         listenersRef.current = [
             api.onDidAddPanel((panel) => {

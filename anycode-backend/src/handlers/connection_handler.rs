@@ -5,7 +5,7 @@ use tracing::{error, info};
 
 use crate::app_state::AppState;
 use crate::handlers::{
-    acp_handler::*, acp_registry_handler::*, git_handler::*, io_handler::*, lsp_handler::*, search_handler::*,
+    acp_handler::*, acp_registry_handler::*, extension_handler::*, git_handler::*, io_handler::*, lsp_handler::*, search_handler::*,
     terminal_handler::*, theme_handler::*, workspace_handler::*,
 };
 
@@ -35,6 +35,23 @@ pub async fn setup_socket(socket: &SocketRef, state: &AppState) {
     socket.on("lsp:definition", handle_definition);
     socket.on("lsp:references", handle_references);
     socket.on("lsp:hover", handle_hover);
+    socket.on("lsp:code_actions", handle_code_actions);
+    socket.on("lsp:format", handle_formatting);
+    socket.on("lsp:rename", handle_lsp_rename);
+
+    socket.on("ext:search", handle_ext_search);
+    socket.on("ext:list", handle_ext_list);
+    socket.on("ext:install", handle_ext_install);
+    socket.on("ext:uninstall", handle_ext_uninstall);
+    socket.on("ext:toggle", handle_ext_toggle);
+    socket.on("ext:commands:list", handle_ext_commands_list);
+    socket.on("ext:command:execute", handle_ext_command_execute);
+    socket.on("ext:treeview:children", handle_ext_treeview_children);
+    socket.on("ext:window:quick_pick:reply", handle_ext_quick_pick_reply);
+    socket.on("ext:window:input_box:reply", handle_ext_input_box_reply);
+    socket.on("ext:window:message:reply", handle_ext_window_message_reply);
+    socket.on("ext:webview:message", handle_ext_webview_message);
+    socket.on("ext:webview_view:resolve", handle_ext_webview_view_resolve);
 
     socket.on("search:start", handle_search);
     socket.on("search:cancel", handle_search_cancel);

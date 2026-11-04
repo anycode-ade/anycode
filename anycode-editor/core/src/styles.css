@@ -662,6 +662,25 @@
   cursor: text;
 }
 
+.inline-decoration {
+  margin-left: 2ch;
+  vertical-align: middle;
+  line-height: 1;
+  display: inline-block;
+  user-select: none;
+  -webkit-user-select: none;
+  opacity: 0.65;
+  font-style: italic;
+  pointer-events: none;
+  position: relative;
+  z-index: 1;
+}
+
+.inline-decoration-before {
+  margin-right: 1ch;
+  margin-left: 0;
+}
+
 .code.selecting .diagnostic {
   user-select: none;
   -webkit-user-select: none;

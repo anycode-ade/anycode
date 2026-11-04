@@ -13,6 +13,7 @@ import { objectHash } from "../utils";
 import { EditorSettings } from "../editor";
 import { DiffModel } from "../diff";
 import { DiagnosticRenderer } from "./DiagnosticRenderer";
+import { DecorationRenderer, InlineDecoration } from "./DecorationRenderer";
 import { appendTokenSpans } from "./tokenSpans";
 
 import { setGapElementData } from "./DiffRenderer";
@@ -23,9 +24,14 @@ import { setGapElementData } from "./DiffRenderer";
  */
 export class LineRenderer {
     private diagnosticRenderer: DiagnosticRenderer;
+    private decorationRenderer: DecorationRenderer;
 
-    constructor(diagnosticRenderer: DiagnosticRenderer = new DiagnosticRenderer()) {
+    constructor(
+        diagnosticRenderer: DiagnosticRenderer = new DiagnosticRenderer(),
+        decorationRenderer: DecorationRenderer = new DecorationRenderer()
+    ) {
         this.diagnosticRenderer = diagnosticRenderer;
+        this.decorationRenderer = decorationRenderer;
     }
 
     /**
@@ -39,7 +45,8 @@ export class LineRenderer {
         diffs?: DiffModel,
         wordHighlight?: WordHighlight | null,
         binaryTokens?: Uint32Array,
-        lineText?: string
+        lineText?: string,
+        decorations?: Map<number, InlineDecoration[]>
     ): AnycodeLine {
         const wrapper = document.createElement('div') as AnycodeLine;
 
@@ -139,11 +146,20 @@ export class LineRenderer {
             this.diagnosticRenderer.render(wrapper, errorMessage);
         }
 
+        const lineDecs = decorations?.get(lineNumber);
+        if (lineDecs) {
+            this.decorationRenderer.render(wrapper, lineDecs);
+        }
+
         return wrapper;
     }
 
     public renderDiagnostics(line: AnycodeLine, message?: string | null) {
         this.diagnosticRenderer.render(line, message);
+    }
+
+    public renderDecorations(line: AnycodeLine, decorations?: InlineDecoration[] | null) {
+        this.decorationRenderer.render(line, decorations);
     }
 
     /**
@@ -242,8 +258,9 @@ export class LineRenderer {
         lineText?: string,
         gapBefore?: { hiddenStart: number; hiddenEnd: number },
         gapAfter?: { hiddenStart: number; hiddenEnd: number },
+        decorations?: Map<number, InlineDecoration[]>,
     ): RealRowElements {
-        const code = this.createLineWrapper(lineNumber, nodes, errorLines, settings, diffs, wordHighlight, binaryTokens, lineText);
+        const code = this.createLineWrapper(lineNumber, nodes, errorLines, settings, diffs, wordHighlight, binaryTokens, lineText, decorations);
         const gutter = this.createLineNumber(lineNumber, settings, diffs, displayLineNumber);
         const btn = this.createLineButtons(lineNumber, runLines, errorLines, settings, gapBefore, gapAfter);
         const fold = document.createElement('div') as FoldColumnElement;

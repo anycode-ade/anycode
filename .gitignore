@@ -2,6 +2,7 @@ target
 node_modules
 .DS_Store
 .anycode
+.anycode-ext-storage
 *copy*.ts
 anycode/dist
 anycode-editor/*/dist

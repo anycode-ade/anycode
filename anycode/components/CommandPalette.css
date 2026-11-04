@@ -1,0 +1,93 @@
+.command-palette-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 99999;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: 80px;
+}
+
+.command-palette-modal {
+  width: 580px;
+  max-width: 90vw;
+  background: var(--anycode-popover-bg, #222225);
+  border: 1px solid var(--anycode-border, #3c3c3c);
+  border-radius: 6px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.command-palette-input-wrap {
+  display: flex;
+  align-items: center;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--anycode-border, #333);
+  gap: 8px;
+}
+
+.command-palette-prompt {
+  color: var(--anycode-accent, #007acc);
+  font-weight: bold;
+  font-size: 14px;
+}
+
+.command-palette-input {
+  flex: 1;
+  background: none;
+  border: none;
+  color: #fff;
+  font-size: 14px;
+  outline: none;
+}
+
+.command-palette-list {
+  max-height: 340px;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+.command-palette-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 14px;
+  cursor: pointer;
+  font-size: 13px;
+  color: #ccc;
+  transition: background 0.1s;
+}
+
+.command-palette-item.active {
+  background: var(--anycode-accent, #007acc);
+  color: #fff;
+}
+
+.command-palette-item-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.command-palette-category {
+  color: #888;
+  font-size: 11px;
+}
+
+.command-palette-item.active .command-palette-category {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.command-palette-keybinding {
+  font-size: 11px;
+  color: #777;
+  background: rgba(255, 255, 255, 0.08);
+  padding: 2px 6px;
+  border-radius: 3px;
+}

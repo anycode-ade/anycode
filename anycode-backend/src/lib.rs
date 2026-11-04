@@ -18,6 +18,8 @@ pub mod background_tasks;
 pub mod code;
 pub mod config;
 pub mod diff;
+pub mod ext_host;
+pub mod extensions;
 pub mod git;
 pub mod handlers;
 pub mod history;
@@ -69,10 +71,10 @@ pub async fn start_server(
         .clone()
         .unwrap_or_else(crate::utils::current_dir);
     let state = AppState::new_for_server(
-        diagnostic_tx,
+        diagnostic_tx.clone(),
         acp_fs_tx,
         options.token.clone(),
-        startup_root,
+        startup_root.clone(),
         options.initial_workspace.is_some(),
     );
 
@@ -86,10 +88,40 @@ pub async fn start_server(
     // Watcher must be kept alive — dropping it stops file watching
     background_tasks::spawn_all(&state, &io, diagnostic_rx, acp_fs_rx).await?;
 
+    // Spawn Extension Host
+    let ext_diagnostic_tx = diagnostic_tx.clone();
+    let ext_startup_root = startup_root.clone();
+    let ext_state = state.clone();
+    let ext_io = io.clone();
+    tokio::spawn(async move {
+        match ext_host::ExtHostManager::spawn(&ext_startup_root, ext_diagnostic_tx).await {
+            Ok(ext_host) => {
+                ext_host.set_socket_io(ext_io);
+                let installed = ext_state.extension_manager.storage.load_installed().unwrap_or_default();
+                for ext in &installed {
+                    if ext.enabled {
+                        ext_host.register_manifest(&ext.manifest).await;
+                        if ext.manifest.activation_events.iter().any(|e| e == "*" || e == "onStartupFinished") {
+                            let _ = ext_host.activate_if_needed(&ext.id, &ext.dir, &ext.manifest).await;
+                        }
+                    }
+                }
+                *ext_state.ext_host_manager.write().await = Some(ext_host);
+                info!("Extension host spawned successfully");
+            }
+            Err(e) => {
+                tracing::warn!("Could not spawn extension host (running without sidecar): {:#}", e);
+            }
+        }
+    });
+
     io.ns("/", handle_connect.with(auth_middleware));
 
     let app = axum::Router::new()
         .route("/api/local-image", axum::routing::get(local_image_handler))
+        .route("/api/ext-file", axum::routing::get(handlers::extension_handler::ext_file_query_handler))
+        .route("/api/ext-file/{*path}", axum::routing::get(handlers::extension_handler::ext_file_path_handler))
+        .route("/api/ext-asset/{ext_id}/{*path}", axum::routing::get(handlers::extension_handler::ext_asset_handler))
         .fallback(static_handler)
         .with_state(state.clone())
         .layer(cors);

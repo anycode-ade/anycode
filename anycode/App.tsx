@@ -34,6 +34,12 @@ import type { MultibufferFile } from './features/editor/MultibufferPanel';
 import { TerminalPanel } from './features/terminal/TerminalPanel';
 import { AgentPanel } from './features/agents/AgentPanel';
 import { BrowserPanel } from './features/browser/BrowserPanel';
+import { ExtensionsPanel } from './features/extensions/ExtensionsPanel';
+import { ExtensionContainerPanel } from './features/extensions/ExtensionContainerPanel';
+import { CommandPalette, type CommandItem } from './components/CommandPalette';
+import { QuickPickModal } from './components/QuickPickModal';
+import { CodeActionModal, type CodeActionItem } from './components/CodeActionModal';
+import { WebviewPanel } from './features/extensions/WebviewPanel';
 import { type DiffMode } from './types/diffMode';
 import { announceWarp, getLanguageFromFileName, normalizePath, pathBelongsToProject, uriToFilePath } from './utils';
 import { useSettings } from './hooks/useSettings';
@@ -109,6 +115,10 @@ const App: React.FC<AppProps> = ({ initialWorkspace }) => {
     const [searchProjectId, setSearchProjectId] = usePanelProjectId(SEARCH_PROJECT_SESSION_KEY);
     const [folderPicker, setFolderPicker] = useState<{ anchor: HTMLElement | null; alignTo: HTMLElement | null } | null>(null);
     const [warpDirection, setWarpDirection] = useState<'closing' | null>(null);
+    const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
+    const [isCodeActionsOpen, setIsCodeActionsOpen] = useState(false);
+    const [codeActions, setCodeActions] = useState<CodeActionItem[]>([]);
+    const [activeWebviews, setActiveWebviews] = useState<Map<string, { panelId: string; viewType: string; title: string; html: string }>>(new Map());
     const isWarping = warpDirection !== null;
     const activeProjectId = workspaceState.active_project_id;
     const selectedSearchProjectId = workspaceState.projects.some(
@@ -1106,6 +1116,215 @@ const App: React.FC<AppProps> = ({ initialWorkspace }) => {
         onActivateAgentPane: agentPanes.setActivePaneId,
     });
 
+    const handleApplyCodeAction = useCallback((act: CodeActionItem) => {
+        if (act.edit?.changes) {
+            for (const change of act.edit.changes) {
+                const filePath = uriToFilePath(change.uri);
+                const editor = editors.getEditorState(filePath) || editors.getEditorState(change.uri);
+                if (editor && change.edits) {
+                    const code = editor.getCodeModel();
+                    const sorted = [...change.edits].sort((a, b) => {
+                        if (b.range.start.line !== a.range.start.line) return b.range.start.line - a.range.start.line;
+                        return b.range.start.character - a.range.start.character;
+                    });
+                    for (const edit of sorted) {
+                        code.removeRange(
+                            { row: edit.range.start.line, column: edit.range.start.character },
+                            { row: edit.range.end.line, column: edit.range.end.character },
+                            true
+                        );
+                        if (edit.newText) {
+                            code.insertAt(
+                                { row: edit.range.start.line, column: edit.range.start.character },
+                                edit.newText,
+                                true
+                            );
+                        }
+                    }
+                    editor.render();
+                }
+            }
+        }
+        if (act.command) {
+            const cmdId = typeof act.command === 'string' ? act.command : act.command.command;
+            const args = typeof act.command === 'object' ? act.command.arguments : undefined;
+            wsRef.current?.emit('ext:command:execute', { command: cmdId, args });
+        }
+    }, [editors, wsRef]);
+
+    const handleFormatDocument = useCallback(() => {
+        const activeFileId = editors.activeFileId;
+        if (!activeFileId) return;
+        const uri = activeFileId.startsWith('file://') ? activeFileId : `file://${activeFileId}`;
+        wsRef.current?.emit('lsp:format', {
+            uri,
+            options: { tabSize: 2, insertSpaces: true },
+        }, (res: any) => {
+            if (res && Array.isArray(res)) {
+                const editor = editors.getEditorState(activeFileId);
+                if (editor) {
+                    const code = editor.getCodeModel();
+                    const sorted = [...res].sort((a, b) => {
+                        if (b.range.start.line !== a.range.start.line) return b.range.start.line - a.range.start.line;
+                        return b.range.start.character - a.range.start.character;
+                    });
+                    for (const edit of sorted) {
+                        code.removeRange(
+                            { row: edit.range.start.line, column: edit.range.start.character },
+                            { row: edit.range.end.line, column: edit.range.end.character },
+                            true
+                        );
+                        if (edit.newText) {
+                            code.insertAt(
+                                { row: edit.range.start.line, column: edit.range.start.character },
+                                edit.newText,
+                                true
+                            );
+                        }
+                    }
+                    editor.render();
+                }
+            }
+        });
+    }, [editors, wsRef]);
+
+    const handleTriggerCodeActions = useCallback(() => {
+        const activeFileId = editors.activeFileId;
+        if (!activeFileId) return;
+        const editor = editors.getEditorState(activeFileId);
+        const cursor = editor?.getCursor();
+        const line = cursor?.row ?? 0;
+        const character = cursor?.column ?? 0;
+        const uri = activeFileId.startsWith('file://') ? activeFileId : `file://${activeFileId}`;
+        wsRef.current?.emit('lsp:code_actions', {
+            uri,
+            range: { start: { line, character }, end: { line, character } },
+            context: { diagnostics: [] },
+        }, (res: any[]) => {
+            if (Array.isArray(res) && res.length > 0) {
+                setCodeActions(res);
+                setIsCodeActionsOpen(true);
+            }
+        });
+    }, [editors, wsRef]);
+
+    const builtInCommands: CommandItem[] = useMemo(() => [
+        {
+            id: 'ext.extensions',
+            title: 'View: Extensions',
+            category: 'View',
+            handler: () => {
+                layoutActionsRef.current?.ensurePanel('extensions');
+                layout.requestPanelFocus('extensions');
+            },
+        },
+        {
+            id: 'workbench.action.showCommands',
+            title: 'Show All Commands',
+            category: 'Preferences',
+            keybinding: '⇧⌘P',
+            handler: () => setIsCommandPaletteOpen(true),
+        },
+        {
+            id: 'editor.action.formatDocument',
+            title: 'Format Document',
+            category: 'Editor',
+            keybinding: '⇧⌥F',
+            handler: handleFormatDocument,
+        },
+        {
+            id: 'editor.action.quickFix',
+            title: 'Quick Fix & Code Actions',
+            category: 'Editor',
+            keybinding: '⌘.',
+            handler: handleTriggerCodeActions,
+        },
+        {
+            id: 'workbench.action.terminal.toggleTerminal',
+            title: 'View: Toggle Terminal',
+            category: 'View',
+            handler: () => {
+                const paneId = layoutActionsRef.current?.ensurePanel('terminal', terminalPanes.activePaneId) ?? 'terminal';
+                layout.requestPanelFocus('terminal', paneId);
+            },
+        },
+        {
+            id: 'workbench.action.files.toggleSearch',
+            title: 'View: Find in Files',
+            category: 'View',
+            keybinding: '⇧⌘F',
+            handler: () => {
+                layoutActionsRef.current?.ensurePanel('search');
+                layout.requestPanelFocus('search');
+            },
+        },
+        {
+            id: 'workbench.action.openSettings',
+            title: 'Preferences: Open Settings',
+            category: 'Preferences',
+            handler: () => {
+                layoutActionsRef.current?.ensurePanel('settings');
+                layout.requestPanelFocus('settings');
+            },
+        },
+    ], [layout, handleFormatDocument, handleTriggerCodeActions, terminalPanes]);
+
+    useEffect(() => {
+        const ws = wsRef.current;
+        if (!ws) return;
+        const onDecorations = (data: { uri: string; key: string; decorations: any[] }) => {
+            if (!data?.uri) return;
+            const targetPath = uriToFilePath(data.uri);
+            const editor = editors.getEditorState(targetPath) || editors.getEditorState(data.uri);
+            if (editor) {
+                editor.setDecorations(data.key, data.decorations);
+            }
+        };
+        ws.on('ext:decorations:set', onDecorations);
+        return () => {
+            ws.off('ext:decorations:set', onDecorations);
+        };
+    }, [wsRef, editors]);
+
+    useEffect(() => {
+        const ws = wsRef.current;
+        if (!ws) return;
+        const onCreate = (data: { panelId: string; viewType: string; title: string }) => {
+            setActiveWebviews((prev) => {
+                const next = new Map(prev);
+                next.set(data.panelId, { ...data, html: '' });
+                return next;
+            });
+            layoutActionsRef.current?.ensureWebviewPanel(data.panelId, data.title);
+        };
+        const onSetHtml = (data: { panelId: string; html: string }) => {
+            setActiveWebviews((prev) => {
+                const existing = prev.get(data.panelId);
+                if (!existing) return prev;
+                const next = new Map(prev);
+                next.set(data.panelId, { ...existing, html: data.html });
+                return next;
+            });
+        };
+        const onDispose = (data: { panelId: string }) => {
+            setActiveWebviews((prev) => {
+                const next = new Map(prev);
+                next.delete(data.panelId);
+                return next;
+            });
+        };
+        ws.on('ext:webview:create', onCreate);
+        ws.on('ext:webview:setHtml', onSetHtml);
+        ws.on('ext:webview:dispose', onDispose);
+        return () => {
+            ws.off('ext:webview:create', onCreate);
+            ws.off('ext:webview:setHtml', onSetHtml);
+            ws.off('ext:webview:dispose', onDispose);
+        };
+    }, [wsRef]);
+
+
+
     const handleGlobalKeyDown = useEvent((e: KeyboardEvent) => {
             const target = e.target;
             if (target instanceof Element) {
@@ -1130,6 +1349,24 @@ const App: React.FC<AppProps> = ({ initialWorkspace }) => {
                     search.startSearch(selectedText);
                 }
                 layout.requestPanelFocus('search');
+                return;
+            }
+
+            if (((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key.toLowerCase() === 'p' || e.code === 'KeyP')) || e.key === 'F1') {
+                e.preventDefault();
+                setIsCommandPaletteOpen(true);
+                return;
+            }
+
+            if ((e.metaKey || e.ctrlKey) && (e.key === '.' || e.code === 'Period')) {
+                e.preventDefault();
+                handleTriggerCodeActions();
+                return;
+            }
+
+            if (e.shiftKey && e.altKey && (e.key.toLowerCase() === 'f' || e.code === 'KeyF')) {
+                e.preventDefault();
+                handleFormatDocument();
                 return;
             }
     
@@ -1501,6 +1738,62 @@ const App: React.FC<AppProps> = ({ initialWorkspace }) => {
                         onBackgroundSettingsChange={settings.updateBackgroundSettings}
                     />
                 );
+            case 'extensions':
+                return (
+                    <ExtensionsPanel
+                        wsRef={wsRef}
+                        isConnected={isConnected}
+                        onOpenExtensionView={(containerId, title) => {
+                            layoutActionsRef.current?.ensureExtensionPanel(containerId, title);
+                        }}
+                    />
+                );
+            case 'extensionView': {
+                const containerId = panelKey.includes('__') ? panelKey.split('__')[1] : 'gitlens';
+                return (
+                    <ExtensionContainerPanel
+                        containerId={containerId}
+                        wsRef={wsRef}
+                        isConnected={isConnected}
+                        onOpenFile={handleOpenFile}
+                        onOpenFileDiff={handleOpenFileDiff}
+                    />
+                );
+            }
+            case 'extensionWebview': {
+                const pId = panelKey.includes('__') ? panelKey.split('__')[1] : panelKey;
+                const wv = activeWebviews.get(pId);
+                if (!wv) {
+                    return (
+                        <div style={{ padding: 24, color: '#888', display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'flex-start' }}>
+                            <span style={{ fontSize: 13, color: '#aaa' }}>Webview session has ended.</span>
+                            <button
+                                onClick={() => layoutActionsRef.current?.closePanel(panelKey)}
+                                style={{
+                                    padding: '6px 14px',
+                                    background: '#2b2b2b',
+                                    color: '#eee',
+                                    border: '1px solid #444',
+                                    borderRadius: 4,
+                                    cursor: 'pointer',
+                                    fontSize: 12,
+                                }}
+                            >
+                                Close Tab
+                            </button>
+                        </div>
+                    );
+                }
+                return (
+                    <WebviewPanel
+                        panelId={wv.panelId}
+                        viewType={wv.viewType}
+                        title={wv.title}
+                        html={wv.html}
+                        wsRef={wsRef}
+                    />
+                );
+            }
             default:
                 return null;
         }
@@ -1535,6 +1828,17 @@ const App: React.FC<AppProps> = ({ initialWorkspace }) => {
 
     const handlePanelRemoved = useEvent((panelId: PanelId, panelKey: string) => {
         layout.handlePanelRemoved(panelId, panelKey);
+
+        if (panelId === 'extensionWebview') {
+            const pId = panelKey.includes('__') ? panelKey.split('__')[1] : panelKey;
+            setActiveWebviews((prev) => {
+                const next = new Map(prev);
+                next.delete(pId);
+                return next;
+            });
+            wsRef.current?.emit('ext:webview:dispose', { panelId: pId });
+            return;
+        }
 
         if (panelId === 'editor') {
             closeReview(panelKey);
@@ -1669,6 +1973,19 @@ const App: React.FC<AppProps> = ({ initialWorkspace }) => {
                     }}
                 />
             )}
+            <CommandPalette
+                isOpen={isCommandPaletteOpen}
+                onClose={() => setIsCommandPaletteOpen(false)}
+                wsRef={wsRef}
+                builtInCommands={builtInCommands}
+            />
+            <QuickPickModal wsRef={wsRef} />
+            <CodeActionModal
+                isOpen={isCodeActionsOpen}
+                onClose={() => setIsCodeActionsOpen(false)}
+                actions={codeActions}
+                onApplyAction={handleApplyCodeAction}
+            />
             <UpdaterToast />
         </div>
     );

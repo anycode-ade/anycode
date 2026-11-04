@@ -2,6 +2,7 @@ packages:
   - anycode-editor/*
   - "!anycode-editor/example"
   - anycode-agent
+  - anycode-ext-host
   - anycode
 allowBuilds:
   esbuild: set this to true or false

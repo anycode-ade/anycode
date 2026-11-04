@@ -1,6 +1,7 @@
 use crate::app_state::AppState;
 use crate::app_state::*;
 use crate::error_ack;
+use lsp_types::Range;
 use serde::{Deserialize, Serialize};
 use serde_json::{self, json};
 use socketioxide::extract::{AckSender, Data, SocketRef, State};
@@ -48,6 +49,19 @@ pub async fn handle_completion(
         None => Vec::new(),
     };
 
+    // If native LSP gave no completions, or in addition, query extension host
+    if result.is_empty() {
+        if let Some(ext_host) = state.ext_host_manager.read().await.as_ref() {
+            let uri = crate::utils::abs_file(&abs_path).unwrap_or_else(|_| format!("file://{}", abs_path));
+            if let Ok(ext_items) = ext_host.provide_completions(&uri, row, column).await {
+                if !ext_items.is_empty() {
+                    ack.send(&ext_items).ok();
+                    return;
+                }
+            }
+        }
+    }
+
     ack.send(&result).ok();
 }
 
@@ -85,16 +99,22 @@ pub async fn handle_hover(
     let mut lsp_manager = lsp_manager.lock().await;
 
     if let Some(lsp) = lsp_manager.get(&code.lang).await {
-        match lsp.hover(&abs_path, row, column).await {
-            Ok(hover) => {
-                ack.send(&hover).ok();
-            }
-            Err(e) => {
-                ack.send(&json!({ "error": format!("Hover request failed: {}", e) }))
-                    .ok();
-            }
+        if let Ok(hover) = lsp.hover(&abs_path, row, column).await {
+            ack.send(&hover).ok();
+            return;
         }
     }
+
+    // Fallback to extension host
+    if let Some(ext_host) = state.ext_host_manager.read().await.as_ref() {
+        let uri = crate::utils::abs_file(&abs_path).unwrap_or_else(|_| format!("file://{}", abs_path));
+        if let Ok(Some(hover)) = ext_host.provide_hover(&uri, row, column).await {
+            ack.send(&hover).ok();
+            return;
+        }
+    }
+
+    ack.send(&json!(null)).ok();
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -139,7 +159,23 @@ pub async fn handle_definition(
         None => Vec::new(),
     };
 
-    ack.send(&result).ok();
+    if !result.is_empty() {
+        ack.send(&result).ok();
+        return;
+    }
+
+    // Fallback to extension host
+    if let Some(ext_host) = state.ext_host_manager.read().await.as_ref() {
+        let uri = crate::utils::abs_file(&abs_path).unwrap_or_else(|_| format!("file://{}", abs_path));
+        if let Ok(locations) = ext_host.provide_definition(&uri, row, column).await {
+            if !locations.is_empty() {
+                ack.send(&locations).ok();
+                return;
+            }
+        }
+    }
+
+    ack.send(&json!([])).ok();
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -183,4 +219,99 @@ pub async fn handle_references(
     };
 
     ack.send(&json!({ "items": result })).ok();
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct CodeActionRequest {
+    pub file: String,
+    pub range: Range,
+    #[serde(default)]
+    pub context: Option<serde_json::Value>,
+}
+
+pub async fn handle_code_actions(
+    socket: SocketRef,
+    Data(request): Data<CodeActionRequest>,
+    ack: AckSender,
+    state: State<AppState>,
+) {
+    let abs_path = match state.resolve_path_for_socket(socket.id.as_str(), &request.file).await {
+        Ok(p) => p,
+        Err(e) => error_ack!(ack, &request.file, "Failed to resolve file: {:?}", e),
+    };
+    let uri = crate::utils::abs_file(&abs_path).unwrap_or_else(|_| format!("file://{}", abs_path));
+
+    if let Some(ext_host) = state.ext_host_manager.read().await.as_ref() {
+        if let Ok(actions) = ext_host.provide_code_actions(&uri, request.range, request.context).await {
+            ack.send(&actions).ok();
+            return;
+        }
+    }
+
+    ack.send(&json!([])).ok();
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct FormatRequest {
+    pub file: String,
+    #[serde(default)]
+    pub options: Option<serde_json::Value>,
+}
+
+pub async fn handle_formatting(
+    socket: SocketRef,
+    Data(request): Data<FormatRequest>,
+    ack: AckSender,
+    state: State<AppState>,
+) {
+    let abs_path = match state.resolve_path_for_socket(socket.id.as_str(), &request.file).await {
+        Ok(p) => p,
+        Err(e) => error_ack!(ack, &request.file, "Failed to resolve file: {:?}", e),
+    };
+    let uri = crate::utils::abs_file(&abs_path).unwrap_or_else(|_| format!("file://{}", abs_path));
+    let options = request.options.unwrap_or_else(|| json!({ "tabSize": 2, "insertSpaces": true }));
+
+    if let Some(ext_host) = state.ext_host_manager.read().await.as_ref() {
+        if let Ok(edits) = ext_host.provide_formatting(&uri, options).await {
+            ack.send(&edits).ok();
+            return;
+        }
+    }
+
+    ack.send(&json!([])).ok();
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct RenameRequest {
+    pub file: String,
+    pub row: usize,
+    pub column: usize,
+    #[serde(rename = "newName")]
+    pub new_name: String,
+}
+
+pub async fn handle_lsp_rename(
+    socket: SocketRef,
+    Data(request): Data<RenameRequest>,
+    ack: AckSender,
+    state: State<AppState>,
+) {
+    let abs_path = match state.resolve_path_for_socket(socket.id.as_str(), &request.file).await {
+        Ok(p) => p,
+        Err(e) => error_ack!(ack, &request.file, "Failed to resolve file: {:?}", e),
+    };
+    let uri = crate::utils::abs_file(&abs_path).unwrap_or_else(|_| format!("file://{}", abs_path));
+
+    if let Some(ext_host) = state.ext_host_manager.read().await.as_ref() {
+        let resp = ext_host.send_request("commands/executeCommand", json!({
+            "command": "vscode.executeDocumentRenameProvider",
+            "args": [uri, { "line": request.row, "character": request.column }, request.new_name]
+        })).await;
+        if let Ok(edits) = resp {
+            ack.send(&edits).ok();
+            return;
+        }
+    }
+
+    ack.send(&json!({ "changes": {} })).ok();
 }

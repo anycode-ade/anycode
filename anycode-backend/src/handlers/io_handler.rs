@@ -165,12 +165,23 @@ pub async fn handle_file_open(
     // LSP startup can take several seconds. Keep it out of the file-open
     // response path so one slow language server cannot block other opens.
     let lsp_manager = state.lsp_for_path(&abs_path).await;
+    let ext_host_opt = state.ext_host_manager.read().await.clone();
+    let ext_mgr = state.extension_manager.clone();
+    let ext_abs_path = abs_path.clone();
+    let ext_lang = lang.clone();
+    let ext_content = content.clone();
     tokio::spawn(async move {
         let mut lsp_manager = lsp_manager.lock().await;
         if let Some(lsp) = lsp_manager.get(&lang).await {
             if let Err(e) = lsp.did_open(&lang, &abs_path, &content) {
                 error!("Failed to notify LSP didOpen for {}: {:?}", abs_path, e);
             }
+        }
+        if let Some(ext_host) = ext_host_opt {
+            let installed = ext_mgr.cached_extensions.lock().await.clone();
+            ext_host.check_language_activation(&ext_lang, &installed).await;
+            let uri = crate::utils::abs_file(&ext_abs_path).unwrap_or_else(|_| format!("file://{}", ext_abs_path));
+            ext_host.did_open_text_document(&uri, &ext_lang, 1, &ext_content).await;
         }
     });
 }
@@ -306,6 +317,11 @@ pub async fn handle_file_close(
         }
     }
 
+    if let Some(ext_host) = state.ext_host_manager.read().await.as_ref() {
+        let uri = crate::utils::abs_file(&abs_path).unwrap_or_else(|_| format!("file://{}", abs_path));
+        ext_host.did_close_text_document(&uri).await;
+    }
+
     // Remove from current socket's opened_files
     let is_still_opened = {
         let mut sockets_data = state.socket2data.lock().await;
@@ -418,7 +434,7 @@ pub async fn handle_file_change(
         let mut lsp_manager = lsp_manager.lock().await;
         if let Some(lsp) = lsp_manager.get(&lang).await {
             if !lsp_changes.is_empty() {
-                if let Err(e) = lsp.did_change(&abs_path, lsp_changes).await {
+                if let Err(e) = lsp.did_change(&abs_path, lsp_changes.clone()).await {
                     error!("Failed to notify LSP didChange for {}: {:?}", abs_path, e);
                 }
             }
@@ -429,6 +445,20 @@ pub async fn handle_file_change(
                 }
             }
         }
+    }
+
+    if let Some(ext_host) = state.ext_host_manager.read().await.as_ref() {
+        let uri = crate::utils::abs_file(&abs_path).unwrap_or_else(|_| format!("file://{}", abs_path));
+        let changes_val = lsp_changes
+            .iter()
+            .map(|c| {
+                json!({
+                    "range": c.range,
+                    "text": c.text,
+                })
+            })
+            .collect();
+        ext_host.did_change_text_document(&uri, 1, changes_val, None).await;
     }
 
     // Broadcast as a single message for other clients if needed
@@ -474,6 +504,11 @@ pub async fn handle_file_save(
         if let Err(e) = lsp.did_save(&abs_path) {
             error!("Failed to notify LSP didSave for {}: {:?}", abs_path, e);
         }
+    }
+
+    if let Some(ext_host) = state.ext_host_manager.read().await.as_ref() {
+        let uri = crate::utils::abs_file(&abs_path).unwrap_or_else(|_| format!("file://{}", abs_path));
+        ext_host.did_save_text_document(&uri).await;
     }
 
     ack.send(&json!({ "success": true })).ok();
