@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import type { Socket } from 'socket.io-client';
 import { BACKEND_URL } from '../../constants';
+import { useWebviewOverlay, WebviewAnchor } from './WebviewOverlayContext';
 
 function prepareForJson(obj: any): any {
   if (!obj || typeof obj !== 'object') return obj;
@@ -432,8 +433,9 @@ export const WebviewViewPanel: React.FC<WebviewViewPanelProps> = ({
   title,
   wsRef,
 }) => {
-  const [panelId] = React.useState(() => `view_${viewId.replace(/[^a-zA-Z0-9]/g, '_')}_${Date.now()}`);
-  const [html, setHtml] = React.useState<string>('');
+  const panelId = `view_${viewId.replace(/[^a-zA-Z0-9]/g, '_')}`;
+  const { updateWebviewHtml, getHtml } = useWebviewOverlay();
+  const [html, setHtml] = React.useState<string>(() => getHtml(panelId) || '');
   const [error, setError] = React.useState<string | null>(null);
   const [retryKey, setRetryKey] = React.useState(0);
 
@@ -446,16 +448,23 @@ export const WebviewViewPanel: React.FC<WebviewViewPanelProps> = ({
     const onSetHtml = (data: { panelId: string; html: string }) => {
       if (data.panelId === panelId) {
         setHtml(data.html);
+        updateWebviewHtml(panelId, data.html);
         setError(null);
       }
     };
 
     ws.on('ext:webview:setHtml', onSetHtml);
 
+    // If we already have HTML in cache/context, don't show loading
+    const existingHtml = getHtml(panelId);
+    if (existingHtml) {
+      setHtml(existingHtml);
+    }
+
     // Timeout if no HTML is set after 12 seconds
     const timeout = setTimeout(() => {
       setHtml((currentHtml) => {
-        if (!currentHtml) {
+        if (!currentHtml && !getHtml(panelId)) {
           setError(`Timed out waiting for webview "${title || viewId}" to load. Check if the extension is enabled or required services are accessible.`);
         }
         return currentHtml;
@@ -468,6 +477,7 @@ export const WebviewViewPanel: React.FC<WebviewViewPanelProps> = ({
       if (isSuccess) {
         if (res?.html) {
           setHtml(res.html);
+          updateWebviewHtml(panelId, res.html);
           setError(null);
         }
       } else {
@@ -480,12 +490,12 @@ export const WebviewViewPanel: React.FC<WebviewViewPanelProps> = ({
       clearTimeout(timeout);
       ws.off('ext:webview:setHtml', onSetHtml);
     };
-  }, [viewId, panelId, wsRef, retryKey, title]);
+  }, [viewId, panelId, wsRef, retryKey, title, updateWebviewHtml, getHtml]);
 
   return (
     <div style={{ width: '100%', height: '100%', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
       {html ? (
-        <WebviewPanel panelId={panelId} viewType={viewId} title={title} html={html} wsRef={wsRef} />
+        <WebviewAnchor panelId={panelId} viewType={viewId} title={title} />
       ) : error ? (
         <div style={{ padding: 16, color: '#f85149', fontSize: 13, display: 'flex', flexDirection: 'column', gap: 10 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>

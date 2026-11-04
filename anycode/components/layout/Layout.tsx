@@ -921,11 +921,21 @@ export const Layout: React.FC<LayoutProps> = ({
             }
         };
 
+        const handleDragStart = () => {
+            root.classList.add('is-layout-dragging');
+        };
+        const handleDragEnd = () => {
+            root.classList.remove('is-layout-dragging');
+        };
+
         document.addEventListener('pointerdown', handlePointerDown, true);
         document.addEventListener('pointerup', clearResizeSelection, true);
         document.addEventListener('pointercancel', clearResizeSelection, true);
         window.addEventListener('blur', clearResizeSelection);
         document.addEventListener('selectstart', handleSelectStart, true);
+        window.addEventListener('dragstart', handleDragStart, true);
+        window.addEventListener('dragend', handleDragEnd, true);
+        window.addEventListener('drop', handleDragEnd, true);
 
         return () => {
             document.removeEventListener('pointerdown', handlePointerDown, true);
@@ -933,7 +943,11 @@ export const Layout: React.FC<LayoutProps> = ({
             document.removeEventListener('pointercancel', clearResizeSelection, true);
             window.removeEventListener('blur', clearResizeSelection);
             document.removeEventListener('selectstart', handleSelectStart, true);
+            window.removeEventListener('dragstart', handleDragStart, true);
+            window.removeEventListener('dragend', handleDragEnd, true);
+            window.removeEventListener('drop', handleDragEnd, true);
             root.classList.remove('is-layout-resizing');
+            root.classList.remove('is-layout-dragging');
         };
     }, []);
 

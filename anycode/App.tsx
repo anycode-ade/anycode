@@ -40,6 +40,7 @@ import { CommandPalette, type CommandItem } from './components/CommandPalette';
 import { QuickPickModal } from './components/QuickPickModal';
 import { CodeActionModal, type CodeActionItem } from './components/CodeActionModal';
 import { WebviewPanel } from './features/extensions/WebviewPanel';
+import { WebviewOverlayProvider, WebviewAnchor } from './features/extensions/WebviewOverlayContext';
 import { type DiffMode } from './types/diffMode';
 import { announceWarp, getLanguageFromFileName, normalizePath, pathBelongsToProject, uriToFilePath } from './utils';
 import { useSettings } from './hooks/useSettings';
@@ -1785,12 +1786,10 @@ const App: React.FC<AppProps> = ({ initialWorkspace }) => {
                     );
                 }
                 return (
-                    <WebviewPanel
+                    <WebviewAnchor
                         panelId={wv.panelId}
                         viewType={wv.viewType}
                         title={wv.title}
-                        html={wv.html}
-                        wsRef={wsRef}
                     />
                 );
             }
@@ -1907,11 +1906,12 @@ const App: React.FC<AppProps> = ({ initialWorkspace }) => {
     }, [terminalPanes, agentPanes]);
 
     return (
-        <div
-            className={`app-container toolbar-header-compact ${settings.backgroundSettings.enabled ? 'app-with-dynamic-bg' : ''} ${isWarping ? 'is-warping' : ''}`}
-            data-dynamic-bg={settings.backgroundSettings.enabled ? "global" : undefined}
-            style={{ '--file-icon-opacity': fileIconsOpacity, ...warpCssVars(settings.backgroundSettings.warpDurationMs) } as React.CSSProperties}
-        >
+        <WebviewOverlayProvider wsRef={wsRef}>
+            <div
+                className={`app-container toolbar-header-compact ${settings.backgroundSettings.enabled ? 'app-with-dynamic-bg' : ''} ${isWarping ? 'is-warping' : ''}`}
+                data-dynamic-bg={settings.backgroundSettings.enabled ? "global" : undefined}
+                style={{ '--file-icon-opacity': fileIconsOpacity, ...warpCssVars(settings.backgroundSettings.warpDurationMs) } as React.CSSProperties}
+            >
             {settings.backgroundSettings.enabled && (
                 <DynamicBackground
                     settings={settings.backgroundSettings}
@@ -1988,7 +1988,8 @@ const App: React.FC<AppProps> = ({ initialWorkspace }) => {
             />
             <UpdaterToast />
         </div>
-    );
+    </WebviewOverlayProvider>
+);
 };
 
 export default App;

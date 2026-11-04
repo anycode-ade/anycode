@@ -720,7 +720,11 @@ export class ExtHostWindow {
       console.warn(`[ext-host] no webview view provider registered for ${viewId}`);
       return { success: false };
     }
-    const webview = new ExtHostWebview(panelId, this._rpc);
+    const existing = this._webviews.get(panelId);
+    if (existing && existing.html) {
+      return { success: true, html: existing.html };
+    }
+    const webview = existing || new ExtHostWebview(panelId, this._rpc);
     this._webviews.set(panelId, webview);
     const webviewView = {
       viewType: viewId,
