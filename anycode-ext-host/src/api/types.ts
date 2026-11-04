@@ -1140,3 +1140,87 @@ export class NotebookCellOutput {
     this.id = Math.random().toString(36).substring(2);
   }
 }
+
+export class DocumentLink {
+  range: Range;
+  target?: Uri;
+  tooltip?: string;
+  constructor(range: Range, target?: Uri) {
+    this.range = range;
+    this.target = target;
+  }
+}
+
+export const QuickInputButtons = {
+  Back: {
+    iconPath: new ThemeIcon('arrow-left'),
+    tooltip: 'Back',
+  },
+};
+
+export class CallHierarchyItem {
+  name: string;
+  kind: SymbolKind;
+  tags?: readonly SymbolTag[];
+  detail?: string;
+  uri: Uri;
+  range: Range;
+  selectionRange: Range;
+
+  constructor(kind: SymbolKind, name: string, detail: string, uri: Uri, range: Range, selectionRange: Range) {
+    this.kind = kind;
+    this.name = name;
+    this.detail = detail;
+    this.uri = uri;
+    this.range = range;
+    this.selectionRange = selectionRange;
+  }
+}
+
+export enum SymbolTag {
+  Deprecated = 1,
+}
+
+export class TypeHierarchyItem {
+  name: string;
+  kind: SymbolKind;
+  tags?: readonly SymbolTag[];
+  detail?: string;
+  uri: Uri;
+  range: Range;
+  selectionRange: Range;
+
+  constructor(kind: SymbolKind, name: string, detail: string, uri: Uri, range: Range, selectionRange: Range) {
+    this.kind = kind;
+    this.name = name;
+    this.detail = detail;
+    this.uri = uri;
+    this.range = range;
+    this.selectionRange = selectionRange;
+  }
+}
+
+export class SymbolInformation {
+  name: string;
+  kind: SymbolKind;
+  tags?: readonly SymbolTag[];
+  containerName: string;
+  location: Location;
+
+  constructor(name: string, kind: SymbolKind, containerName: string, location: Location);
+  constructor(name: string, kind: SymbolKind, range: Range, uri?: Uri, containerName?: string);
+  constructor(name: string, kind: SymbolKind, rangeOrContainer: string | Range, locationOrUri?: any, containerName?: string) {
+    this.name = name;
+    this.kind = kind;
+    if (typeof rangeOrContainer === 'string') {
+      this.containerName = rangeOrContainer;
+      this.location = locationOrUri;
+    } else {
+      this.containerName = containerName || '';
+      this.location = locationOrUri instanceof Location ? locationOrUri : new Location(locationOrUri, rangeOrContainer);
+    }
+  }
+}
+
+
+

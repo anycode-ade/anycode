@@ -326,7 +326,7 @@ export class ExtHostWorkspace {
       return found ? nested : undefined;
     };
 
-    return {
+    const configObj = {
       get: <T>(key: string, defaultValue?: T): T => {
         const fullKey = section ? `${section}.${key}` : key;
         const val = getValue(fullKey) ?? getValue(key);
@@ -354,6 +354,22 @@ export class ExtHostWorkspace {
         this.onDidChangeConfigurationEmitter.fire({ affectsConfiguration: (s: string) => s === fullKey || s === section });
       },
     };
+
+    return new Proxy(configObj, {
+      get(target: any, prop: string | symbol, receiver: any) {
+        if (typeof prop === 'string' && prop in target) {
+          return target[prop];
+        }
+        if (typeof prop === 'string') {
+          const val = target.get(prop);
+          if (val !== undefined) return val;
+          if (prop === 'http') {
+            return { proxy: '', proxyStrictSSL: true, proxyAuthorization: null, proxySupport: 'override' };
+          }
+        }
+        return Reflect.get(target, prop, receiver);
+      },
+    });
   }
 
   updateConfiguration(values: Record<string, any>): void {

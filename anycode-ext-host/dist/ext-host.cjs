@@ -231,6 +231,7 @@ var path = __toESM(require("path"));
 // src/api/types.ts
 var types_exports = {};
 __export(types_exports, {
+  CallHierarchyItem: () => CallHierarchyItem,
   CancellationError: () => CancellationError,
   CancellationTokenSource: () => CancellationTokenSource,
   CodeAction: () => CodeAction,
@@ -249,6 +250,7 @@ __export(types_exports, {
   Disposable: () => Disposable,
   DocumentHighlight: () => DocumentHighlight,
   DocumentHighlightKind: () => DocumentHighlightKind,
+  DocumentLink: () => DocumentLink,
   DocumentSymbol: () => DocumentSymbol,
   EventEmitter: () => EventEmitter,
   FileChangeType: () => FileChangeType,
@@ -277,6 +279,7 @@ __export(types_exports, {
   ProcessExecution: () => ProcessExecution,
   ProgressLocation: () => ProgressLocation,
   QuickInputButtonLocation: () => QuickInputButtonLocation,
+  QuickInputButtons: () => QuickInputButtons,
   QuickPickItemKind: () => QuickPickItemKind,
   Range: () => Range,
   RelativePattern: () => RelativePattern,
@@ -284,7 +287,9 @@ __export(types_exports, {
   ShellExecution: () => ShellExecution,
   SnippetString: () => SnippetString,
   StatusBarAlignment: () => StatusBarAlignment,
+  SymbolInformation: () => SymbolInformation,
   SymbolKind: () => SymbolKind,
+  SymbolTag: () => SymbolTag,
   TabInputCustom: () => TabInputCustom,
   TabInputNotebook: () => TabInputNotebook,
   TabInputNotebookDiff: () => TabInputNotebookDiff,
@@ -301,6 +306,7 @@ __export(types_exports, {
   ThemeIcon: () => ThemeIcon,
   TreeItem: () => TreeItem,
   TreeItemCollapsibleState: () => TreeItemCollapsibleState,
+  TypeHierarchyItem: () => TypeHierarchyItem,
   Uri: () => Uri,
   ViewColumn: () => ViewColumn,
   WorkspaceEdit: () => WorkspaceEdit
@@ -1300,6 +1306,77 @@ var NotebookCellOutput = class {
   }
   id;
 };
+var DocumentLink = class {
+  range;
+  target;
+  tooltip;
+  constructor(range, target) {
+    this.range = range;
+    this.target = target;
+  }
+};
+var QuickInputButtons = {
+  Back: {
+    iconPath: new ThemeIcon("arrow-left"),
+    tooltip: "Back"
+  }
+};
+var CallHierarchyItem = class {
+  name;
+  kind;
+  tags;
+  detail;
+  uri;
+  range;
+  selectionRange;
+  constructor(kind, name, detail, uri, range, selectionRange) {
+    this.kind = kind;
+    this.name = name;
+    this.detail = detail;
+    this.uri = uri;
+    this.range = range;
+    this.selectionRange = selectionRange;
+  }
+};
+var SymbolTag = /* @__PURE__ */ ((SymbolTag2) => {
+  SymbolTag2[SymbolTag2["Deprecated"] = 1] = "Deprecated";
+  return SymbolTag2;
+})(SymbolTag || {});
+var TypeHierarchyItem = class {
+  name;
+  kind;
+  tags;
+  detail;
+  uri;
+  range;
+  selectionRange;
+  constructor(kind, name, detail, uri, range, selectionRange) {
+    this.kind = kind;
+    this.name = name;
+    this.detail = detail;
+    this.uri = uri;
+    this.range = range;
+    this.selectionRange = selectionRange;
+  }
+};
+var SymbolInformation = class {
+  name;
+  kind;
+  tags;
+  containerName;
+  location;
+  constructor(name, kind, rangeOrContainer, locationOrUri, containerName) {
+    this.name = name;
+    this.kind = kind;
+    if (typeof rangeOrContainer === "string") {
+      this.containerName = rangeOrContainer;
+      this.location = locationOrUri;
+    } else {
+      this.containerName = containerName || "";
+      this.location = locationOrUri instanceof Location ? locationOrUri : new Location(locationOrUri, rangeOrContainer);
+    }
+  }
+};
 
 // src/api/workspace.ts
 var ExtHostTextDocument = class {
@@ -1553,7 +1630,7 @@ var ExtHostWorkspace = class {
       }
       return found ? nested : void 0;
     };
-    return {
+    const configObj = {
       get: (key, defaultValue) => {
         const fullKey = section ? `${section}.${key}` : key;
         const val = getValue(fullKey) ?? getValue(key);
@@ -1581,6 +1658,21 @@ var ExtHostWorkspace = class {
         this.onDidChangeConfigurationEmitter.fire({ affectsConfiguration: (s) => s === fullKey || s === section });
       }
     };
+    return new Proxy(configObj, {
+      get(target, prop, receiver) {
+        if (typeof prop === "string" && prop in target) {
+          return target[prop];
+        }
+        if (typeof prop === "string") {
+          const val = target.get(prop);
+          if (val !== void 0) return val;
+          if (prop === "http") {
+            return { proxy: "", proxyStrictSSL: true, proxyAuthorization: null, proxySupport: "override" };
+          }
+        }
+        return Reflect.get(target, prop, receiver);
+      }
+    });
   }
   updateConfiguration(values) {
     Object.assign(this._configuration, values);
@@ -3257,7 +3349,9 @@ function createVsCodeApi(workspace2, languages2, window2, commands2, env2, getEx
     authentication: {
       getSession: async () => void 0,
       getSessions: async () => [],
-      onDidChangeSessions: new EventEmitter().event
+      onDidChangeSessions: new EventEmitter().event,
+      registerAuthenticationProvider: (id, label, provider, options) => new Disposable(() => {
+      })
     },
     tasks: {
       registerTaskProvider: (_type, _provider) => new Disposable(() => {
@@ -3382,9 +3476,28 @@ var vscodeApi = createVsCodeApi(
   },
   () => Array.from(activeExtensions.values()).map((e) => e.context.extension)
 );
+var dummyPtySpawn = (cmd, args, opt) => ({
+  onData: (cb) => ({ dispose: () => {
+  } }),
+  onExit: (cb) => ({ dispose: () => {
+  } }),
+  write: (_data) => {
+  },
+  resize: (_cols, _rows) => {
+  },
+  kill: (_signal) => {
+  },
+  pid: process.pid
+});
+var dummyPtyModule = (cmd, args, opt) => dummyPtySpawn(cmd, args, opt);
+dummyPtyModule.spawn = dummyPtySpawn;
+dummyPtyModule.open = () => ({});
 Module._load = function(request, parent, isMain) {
   if (request === "vscode") {
     return vscodeApi;
+  }
+  if (typeof request === "string" && (request.includes("node-pty") || request === "node-pty" || request.endsWith("@theia/node-pty") || request.endsWith("@vscode/node-pty"))) {
+    return dummyPtyModule;
   }
   return originalLoad.apply(this, arguments);
 };

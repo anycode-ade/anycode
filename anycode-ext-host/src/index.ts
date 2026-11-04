@@ -76,9 +76,24 @@ const vscodeApi = createVsCodeApi(
   () => Array.from(activeExtensions.values()).map((e) => e.context.extension)
 );
 
+const dummyPtySpawn = (cmd: string, args?: string[], opt?: any) => ({
+  onData: (cb: (data: string) => void) => ({ dispose: () => {} }),
+  onExit: (cb: (e: { exitCode: number }) => void) => ({ dispose: () => {} }),
+  write: (_data: string) => {},
+  resize: (_cols: number, _rows: number) => {},
+  kill: (_signal?: string) => {},
+  pid: process.pid,
+});
+const dummyPtyModule: any = (cmd: string, args?: string[], opt?: any) => dummyPtySpawn(cmd, args, opt);
+dummyPtyModule.spawn = dummyPtySpawn;
+dummyPtyModule.open = () => ({});
+
 Module._load = function (request: string, parent: any, isMain: boolean) {
   if (request === 'vscode') {
     return vscodeApi;
+  }
+  if (typeof request === 'string' && (request.includes('node-pty') || request === 'node-pty' || request.endsWith('@theia/node-pty') || request.endsWith('@vscode/node-pty'))) {
+    return dummyPtyModule;
   }
   return originalLoad.apply(this, arguments);
 };

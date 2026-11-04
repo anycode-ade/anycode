@@ -51,6 +51,7 @@ export function createVsCodeApi(
       getSession: async () => undefined,
       getSessions: async () => [],
       onDidChangeSessions: new types.EventEmitter().event,
+      registerAuthenticationProvider: (id: string, label: string, provider: any, options?: any) => new types.Disposable(() => {}),
     },
     tasks: {
       registerTaskProvider: (_type: string, _provider: any) => new types.Disposable(() => {}),

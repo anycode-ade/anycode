@@ -16,6 +16,7 @@ export function useExtensions(wsRef: React.RefObject<Socket | null>, isConnected
   const [searchError, setSearchError] = useState<string | null>(null);
   const [searchTotal, setSearchTotal] = useState(0);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
   // Bumped on every new search so responses from superseded requests are ignored.
   const searchRequestRef = useRef(0);
   const activeQueryRef = useRef('');
@@ -49,6 +50,7 @@ export function useExtensions(wsRef: React.RefObject<Socket | null>, isConnected
       activeQueryRef.current = trimmed;
       setIsSearching(true);
       setIsLoadingMore(false);
+      setLoadMoreError(null);
       setSearchError(null);
       wsRef.current.emit('ext:search', { query: trimmed, offset: 0, size: MARKETPLACE_PAGE_SIZE }, (res: any) => {
         if (requestId !== searchRequestRef.current) return;
@@ -72,6 +74,7 @@ export function useExtensions(wsRef: React.RefObject<Socket | null>, isConnected
     if (!wsRef.current || !isConnected || isSearching || isLoadingMore) return;
     if (searchResults.length >= searchTotal) return;
     const requestId = searchRequestRef.current;
+    setLoadMoreError(null);
     setIsLoadingMore(true);
     wsRef.current.emit(
       'ext:search',
@@ -83,7 +86,7 @@ export function useExtensions(wsRef: React.RefObject<Socket | null>, isConnected
           setSearchResults((prev) => [...prev, ...res.data.extensions.map(mapOpenVsxExtension)]);
           setSearchTotal(res.data.totalSize ?? 0);
         } else {
-          alert(`Failed to load more extensions: ${res?.error || 'Unknown error'}`);
+          setLoadMoreError(res?.error || 'Unknown error');
         }
       }
     );
@@ -181,6 +184,7 @@ export function useExtensions(wsRef: React.RefObject<Socket | null>, isConnected
     searchTotal,
     isSearching,
     isLoadingMore,
+    loadMoreError,
     isLoadingInstalled,
     installingIds,
     activeTab,

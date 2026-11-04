@@ -1,9 +1,15 @@
-import React, { useRef } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import type { Socket } from 'socket.io-client';
 import { useExtensions } from './useExtensions';
+import { VirtualRow, useVirtualList } from './useVirtualList';
 import { Icons } from '../../components/Icons';
 import { BACKEND_URL } from '../../constants';
 import './ExtensionsPanel.css';
+
+/** Rough card height incl. gap; real heights are measured once rendered. */
+const MARKETPLACE_ROW_ESTIMATE = 130;
+/** Start loading the next page when the viewport gets this many rows from the end. */
+const LOAD_MORE_AHEAD_ROWS = 6;
 
 const resolveIconUrl = (iconUrl?: string): string | undefined => {
   if (!iconUrl) return undefined;
@@ -27,6 +33,7 @@ export const ExtensionsPanel: React.FC<ExtensionsPanelProps> = ({ wsRef, isConne
     searchTotal,
     isSearching,
     isLoadingMore,
+    loadMoreError,
     isLoadingInstalled,
     installingIds,
     activeTab,
@@ -45,6 +52,23 @@ export const ExtensionsPanel: React.FC<ExtensionsPanelProps> = ({ wsRef, isConne
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const listScrollRef = useRef<HTMLDivElement>(null);
+  const virtualListRef = useRef<HTMLDivElement>(null);
+
+  const marketplaceKeys = useMemo(() => searchResults.map((ext) => ext.id), [searchResults]);
+  const { rows, totalHeight, lastVisibleIndex, measureRow } = useVirtualList({
+    scrollRef: listScrollRef,
+    listRef: virtualListRef,
+    keys: marketplaceKeys,
+    estimateSize: MARKETPLACE_ROW_ESTIMATE,
+    overscan: 400,
+  });
+
+  useEffect(() => {
+    if (activeTab !== 'marketplace' || isSearching || isLoadingMore || loadMoreError) return;
+    const nearEnd = lastVisibleIndex >= searchResults.length - LOAD_MORE_AHEAD_ROWS;
+    if (nearEnd && searchResults.length < searchTotal) loadMoreMarketplace();
+  }, [activeTab, isSearching, isLoadingMore, loadMoreError, lastVisibleIndex, searchResults.length, searchTotal, loadMoreMarketplace]);
 
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
@@ -123,7 +147,7 @@ export const ExtensionsPanel: React.FC<ExtensionsPanelProps> = ({ wsRef, isConne
         </div>
       </div>
 
-      <div className="extensions-list">
+      <div className="extensions-list" ref={listScrollRef}>
         {activeTab === 'installed' ? (
           installed.length === 0 ? (
             <div className="extensions-empty">
@@ -236,77 +260,79 @@ export const ExtensionsPanel: React.FC<ExtensionsPanelProps> = ({ wsRef, isConne
             <div className="extensions-section-title">
               {searchQuery ? `Search results for "${searchQuery}"` : 'Popular & Recommended'}
             </div>
-            {searchResults.map((ext) => {
+            <div ref={virtualListRef} style={{ position: 'relative', flexShrink: 0, height: totalHeight }}>
+            {rows.map(({ index, key, top }) => {
+              const ext = searchResults[index];
               const alreadyInstalled = isInstalled(ext.id);
               const isInstalling = installingIds.has(ext.id);
 
               return (
-                <div
-                  key={ext.id}
-                  className={`extension-item ${selectedExtension?.id === ext.id ? 'selected' : ''}`}
-                  onClick={() => setSelectedExtension(ext)}
-                >
-                  <div className="extension-info">
-                    <div className="extension-icon-box">
-                      {ext.iconUrl ? (
-                        <img src={resolveIconUrl(ext.iconUrl)} alt={ext.displayName || ext.name} />
-                      ) : (
-                        <Icons.Extensions size={20} />
-                      )}
-                    </div>
-                    <div className="extension-title-row">
-                      <span className="extension-name">{ext.displayName || ext.name}</span>
-                      <span className="extension-version">v{ext.version}</span>
-                    </div>
-                    <div className="extension-author">{ext.namespace}</div>
-                    {ext.description && (
-                      <div className="extension-description">{ext.description}</div>
-                    )}
-
-                    <div className="extension-footer">
-                      <div className="extension-stats">
-                        {ext.downloadCount != null && (
-                          <span className="extension-stat" title={`${ext.downloadCount.toLocaleString()} downloads`}>
-                            ↓ {ext.downloadCount >= 1000000 ? `${(ext.downloadCount / 1000000).toFixed(1)}M` : ext.downloadCount >= 1000 ? `${(ext.downloadCount / 1000).toFixed(0)}k` : ext.downloadCount}
-                          </span>
-                        )}
-                        {ext.averageRating != null && typeof ext.averageRating === 'number' && (
-                          <span className="extension-stat" title={`Rating: ${ext.averageRating.toFixed(1)}`}>
-                            ★ {ext.averageRating.toFixed(1)}
-                          </span>
+                <VirtualRow key={key} rowKey={key} top={top} measure={measureRow}>
+                  <div
+                    className={`extension-item ${selectedExtension?.id === ext.id ? 'selected' : ''}`}
+                    onClick={() => setSelectedExtension(ext)}
+                  >
+                    <div className="extension-info">
+                      <div className="extension-icon-box">
+                        {ext.iconUrl ? (
+                          <img src={resolveIconUrl(ext.iconUrl)} alt={ext.displayName || ext.name} />
+                        ) : (
+                          <Icons.Extensions size={20} />
                         )}
                       </div>
+                      <div className="extension-title-row">
+                        <span className="extension-name">{ext.displayName || ext.name}</span>
+                        <span className="extension-version">v{ext.version}</span>
+                      </div>
+                      <div className="extension-author">{ext.namespace}</div>
+                      {ext.description && (
+                        <div className="extension-description">{ext.description}</div>
+                      )}
 
-                      <div className="extension-controls">
-                        {alreadyInstalled ? (
-                          <span className="ext-badge-installed">✓ Installed</span>
-                        ) : (
-                          <button
-                            className="ext-btn-install"
-                            disabled={isInstalling}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              installExtension(ext.id, ext.version);
-                            }}
-                          >
-                            {isInstalling ? 'Installing...' : 'Install'}
-                          </button>
-                        )}
+                      <div className="extension-footer">
+                        <div className="extension-stats">
+                          {ext.downloadCount != null && (
+                            <span className="extension-stat" title={`${ext.downloadCount.toLocaleString()} downloads`}>
+                              ↓ {ext.downloadCount >= 1000000 ? `${(ext.downloadCount / 1000000).toFixed(1)}M` : ext.downloadCount >= 1000 ? `${(ext.downloadCount / 1000).toFixed(0)}k` : ext.downloadCount}
+                            </span>
+                          )}
+                          {ext.averageRating != null && typeof ext.averageRating === 'number' && (
+                            <span className="extension-stat" title={`Rating: ${ext.averageRating.toFixed(1)}`}>
+                              ★ {ext.averageRating.toFixed(1)}
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="extension-controls">
+                          {alreadyInstalled ? (
+                            <span className="ext-badge-installed">✓ Installed</span>
+                          ) : (
+                            <button
+                              className="ext-btn-install"
+                              disabled={isInstalling}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                installExtension(ext.id, ext.version);
+                              }}
+                            >
+                              {isInstalling ? 'Installing...' : 'Install'}
+                            </button>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
+                </VirtualRow>
               );
             })}
-            {searchResults.length < searchTotal && (
-              <div style={{ display: 'flex', justifyContent: 'center', padding: '8px 0 12px' }}>
-                <button
-                  className="ext-btn-secondary"
-                  disabled={isLoadingMore}
-                  onClick={loadMoreMarketplace}
-                >
-                  {isLoadingMore ? 'Loading...' : `Load more (${searchResults.length} of ${searchTotal})`}
-                </button>
+            </div>
+            {isLoadingMore && (
+              <div style={{ textAlign: 'center', padding: '8px 0 12px', fontSize: 12, color: '#888' }}>Loading more...</div>
+            )}
+            {loadMoreError && (
+              <div style={{ textAlign: 'center', padding: '8px 0 12px', fontSize: 12, color: '#f85149' }}>
+                Failed to load more: {loadMoreError}{' '}
+                <button className="ext-btn-secondary" onClick={loadMoreMarketplace}>Retry</button>
               </div>
             )}
           </>

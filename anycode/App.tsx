@@ -1305,6 +1305,7 @@ const App: React.FC<AppProps> = ({ initialWorkspace }) => {
     useEffect(() => {
         const ws = wsRef.current;
         if (!ws) return;
+        (window as any).__ANYCODE_WS__ = ws;
         const onDecorations = (data: { uri: string; key: string; decorations: any[] }) => {
             if (!data?.uri) return;
             const targetPath = uriToFilePath(data.uri);
@@ -1322,6 +1323,7 @@ const App: React.FC<AppProps> = ({ initialWorkspace }) => {
     useEffect(() => {
         const ws = wsRef.current;
         if (!ws) return;
+        (window as any).__ANYCODE_WS__ = ws;
         const onCreate = (data: { panelId: string; viewType: string; title: string }) => {
             setActiveWebviews((prev) => {
                 const next = new Map(prev);
