@@ -104,6 +104,8 @@ const App: React.FC<AppProps> = ({ initialWorkspace }) => {
         active_project_id: null,
         recent_workspaces: [],
     });
+    // Until the backend reports the restored workspace, the empty state above would show the welcome screen on every reload.
+    const [isWorkspaceLoaded, setIsWorkspaceLoaded] = useState(false);
     const [changesProjectId, setChangesProjectId] = usePanelProjectId(CHANGES_PROJECT_SESSION_KEY);
     const [historyProjectId, setHistoryProjectId] = usePanelProjectId(HISTORY_PROJECT_SESSION_KEY);
     const [searchProjectId, setSearchProjectId] = usePanelProjectId(SEARCH_PROJECT_SESSION_KEY);
@@ -384,6 +386,7 @@ const App: React.FC<AppProps> = ({ initialWorkspace }) => {
 
     const acceptWorkspaceState = useCallback((next: WorkspaceState) => {
         setWorkspaceState(next);
+        setIsWorkspaceLoaded(true);
         const selected = next.projects.find((project) => project.id === next.active_project_id);
         setWorkspacePath(selected?.root ?? next.projects[0]?.root ?? null);
         if (next.active_project_id) {
@@ -566,6 +569,7 @@ const App: React.FC<AppProps> = ({ initialWorkspace }) => {
         socket.emit('workspace:state', (response: WorkspaceState & { success?: boolean; error?: string }) => {
             if (!response?.success) {
                 console.error('Failed to restore workspace state:', response?.error);
+                setIsWorkspaceLoaded(true);
                 return;
             }
             const preferredProjectId = sessionStorage.getItem(ACTIVE_PROJECT_SESSION_KEY);
@@ -1615,16 +1619,18 @@ const App: React.FC<AppProps> = ({ initialWorkspace }) => {
                 />
             )}
             {!isWorkspaceOpen ? (
-                <div className={`warp-screen-wrapper ${warpDirection === 'closing' ? 'warping-in' : ''}`}>
-                    <WelcomeScreen
-                        onOpenFolder={handleOpenFolderClick}
-                        onSelectWorkspace={handleSelectWorkspace}
-                        onRemoveRecent={handleRemoveRecentWorkspace}
-                        recentProjects={workspaceState.recent_workspaces}
-                        backgroundSettings={settings.backgroundSettings}
-                        hideBackground={settings.backgroundSettings.enabled}
-                    />
-                </div>
+                isWorkspaceLoaded && (
+                    <div className={`warp-screen-wrapper ${warpDirection === 'closing' ? 'warping-in' : ''}`}>
+                        <WelcomeScreen
+                            onOpenFolder={handleOpenFolderClick}
+                            onSelectWorkspace={handleSelectWorkspace}
+                            onRemoveRecent={handleRemoveRecentWorkspace}
+                            recentProjects={workspaceState.recent_workspaces}
+                            backgroundSettings={settings.backgroundSettings}
+                            hideBackground={settings.backgroundSettings.enabled}
+                        />
+                    </div>
+                )
             ) : (
                 <div
                     className={`main-content warp-screen-wrapper ${warpDirection === 'closing' ? 'warping-out' : ''}`}

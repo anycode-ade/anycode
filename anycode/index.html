@@ -1,6 +1,21 @@
 <!DOCTYPE html>
 <html lang="en">
   <head>
+      <script>
+        // Paint the last-used theme background before the stylesheet and app bundle load.
+        // useTheme applies the full theme after mount and keeps themeBackground in sync.
+        (function () {
+          try {
+            var background = localStorage.getItem('themeBackground');
+            if (background) {
+              document.documentElement.style.setProperty('--background-color', background);
+              document.documentElement.style.backgroundColor = background;
+            }
+          } catch (error) {
+            // localStorage can be unavailable (private mode); keep the CSS default.
+          }
+        })();
+      </script>
       <meta charset="UTF-8" />
       <title>Anycode</title>
       <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
