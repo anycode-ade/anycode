@@ -60,6 +60,8 @@ describe('FilesPanel project selector', () => {
         );
 
         expect(html.match(/aria-label="Switch project"/g)).toHaveLength(1);
+        // The add button sits beside the chevron, not inside the switch menu.
+        expect(html.match(/aria-label="Add project"/g)).toHaveLength(1);
         // Only the chevron is a button; the project name must not open the menu.
         expect(html).not.toMatch(/<button[^>]*>\s*<span class="project-switcher-name"/);
         expect(html).toContain('class="tree-project-selector"');
@@ -102,5 +104,32 @@ describe('FilesPanel project selector', () => {
 
         expect(render(false)).not.toMatch(/project-switcher-trigger" disabled/);
         expect(render(true)).toMatch(/class="project-switcher-trigger"[^>]*disabled/);
+        expect(render(false)).not.toMatch(/aria-label="Add project"[^>]*disabled/);
+        expect(render(true)).toMatch(/aria-label="Add project"[^>]*disabled/);
+    });
+
+    it('shows only the add button for a single project', () => {
+        const noop = vi.fn();
+        const html = renderToStaticMarkup(
+            React.createElement(FilesPanel, {
+                fileTree: [{ id: 'project:alpha', name: 'Alpha', path: '/workspace/alpha', project_id: 'alpha', type: 'directory', isExpanded: true, children: [] }],
+                activeNodeId: null,
+                focusRequestToken: null,
+                onActivateNode: noop,
+                onToggle: noop,
+                onSelect: noop,
+                onOpenFile: noop,
+                onLoadFolder: noop,
+                onFocusEditor: noop,
+                onNavigateByKey: () => false,
+                projects: [{ id: 'alpha', name: 'Alpha', root: '/workspace/alpha' }],
+                activeProjectId: 'alpha',
+                onSelectProject: noop,
+                onAddProject: noop,
+            }),
+        );
+
+        expect(html).not.toContain('aria-label="Switch project"');
+        expect(html).toContain('aria-label="Add project"');
     });
 });

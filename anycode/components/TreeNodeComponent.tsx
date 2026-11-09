@@ -68,7 +68,7 @@ const TreeNodeComponentImpl: React.FC<TreeNodeComponentProps> = ({
     const isEditing = editingNodeId === node.id;
     const isProjectRoot = level === 0 && Boolean(node.project_id);
     const canSwitchProject = Boolean(onProjectChange) && (projectOptions?.length ?? 0) > 1;
-    // The project root's menu holds both project switching and "add project", so it shows whenever either exists.
+    // The project root shows the switch chevron when switching is possible and the add button when adding is possible.
     const isProjectSelector = isProjectRoot && (canSwitchProject || Boolean(onAddProject));
 
     const [renameValue, setRenameValue] = React.useState(node.name);
@@ -226,7 +226,7 @@ const TreeNodeComponentImpl: React.FC<TreeNodeComponentProps> = ({
                         <ProjectSwitcher
                             options={projectOptions ?? []}
                             value={node.project_id ?? ''}
-                            onChange={(projectId) => onProjectChange?.(projectId)}
+                            onChange={onProjectChange}
                             onAddProject={onAddProject}
                             disabled={isAddingProject}
                         />

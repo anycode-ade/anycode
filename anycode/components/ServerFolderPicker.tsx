@@ -183,20 +183,21 @@ export const ServerFolderPicker = ({
                 </div>
             </form>
 
-            {!isPopover && recentProjects.length > 0 && (
+            {recentProjects.length > 0 && (
                 <div className="server-folder-recents">
                     <span>Recent folders</span>
-                    {recentProjects.slice(0, 5).map((project) => (
-                        <button
-                            key={project.path}
-                            type="button"
-                            title={project.path}
-                            onClick={() => void browse(project.path)}
-                        >
-                            <strong>{project.name}</strong>
-                            <small>{project.path}</small>
-                        </button>
-                    ))}
+                    <div className="server-folder-recents-chips">
+                        {recentProjects.map((project) => (
+                            <button
+                                key={project.path}
+                                type="button"
+                                title={project.path}
+                                onClick={() => void browse(project.path)}
+                            >
+                                {project.name}
+                            </button>
+                        ))}
+                    </div>
                 </div>
             )}
 

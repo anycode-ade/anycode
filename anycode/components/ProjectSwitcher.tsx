@@ -11,9 +11,10 @@ export interface ProjectSwitcherOption {
 interface ProjectSwitcherProps {
     options: ProjectSwitcherOption[];
     value: string;
-    onChange: (projectId: string) => void;
+    // The chevron and its menu appear only when there is a change handler and more than one project.
+    onChange?: (projectId: string) => void;
     onAddProject?: (anchor: HTMLElement) => void;
-    // While the add-folder picker is open it is anchored to this chevron, so the menu must stay shut.
+    // While the add-folder picker is open it is anchored to the add button, so both buttons stay disabled.
     disabled?: boolean;
 }
 
@@ -29,6 +30,7 @@ export const ProjectSwitcher: React.FC<ProjectSwitcherProps> = ({ options, value
     const menuRef = useRef<HTMLDivElement>(null);
     const isOpen = menuPosition !== null;
     const current = options.find((option) => option.id === value) ?? options[0];
+    const canSwitch = Boolean(onChange) && options.length > 1;
 
     const closeMenu = () => setMenuPosition(null);
 
@@ -71,12 +73,7 @@ export const ProjectSwitcher: React.FC<ProjectSwitcherProps> = ({ options, value
     const selectOption = (projectId: string) => {
         closeMenu();
         triggerRef.current?.focus();
-        if (projectId !== value) onChange(projectId);
-    };
-
-    const addProject = () => {
-        closeMenu();
-        if (triggerRef.current && onAddProject) onAddProject(triggerRef.current);
+        if (onChange && projectId !== value) onChange(projectId);
     };
 
     return (
@@ -84,29 +81,47 @@ export const ProjectSwitcher: React.FC<ProjectSwitcherProps> = ({ options, value
             <div className="project-switcher">
                 {/* Only the chevron opens the menu; the name behaves like a plain project row. */}
                 <span className="project-switcher-name" title={current?.name}>{current?.name}</span>
-                <button
-                    ref={triggerRef}
-                    type="button"
-                    className="project-switcher-trigger"
-                    aria-label="Switch project"
-                    aria-haspopup="menu"
-                    aria-expanded={isOpen}
-                    disabled={disabled}
-                    // Stop here so the tree row does not also toggle the project folder.
-                    onMouseDown={(event) => event.stopPropagation()}
-                    onClick={(event) => {
-                        event.stopPropagation();
-                        toggleMenu();
-                    }}
-                    onKeyDown={(event) => {
-                        if (event.key === 'Escape' && isOpen) {
+                {canSwitch && (
+                    <button
+                        ref={triggerRef}
+                        type="button"
+                        className="project-switcher-trigger"
+                        aria-label="Switch project"
+                        aria-haspopup="menu"
+                        aria-expanded={isOpen}
+                        disabled={disabled}
+                        // Stop here so the tree row does not also toggle the project folder.
+                        onMouseDown={(event) => event.stopPropagation()}
+                        onClick={(event) => {
                             event.stopPropagation();
-                            closeMenu();
-                        }
-                    }}
-                >
-                    <Icons.ChevronDown />
-                </button>
+                            toggleMenu();
+                        }}
+                        onKeyDown={(event) => {
+                            if (event.key === 'Escape' && isOpen) {
+                                event.stopPropagation();
+                                closeMenu();
+                            }
+                        }}
+                    >
+                        <Icons.ChevronDown />
+                    </button>
+                )}
+                {onAddProject && (
+                    <button
+                        type="button"
+                        className="project-switcher-trigger"
+                        aria-label="Add project"
+                        title="Add project"
+                        disabled={disabled}
+                        onMouseDown={(event) => event.stopPropagation()}
+                        onClick={(event) => {
+                            event.stopPropagation();
+                            onAddProject(event.currentTarget);
+                        }}
+                    >
+                        <Icons.Plus />
+                    </button>
+                )}
             </div>
             {isOpen && menuPosition && createPortal(
                 <div
@@ -144,19 +159,6 @@ export const ProjectSwitcher: React.FC<ProjectSwitcherProps> = ({ options, value
                             </button>
                         );
                     })}
-                    {onAddProject && (
-                        <>
-                            <div className="project-switcher-separator" role="separator" />
-                            <button
-                                type="button"
-                                role="menuitem"
-                                className="project-switcher-option"
-                                onClick={addProject}
-                            >
-                                <span className="project-switcher-option-name">Add project</span>
-                            </button>
-                        </>
-                    )}
                 </div>,
                 document.body,
             )}
