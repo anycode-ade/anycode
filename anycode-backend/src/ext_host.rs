@@ -167,6 +167,13 @@ impl ExtHostManager {
             for cmd in &contrib.commands {
                 events.push(format!("onCommand:{}", cmd.command));
             }
+            if let Some(ref ce_list) = contrib.custom_editors {
+                for ce in ce_list {
+                    if let Some(vt) = ce.get("viewType").and_then(|v| v.as_str()) {
+                        events.push(format!("onCustomEditor:{}", vt));
+                    }
+                }
+            }
         }
 
         let mut rules = self.activation_rules.lock().await;
@@ -237,6 +244,22 @@ impl ExtHostManager {
 
     pub async fn check_command_activation(&self, cmd: &str, installed: &[crate::extensions::InstalledExtension]) {
         let trigger = format!("onCommand:{}", cmd);
+        for ext in installed {
+            if !ext.enabled {
+                continue;
+            }
+            let rules = self.activation_rules.lock().await;
+            if let Some(events) = rules.get(&ext.id) {
+                if events.iter().any(|e| e == "*" || e == &trigger) {
+                    drop(rules);
+                    let _ = self.activate_if_needed(&ext.id, &ext.dir, &ext.manifest).await;
+                }
+            }
+        }
+    }
+
+    pub async fn check_custom_editor_activation(&self, view_id: &str, installed: &[crate::extensions::InstalledExtension]) {
+        let trigger = format!("onCustomEditor:{}", view_id);
         for ext in installed {
             if !ext.enabled {
                 continue;
@@ -460,7 +483,14 @@ impl ExtHostManager {
                         }
                     }
                 }
-                "window/disposeWebviewPanel" => {
+                "window/setWebviewTitle" => {
+                    if let Some(ref params) = msg.params {
+                        if let Some(io) = self.io.lock().await.as_ref() {
+                            let _ = io.emit("ext:webview:setTitle", params).await;
+                        }
+                    }
+                }
+                "window/disposeWebview" | "window/disposeWebviewPanel" => {
                     if let Some(ref params) = msg.params {
                         if let Some(io) = self.io.lock().await.as_ref() {
                             let _ = io.emit("ext:webview:dispose", params).await;
@@ -479,6 +509,12 @@ impl ExtHostManager {
                     };
                     if let Some(id) = msg.id {
                         let _ = self.send_response(id, Some(serde_json::json!(sent)), None).await;
+                        return;
+                    }
+                }
+                "commands/openWith" => {
+                    if let Some(id) = msg.id {
+                        let _ = self.send_response(id, Some(Value::Null), None).await;
                         return;
                     }
                 }

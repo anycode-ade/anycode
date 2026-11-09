@@ -244,6 +244,10 @@ export class ExtHostLanguages {
     return new Disposable(() => {});
   }
 
+  setLanguageConfiguration(language: string, configuration: any): Disposable {
+    return new Disposable(() => {});
+  }
+
   async getLanguages(): Promise<string[]> {
     return ['javascript', 'typescript', 'rust', 'python', 'json', 'html', 'css', 'markdown'];
   }

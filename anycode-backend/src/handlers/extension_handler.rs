@@ -184,6 +184,13 @@ pub async fn handle_ext_command_execute(
     info!("ext:command:execute: command={}", req.command);
     if let Some(ext_host) = state.ext_host_manager.read().await.as_ref() {
         let installed = state.extension_manager.storage.load_installed().unwrap_or_default();
+        if req.command == "vscode.openWith" {
+            if let Some(ref args) = req.args {
+                if let Some(view_id) = args.get(1).and_then(|v| v.as_str()) {
+                    ext_host.check_custom_editor_activation(view_id, &installed).await;
+                }
+            }
+        }
         ext_host.check_command_activation(&req.command, &installed).await;
         match ext_host.execute_command(&req.command, req.args).await {
             Ok(result) => {
@@ -324,6 +331,30 @@ pub async fn handle_ext_webview_message(
 }
 
 #[derive(Debug, Deserialize)]
+pub struct ExtWebviewDisposeMessage {
+    #[serde(rename = "panelId")]
+    pub panel_id: String,
+}
+
+pub async fn handle_ext_webview_dispose(
+    _socket: SocketRef,
+    Data(req): Data<ExtWebviewDisposeMessage>,
+    state: State<AppState>,
+) {
+    info!("[backend:ext] ext:webview:dispose panel_id='{}'", req.panel_id);
+    if let Some(ext_host) = state.ext_host_manager.read().await.as_ref() {
+        let _ = ext_host
+            .send_notification(
+                "webview/didDispose",
+                json!({
+                    "panelId": req.panel_id,
+                }),
+            )
+            .await;
+    }
+}
+
+#[derive(Debug, Deserialize)]
 pub struct ExtWebviewViewResolveRequest {
     #[serde(rename = "viewId")]
     pub view_id: String,
@@ -421,6 +452,7 @@ async fn serve_ext_file(state: &AppState, raw_path: &str) -> Response {
         .decode_utf8_lossy()
         .to_string();
     let p = std::path::PathBuf::from(&decoded_path);
+
     let ext_root = &state.extension_manager.storage.root_dir;
     let allowed = if let (Ok(can_path), Ok(can_root)) = (p.canonicalize(), ext_root.canonicalize()) {
         can_path.starts_with(can_root)

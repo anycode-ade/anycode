@@ -122,9 +122,21 @@ rpc.onRequest('extHost/activateExtension', async (params: { id: string; extensio
     return { success: true, declarativeOnly: true };
   }
 
-  const fullMainPath = path.isAbsolute(mainFile) ? mainFile : path.join(extensionPath, mainFile);
+  let fullMainPath = path.isAbsolute(mainFile) ? mainFile : path.join(extensionPath, mainFile);
   if (!fs.existsSync(fullMainPath)) {
-    throw new Error(`Extension main entry point does not exist: ${fullMainPath}`);
+    if (fs.existsSync(fullMainPath + '.js')) {
+      fullMainPath = fullMainPath + '.js';
+    } else if (fs.existsSync(fullMainPath + '.cjs')) {
+      fullMainPath = fullMainPath + '.cjs';
+    } else if (fs.existsSync(path.join(fullMainPath, 'index.js'))) {
+      fullMainPath = path.join(fullMainPath, 'index.js');
+    } else {
+      try {
+        fullMainPath = require.resolve(fullMainPath);
+      } catch {
+        throw new Error(`Extension main entry point does not exist: ${fullMainPath}`);
+      }
+    }
   }
 
   const context = new ExtHostExtensionContext(id, extensionPath, storageDirectory);
@@ -241,6 +253,10 @@ rpc.onRequest('commands/executeCommand', async (params: { command: string; args?
   return commands.execute(params.command, params.args || []);
 });
 
+rpc.onRequest('commands/openWith', async (params: { uri: any; viewId: string; options?: any }) => {
+  return window.openCustomEditor(params.uri, params.viewId, params.options);
+});
+
 // TreeView & Webview
 rpc.onRequest('treeView/getChildren', async (params: { viewId: string; elementId?: string }) => {
   return window.getTreeItemChildren(params.viewId, params.elementId);
@@ -252,6 +268,10 @@ rpc.onRequest('webviewView/resolve', async (params: { viewId: string; panelId: s
 
 rpc.onNotification('webview/onMessage', (params: { panelId: string; message: any }) => {
   window.handleWebviewMessage(params.panelId, params.message);
+});
+
+rpc.onNotification('webview/didDispose', (params: { panelId: string }) => {
+  window.disposeWebviewPanel(params.panelId);
 });
 
 rpc.onNotification('window/handleUri', (params: { uri: string }) => {

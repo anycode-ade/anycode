@@ -13,7 +13,7 @@ export interface OverlayWebviewItem {
 interface WebviewOverlayContextValue {
   registerWebview: (item: { panelId: string; viewType: string; title: string; html?: string }) => void;
   updateWebviewHtml: (panelId: string, html: string) => void;
-  attachAnchor: (panelId: string, anchorEl: HTMLElement, metadata: { viewType: string; title: string }) => void;
+  attachAnchor: (panelId: string, anchorEl: HTMLElement, metadata: { viewType: string; title: string; html?: string }) => void;
   detachAnchor: (panelId: string, anchorEl: HTMLElement) => void;
   syncRect: (panelId: string, rect: DOMRect, isVisible: boolean) => void;
   getHtml: (panelId: string) => string | undefined;
@@ -31,10 +31,11 @@ export const useWebviewOverlay = () => {
 
 interface WebviewOverlayProviderProps {
   wsRef: React.RefObject<Socket | null>;
+  isConnected?: boolean;
   children: React.ReactNode;
 }
 
-export const WebviewOverlayProvider: React.FC<WebviewOverlayProviderProps> = ({ wsRef, children }) => {
+export const WebviewOverlayProvider: React.FC<WebviewOverlayProviderProps> = ({ wsRef, isConnected, children }) => {
   const [overlays, setOverlays] = useState<Map<string, OverlayWebviewItem>>(new Map());
   const overlayDomRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const pendingCleanups = useRef<Map<string, NodeJS.Timeout>>(new Map());
@@ -47,15 +48,16 @@ export const WebviewOverlayProvider: React.FC<WebviewOverlayProviderProps> = ({ 
     }
     setOverlays((prev) => {
       const existing = prev.get(item.panelId);
-      if (existing && existing.html === (item.html || existing.html)) {
+      const html = item.html || existing?.html || htmlCache.current.get(item.panelId) || '';
+      if (existing && existing.html === html && existing.title === item.title && existing.viewType === item.viewType) {
         return prev;
       }
       const next = new Map(prev);
       next.set(item.panelId, {
         panelId: item.panelId,
-        viewType: item.viewType,
-        title: item.title,
-        html: item.html || existing?.html || htmlCache.current.get(item.panelId) || '',
+        viewType: item.viewType || existing?.viewType || '',
+        title: item.title || existing?.title || '',
+        html,
       });
       return next;
     });
@@ -65,10 +67,14 @@ export const WebviewOverlayProvider: React.FC<WebviewOverlayProviderProps> = ({ 
     htmlCache.current.set(panelId, html);
     setOverlays((prev) => {
       const existing = prev.get(panelId);
-      if (!existing) return prev;
-      if (existing.html === html) return prev;
+      if (existing && existing.html === html) return prev;
       const next = new Map(prev);
-      next.set(panelId, { ...existing, html });
+      next.set(panelId, {
+        panelId,
+        viewType: existing?.viewType || '',
+        title: existing?.title || '',
+        html,
+      });
       return next;
     });
   }, []);
@@ -93,7 +99,7 @@ export const WebviewOverlayProvider: React.FC<WebviewOverlayProviderProps> = ({ 
     dom.style.pointerEvents = 'auto';
   }, []);
 
-  const attachAnchor = useCallback((panelId: string, anchorEl: HTMLElement, metadata: { viewType: string; title: string }) => {
+  const attachAnchor = useCallback((panelId: string, anchorEl: HTMLElement, metadata: { viewType: string; title: string; html?: string }) => {
     activeAnchors.current.set(panelId, anchorEl);
     const cleanup = pendingCleanups.current.get(panelId);
     if (cleanup) {
@@ -101,14 +107,22 @@ export const WebviewOverlayProvider: React.FC<WebviewOverlayProviderProps> = ({ 
       pendingCleanups.current.delete(panelId);
     }
 
+    const html = metadata.html || htmlCache.current.get(panelId) || '';
+    if (html) {
+      htmlCache.current.set(panelId, html);
+    }
+
     setOverlays((prev) => {
-      if (prev.has(panelId)) return prev;
+      const existing = prev.get(panelId);
+      if (existing && (!html || existing.html === html)) {
+        return prev;
+      }
       const next = new Map(prev);
       next.set(panelId, {
         panelId,
-        viewType: metadata.viewType,
-        title: metadata.title,
-        html: htmlCache.current.get(panelId) || '',
+        viewType: metadata.viewType || existing?.viewType || '',
+        title: metadata.title || existing?.title || '',
+        html: html || existing?.html || '',
       });
       return next;
     });
@@ -142,14 +156,42 @@ export const WebviewOverlayProvider: React.FC<WebviewOverlayProviderProps> = ({ 
   useEffect(() => {
     const ws = wsRef.current;
     if (!ws) return;
+    const onCreate = (data: { panelId: string; viewType: string; title: string }) => {
+      registerWebview({ panelId: data.panelId, viewType: data.viewType, title: data.title });
+    };
     const onSetHtml = (data: { panelId: string; html: string }) => {
       updateWebviewHtml(data.panelId, data.html);
     };
-    ws.on('ext:webview:setHtml', onSetHtml);
-    return () => {
-      ws.off('ext:webview:setHtml', onSetHtml);
+    const onSetTitle = (data: { panelId: string; title: string }) => {
+      setOverlays((prev) => {
+        const existing = prev.get(data.panelId);
+        if (!existing) return prev;
+        const next = new Map(prev);
+        next.set(data.panelId, { ...existing, title: data.title });
+        return next;
+      });
     };
-  }, [wsRef, updateWebviewHtml]);
+    const onDispose = (data: { panelId: string }) => {
+      setOverlays((prev) => {
+        if (!prev.has(data.panelId)) return prev;
+        const next = new Map(prev);
+        next.delete(data.panelId);
+        return next;
+      });
+      htmlCache.current.delete(data.panelId);
+      overlayDomRefs.current.delete(data.panelId);
+    };
+    ws.on('ext:webview:create', onCreate);
+    ws.on('ext:webview:setHtml', onSetHtml);
+    ws.on('ext:webview:setTitle', onSetTitle);
+    ws.on('ext:webview:dispose', onDispose);
+    return () => {
+      ws.off('ext:webview:create', onCreate);
+      ws.off('ext:webview:setHtml', onSetHtml);
+      ws.off('ext:webview:setTitle', onSetTitle);
+      ws.off('ext:webview:dispose', onDispose);
+    };
+  }, [wsRef, isConnected, registerWebview, updateWebviewHtml]);
 
   return (
     <WebviewOverlayContext.Provider
@@ -376,18 +418,25 @@ export const WebviewAnchor: React.FC<{
   panelId: string;
   viewType: string;
   title: string;
+  html?: string;
   className?: string;
   style?: React.CSSProperties;
-}> = ({ panelId, viewType, title, className, style }) => {
+}> = ({ panelId, viewType, title, html, className, style }) => {
   const anchorRef = useRef<HTMLDivElement>(null);
-  const { attachAnchor, detachAnchor, syncRect } = useWebviewOverlay();
+  const { attachAnchor, detachAnchor, syncRect, updateWebviewHtml } = useWebviewOverlay();
   const panelApi = useContext(LayoutPanelApiContext);
+
+  useEffect(() => {
+    if (html) {
+      updateWebviewHtml(panelId, html);
+    }
+  }, [panelId, html, updateWebviewHtml]);
 
   useEffect(() => {
     const el = anchorRef.current;
     if (!el) return;
 
-    attachAnchor(panelId, el, { viewType, title });
+    attachAnchor(panelId, el, { viewType, title, html });
 
     const update = () => {
       if (!el || !document.contains(el)) {
@@ -451,7 +500,7 @@ export const WebviewAnchor: React.FC<{
       window.removeEventListener('scroll', update, true);
       detachAnchor(panelId, el);
     };
-  }, [panelId, viewType, title, panelApi, attachAnchor, detachAnchor, syncRect]);
+  }, [panelId, viewType, title, html, panelApi, attachAnchor, detachAnchor, syncRect]);
 
   return (
     <div

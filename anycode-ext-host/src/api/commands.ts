@@ -27,6 +27,9 @@ export class ExtHostCommands {
     });
 
     this._commands.set('vscode.openWith', async (uri: any, viewId: string, options?: any) => {
+      if (this._window.hasCustomEditorProvider(viewId)) {
+        return this._window.openCustomEditor(uri, viewId, options);
+      }
       return this._rpc.sendRequest('commands/openWith', { uri: uri?.toString?.() || uri, viewId, options });
     });
 

@@ -157,7 +157,14 @@ export class ExtHostWorkspace {
   private _documents = new Map<string, ExtHostTextDocument>();
   private _folders: WorkspaceFolder[] = [];
   private _configuration: Record<string, any> = {};
-  private _defaultConfiguration: Record<string, any> = {};
+  private _defaultConfiguration: Record<string, any> = {
+    'files.exclude': {},
+    'search.exclude': {},
+    'editor.fontSize': 14,
+    'editor.tabSize': 4,
+    'editor.formatOnSave': false,
+    'workbench.colorTheme': 'Default Dark Modern',
+  };
 
   setDefaultConfiguration(key: string, value: any): void {
     this._defaultConfiguration[key] = value;

@@ -60,6 +60,8 @@ pub struct VsCodeContributes {
     pub views_containers: Option<serde_json::Value>,
     #[serde(default)]
     pub views: Option<serde_json::Value>,
+    #[serde(default, rename = "customEditors")]
+    pub custom_editors: Option<Vec<serde_json::Value>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

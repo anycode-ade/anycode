@@ -120,6 +120,7 @@ const App: React.FC<AppProps> = ({ initialWorkspace }) => {
     const [isCodeActionsOpen, setIsCodeActionsOpen] = useState(false);
     const [codeActions, setCodeActions] = useState<CodeActionItem[]>([]);
     const [activeWebviews, setActiveWebviews] = useState<Map<string, { panelId: string; viewType: string; title: string; html: string }>>(new Map());
+    const activeWebviewsRef = useRef<Map<string, { panelId: string; viewType: string; title: string; html: string }>>(new Map());
     const isWarping = warpDirection !== null;
     const activeProjectId = workspaceState.active_project_id;
     const selectedSearchProjectId = workspaceState.projects.some(
@@ -1325,23 +1326,48 @@ const App: React.FC<AppProps> = ({ initialWorkspace }) => {
         if (!ws) return;
         (window as any).__ANYCODE_WS__ = ws;
         const onCreate = (data: { panelId: string; viewType: string; title: string }) => {
+            const nextItem = { ...data, html: activeWebviewsRef.current.get(data.panelId)?.html || '' };
+            activeWebviewsRef.current.set(data.panelId, nextItem);
             setActiveWebviews((prev) => {
                 const next = new Map(prev);
-                next.set(data.panelId, { ...data, html: '' });
+                next.set(data.panelId, nextItem);
                 return next;
             });
             layoutActionsRef.current?.ensureWebviewPanel(data.panelId, data.title);
         };
         const onSetHtml = (data: { panelId: string; html: string }) => {
+            const existing = activeWebviewsRef.current.get(data.panelId);
+            const nextItem = {
+                panelId: data.panelId,
+                viewType: existing?.viewType || '',
+                title: existing?.title || '',
+                html: data.html,
+            };
+            activeWebviewsRef.current.set(data.panelId, nextItem);
             setActiveWebviews((prev) => {
-                const existing = prev.get(data.panelId);
-                if (!existing) return prev;
                 const next = new Map(prev);
-                next.set(data.panelId, { ...existing, html: data.html });
+                next.set(data.panelId, nextItem);
                 return next;
             });
         };
+        const onSetTitle = (data: { panelId: string; title: string }) => {
+            const existing = activeWebviewsRef.current.get(data.panelId);
+            const nextItem = {
+                panelId: data.panelId,
+                viewType: existing?.viewType || '',
+                title: data.title,
+                html: existing?.html || '',
+            };
+            activeWebviewsRef.current.set(data.panelId, nextItem);
+            setActiveWebviews((prev) => {
+                const next = new Map(prev);
+                next.set(data.panelId, nextItem);
+                return next;
+            });
+            layoutActionsRef.current?.ensureWebviewPanel(data.panelId, data.title);
+        };
         const onDispose = (data: { panelId: string }) => {
+            activeWebviewsRef.current.delete(data.panelId);
             setActiveWebviews((prev) => {
                 const next = new Map(prev);
                 next.delete(data.panelId);
@@ -1350,13 +1376,15 @@ const App: React.FC<AppProps> = ({ initialWorkspace }) => {
         };
         ws.on('ext:webview:create', onCreate);
         ws.on('ext:webview:setHtml', onSetHtml);
+        ws.on('ext:webview:setTitle', onSetTitle);
         ws.on('ext:webview:dispose', onDispose);
         return () => {
             ws.off('ext:webview:create', onCreate);
             ws.off('ext:webview:setHtml', onSetHtml);
+            ws.off('ext:webview:setTitle', onSetTitle);
             ws.off('ext:webview:dispose', onDispose);
         };
-    }, [wsRef]);
+    }, [wsRef, isConnected]);
 
 
 
@@ -1797,33 +1825,13 @@ const App: React.FC<AppProps> = ({ initialWorkspace }) => {
             }
             case 'extensionWebview': {
                 const pId = panelKey.includes('__') ? panelKey.split('__')[1] : panelKey;
-                const wv = activeWebviews.get(pId);
-                if (!wv) {
-                    return (
-                        <div style={{ padding: 24, color: '#888', display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'flex-start' }}>
-                            <span style={{ fontSize: 13, color: '#aaa' }}>Webview session has ended.</span>
-                            <button
-                                onClick={() => layoutActionsRef.current?.closePanel(panelKey)}
-                                style={{
-                                    padding: '6px 14px',
-                                    background: '#2b2b2b',
-                                    color: '#eee',
-                                    border: '1px solid #444',
-                                    borderRadius: 4,
-                                    cursor: 'pointer',
-                                    fontSize: 12,
-                                }}
-                            >
-                                Close Tab
-                            </button>
-                        </div>
-                    );
-                }
+                const wv = activeWebviews.get(pId) || activeWebviewsRef.current.get(pId);
                 return (
                     <WebviewAnchor
-                        panelId={wv.panelId}
-                        viewType={wv.viewType}
-                        title={wv.title}
+                        panelId={pId}
+                        viewType={wv?.viewType || ''}
+                        title={wv?.title || ''}
+                        html={wv?.html || ''}
                     />
                 );
             }
@@ -1940,7 +1948,7 @@ const App: React.FC<AppProps> = ({ initialWorkspace }) => {
     }, [terminalPanes, agentPanes]);
 
     return (
-        <WebviewOverlayProvider wsRef={wsRef}>
+        <WebviewOverlayProvider wsRef={wsRef} isConnected={isConnected}>
             <div
                 className={`app-container toolbar-header-compact ${settings.backgroundSettings.enabled ? 'app-with-dynamic-bg' : ''} ${isWarping ? 'is-warping' : ''}`}
                 data-dynamic-bg={settings.backgroundSettings.enabled ? "global" : undefined}

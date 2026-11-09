@@ -1495,7 +1495,14 @@ var ExtHostWorkspace = class {
   _documents = /* @__PURE__ */ new Map();
   _folders = [];
   _configuration = {};
-  _defaultConfiguration = {};
+  _defaultConfiguration = {
+    "files.exclude": {},
+    "search.exclude": {},
+    "editor.fontSize": 14,
+    "editor.tabSize": 4,
+    "editor.formatOnSave": false,
+    "workbench.colorTheme": "Default Dark Modern"
+  };
   setDefaultConfiguration(key, value) {
     this._defaultConfiguration[key] = value;
   }
@@ -2009,6 +2016,10 @@ var ExtHostLanguages = class {
     });
   }
   registerInlineCompletionItemProvider(selector, provider) {
+    return new Disposable(() => {
+    });
+  }
+  setLanguageConfiguration(language, configuration) {
     return new Disposable(() => {
     });
   }
@@ -2590,12 +2601,13 @@ var ExtHostWebview = class {
 var ExtHostWebviewPanel = class {
   constructor(viewType, title, panelId, options, _rpc) {
     this.viewType = viewType;
-    this.title = title;
     this.panelId = panelId;
     this._rpc = _rpc;
+    this._title = title;
     this.webview = new ExtHostWebview(panelId, _rpc, options);
   }
   webview;
+  _title;
   _onDidDisposeEmitter = new EventEmitter();
   onDidDispose = this._onDidDisposeEmitter.event;
   _onDidChangeViewStateEmitter = new EventEmitter();
@@ -2606,6 +2618,18 @@ var ExtHostWebviewPanel = class {
   active = true;
   viewColumn = 1;
   iconPath = void 0;
+  get title() {
+    return this._title;
+  }
+  set title(val) {
+    if (this._title !== val) {
+      this._title = val;
+      this._rpc.sendNotification("window/setWebviewTitle", {
+        panelId: this.panelId,
+        title: val
+      });
+    }
+  }
   get onDidReceiveMessage() {
     return this.webview.onDidReceiveMessage;
   }
@@ -2616,7 +2640,7 @@ var ExtHostWebviewPanel = class {
     this._rpc.sendNotification("window/revealWebview", { panelId: this.panelId, viewColumn, preserveFocus });
   }
   dispose() {
-    this._rpc.sendNotification("window/disposeWebview", { panelId: this.panelId });
+    this._rpc.sendNotification("window/disposeWebviewPanel", { panelId: this.panelId });
     this._onDidDisposeEmitter.fire();
   }
 };
@@ -2635,6 +2659,7 @@ var ExtHostWindow = class {
   _webviewViewProviders = /* @__PURE__ */ new Map();
   _webviewPanels = /* @__PURE__ */ new Map();
   _webviews = /* @__PURE__ */ new Map();
+  _customEditorProviders = /* @__PURE__ */ new Map();
   onDidChangeActiveTextEditorEmitter = new EventEmitter();
   onDidChangeActiveTextEditor = this.onDidChangeActiveTextEditorEmitter.event;
   onDidChangeVisibleTextEditorsEmitter = new EventEmitter();
@@ -2711,6 +2736,31 @@ var ExtHostWindow = class {
   }
   async showInputBox(options) {
     return this._rpc.sendRequest("window/showInputBox", { options });
+  }
+  async showSaveDialog(options) {
+    extHostLog("window", "showSaveDialog", options);
+    try {
+      const res = await this._rpc.sendRequest("window/showSaveDialog", { options });
+      if (res?.path || res?.fsPath) {
+        return Uri.file(res.fsPath || res.path);
+      }
+      if (typeof res === "string") {
+        return Uri.file(res);
+      }
+    } catch {
+    }
+    return void 0;
+  }
+  async showOpenDialog(options) {
+    extHostLog("window", "showOpenDialog", options);
+    try {
+      const res = await this._rpc.sendRequest("window/showOpenDialog", { options });
+      if (Array.isArray(res)) {
+        return res.map((p) => Uri.file(typeof p === "string" ? p : p.fsPath || p.path));
+      }
+    } catch {
+    }
+    return void 0;
   }
   createQuickPick() {
     return new ExtHostQuickPick(this._rpc);
@@ -2859,8 +2909,20 @@ var ExtHostWindow = class {
   _onDidChangeActiveColorThemeEmitter = new EventEmitter();
   onDidChangeActiveColorTheme = this._onDidChangeActiveColorThemeEmitter.event;
   tabGroups = {
-    all: [],
-    activeTabGroup: void 0,
+    all: [
+      {
+        isActive: true,
+        activeTab: void 0,
+        tabs: [],
+        viewColumn: 1
+      }
+    ],
+    activeTabGroup: {
+      isActive: true,
+      activeTab: void 0,
+      tabs: [],
+      viewColumn: 1
+    },
     onDidChangeTabGroups: new EventEmitter().event,
     onDidChangeTabs: new EventEmitter().event
   };
@@ -2927,8 +2989,68 @@ var ExtHostWindow = class {
     });
   }
   registerCustomEditorProvider(viewType, provider, options) {
+    extHostLog("window", `registerCustomEditorProvider: ${viewType}`);
+    this._customEditorProviders.set(viewType, { provider, options });
     return new Disposable(() => {
+      this._customEditorProviders.delete(viewType);
     });
+  }
+  hasCustomEditorProvider(viewType) {
+    return this._customEditorProviders.has(viewType);
+  }
+  async openCustomEditor(uri, viewType, options) {
+    extHostLog("window", `openCustomEditor [${viewType}] uri: ${uri?.toString?.() || uri}`);
+    const entry = this._customEditorProviders.get(viewType);
+    if (!entry) {
+      extHostLog("window", `openCustomEditor: no provider for ${viewType}`);
+      return void 0;
+    }
+    const parsedUri = typeof uri === "string" ? Uri.parse(uri) : uri || Uri.parse("");
+    const uriPath = parsedUri.path || parsedUri.fsPath || "";
+    const baseName = uriPath.split("/").filter(Boolean).pop();
+    const initialTitle = options?.title || baseName || "Editor";
+    const panel = this.createWebviewPanel(
+      viewType,
+      initialTitle,
+      options?.viewColumn || 1,
+      {
+        enableScripts: true,
+        retainContextWhenHidden: true,
+        ...entry.options?.webviewOptions,
+        ...options
+      }
+    );
+    const cancellationToken = {
+      isCancellationRequested: false,
+      onCancellationRequested: new EventEmitter().event
+    };
+    try {
+      const provider = entry.provider;
+      if (typeof provider.openCustomDocument === "function") {
+        const document = await provider.openCustomDocument(parsedUri, { backupId: options?.backupId }, cancellationToken);
+        if (typeof provider.resolveCustomEditor === "function") {
+          await provider.resolveCustomEditor(document, panel, cancellationToken);
+        }
+      } else if (typeof provider.resolveCustomTextEditor === "function") {
+        const document = await this._workspace.openTextDocument(parsedUri);
+        await provider.resolveCustomTextEditor(document, panel, cancellationToken);
+      } else if (typeof provider.resolveCustomEditor === "function") {
+        const document = { uri: parsedUri, dispose: () => {
+        } };
+        await provider.resolveCustomEditor(document, panel, cancellationToken);
+      }
+      return panel;
+    } catch (e) {
+      extHostLog("window", `Error in resolveCustomEditor for ${viewType}:`, e);
+      return panel;
+    }
+  }
+  disposeWebviewPanel(panelId) {
+    const panel = this._webviewPanels.get(panelId);
+    if (panel) {
+      this._webviewPanels.delete(panelId);
+      panel.dispose();
+    }
   }
   registerWebviewPanelSerializer(viewType, serializer) {
     return new Disposable(() => {
@@ -3038,6 +3160,9 @@ var ExtHostCommands = class {
       return this._rpc.sendRequest("commands/openUri", { uri: uri?.toString?.() || uri, options });
     });
     this._commands.set("vscode.openWith", async (uri, viewId, options) => {
+      if (this._window.hasCustomEditorProvider(viewId)) {
+        return this._window.openCustomEditor(uri, viewId, options);
+      }
       return this._rpc.sendRequest("commands/openWith", { uri: uri?.toString?.() || uri, viewId, options });
     });
     this._commands.set("vscode.diff", async (left, right, title, options) => {
@@ -3521,9 +3646,21 @@ rpc.onRequest("extHost/activateExtension", async (params) => {
   if (!mainFile) {
     return { success: true, declarativeOnly: true };
   }
-  const fullMainPath = path3.isAbsolute(mainFile) ? mainFile : path3.join(extensionPath, mainFile);
+  let fullMainPath = path3.isAbsolute(mainFile) ? mainFile : path3.join(extensionPath, mainFile);
   if (!fs3.existsSync(fullMainPath)) {
-    throw new Error(`Extension main entry point does not exist: ${fullMainPath}`);
+    if (fs3.existsSync(fullMainPath + ".js")) {
+      fullMainPath = fullMainPath + ".js";
+    } else if (fs3.existsSync(fullMainPath + ".cjs")) {
+      fullMainPath = fullMainPath + ".cjs";
+    } else if (fs3.existsSync(path3.join(fullMainPath, "index.js"))) {
+      fullMainPath = path3.join(fullMainPath, "index.js");
+    } else {
+      try {
+        fullMainPath = require.resolve(fullMainPath);
+      } catch {
+        throw new Error(`Extension main entry point does not exist: ${fullMainPath}`);
+      }
+    }
   }
   const context = new ExtHostExtensionContext(id, extensionPath, storageDirectory);
   try {
@@ -3613,6 +3750,9 @@ rpc.onRequest("textDocument/codeAction", async (params) => {
 rpc.onRequest("commands/executeCommand", async (params) => {
   return commands.execute(params.command, params.args || []);
 });
+rpc.onRequest("commands/openWith", async (params) => {
+  return window.openCustomEditor(params.uri, params.viewId, params.options);
+});
 rpc.onRequest("treeView/getChildren", async (params) => {
   return window.getTreeItemChildren(params.viewId, params.elementId);
 });
@@ -3621,6 +3761,9 @@ rpc.onRequest("webviewView/resolve", async (params) => {
 });
 rpc.onNotification("webview/onMessage", (params) => {
   window.handleWebviewMessage(params.panelId, params.message);
+});
+rpc.onNotification("webview/didDispose", (params) => {
+  window.disposeWebviewPanel(params.panelId);
 });
 rpc.onNotification("window/handleUri", (params) => {
   window.handleUri(params.uri);

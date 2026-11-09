@@ -475,6 +475,7 @@ export class ExtHostWebview {
 
 export class ExtHostWebviewPanel implements Disposable {
   readonly webview: ExtHostWebview;
+  private _title: string;
   private _onDidDisposeEmitter = new EventEmitter<void>();
   readonly onDidDispose = this._onDidDisposeEmitter.event;
 
@@ -491,12 +492,27 @@ export class ExtHostWebviewPanel implements Disposable {
 
   constructor(
     readonly viewType: string,
-    public title: string,
+    title: string,
     readonly panelId: string,
     options: any,
     private _rpc: RpcConnection
   ) {
+    this._title = title;
     this.webview = new ExtHostWebview(panelId, _rpc, options);
+  }
+
+  get title(): string {
+    return this._title;
+  }
+
+  set title(val: string) {
+    if (this._title !== val) {
+      this._title = val;
+      this._rpc.sendNotification('window/setWebviewTitle', {
+        panelId: this.panelId,
+        title: val,
+      });
+    }
   }
 
   get onDidReceiveMessage() {
@@ -512,7 +528,7 @@ export class ExtHostWebviewPanel implements Disposable {
   }
 
   dispose(): void {
-    this._rpc.sendNotification('window/disposeWebview', { panelId: this.panelId });
+    this._rpc.sendNotification('window/disposeWebviewPanel', { panelId: this.panelId });
     this._onDidDisposeEmitter.fire();
   }
 }
@@ -528,6 +544,7 @@ export class ExtHostWindow {
   private _webviewViewProviders = new Map<string, any>();
   private _webviewPanels = new Map<string, ExtHostWebviewPanel>();
   private _webviews = new Map<string, ExtHostWebview>();
+  private _customEditorProviders = new Map<string, { provider: any; options?: any }>();
 
   readonly onDidChangeActiveTextEditorEmitter = new EventEmitter<ExtHostTextEditor | undefined>();
   readonly onDidChangeActiveTextEditor = this.onDidChangeActiveTextEditorEmitter.event;
@@ -624,6 +641,48 @@ export class ExtHostWindow {
 
   async showInputBox(options?: any): Promise<string | undefined> {
     return this._rpc.sendRequest('window/showInputBox', { options });
+  }
+
+  async showSaveDialog(options?: {
+    defaultUri?: any;
+    saveLabel?: string;
+    filters?: { [name: string]: string[] };
+    title?: string;
+  }): Promise<Uri | undefined> {
+    extHostLog('window', 'showSaveDialog', options);
+    try {
+      const res = await this._rpc.sendRequest('window/showSaveDialog', { options });
+      if (res?.path || res?.fsPath) {
+        return Uri.file(res.fsPath || res.path);
+      }
+      if (typeof res === 'string') {
+        return Uri.file(res);
+      }
+    } catch {
+      // Backend didn't handle it
+    }
+    return undefined;
+  }
+
+  async showOpenDialog(options?: {
+    canSelectFiles?: boolean;
+    canSelectFolders?: boolean;
+    canSelectMany?: boolean;
+    defaultUri?: any;
+    openLabel?: string;
+    filters?: { [name: string]: string[] };
+    title?: string;
+  }): Promise<Uri[] | undefined> {
+    extHostLog('window', 'showOpenDialog', options);
+    try {
+      const res = await this._rpc.sendRequest('window/showOpenDialog', { options });
+      if (Array.isArray(res)) {
+        return res.map((p: any) => Uri.file(typeof p === 'string' ? p : (p.fsPath || p.path)));
+      }
+    } catch {
+      // Backend didn't handle it
+    }
+    return undefined;
   }
 
   createQuickPick<T = any>(): ExtHostQuickPick {
@@ -792,8 +851,20 @@ export class ExtHostWindow {
   readonly onDidChangeActiveColorTheme = this._onDidChangeActiveColorThemeEmitter.event;
 
   readonly tabGroups = {
-    all: [],
-    activeTabGroup: undefined,
+    all: [
+      {
+        isActive: true,
+        activeTab: undefined,
+        tabs: [],
+        viewColumn: 1,
+      },
+    ],
+    activeTabGroup: {
+      isActive: true,
+      activeTab: undefined,
+      tabs: [],
+      viewColumn: 1,
+    },
     onDidChangeTabGroups: new EventEmitter<any>().event,
     onDidChangeTabs: new EventEmitter<any>().event,
   };
@@ -866,7 +937,73 @@ export class ExtHostWindow {
   }
 
   registerCustomEditorProvider(viewType: string, provider: any, options?: any): Disposable {
-    return new Disposable(() => {});
+    extHostLog('window', `registerCustomEditorProvider: ${viewType}`);
+    this._customEditorProviders.set(viewType, { provider, options });
+    return new Disposable(() => {
+      this._customEditorProviders.delete(viewType);
+    });
+  }
+
+  hasCustomEditorProvider(viewType: string): boolean {
+    return this._customEditorProviders.has(viewType);
+  }
+
+  async openCustomEditor(uri: any, viewType: string, options?: any): Promise<ExtHostWebviewPanel | undefined> {
+    extHostLog('window', `openCustomEditor [${viewType}] uri: ${uri?.toString?.() || uri}`);
+    const entry = this._customEditorProviders.get(viewType);
+    if (!entry) {
+      extHostLog('window', `openCustomEditor: no provider for ${viewType}`);
+      return undefined;
+    }
+
+    const parsedUri = typeof uri === 'string' ? Uri.parse(uri) : (uri || Uri.parse(''));
+    const uriPath = parsedUri.path || parsedUri.fsPath || '';
+    const baseName = uriPath.split('/').filter(Boolean).pop();
+    const initialTitle = options?.title || baseName || 'Editor';
+    const panel = this.createWebviewPanel(
+      viewType,
+      initialTitle,
+      options?.viewColumn || 1,
+      {
+        enableScripts: true,
+        retainContextWhenHidden: true,
+        ...entry.options?.webviewOptions,
+        ...options,
+      }
+    );
+
+    const cancellationToken = {
+      isCancellationRequested: false,
+      onCancellationRequested: new EventEmitter<any>().event,
+    };
+
+    try {
+      const provider = entry.provider;
+      if (typeof provider.openCustomDocument === 'function') {
+        const document = await provider.openCustomDocument(parsedUri, { backupId: options?.backupId }, cancellationToken);
+        if (typeof provider.resolveCustomEditor === 'function') {
+          await provider.resolveCustomEditor(document, panel, cancellationToken);
+        }
+      } else if (typeof provider.resolveCustomTextEditor === 'function') {
+        const document = await this._workspace.openTextDocument(parsedUri);
+        await provider.resolveCustomTextEditor(document, panel, cancellationToken);
+      } else if (typeof provider.resolveCustomEditor === 'function') {
+        const document = { uri: parsedUri, dispose: () => {} };
+        await provider.resolveCustomEditor(document, panel, cancellationToken);
+      }
+      return panel;
+    } catch (e) {
+      extHostLog('window', `Error in resolveCustomEditor for ${viewType}:`, e);
+      return panel;
+    }
+  }
+
+  disposeWebviewPanel(panelId: string): void {
+    const panel = this._webviewPanels.get(panelId);
+    if (panel) {
+      this._webviewPanels.delete(panelId);
+      panel.dispose();
+    }
   }
 
   registerWebviewPanelSerializer(viewType: string, serializer: any): Disposable {
