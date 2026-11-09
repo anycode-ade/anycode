@@ -93,6 +93,7 @@ export class AnycodeEditor {
     private renderer!: Renderer;
     private wrapper!: HTMLDivElement;
     private container!: HTMLDivElement;
+    private contentContainer!: HTMLDivElement;
     private buttonsColumn!: HTMLDivElement;
     private gutter!: HTMLDivElement;
     private foldsColumn!: HTMLDivElement;
@@ -237,7 +238,8 @@ export class AnycodeEditor {
             this.wrapper,
             (line) => this.toggleMultibufferHeader(line),
             (line) => this.jumpToMultibufferHeader(line),
-            this.stickyHeaderEnabled
+            this.stickyHeaderEnabled,
+            this.contentContainer
         );
         this.renderer.setFocusedDiffMode(this.focusedDiffEnabled, this.focusedDiffContextLines);
     }
@@ -274,10 +276,14 @@ export class AnycodeEditor {
             this.container.classList.add('no-folding');
         }
 
-        this.container.appendChild(this.buttonsColumn);
-        this.container.appendChild(this.gutter);
-        this.container.appendChild(this.foldsColumn);
-        this.container.appendChild(this.codeContent);
+        this.contentContainer = document.createElement('div');
+        this.contentContainer.className = 'anyeditor-content';
+
+        this.contentContainer.appendChild(this.buttonsColumn);
+        this.contentContainer.appendChild(this.gutter);
+        this.contentContainer.appendChild(this.foldsColumn);
+        this.contentContainer.appendChild(this.codeContent);
+        this.container.appendChild(this.contentContainer);
         this.wrapper.appendChild(this.container);
     }
 
@@ -896,7 +902,6 @@ export class AnycodeEditor {
 
     private handleScroll(e: Event) {
         if (!this.container.isConnected) return;
-        if (this.container.clientHeight === 0 && this.container.clientWidth === 0) return;
 
         this.clearPendingHover();
         this.closeHover();

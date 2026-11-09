@@ -764,6 +764,16 @@ test.describe('Anycode Live Demo Mode E2E Tests', () => {
         await reviewBtn.click();
         const headerRow = page.locator('.multibuffer-file-header-row').first();
         await expect(headerRow).toBeVisible({ timeout: 10000 });
+        // Wait for async commit files to finish loading so external refreshes don't replace the chevron mid-press.
+        const editorEl = page.locator('.multibuffer-editor-shell .anyeditor').first();
+        await expect(page.locator('.multibuffer-editor-shell .diff-gap').first()).toBeVisible({ timeout: 10000 });
+        await expect(async () => {
+            const h1 = await editorEl.evaluate((el) => el.scrollHeight);
+            await page.waitForTimeout(150);
+            const h2 = await editorEl.evaluate((el) => el.scrollHeight);
+            expect(h2).toBeGreaterThan(0);
+            expect(h2).toBe(h1);
+        }).toPass({ timeout: 10000 });
         const chevron = headerRow.locator('.multibuffer-header-chevron');
         await expect(chevron).toHaveClass(/expanded/);
 
@@ -879,6 +889,149 @@ test.describe('Anycode Live Demo Mode E2E Tests', () => {
 
         await expect.poll(() => editorContainer.evaluate((el) => el.scrollTop)).toBe(0);
         await expect(stickyHeader).toBeHidden();
+    });
+
+    test('should transition multibuffer sticky header without vertical gap or layout shifts on wheel scroll', async ({ page }) => {
+        const historyTab = page.getByText(/^History$/i).first();
+        await historyTab.click();
+        const historyList = page.locator('.history-panel').getByRole('list', { name: 'Git history' });
+        const firstCommit = historyList.locator('.history-commit-row').first();
+        await firstCommit.click();
+
+        const reviewBtn = historyList.locator('.history-review-button, button:has-text("Review")').first();
+        await expect(reviewBtn).toBeVisible({ timeout: 5000 });
+        await reviewBtn.click();
+
+        const editorContainer = page.locator('.multibuffer-editor-shell .anyeditor').first();
+        await expect(editorContainer).toBeVisible({ timeout: 10000 });
+        await expect(editorContainer.locator('.multibuffer-file-header-row').first()).toBeVisible({ timeout: 10000 });
+        await expect.poll(() => editorContainer.evaluate((el) => el.scrollHeight - el.clientHeight)).toBeGreaterThan(200);
+
+        await page.evaluate(() => {
+            (window as any).__stickyWheelShifts = [];
+            const observer = new PerformanceObserver((list) => {
+                for (const entry of list.getEntries() as any[]) {
+                    (window as any).__stickyWheelShifts.push({
+                        value: entry.value,
+                        hadRecentInput: entry.hadRecentInput,
+                        nodes: (entry.sources || []).map((s: any) => s.node?.className || ''),
+                    });
+                }
+            });
+            observer.observe({ type: 'layout-shift', buffered: false });
+        });
+
+        const box = await editorContainer.boundingBox();
+        expect(box).not.toBeNull();
+        await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
+
+        const pushObservations: Array<{ direction: 'down' | 'up'; gapPx: number; stickyWidth: number; edWidth: number }> = [];
+        let maxStickyCount = 0;
+
+        const inspectFrame = async (direction: 'down' | 'up') => {
+            const state = await editorContainer.evaluate((ed) => {
+                const edRect = ed.getBoundingClientRect();
+                const stickyHeaders = ed.querySelectorAll('.anyeditor-sticky-header');
+                const visibleSticky = Array.from(stickyHeaders).find(
+                    (el) => getComputedStyle(el).display !== 'none'
+                ) as HTMLElement | undefined;
+
+                if (!visibleSticky) {
+                    return { count: stickyHeaders.length, pushSample: null, scrollTop: ed.scrollTop };
+                }
+
+                const stickyRect = visibleSticky.getBoundingClientRect();
+                const nextHeader = Array.from(ed.querySelectorAll('.multibuffer-file-header-row'))
+                    .map((el) => el.getBoundingClientRect())
+                    .find((rect) => rect.top > edRect.top && rect.top < edRect.top + stickyRect.height - 0.5);
+
+                return {
+                    count: stickyHeaders.length,
+                    scrollTop: ed.scrollTop,
+                    pushSample: nextHeader
+                        ? {
+                            gapPx: Math.abs(stickyRect.bottom - nextHeader.top),
+                            stickyWidth: Math.round(stickyRect.width),
+                            edWidth: Math.round(edRect.width),
+                        }
+                        : null,
+                };
+            });
+
+            maxStickyCount = Math.max(maxStickyCount, state.count);
+            if (state.pushSample) {
+                pushObservations.push({ direction, ...state.pushSample });
+            }
+            return state.scrollTop;
+        };
+
+        // Enter the first file to read its sticky slot boundary height (second header offset)
+        await page.mouse.wheel(0, 40);
+        await expect(editorContainer.locator('.anyeditor-sticky-header')).toBeVisible({ timeout: 5000 });
+        const secondHeaderY = await editorContainer.evaluate((ed) => {
+            const slot = ed.querySelector('.anyeditor-sticky-slot:has(.anyeditor-sticky-header)') as HTMLElement | null;
+            return slot ? parseFloat(slot.style.height || '0') : 0;
+        });
+        expect(secondHeaderY).toBeGreaterThan(80);
+
+        // Approach the second header boundary, then wheel finely down and back up across the push zone
+        let scrollTop = await inspectFrame('down');
+        while (scrollTop < secondHeaderY - 80) {
+            await page.mouse.wheel(0, 60);
+            await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+            const nextScrollTop = await inspectFrame('down');
+            if (nextScrollTop === scrollTop) break;
+            scrollTop = nextScrollTop;
+        }
+
+        while (scrollTop < secondHeaderY + 50) {
+            await page.mouse.wheel(0, 10);
+            await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+            const nextScrollTop = await inspectFrame('down');
+            if (nextScrollTop === scrollTop) break;
+            scrollTop = nextScrollTop;
+        }
+
+        while (scrollTop > secondHeaderY - 80) {
+            await page.mouse.wheel(0, -10);
+            await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+            const nextScrollTop = await inspectFrame('up');
+            if (nextScrollTop === scrollTop) break;
+            scrollTop = nextScrollTop;
+        }
+
+        // Fast wheel jumps across boundaries keep pre-warmed composited banners populated and zero layout shifts
+        await editorContainer.evaluate((ed, y) => {
+            ed.scrollTop = y;
+            ed.dispatchEvent(new Event('scroll'));
+        }, secondHeaderY + 60);
+        await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+        const prewarmedTexts = await editorContainer.evaluate((ed) =>
+            Array.from(ed.querySelectorAll('.anyeditor-sticky-banner .sticky-header-path')).map((el) => el.textContent?.trim() || '')
+        );
+        expect(prewarmedTexts.filter(Boolean).length).toBeGreaterThanOrEqual(2);
+
+        await page.mouse.wheel(0, -180);
+        await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+        const afterUpJump = await inspectFrame('up');
+        expect(afterUpJump).toBeLessThan(secondHeaderY);
+        await expect(editorContainer.locator('.anyeditor-sticky-header')).toBeVisible();
+
+        await page.mouse.wheel(0, 180);
+        await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+        const afterDownJump = await inspectFrame('down');
+        expect(afterDownJump).toBeGreaterThan(secondHeaderY);
+        await expect(editorContainer.locator('.anyeditor-sticky-header')).toBeVisible();
+
+        const stickyShifts = await page.evaluate(() => (window as any).__stickyWheelShifts);
+        expect(maxStickyCount).toBeLessThanOrEqual(1);
+        expect(pushObservations.some((s) => s.direction === 'down')).toBe(true);
+        expect(pushObservations.some((s) => s.direction === 'up')).toBe(true);
+        for (const sample of pushObservations) {
+            expect(sample.gapPx).toBeLessThanOrEqual(0.5);
+            expect(sample.stickyWidth).toBe(sample.edWidth);
+        }
+        expect(stickyShifts).toEqual([]);
     });
 
     test('should preserve scroll position in Multibuffer Review when switching panels', async ({ page }) => {

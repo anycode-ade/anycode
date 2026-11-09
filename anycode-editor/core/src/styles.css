@@ -67,6 +67,14 @@
   background: transparent !important;
 }
 
+.anyeditor .anyeditor-content {
+  display: flex;
+  flex: 1;
+  align-self: flex-start;
+  min-height: 100%;
+  position: relative;
+}
+
 .anyeditor::-webkit-scrollbar {
   display: none;
   width: 0;
@@ -303,6 +311,7 @@
 
 .anyeditor .line,
 .anyeditor .multibuffer-file-header-row,
+.anyeditor-wrapper .anyeditor-sticky-banner,
 .anyeditor-wrapper .anyeditor-sticky-header {
   height: var(--anycode-line-height);
   line-height: var(--anycode-line-height);
@@ -312,6 +321,7 @@
 }
 
 .anyeditor .multibuffer-file-header-row,
+.anyeditor-wrapper .anyeditor-sticky-banner,
 .anyeditor-wrapper .anyeditor-sticky-header {
   color: var(--theme-editor-foreground, var(--foreground-color, #fff));
   background: var(--multibuffer-header-background);
@@ -339,6 +349,7 @@
 }
 
 .anyeditor .multibuffer-file-header-row .multibuffer-header,
+.anyeditor-wrapper .anyeditor-sticky-banner .multibuffer-header,
 .anyeditor-wrapper .anyeditor-sticky-header .multibuffer-header {
   color: var(--theme-editor-foreground, var(--foreground-color, #fff));
   font-family: inherit;
@@ -350,6 +361,7 @@
 }
 
 .anyeditor .multibuffer-file-header-row .multibuffer-header-added,
+.anyeditor-wrapper .anyeditor-sticky-banner .multibuffer-header-added,
 .anyeditor-wrapper .anyeditor-sticky-header .multibuffer-header-added {
   color: var(--theme-git-added, #79c97d);
   font-family: inherit;
@@ -361,6 +373,7 @@
 }
 
 .anyeditor .multibuffer-file-header-row .multibuffer-header-removed,
+.anyeditor-wrapper .anyeditor-sticky-banner .multibuffer-header-removed,
 .anyeditor-wrapper .anyeditor-sticky-header .multibuffer-header-removed {
   color: var(--theme-git-removed, rgba(248, 65, 61, 1));
   font-family: inherit;
@@ -372,6 +385,7 @@
 }
 
 .anyeditor .multibuffer-file-header-row .multibuffer-header-icon,
+.anyeditor-wrapper .anyeditor-sticky-banner .multibuffer-header-icon,
 .anyeditor-wrapper .anyeditor-sticky-header .multibuffer-header-icon {
   display: inline-block;
   flex: none;
@@ -392,6 +406,7 @@
 }
 
 .anyeditor .multibuffer-file-header-row .multibuffer-header-dir,
+.anyeditor-wrapper .anyeditor-sticky-banner .multibuffer-header-dir,
 .anyeditor-wrapper .anyeditor-sticky-header .multibuffer-header-dir {
   color: var(--theme-muted-foreground, #888);
   font-family: inherit;
@@ -407,22 +422,43 @@
   --multibuffer-header-background: var(--background-color, #1e1e1e);
 }
 
-.anyeditor-wrapper .anyeditor-sticky-header {
+.anyeditor-wrapper .anyeditor-sticky-slot {
   position: absolute;
+  left: 0;
+  width: 100%;
+  min-width: 100cqw;
+  pointer-events: none;
+  z-index: 25;
+}
+
+.anyeditor-wrapper .anyeditor-sticky-banner,
+.anyeditor-wrapper .anyeditor-sticky-header {
+  position: sticky;
   top: 0;
   left: 0;
-  right: 0;
-  display: none;
+  width: 100cqw;
+  display: flex;
   align-items: center;
-  z-index: 25;
   user-select: none;
   -webkit-user-select: none;
   padding-left: 7px;
   padding-right: 16px;
+  pointer-events: none;
+  will-change: transform;
+}
+
+.anyeditor-wrapper .anyeditor-sticky-banner.anyeditor-sticky-header {
   cursor: pointer;
   pointer-events: auto;
 }
 
+:root[data-dynamic-bg="global"] .anyeditor-wrapper .anyeditor-sticky-banner:not(.anyeditor-sticky-header):not(.anyeditor-sticky-passed),
+[data-dynamic-bg="global"] .anyeditor-wrapper .anyeditor-sticky-banner:not(.anyeditor-sticky-header):not(.anyeditor-sticky-passed),
+.app-with-dynamic-bg .anyeditor-wrapper .anyeditor-sticky-banner:not(.anyeditor-sticky-header):not(.anyeditor-sticky-passed) {
+  opacity: 0;
+}
+
+.anyeditor-wrapper .anyeditor-sticky-banner .sticky-header-content,
 .anyeditor-wrapper .anyeditor-sticky-header .sticky-header-content {
   display: inline-flex;
   align-items: center;
@@ -433,6 +469,7 @@
 }
 
 .anyeditor .multibuffer-file-header-row .multibuffer-header-chevron,
+.anyeditor-wrapper .anyeditor-sticky-banner .sticky-header-chevron,
 .anyeditor-wrapper .anyeditor-sticky-header .sticky-header-chevron {
   display: inline-flex;
   align-items: center;
@@ -458,6 +495,7 @@
 }
 
 .anyeditor .multibuffer-file-header-row .multibuffer-header-chevron::before,
+.anyeditor-wrapper .anyeditor-sticky-banner .sticky-header-chevron::before,
 .anyeditor-wrapper .anyeditor-sticky-header .sticky-header-chevron::before {
   content: "";
   position: absolute;
@@ -480,15 +518,18 @@
 }
 
 .anyeditor .multibuffer-file-header-row .multibuffer-header-chevron.expanded::before,
+.anyeditor-wrapper .anyeditor-sticky-banner .sticky-header-chevron.expanded::before,
 .anyeditor-wrapper .anyeditor-sticky-header .sticky-header-chevron.expanded::before {
   transform: translate(-50%, -80%) rotate(-45deg);
 }
 
 .anyeditor .multibuffer-file-header-row .multibuffer-header-chevron.collapsed::before,
+.anyeditor-wrapper .anyeditor-sticky-banner .sticky-header-chevron.collapsed::before,
 .anyeditor-wrapper .anyeditor-sticky-header .sticky-header-chevron.collapsed::before {
   transform: translate(-80%, -50%) rotate(-135deg);
 }
 
+.anyeditor-wrapper .anyeditor-sticky-banner .sticky-header-path,
 .anyeditor-wrapper .anyeditor-sticky-header .sticky-header-path {
   display: inline-flex;
   align-items: center;

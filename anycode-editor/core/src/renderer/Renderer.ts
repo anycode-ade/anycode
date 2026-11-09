@@ -118,7 +118,8 @@ export class Renderer {
         wrapper?: HTMLDivElement,
         onToggleMultibufferHeader?: (line: number) => void,
         onJumpToMultibufferHeader?: (line: number) => void,
-        stickyHeaderEnabled: boolean = true
+        stickyHeaderEnabled: boolean = true,
+        stickyHost?: HTMLDivElement
     ) {
         this.container = container;
         this.buttonsColumn = buttonsColumn;
@@ -175,7 +176,8 @@ export class Renderer {
                 onJumpToFile: onJumpToMultibufferHeader,
                 getVisualIndexForLine: (line: number) => this.getVisualIndexForLine(line),
             },
-            stickyHeaderEnabled
+            stickyHeaderEnabled,
+            stickyHost
         );
     }
 
