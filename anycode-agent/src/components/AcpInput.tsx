@@ -216,11 +216,24 @@ const AcpInputComponent: React.FC<AcpInputProps> = ({
       el.style.overflowY = 'hidden';
       return;
     }
-    el.style.height = 'auto';
-    const isSingleLine = !el.value.includes('\n') && el.scrollHeight <= 28;
-    const nextHeight = isSingleLine ? 24 : Math.min(Math.max(el.scrollHeight, 24), 160);
-    el.style.height = `${nextHeight}px`;
-    el.style.overflowY = el.scrollHeight > 160 ? 'auto' : 'hidden';
+    const row = el.parentElement;
+    const prevRowHeight = row?.getBoundingClientRect().height ?? 0;
+    const prevMinHeight = row ? row.style.minHeight : '';
+    if (row && prevRowHeight > 0) {
+      // Hold the row height across height='auto' so outer scroll containers do not clamp scrollTop.
+      row.style.minHeight = `${prevRowHeight}px`;
+    }
+    try {
+      el.style.height = 'auto';
+      const isSingleLine = !el.value.includes('\n') && el.scrollHeight <= 28;
+      const nextHeight = isSingleLine ? 24 : Math.min(Math.max(el.scrollHeight, 24), 160);
+      el.style.height = `${nextHeight}px`;
+      el.style.overflowY = el.scrollHeight > 160 ? 'auto' : 'hidden';
+    } finally {
+      if (row) {
+        row.style.minHeight = prevMinHeight;
+      }
+    }
   }, []);
 
   React.useLayoutEffect(() => {

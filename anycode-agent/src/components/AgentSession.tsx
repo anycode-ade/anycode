@@ -129,15 +129,28 @@ const useAutoScroll = (messages: AcpMessage[], isProcessing: boolean, agentId: s
         return;
       }
 
-      const gap = element.scrollHeight - element.clientHeight - element.scrollTop;
+      const prevScrollTop = element.scrollTop;
+      const gap = element.scrollHeight - element.clientHeight - prevScrollTop;
       if (gap <= 0) {
         followBottomRafRef.current = null;
         return;
       }
 
       const isJump = gap > element.clientHeight;
-      element.scrollTop = gap < 2 || isJump ? element.scrollHeight : element.scrollTop + gap * FOLLOW_EASE;
+      if (gap < 2 || isJump) {
+        element.scrollTop = element.scrollHeight;
+        lastScrollTopRef.current = element.scrollTop;
+        followBottomRafRef.current = null;
+        return;
+      }
+
+      element.scrollTop = prevScrollTop + Math.max(1, gap * FOLLOW_EASE);
       lastScrollTopRef.current = element.scrollTop;
+      if (element.scrollTop <= prevScrollTop) {
+        followBottomRafRef.current = null;
+        return;
+      }
+
       followBottomRafRef.current = requestAnimationFrame(step);
     };
 
