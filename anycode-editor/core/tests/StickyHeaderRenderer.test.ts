@@ -348,7 +348,7 @@ describe('StickyHeaderRenderer & MultiBufferCode headers', () => {
         const file1 = new Code('line 1\nline 2\nline 3\nline 4\nline 5\nline 6\nline 7\nline 8\nline 9\nline 10', 'src/file1.ts', '');
         const multibuffer = new MultiBufferCode([
             { id: 'src/file1.ts', path: 'src/file1.ts', code: file1, originalCode: new Code('', 'src/file1.ts', '') },
-        ]);
+        ], { headerRows: 1 });
 
         // In multibuffer: line 0 = header, line 1..10 = code lines
         // If container.scrollTop = 100 (which corresponds to line 5 at y=100),

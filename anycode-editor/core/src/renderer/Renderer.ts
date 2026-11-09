@@ -1476,9 +1476,7 @@ export class Renderer {
         const cursorTop = visualIndex * settings.lineHeight;
         const cursorBottom = cursorTop + settings.lineHeight;
 
-        const topPaddingLines = (state.stickyHeaderEnabled && typeof (state.code as any)?.getFileHeaders === 'function')
-            ? this.headerRowCount
-            : 0;
+        const topPaddingLines = state.stickyHeaderEnabled ? (code.getHeaderLayout()?.rows ?? 0) : 0;
         const topPadding = topPaddingLines * settings.lineHeight;
 
         const renderedRange = this.getRenderedRange();
