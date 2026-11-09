@@ -150,7 +150,7 @@ export const BG_SETTINGS_VERSION = 2;
 
 export const DEFAULT_BACKGROUND_SETTINGS: DynamicBackgroundSettings = {
     version: BG_SETTINGS_VERSION,
-    enabled: true,
+    enabled: false,
     scope: 'all',
     physics: 'blackhole',
     pulsation: 'radial',

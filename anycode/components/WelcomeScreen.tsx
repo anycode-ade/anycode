@@ -10,7 +10,7 @@ import {
 import { announceWarp, formatRelativeTime } from '../utils';
 import { isTauri } from '../constants';
 import { DynamicBackground } from './DynamicBackground';
-import type { DynamicBackgroundSettings } from '../hooks/useSettings';
+import { DEFAULT_BACKGROUND_SETTINGS, type DynamicBackgroundSettings } from '../hooks/useSettings';
 import './WelcomeScreen.css';
 
 interface WelcomeScreenProps {
@@ -134,7 +134,7 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
         return () => window.removeEventListener('anycode:warp-speed', handleWarpPop);
     }, []);
 
-    const isDynamicEnabled = backgroundSettings?.enabled ?? true;
+    const isDynamicEnabled = backgroundSettings?.enabled ?? DEFAULT_BACKGROUND_SETTINGS.enabled;
 
     return (
         <div
