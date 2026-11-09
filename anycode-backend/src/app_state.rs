@@ -6,6 +6,7 @@ use crate::git::{GitManager, SearchHistorySessionCommand};
 use crate::lsp::LspManager;
 use crate::search::FileSearchResult;
 use crate::terminal::Terminal;
+use crate::workspace::StartupProject;
 use anyhow::{Result, anyhow};
 use lsp_types::PublishDiagnosticsParams;
 use socketioxide::extract::{SocketRef, State};
@@ -94,7 +95,7 @@ impl AppState {
             acp_fs_tx,
             auth_token,
             startup_root,
-            true,
+            StartupProject::IfEmpty,
         )
     }
 
@@ -103,14 +104,14 @@ impl AppState {
         acp_fs_tx: mpsc::Sender<acp_fs::AcpFsCommand>,
         auth_token: Option<String>,
         startup_root: PathBuf,
-        add_startup_when_empty: bool,
+        startup: StartupProject,
     ) -> Self {
         Self::new_with_workspace(
             diagnostic_tx,
             acp_fs_tx,
             auth_token,
             startup_root,
-            add_startup_when_empty,
+            startup,
         )
     }
 
@@ -119,7 +120,7 @@ impl AppState {
         acp_fs_tx: mpsc::Sender<acp_fs::AcpFsCommand>,
         auth_token: Option<String>,
         startup_root: PathBuf,
-        add_startup_when_empty: bool,
+        startup: StartupProject,
     ) -> Self {
         let config = crate::config::get();
 
@@ -140,19 +141,12 @@ impl AppState {
 
         let acp_manager = AcpManager::new(acp_fs_tx, Some(acp_db.clone()));
         let acp_registry = crate::acp_registry::AcpRegistryManager::new();
-        let workspace = if add_startup_when_empty {
-            crate::workspace::WorkspaceManager::new(
-                startup_root.clone(),
-                config.clone(),
-                diagnostic_tx.clone(),
-            )
-        } else {
-            crate::workspace::WorkspaceManager::new_empty(
-                startup_root.clone(),
-                config.clone(),
-                diagnostic_tx,
-            )
-        };
+        let workspace = crate::workspace::WorkspaceManager::new(
+            startup_root.clone(),
+            startup,
+            config.clone(),
+            diagnostic_tx,
+        );
         let mut git_manager = GitManager::new(startup_root);
         let _ = git_manager.refresh_status_cache();
 

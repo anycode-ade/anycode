@@ -39,6 +39,17 @@ pub struct Project {
     pub lsp: Arc<Mutex<crate::lsp::LspManager>>,
 }
 
+/// How the directory a server was launched from enters the workspace.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StartupProject {
+    /// Add the directory and make it the default project, even when other projects were restored.
+    Select,
+    /// Add the directory only when no projects were restored.
+    IfEmpty,
+    /// Do not add the directory.
+    Skip,
+}
+
 pub struct WorkspaceManager {
     projects: HashMap<String, Project>,
     default_project_id: Option<String>,
@@ -52,18 +63,11 @@ pub struct WorkspaceManager {
 impl WorkspaceManager {
     pub fn new(
         startup_root: PathBuf,
+        startup: StartupProject,
         config: Config,
         diagnostic_tx: tokio::sync::mpsc::Sender<PublishDiagnosticsParams>,
     ) -> Self {
-        Self::load(startup_root, true, config, diagnostic_tx, None)
-    }
-
-    pub fn new_empty(
-        startup_root: PathBuf,
-        config: Config,
-        diagnostic_tx: tokio::sync::mpsc::Sender<PublishDiagnosticsParams>,
-    ) -> Self {
-        Self::load(startup_root, false, config, diagnostic_tx, None)
+        Self::load(startup_root, startup, config, diagnostic_tx, None)
     }
 
     #[cfg(test)]
@@ -73,12 +77,18 @@ impl WorkspaceManager {
         config: Config,
         diagnostic_tx: tokio::sync::mpsc::Sender<PublishDiagnosticsParams>,
     ) -> Self {
-        Self::load(startup_root, true, config, diagnostic_tx, Some(config_path))
+        Self::load(
+            startup_root,
+            StartupProject::IfEmpty,
+            config,
+            diagnostic_tx,
+            Some(config_path),
+        )
     }
 
     fn load(
         startup_root: PathBuf,
-        add_startup_when_empty: bool,
+        startup: StartupProject,
         config: Config,
         diagnostic_tx: tokio::sync::mpsc::Sender<PublishDiagnosticsParams>,
         config_path: Option<PathBuf>,
@@ -106,7 +116,7 @@ impl WorkspaceManager {
             }
         }
 
-        if projects.is_empty() && add_startup_when_empty {
+        if projects.is_empty() && startup == StartupProject::IfEmpty {
             if let Ok(project) = make_project(&startup_root, &config, &diagnostic_tx) {
                 projects.insert(project.info.id.clone(), project);
             }
@@ -121,7 +131,7 @@ impl WorkspaceManager {
             .or_else(|| projects.keys().min().cloned());
 
         persisted.projects = projects.keys().cloned().collect();
-        let manager = Self {
+        let mut manager = Self {
             projects,
             default_project_id,
             config_path,
@@ -130,6 +140,12 @@ impl WorkspaceManager {
             config,
             diagnostic_tx,
         };
+        if startup == StartupProject::Select {
+            let root = manager.startup_root.clone();
+            if let Err(error) = manager.add_project(&root) {
+                tracing::warn!("Could not open {}: {error}", root.display());
+            }
+        }
         manager.persist();
         manager
     }
@@ -510,6 +526,37 @@ mod tests {
         );
         assert!(restored.get(&project_a.id).is_none());
         assert!(restored.get(&project_b.id).is_some());
+    }
+
+    #[test]
+    fn launch_directory_becomes_default_even_when_other_projects_were_restored() {
+        let workspace_dir = tempfile::tempdir().unwrap();
+        let launch_dir = workspace_dir.path().join("launch");
+        let root_a = workspace_dir.path().join("project-a");
+        create_git_project(&launch_dir, "launch");
+        create_git_project(&root_a, "alpha");
+        let config_path = workspace_dir.path().join("workspaces.json");
+        let (diagnostics, _) = tokio::sync::mpsc::channel(1);
+        let mut manager = WorkspaceManager::new_with_config_path(
+            launch_dir.clone(),
+            config_path.clone(),
+            crate::config::get(),
+            diagnostics,
+        );
+        let project_a = manager.add_project(&root_a).unwrap();
+        drop(manager);
+
+        let (diagnostics, _) = tokio::sync::mpsc::channel(1);
+        let launched = WorkspaceManager::load(
+            launch_dir.clone(),
+            StartupProject::Select,
+            crate::config::get(),
+            diagnostics,
+            Some(config_path),
+        );
+        let launch_id = project_info_for_path(&launch_dir).unwrap().id;
+        assert_eq!(launched.default_project_id().as_deref(), Some(launch_id.as_str()));
+        assert!(launched.get(&project_a.id).is_some());
     }
 
     fn create_git_project(root: &Path, contents: &str) {

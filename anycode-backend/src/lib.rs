@@ -5,6 +5,7 @@ use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot};
 use tower::ServiceBuilder;
 use tower_http::cors::CorsLayer;
+use crate::workspace::StartupProject;
 use tracing::info;
 
 pub mod acp;
@@ -68,12 +69,17 @@ pub async fn start_server(
         .initial_workspace
         .clone()
         .unwrap_or_else(crate::utils::current_dir);
+    let startup = if options.initial_workspace.is_some() {
+        StartupProject::Select
+    } else {
+        StartupProject::Skip
+    };
     let state = AppState::new_for_server(
         diagnostic_tx,
         acp_fs_tx,
         options.token.clone(),
         startup_root,
-        options.initial_workspace.is_some(),
+        startup,
     );
 
     let (layer, io) = SocketIo::builder().with_state(state.clone()).build_layer();
