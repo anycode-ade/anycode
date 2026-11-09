@@ -2,6 +2,28 @@
 
 All notable changes are documented here by release tag.
 
+## v0.3.6 - 2026-11-09
+
+### Highlights
+- Composited multibuffer sticky headers with pre-warmed `position: sticky` slots, eliminating 1-frame push gaps, flicker on fast scroll flicks, DOM recreation during line edits/diff-gap expansions, and layout shifts (`LayoutShift` 0).
+- Added bounded compositor windowing (`SLOT_RADIUS_PX` + `MAX_SLOT_COUNT_RADIUS`) and preserved standby slots across negative overscroll.
+- Replaced blocking `window.confirm` update prompts in Desktop with a non-blocking React `UpdaterToast` component.
+- Made dynamic background off by default and eliminated welcome/background flash on page reload.
+- Added configurable startup project handling (`StartupProject::Select` / `IfEmpty` / `Skip`) in backend `WorkspaceManager`.
+- Added recent folders in the add-project popover along with a separate add-project button in the project switcher.
+- Fixed agent session scroll jump on multi-line prompt resize and stopped auto-scroll spin.
+
+### Commits
+- `8fa5eec` perf(editor): composite multibuffer sticky headers with pre-warmed slots
+- `21be3ec` refactor(editor): use multibuffer header rows for cursor reveal padding
+- `a0587d0` fix(css): let bundler add -webkit-backdrop-filter prefixes
+- `1c62c85` feat(ui): dynamic background off by default
+- `fa81566` fix(ui): avoid welcome and background flash on reload
+- `99ebe01` feat(ui): recent folders in add-project popover and separate add-project button
+- `ca0da46` feat(backend): configurable startup project
+- `b828020` fix(agent): prevent prompt resize scroll jump and auto-scroll spin
+- `98336c4` feat(desktop): replace window.confirm updater with React UpdaterToast component
+
 ## v0.3.5 - 2026-11-03
 
 ### Highlights
