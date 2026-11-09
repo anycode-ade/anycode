@@ -452,7 +452,6 @@
 [data-dynamic-bg="global"] .terminal-pane-opened-action {
     background: color-mix(in srgb, var(--background-color, #242424) 75%, transparent 25%) !important;
     backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
     border: 1px solid color-mix(in srgb, var(--theme-foreground, #ffffff) 10%, transparent) !important;
 }
 

@@ -724,7 +724,6 @@
 [data-dynamic-bg="global"] .settings-select {
     background: color-mix(in srgb, var(--background-color, #242424) 86%, transparent 14%);
     backdrop-filter: blur(14px);
-    -webkit-backdrop-filter: blur(14px);
 }
 
 .app-container.app-with-dynamic-bg .settings-card:hover,

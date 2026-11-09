@@ -107,5 +107,4 @@
 [data-dynamic-bg="global"] .term-selection-status {
   background: rgba(30, 30, 30, 0.75) !important;
   backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
 }

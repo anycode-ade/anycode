@@ -15,7 +15,6 @@
     font-size: 13px;
     line-height: 1.45;
     backdrop-filter: blur(14px);
-    -webkit-backdrop-filter: blur(14px);
     animation: anycodeUpdaterSlideIn 0.18s ease-out;
 }
 
