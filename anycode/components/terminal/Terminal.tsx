@@ -1,11 +1,12 @@
-import React, { useEffect, useRef } from "react";
-import { WTerm } from "@wterm/dom";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { WTerm, type SearchState } from "@wterm/dom";
 import { GhosttyCore } from "@wterm/ghostty";
 import "@wterm/dom/css";
 import "./Terminal.css";
 import { resolveFontFamily, type FontConfig } from "../../hooks/useSettings";
 import { selectionQuoteStore } from "../../features/agents/selectionQuoteStore";
 import { copyTextToClipboard } from "../../utils";
+import { Icons } from "../Icons";
 
 interface TerminalProps {
   name: string;
@@ -24,6 +25,15 @@ interface TerminalProps {
 const TERMINAL_DELAY_MS = 100;
 const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB
 const MAX_SNAPSHOT_CHARS = 200_000;
+const MAX_SEARCH_QUERY_LEN = 1024;
+const INITIAL_SEARCH_STATE: SearchState = {
+  query: "",
+  caseSensitive: false,
+  count: 0,
+  activeIndex: -1,
+  searching: false,
+  limited: false,
+};
 const terminalStorageKey = (kind: "data" | "mouseMode", name: string, session: string) => (
   session === "anycode"
     ? `terminal:${kind}:${name}`
@@ -109,6 +119,14 @@ const Terminal: React.FC<TerminalProps> = ({
   const didAutoFocusRef = useRef<boolean>(false);
   const pendingFocusRef = useRef<boolean>(false);
   const wasContainerVisibleRef = useRef(false);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [caseSensitive, setCaseSensitive] = useState(false);
+  const [searchState, setSearchState] = useState<SearchState>(INITIAL_SEARCH_STATE);
+  const isSearchOpenRef = useRef(isSearchOpen);
+  const searchQueryRef = useRef(searchQuery);
+  const caseSensitiveRef = useRef(caseSensitive);
   const onDataRef = useRef(onData);
   const onResizeRef = useRef(onResize);
   const onTitleRef = useRef(onTitle);
@@ -124,6 +142,85 @@ const Terminal: React.FC<TerminalProps> = ({
     onUploadFileRef.current = onUploadFile;
     fontConfigRef.current = fontConfig;
   }, [onData, onResize, onTitle, isTerminalClosing, onUploadFile, fontConfig]);
+
+  useEffect(() => {
+    isSearchOpenRef.current = isSearchOpen;
+    searchQueryRef.current = searchQuery;
+    caseSensitiveRef.current = caseSensitive;
+  }, [isSearchOpen, searchQuery, caseSensitive]);
+
+  const runSearch = useCallback((query: string, isCaseSensitive: boolean) => {
+    const terminal = wtermRef.current;
+    if (!terminal || !isReadyRef.current) return;
+    const bounded = query.slice(0, MAX_SEARCH_QUERY_LEN);
+    if (!bounded) {
+      terminal.clearSearch();
+      setSearchState(INITIAL_SEARCH_STATE);
+      return;
+    }
+    terminal.search(bounded, { caseSensitive: isCaseSensitive });
+  }, []);
+
+  const closeSearch = useCallback(() => {
+    setIsSearchOpen(false);
+    setSearchState(INITIAL_SEARCH_STATE);
+    const terminal = wtermRef.current;
+    if (terminal && isReadyRef.current) {
+      terminal.clearSearch();
+      terminal.focus();
+    }
+  }, []);
+
+  const openSearch = useCallback(() => {
+    const terminal = wtermRef.current;
+    const selectedText = terminal?.getSelectionText()?.trim() ?? "";
+    let nextQuery = searchQueryRef.current;
+    if (selectedText && !selectedText.includes("\n") && selectedText.length <= MAX_SEARCH_QUERY_LEN) {
+      nextQuery = selectedText;
+      searchQueryRef.current = nextQuery;
+      setSearchQuery(nextQuery);
+    }
+    setIsSearchOpen(true);
+    if (nextQuery) {
+      runSearch(nextQuery, caseSensitiveRef.current);
+    }
+    requestAnimationFrame(() => {
+      searchInputRef.current?.focus();
+      searchInputRef.current?.select();
+    });
+  }, [runSearch]);
+
+  const handleFindNext = useCallback(() => {
+    const terminal = wtermRef.current;
+    if (!terminal || !isReadyRef.current || !searchQueryRef.current) return;
+    const current = terminal.getSearchState();
+    if (current.query !== searchQueryRef.current || current.caseSensitive !== caseSensitiveRef.current) {
+      runSearch(searchQueryRef.current, caseSensitiveRef.current);
+      return;
+    }
+    terminal.findNext();
+  }, [runSearch]);
+
+  const handleFindPrevious = useCallback(() => {
+    const terminal = wtermRef.current;
+    if (!terminal || !isReadyRef.current || !searchQueryRef.current) return;
+    const current = terminal.getSearchState();
+    if (current.query !== searchQueryRef.current || current.caseSensitive !== caseSensitiveRef.current) {
+      runSearch(searchQueryRef.current, caseSensitiveRef.current);
+      return;
+    }
+    terminal.findPrevious();
+  }, [runSearch]);
+
+  const handleToggleCaseSensitive = useCallback(() => {
+    const next = !caseSensitiveRef.current;
+    caseSensitiveRef.current = next;
+    setCaseSensitive(next);
+    if (searchQueryRef.current) {
+      runSearch(searchQueryRef.current, next);
+    }
+    searchInputRef.current?.focus();
+  }, [runSearch]);
 
   const appendToSnapshot = (chunk: string) => {
     let next = savedSnapshotRef.current + chunk;
@@ -248,11 +345,31 @@ const Terminal: React.FC<TerminalProps> = ({
   };
 
   const handleKeyDownCapture = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    const key = event.key.toLowerCase();
     if (
       (event.ctrlKey || event.metaKey) &&
       !event.altKey &&
       !event.shiftKey &&
-      event.key.toLowerCase() === "c"
+      key === "f"
+    ) {
+      event.preventDefault();
+      event.stopPropagation();
+      openSearch();
+      return;
+    }
+
+    if (event.key === "Escape" && isSearchOpenRef.current) {
+      event.preventDefault();
+      event.stopPropagation();
+      closeSearch();
+      return;
+    }
+
+    if (
+      (event.ctrlKey || event.metaKey) &&
+      !event.altKey &&
+      !event.shiftKey &&
+      key === "c"
     ) {
       const terminal = wtermRef.current;
       const selection = terminal?.getSelectionText();
@@ -261,6 +378,43 @@ const Terminal: React.FC<TerminalProps> = ({
         event.stopPropagation();
         void copyTextToClipboard(selection);
       }
+    }
+  };
+
+  const handleSearchInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const next = event.target.value.slice(0, MAX_SEARCH_QUERY_LEN);
+    searchQueryRef.current = next;
+    setSearchQuery(next);
+    runSearch(next, caseSensitiveRef.current);
+  };
+
+  const handleSearchInputKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      closeSearch();
+      return;
+    }
+    if (event.key === "Enter") {
+      event.preventDefault();
+      event.stopPropagation();
+      if (event.shiftKey) {
+        handleFindPrevious();
+      } else {
+        handleFindNext();
+      }
+      return;
+    }
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      event.stopPropagation();
+      handleFindNext();
+      return;
+    }
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      event.stopPropagation();
+      handleFindPrevious();
     }
   };
 
@@ -455,6 +609,11 @@ const Terminal: React.FC<TerminalProps> = ({
             }
             onResizeRef.current(name, session, nextCols, nextRows);
           },
+          onSearchChange: (state) => {
+            if (!cancelled) {
+              setSearchState(state);
+            }
+          },
         });
         wtermRef.current = terminal;
 
@@ -473,6 +632,11 @@ const Terminal: React.FC<TerminalProps> = ({
           appendToSnapshot(combined);
           terminal.write(combined);
           queueSnapshotSave();
+        }
+        if (isSearchOpenRef.current && searchQueryRef.current) {
+          terminal.search(searchQueryRef.current, {
+            caseSensitive: caseSensitiveRef.current,
+          });
         }
 
         terminal.fit();
@@ -624,6 +788,16 @@ const Terminal: React.FC<TerminalProps> = ({
     return () => cancelAnimationFrame(rafId);
   }, [focusRequestToken]);
 
+  const hasQuery = searchQuery.length > 0;
+  const noMatches = hasQuery && !searchState.searching && searchState.count === 0;
+  const matchCountLabel = !hasQuery
+    ? ""
+    : searchState.count > 0
+      ? `${searchState.activeIndex + 1}/${searchState.count}${searchState.limited ? "+" : ""}`
+      : searchState.searching
+        ? "..."
+        : "0/0";
+
   return (
     <div
       className="terminal-wrapper"
@@ -642,6 +816,80 @@ const Terminal: React.FC<TerminalProps> = ({
         position: "relative",
       }}
     >
+      {isSearchOpen && (
+        <div
+          className={`terminal-search-bar${noMatches ? " is-no-matches" : ""}`}
+          role="search"
+          aria-label="Find in terminal"
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <input
+            ref={searchInputRef}
+            type="text"
+            className="terminal-search-input"
+            placeholder="Find in terminal…"
+            value={searchQuery}
+            onChange={handleSearchInputChange}
+            onKeyDown={handleSearchInputKeyDown}
+            spellCheck={false}
+            autoCapitalize="off"
+            autoComplete="off"
+            autoCorrect="off"
+          />
+          {hasQuery && (
+            <span
+              className={`terminal-search-count${noMatches ? " is-empty" : ""}`}
+              title={
+                searchState.limited
+                  ? "Showing first 10,000 matches — narrow your search to see more"
+                  : undefined
+              }
+            >
+              {matchCountLabel}
+            </span>
+          )}
+          <button
+            type="button"
+            className={`terminal-search-btn terminal-search-case-btn${caseSensitive ? " is-active" : ""}`}
+            onClick={handleToggleCaseSensitive}
+            title="Match Case"
+            aria-label="Match Case"
+            aria-pressed={caseSensitive}
+          >
+            Aa
+          </button>
+          <div className="terminal-search-divider" />
+          <button
+            type="button"
+            className="terminal-search-btn"
+            onClick={handleFindPrevious}
+            disabled={searchState.count === 0}
+            title="Previous Match (Shift+Enter)"
+            aria-label="Previous Match"
+          >
+            <Icons.ChevronUp size={14} />
+          </button>
+          <button
+            type="button"
+            className="terminal-search-btn"
+            onClick={handleFindNext}
+            disabled={searchState.count === 0}
+            title="Next Match (Enter)"
+            aria-label="Next Match"
+          >
+            <Icons.ChevronDown size={14} />
+          </button>
+          <button
+            type="button"
+            className="terminal-search-btn terminal-search-close-btn"
+            onClick={closeSearch}
+            title="Close (Escape)"
+            aria-label="Close Search"
+          >
+            <Icons.CloseSmall size={11} />
+          </button>
+        </div>
+      )}
       <div
         ref={terminalRef}
         style={{

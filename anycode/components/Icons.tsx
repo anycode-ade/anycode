@@ -122,13 +122,13 @@ export const Icons = {
       <path d="M6 2.5v7M2.5 6h7" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
     </svg>
   ),
-  ChevronDown: () => (
-    <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+  ChevronDown: ({ size = 20 }: { size?: number } = {}) => (
+    <svg width={size} height={size} viewBox="0 0 20 20" fill="none" aria-hidden="true">
       <path d="M6.5 8L10 11.5L13.5 8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   ),
-  ChevronUp: () => (
-    <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+  ChevronUp: ({ size = 20 }: { size?: number } = {}) => (
+    <svg width={size} height={size} viewBox="0 0 20 20" fill="none" aria-hidden="true">
       <path d="M6.5 12L10 8.5L13.5 12" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   ),
@@ -277,8 +277,8 @@ export const Icons = {
       <path d="M2 10h20l-3 9H5l-3-9z" fill="currentColor" opacity="0.15" />
     </svg>
   ),
-  CloseSmall: ({ size = 12 }: { size?: number }) => (
-    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+  CloseSmall: ({ size = 12 }: { size?: number } = {}) => (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
       <path d="M4 4L12 12M12 4L4 12" />
     </svg>
   ),

@@ -16,6 +16,9 @@
   --term-cursor: var(--foreground-color, var(--theme-foreground, #f0f0f0));
   --term-selection-bg: var(--theme-accent-background, rgba(86, 156, 214, 0.3));
   --term-font-family: var(--terminal-font-family, monospace);
+  --term-search-match: color-mix(in srgb, var(--theme-accent-background, #ffb000) 28%, rgba(255, 200, 0, 0.28));
+  --term-search-active: color-mix(in srgb, var(--theme-accent-background, #ff9600) 55%, rgba(255, 150, 0, 0.45));
+  --term-search-border: var(--theme-accent-background, #ffb000);
 }
 
 .terminal-container .wterm .term-grid,
@@ -75,6 +78,172 @@
   color: var(--foreground-color, var(--theme-foreground, #f0f0f0));
   font-size: 1.2rem;
   z-index: 10;  
+}
+
+/* Terminal search bar */
+.terminal-search-bar {
+  position: absolute;
+  top: 8px;
+  right: 14px;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 4px 6px 4px 10px;
+  border-radius: 8px;
+  background: color-mix(
+    in srgb,
+    var(--background-color, #1e1e1e) 92%,
+    var(--foreground-color, #f0f0f0) 8%
+  );
+  border: 1px solid color-mix(
+    in srgb,
+    var(--foreground-color, #f0f0f0) 18%,
+    var(--background-color, #1e1e1e) 82%
+  );
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+  backdrop-filter: blur(10px);
+  font-family: var(--interface-font-family, sans-serif);
+  font-size: 12px;
+  color: var(--foreground-color, #f0f0f0);
+  max-width: calc(100% - 28px);
+  box-sizing: border-box;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.terminal-search-bar:focus-within {
+  border-color: color-mix(
+    in srgb,
+    var(--theme-accent-background, #458588) 65%,
+    var(--foreground-color, #f0f0f0) 35%
+  );
+}
+
+.terminal-search-bar.is-no-matches:focus-within {
+  border-color: color-mix(
+    in srgb,
+    var(--theme-git-removed, #eb5261) 70%,
+    var(--foreground-color, #f0f0f0) 30%
+  );
+}
+
+.terminal-search-input {
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--foreground-color, #f0f0f0);
+  font-family: var(--term-font-family, var(--editor-font-family, monospace));
+  font-size: 12.5px;
+  line-height: 1.4;
+  width: 170px;
+  min-width: 90px;
+  padding: 2px 4px 2px 0;
+}
+
+.terminal-search-input::placeholder {
+  color: color-mix(
+    in srgb,
+    var(--foreground-color, #f0f0f0) 50%,
+    transparent
+  );
+}
+
+.terminal-search-count {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: color-mix(
+    in srgb,
+    var(--foreground-color, #f0f0f0) 65%,
+    transparent
+  );
+  padding: 0 5px;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.terminal-search-count.is-empty {
+  color: var(--theme-git-removed, #eb5261);
+}
+
+.terminal-search-divider {
+  width: 1px;
+  height: 14px;
+  margin: 0 2px;
+  background: color-mix(
+    in srgb,
+    var(--foreground-color, #f0f0f0) 18%,
+    transparent
+  );
+  flex-shrink: 0;
+}
+
+.terminal-search-btn {
+  appearance: none;
+  -webkit-appearance: none;
+  border: 1px solid transparent;
+  background: transparent;
+  color: color-mix(
+    in srgb,
+    var(--foreground-color, #f0f0f0) 70%,
+    transparent
+  );
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border-radius: 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background-color 0.14s ease, color 0.14s ease, border-color 0.14s ease;
+  user-select: none;
+}
+
+.terminal-search-case-btn {
+  font-family: var(--interface-font-family, sans-serif);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  width: auto;
+  min-width: 24px;
+  padding: 0 5px;
+}
+
+.terminal-search-btn:hover:not(:disabled) {
+  background: color-mix(
+    in srgb,
+    var(--foreground-color, #f0f0f0) 12%,
+    transparent
+  );
+  color: var(--foreground-color, #f0f0f0);
+}
+
+.terminal-search-btn:active:not(:disabled) {
+  background: color-mix(
+    in srgb,
+    var(--foreground-color, #f0f0f0) 18%,
+    transparent
+  );
+}
+
+.terminal-search-btn.is-active {
+  background: color-mix(
+    in srgb,
+    var(--theme-accent-background, #458588) 22%,
+    transparent
+  );
+  border-color: color-mix(
+    in srgb,
+    var(--theme-accent-background, #458588) 55%,
+    transparent
+  );
+  color: var(--foreground-color, #f0f0f0);
+}
+
+.terminal-search-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
 }
 
 /* Dynamic background transparency */
