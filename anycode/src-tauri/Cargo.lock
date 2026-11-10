@@ -174,9 +174,13 @@ name = "anycode-desktop"
 version = "0.3.6"
 dependencies = [
  "anycode",
+ "block2",
  "dirs 6.0.0",
  "fix-path-env",
  "log",
+ "objc2",
+ "objc2-app-kit",
+ "objc2-foundation",
  "objc2-web-kit",
  "rfd",
  "serde",

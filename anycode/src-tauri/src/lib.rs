@@ -4,6 +4,176 @@ mod workspace;
 use tauri::Emitter;
 use tokio_util::sync::CancellationToken;
 
+#[cfg(target_os = "macos")]
+mod macos_dialogs {
+  use block2::DynBlock;
+  use objc2::{
+    MainThreadMarker,
+    ffi::class_addMethod,
+    rc::Retained,
+    runtime::{AnyClass, AnyObject, Bool, Imp, ProtocolObject, Sel},
+    sel,
+  };
+  use objc2_app_kit::{
+    NSAlert, NSAlertFirstButtonReturn, NSAlertStyle, NSTextField,
+  };
+  use objc2_foundation::{NSPoint, NSRect, NSSize, NSString};
+  use objc2_web_kit::WKWebView;
+
+  fn configure_alert_text(alert: &NSAlert, raw_message: &NSString) {
+    let text = raw_message.to_string();
+    if let Some((headline, body)) = text.split_once("\n\n") {
+      alert.setMessageText(&NSString::from_str(headline.trim()));
+      alert.setInformativeText(&NSString::from_str(body.trim()));
+    } else {
+      alert.setMessageText(raw_message);
+    }
+  }
+
+  unsafe extern "C" fn run_js_alert(
+    _this: &AnyObject,
+    _sel: Sel,
+    _web_view: &AnyObject,
+    message: &NSString,
+    _frame: &AnyObject,
+    completion_handler: &DynBlock<dyn Fn()>,
+  ) {
+    if let Some(mtm) = MainThreadMarker::new() {
+      let alert = NSAlert::new(mtm);
+      alert.setAlertStyle(NSAlertStyle::Informational);
+      configure_alert_text(&alert, message);
+      alert.addButtonWithTitle(&NSString::from_str("OK"));
+      let _ = alert.runModal();
+    }
+    completion_handler.call(());
+  }
+
+  unsafe extern "C" fn run_js_confirm(
+    _this: &AnyObject,
+    _sel: Sel,
+    _web_view: &AnyObject,
+    message: &NSString,
+    _frame: &AnyObject,
+    completion_handler: &DynBlock<dyn Fn(Bool)>,
+  ) {
+    let confirmed = if let Some(mtm) = MainThreadMarker::new() {
+      let alert = NSAlert::new(mtm);
+      alert.setAlertStyle(NSAlertStyle::Informational);
+      configure_alert_text(&alert, message);
+      alert.addButtonWithTitle(&NSString::from_str("OK"));
+      alert.addButtonWithTitle(&NSString::from_str("Cancel"));
+      alert.runModal() == NSAlertFirstButtonReturn
+    } else {
+      false
+    };
+    completion_handler.call((Bool::new(confirmed),));
+  }
+
+  unsafe extern "C" fn run_js_prompt(
+    _this: &AnyObject,
+    _sel: Sel,
+    _web_view: &AnyObject,
+    prompt: &NSString,
+    default_text: Option<&NSString>,
+    _frame: &AnyObject,
+    completion_handler: &DynBlock<dyn Fn(*mut NSString)>,
+  ) {
+    if let Some(mtm) = MainThreadMarker::new() {
+      let alert = NSAlert::new(mtm);
+      alert.setAlertStyle(NSAlertStyle::Informational);
+      configure_alert_text(&alert, prompt);
+      alert.addButtonWithTitle(&NSString::from_str("OK"));
+      alert.addButtonWithTitle(&NSString::from_str("Cancel"));
+
+      let input = NSTextField::initWithFrame(
+        mtm.alloc(),
+        NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(260.0, 24.0)),
+      );
+      if let Some(default_val) = default_text {
+        input.setStringValue(default_val);
+      }
+      alert.setAccessoryView(Some(&input));
+      alert.layout();
+      alert.window().makeFirstResponder(Some(&input));
+
+      if alert.runModal() == NSAlertFirstButtonReturn {
+        let value = input.stringValue();
+        completion_handler.call((Retained::as_ptr(&value) as *mut NSString,));
+        return;
+      }
+    }
+    completion_handler.call((std::ptr::null_mut(),));
+  }
+
+  pub unsafe fn install(view: &WKWebView) {
+    let Some(ui_delegate) = (unsafe { view.UIDelegate() }) else {
+      return;
+    };
+    let cls = AnyObject::class(ProtocolObject::as_ref(&*ui_delegate)) as *const AnyClass as *mut AnyClass;
+
+    unsafe {
+      let alert_imp: Imp = std::mem::transmute(
+        run_js_alert
+          as unsafe extern "C" fn(
+            &AnyObject,
+            Sel,
+            &AnyObject,
+            &NSString,
+            &AnyObject,
+            &DynBlock<dyn Fn()>,
+          ),
+      );
+      let _ = class_addMethod(
+        cls,
+        sel!(webView:runJavaScriptAlertPanelWithMessage:initiatedByFrame:completionHandler:),
+        alert_imp,
+        c"v@:@@@@?".as_ptr(),
+      );
+
+      let confirm_imp: Imp = std::mem::transmute(
+        run_js_confirm
+          as unsafe extern "C" fn(
+            &AnyObject,
+            Sel,
+            &AnyObject,
+            &NSString,
+            &AnyObject,
+            &DynBlock<dyn Fn(Bool)>,
+          ),
+      );
+      let _ = class_addMethod(
+        cls,
+        sel!(webView:runJavaScriptConfirmPanelWithMessage:initiatedByFrame:completionHandler:),
+        confirm_imp,
+        c"v@:@@@@?".as_ptr(),
+      );
+
+      let prompt_imp: Imp = std::mem::transmute(
+        run_js_prompt
+          as unsafe extern "C" fn(
+            &AnyObject,
+            Sel,
+            &AnyObject,
+            &NSString,
+            Option<&NSString>,
+            &AnyObject,
+            &DynBlock<dyn Fn(*mut NSString)>,
+          ),
+      );
+      let _ = class_addMethod(
+        cls,
+        sel!(webView:runJavaScriptTextInputPanelWithPrompt:defaultText:initiatedByFrame:completionHandler:),
+        prompt_imp,
+        c"v@:@@@@@?".as_ptr(),
+      );
+
+      // Re-bind UIDelegate so WKWebView re-queries respondsToSelector: for the newly added methods.
+      view.setUIDelegate(None);
+      view.setUIDelegate(Some(&ui_delegate));
+    }
+  }
+}
+
 #[tauri::command]
 fn get_workspace_state() -> Result<workspace::WorkspaceConfig, String> {
   Ok(workspace::load_config())
@@ -188,6 +358,7 @@ pub fn run() {
             unsafe {
               let view: &objc2_web_kit::WKWebView = &*webview.inner().cast();
               view.setAllowsMagnification(true);
+              macos_dialogs::install(view);
             }
           }
         });
