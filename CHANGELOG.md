@@ -2,6 +2,16 @@
 
 All notable changes are documented here by release tag.
 
+## v0.3.7 - 2026-11-10
+
+### Highlights
+- Added a terminal search bar overlay (`Cmd+F` / `Ctrl+F`) integrated with `@wterm/dom` search, supporting case-sensitive toggles (`Aa`), match count indicators, next/previous navigation, and selection prefill.
+- Implemented native macOS `WKUIDelegate` / `NSAlert` dialogs for `window.alert`, `window.confirm`, and `window.prompt` in `anycode-desktop`.
+
+### Commits
+- `23cd383` feat(terminal): add search bar overlay with wterm search integration
+- `9dde7f4` fix(desktop): implement native alert, confirm and prompt dialogs on macos
+
 ## v0.3.6 - 2026-11-09
 
 ### Highlights
