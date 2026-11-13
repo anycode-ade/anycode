@@ -68,6 +68,7 @@ impl AcpTerminalManager {
         );
 
         let mut cmd = tokio::process::Command::new(&args.command);
+        crate::path_env::apply_to_tokio_command(&mut cmd).await;
         #[cfg(windows)]
         cmd.creation_flags(0x0800_0000);
         cmd.args(&args.args);

@@ -43,6 +43,7 @@ import {
     addRemoteProject,
     closeRemoteWorkspace,
     getRemoteWorkspaceState,
+    getWorkspaceState,
     openFolderDialog,
     openWorkspace,
     removeRemoteRecentWorkspace,
@@ -106,6 +107,20 @@ const App: React.FC<AppProps> = ({ initialWorkspace }) => {
     });
     // Until the backend reports the restored workspace, the empty state above would show the welcome screen on every reload.
     const [isWorkspaceLoaded, setIsWorkspaceLoaded] = useState(false);
+    const isWorkspaceLoadedRef = useRef(false);
+
+    useEffect(() => {
+        if (initialWorkspace !== null) return;
+        let cancelled = false;
+        getWorkspaceState().then((state) => {
+            if (!cancelled && !isWorkspaceLoadedRef.current && state.current_workspace) {
+                setWorkspacePath(state.current_workspace);
+            }
+        });
+        return () => {
+            cancelled = true;
+        };
+    }, [initialWorkspace]);
     const [changesProjectId, setChangesProjectId] = usePanelProjectId(CHANGES_PROJECT_SESSION_KEY);
     const [historyProjectId, setHistoryProjectId] = usePanelProjectId(HISTORY_PROJECT_SESSION_KEY);
     const [searchProjectId, setSearchProjectId] = usePanelProjectId(SEARCH_PROJECT_SESSION_KEY);
@@ -385,6 +400,7 @@ const App: React.FC<AppProps> = ({ initialWorkspace }) => {
     ]);
 
     const acceptWorkspaceState = useCallback((next: WorkspaceState) => {
+        isWorkspaceLoadedRef.current = true;
         setWorkspaceState(next);
         setIsWorkspaceLoaded(true);
         const selected = next.projects.find((project) => project.id === next.active_project_id);

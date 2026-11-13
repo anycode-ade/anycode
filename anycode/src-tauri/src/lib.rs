@@ -213,8 +213,13 @@ fn open_workspace(path: String) -> Result<String, String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   // GUI apps on macOS/Linux don't inherit the shell's PATH, so LSP servers and
-  // other child processes can't find user-installed binaries. Load it first.
+  // other child processes can't find user-installed binaries.
+  // On Windows this is fast and synchronous; on Unix we resolve the shell PATH in
+  // the background so window creation isn't blocked by shell startup scripts.
+  #[cfg(windows)]
   let _ = fix_path_env::fix();
+  #[cfg(not(windows))]
+  anycode::path_env::init_in_background();
 
   let active_workspace = workspace::determine_initial_workspace();
   let shutdown_token = CancellationToken::new();

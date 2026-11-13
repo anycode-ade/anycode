@@ -13,16 +13,17 @@ use crate::utils::format_path;
 
 fn git_command() -> Command {
     #[cfg(windows)]
-    {
+    let mut command = {
         use std::os::windows::process::CommandExt;
         let mut command = Command::new("git");
         command.creation_flags(0x0800_0000);
         command
-    }
+    };
     #[cfg(not(windows))]
-    {
-        Command::new("git")
-    }
+    let mut command = Command::new("git");
+
+    crate::path_env::apply_to_std_command(&mut command);
+    command
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]

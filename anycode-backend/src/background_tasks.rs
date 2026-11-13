@@ -186,15 +186,16 @@ async fn spawn_file_watcher(state: &AppState, io: &Arc<SocketIo>) -> Result<()> 
 
     let file_states = Arc::new(Mutex::new(HashMap::new()));
     let socket = io.clone();
-    let initial_projects = workspace.lock().await.projects();
-    let mut watched = HashMap::new();
-    for project in &initial_projects {
-        if let Err(error) = register_project_watch(&mut watcher, &mut watched, project) {
-            tracing::error!("Could not watch project {}: {}", project.root, error);
-        }
-    }
 
     tokio::spawn(async move {
+        let initial_projects = workspace.lock().await.projects();
+        let mut watched = HashMap::new();
+        for project in &initial_projects {
+            if let Err(error) = register_project_watch(&mut watcher, &mut watched, project) {
+                tracing::error!("Could not watch project {}: {}", project.root, error);
+            }
+        }
+
         loop {
             tokio::select! {
                 Some(command) = control_rx.recv() => {

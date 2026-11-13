@@ -838,7 +838,7 @@ impl AcpAgent {
 
         // Spawn agent process
         let (mut child, stdin, stdout, stderr) =
-            Self::spawn_agent_process(cmd, args, env.as_ref(), &self.project_root)?;
+            Self::spawn_agent_process(cmd, args, env.as_ref(), &self.project_root).await?;
 
         // Setup connection and run in LocalSet
         let ready_clone = self.ready.clone();
@@ -940,7 +940,7 @@ impl AcpAgent {
         }
     }
 
-    fn spawn_agent_process(
+    async fn spawn_agent_process(
         cmd: &str,
         args: &[String],
         env: Option<&HashMap<String, String>>,
@@ -952,6 +952,7 @@ impl AcpAgent {
         tokio::process::ChildStderr,
     )> {
         let mut command = Self::agent_command(cmd);
+        crate::path_env::apply_to_tokio_command(&mut command).await;
         #[cfg(windows)]
         command.creation_flags(0x0800_0000);
         command.args(args);
@@ -2032,7 +2033,7 @@ impl AcpAgent {
                 local_set
                     .run_until(async move {
                         let (mut child, stdin, stdout, stderr) =
-                            Self::spawn_agent_process(&cmd, &args, None, &cwd).map_err(|e| {
+                            Self::spawn_agent_process(&cmd, &args, None, &cwd).await.map_err(|e| {
                                 anyhow!("Failed to spawn ACP agent for session listing: {}", e)
                             })?;
 
@@ -2687,7 +2688,9 @@ mod workspace_tests {
             .to_string_lossy()
             .to_string();
         let (mut child, _stdin, mut stdout, _stderr) =
-            AcpAgent::spawn_agent_process("/bin/pwd", &[], None, project.path()).unwrap();
+            AcpAgent::spawn_agent_process("/bin/pwd", &[], None, project.path())
+                .await
+                .unwrap();
 
         let mut output = Vec::new();
         stdout.read_to_end(&mut output).await.unwrap();
@@ -2720,6 +2723,7 @@ mod windows_workspace_tests {
             None,
             &root,
         )
+        .await
         .unwrap();
 
         let mut output = String::new();

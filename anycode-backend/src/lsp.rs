@@ -32,8 +32,10 @@ fn lsp_command(program: &str, args: &[&str]) -> Command {
     command
 }
 
-fn spawn_lsp(program: &str, args: &[&str]) -> io::Result<tokio::process::Child> {
-    match lsp_command(program, args).spawn() {
+async fn spawn_lsp(program: &str, args: &[&str]) -> io::Result<tokio::process::Child> {
+    let mut command = lsp_command(program, args);
+    crate::path_env::apply_to_tokio_command(&mut command).await;
+    match command.spawn() {
         Ok(child) => Ok(child),
         #[cfg(windows)]
         Err(error) if error.kind() == io::ErrorKind::NotFound => {
@@ -104,7 +106,7 @@ impl Lsp {
         }
     }
 
-    pub fn start(
+    pub async fn start(
         &mut self,
         lang: &str,
         cmd: &str,
@@ -126,7 +128,7 @@ impl Lsp {
         let server_request_send = stdin_send;
 
         // spawn lsp process
-        let mut child = spawn_lsp(cmd, args)?;
+        let mut child = spawn_lsp(cmd, args).await?;
 
         let mut stdin = child.stdin.take().unwrap();
         let stdout = child.stdout.take().unwrap();
@@ -640,7 +642,8 @@ mod tests {
             "pyright-langserver --stdio",
             Some("pyright-langserver".to_string()),
             None,
-        )?;
+        )
+        .await?;
 
         let dir = std::env::current_dir()?.to_string_lossy().into_owned();
 
@@ -691,7 +694,8 @@ mod tests {
             "typescript-language-server --stdio",
             Some("typescript-language-server".to_string()),
             None,
-        )?;
+        )
+        .await?;
 
         let workspace = tempfile::tempdir()?;
         let dir = workspace.path().to_string_lossy().into_owned();
@@ -750,7 +754,8 @@ fn main() {
             "rust-analyzer",
             Some("rust-analyzer".to_string()),
             None,
-        )?;
+        )
+        .await?;
 
         let dir = workspace.path().to_string_lossy().into_owned();
         let file_path = file_path.to_string_lossy().into_owned();
@@ -980,7 +985,7 @@ impl LspManager {
         let diagnostic_send = self.diagnostics_sender.as_mut().map(|s| s.clone());
         let lsp_name = lsp_cmd.split_whitespace().next().map(|s| s.to_string());
 
-        let result = lsp.start(&lang, &lsp_cmd, lsp_name, diagnostic_send);
+        let result = lsp.start(&lang, &lsp_cmd, lsp_name, diagnostic_send).await;
 
         match result {
             Ok(_) => {

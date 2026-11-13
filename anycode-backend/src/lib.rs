@@ -23,6 +23,7 @@ pub mod git;
 pub mod handlers;
 pub mod history;
 pub mod lsp;
+pub mod path_env;
 pub mod search;
 pub mod terminal;
 pub mod updater;
@@ -111,6 +112,30 @@ pub async fn start_server(
 
     if let Some(tx) = ready_tx {
         let _ = tx.send(bound_port);
+    }
+
+    // Warm git status caches in the background so startup never blocks on `git status`.
+    {
+        let state = state.clone();
+        let io = io.clone();
+        tokio::spawn(async move {
+            let projects = state.workspace.lock().await.projects();
+            for info in projects {
+                let Some(project) = state.workspace.lock().await.get(&info.id) else {
+                    continue;
+                };
+                let status = {
+                    let mut git = project.git.lock().await;
+                    git.refresh_status_cache().ok().map(|s| s.to_json())
+                };
+                if let Some(mut status_update) = status {
+                    if let Some(object) = status_update.as_object_mut() {
+                        object.insert("project_id".to_string(), serde_json::json!(info.id));
+                    }
+                    let _ = io.emit("git:update", &status_update).await;
+                }
+            }
+        });
     }
 
     let cancel = shutdown_token.unwrap_or_default();

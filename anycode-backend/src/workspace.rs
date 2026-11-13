@@ -356,10 +356,7 @@ fn make_project(
 ) -> Result<Project> {
     let info = project_info_for_path(path)?;
     let root = PathBuf::from(&info.root);
-    let mut git = GitManager::new(root.clone());
-    if let Err(error) = git.refresh_status_cache() {
-        tracing::debug!("Project {} has no usable Git repository: {error}", root.display());
-    }
+    let git = GitManager::new(root.clone());
     let mut lsp = crate::lsp::LspManager::new_with_root(config.clone(), root.clone());
     lsp.set_diagnostics_sender(diagnostic_tx.clone());
     Ok(Project {

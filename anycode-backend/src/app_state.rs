@@ -147,8 +147,7 @@ impl AppState {
             config.clone(),
             diagnostic_tx,
         );
-        let mut git_manager = GitManager::new(startup_root);
-        let _ = git_manager.refresh_status_cache();
+        let git_manager = GitManager::new(startup_root);
 
         Self {
             config: Arc::new(config),
