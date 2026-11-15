@@ -833,7 +833,11 @@ export class AnycodeEditor {
         this.codeContent.addEventListener('mousedown', this.handleMouseDown);
 
         this.handleMouseUp = this.handleMouseUp.bind(this);
-        this.container.addEventListener('mouseup', this.handleMouseUp);
+        if (typeof window !== 'undefined') {
+            window.addEventListener('mouseup', this.handleMouseUp);
+        } else {
+            this.container.addEventListener('mouseup', this.handleMouseUp);
+        }
 
         this.handleMouseMove = this.handleMouseMove.bind(this);
         this.container.addEventListener('mousemove', this.handleMouseMove);
@@ -869,7 +873,11 @@ export class AnycodeEditor {
         this.codeContent.removeEventListener('paste', this.handlePasteEvent);
         this.container.removeEventListener('beforeinput', this.handleBeforeInput);
         this.codeContent.removeEventListener('mousedown', this.handleMouseDown);
-        this.container.removeEventListener('mouseup', this.handleMouseUp);
+        if (typeof window !== 'undefined') {
+            window.removeEventListener('mouseup', this.handleMouseUp);
+        } else {
+            this.container.removeEventListener('mouseup', this.handleMouseUp);
+        }
         this.container.removeEventListener('mousemove', this.handleMouseMove);
         this.container.removeEventListener('mouseleave', this.handleMouseLeave);
         this.codeContent.removeEventListener('blur', this.handleBlur);
@@ -1062,7 +1070,7 @@ export class AnycodeEditor {
             return;
         }
 
-        if (!this.code.isLineEditable(pos.row)) {
+        if (this.isMultibufferHeaderLine(pos.row)) {
             return;
         }
 
@@ -1232,10 +1240,6 @@ export class AnycodeEditor {
 
         this.isMouseSelecting = true;
 
-        if (!this.code.isLineEditable(pos.row)) {
-            return;
-        }
-
         if (e.detail === 2) { // double click
             this.selectWord(pos.row, pos.col);
             this.isWordSelection = true;
@@ -1262,10 +1266,14 @@ export class AnycodeEditor {
             this.cursor = targetPoint;
             this.renderer.renderSelection(this.code, this.selection);
         } else {
+            const hadSelection = Boolean(this.selection?.nonEmpty());
             if (this.selection) {
                 this.selection.reset(targetPoint);
             } else {
                 this.selection = new Selection(targetPoint, targetPoint);
+            }
+            if (hadSelection) {
+                this.renderer.renderCursor(targetPoint.row, targetPoint.column, false, this.getEditorState());
             }
         }
     }
@@ -1451,7 +1459,7 @@ export class AnycodeEditor {
     }
 
     private selectWord(row: number, col: number) {
-        if (!this.code.isLineEditable(row)) return;
+        if (this.isMultibufferHeaderLine(row)) return;
         const line = this.code.line(row);
 
         const startCol = findPrevWord(line, col);
@@ -1464,7 +1472,7 @@ export class AnycodeEditor {
     }
 
     private selectLine(row: number) {
-        if (!this.code.isLineEditable(row)) return;
+        if (this.isMultibufferHeaderLine(row)) return;
         const lineLen = this.code.lineLength(row);
 
         this.selection = new Selection({ row, column: 0 }, { row, column: lineLen });
