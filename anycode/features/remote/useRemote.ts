@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Socket } from 'socket.io-client';
 import type {
     AcpAgent,
@@ -26,6 +26,18 @@ import {
 } from './types';
 
 const MESSAGE_FLUSH_MS = 25;
+const DEFAULT_ACK_TIMEOUT_MS = 65_000;
+const LONG_ACK_TIMEOUT_MS = 310_000;
+const LONG_RPC_METHODS = new Set([
+    'acp:registry:install',
+    'acp:agent:sync',
+    'workspace:clone',
+    'workspace:sync',
+    'workspace:pull',
+    'workspace:worktree:create',
+    'transfer:chunk',
+    'transfer:read',
+]);
 
 export interface UseRemoteParams {
     wsRef: React.RefObject<Socket | null>;
@@ -42,13 +54,36 @@ const emitWithAck = <T = any>(
     socket: Socket | null,
     event: string,
     payload: unknown,
+    timeoutMs = DEFAULT_ACK_TIMEOUT_MS,
 ): Promise<T> => {
     return new Promise((resolve, reject) => {
-        if (!socket) {
+        if (!socket || !socket.connected) {
             reject(new Error('Not connected to Anycode backend'));
             return;
         }
+        let settled = false;
+        const cleanup = () => {
+            clearTimeout(timer);
+            socket.off('disconnect', handleDisconnect);
+        };
+        const handleDisconnect = () => {
+            if (settled) return;
+            settled = true;
+            cleanup();
+            reject(new Error(`Disconnected before receiving response for ${event}`));
+        };
+        const timer = setTimeout(() => {
+            if (settled) return;
+            settled = true;
+            cleanup();
+            reject(new Error(`Timed out waiting for response to ${event}`));
+        }, timeoutMs);
+
+        socket.once('disconnect', handleDisconnect);
         socket.emit(event, payload, (response: any) => {
+            if (settled) return;
+            settled = true;
+            cleanup();
             if (!response || response.success === false) {
                 reject(new Error(response?.error ?? `Request failed: ${event}`));
                 return;
@@ -65,14 +100,22 @@ export const useRemote = ({ wsRef, isConnected }: UseRemoteParams) => {
     const [registryAgentsByServer, setRegistryAgentsByServer] = useState<Record<string, AcpRegistryAgentSummary[]>>({});
     const [isLoading, setIsLoading] = useState(false);
 
+    const serversRef = useRef(servers);
+    serversRef.current = servers;
     const sessionsRef = useRef(sessions);
     sessionsRef.current = sessions;
     const pendingEventsRef = useRef<PendingRemoteEvent[]>([]);
     const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const agentCountersRef = useRef<Record<string, number>>({});
     const reconnectedKeysRef = useRef<Set<string>>(new Set());
+    const optimisticProcessingKeysRef = useRef<Set<string>>(new Set());
     const toolOutputCacheRef = useRef<Map<string, string>>(new Map());
     const diffStatsListenersRef = useRef<Set<(event: RemoteDiffStatsEvent) => void>>(new Set());
+
+    useEffect(() => {
+        // React committed the latest sessions state, so sessionsRef now reflects any optimistic isProcessing flags.
+        optimisticProcessingKeysRef.current.clear();
+    }, [sessions]);
 
     const updateSession = useCallback((
         key: string,
@@ -95,10 +138,12 @@ export const useRemote = ({ wsRef, isConnected }: UseRemoteParams) => {
         method: string,
         params: Record<string, unknown> | null = {},
     ): Promise<T> => {
+        const timeoutMs = LONG_RPC_METHODS.has(method) ? LONG_ACK_TIMEOUT_MS : DEFAULT_ACK_TIMEOUT_MS;
         const res = await emitWithAck<{ success: true; data: T }>(
             wsRef.current,
             'remote:rpc',
             { server_id: serverId, method, params: params ?? {} },
+            timeoutMs,
         );
         return res.data;
     }, [wsRef]);
@@ -318,6 +363,8 @@ export const useRemote = ({ wsRef, isConnected }: UseRemoteParams) => {
             socket.off('remote:acp:queue', handleRemoteAcpQueue);
             socket.off('remote:acp:diff_stats', handleRemoteAcpDiffStats);
             reconnectedKeysRef.current.clear();
+            optimisticProcessingKeysRef.current.clear();
+            pendingEventsRef.current = [];
             if (flushTimerRef.current) {
                 clearTimeout(flushTimerRef.current);
                 flushTimerRef.current = null;
@@ -336,10 +383,35 @@ export const useRemote = ({ wsRef, isConnected }: UseRemoteParams) => {
 
     const removeServer = useCallback(async (serverId: string) => {
         await emitWithAck(wsRef.current, 'remote:servers:remove', { server_id: serverId });
+        const prefix = `${serverId}::`;
+        for (const key of Array.from(reconnectedKeysRef.current)) {
+            if (key.startsWith(prefix)) reconnectedKeysRef.current.delete(key);
+        }
+        for (const key of Array.from(optimisticProcessingKeysRef.current)) {
+            if (key.startsWith(prefix)) optimisticProcessingKeysRef.current.delete(key);
+        }
+        for (const key of Object.keys(agentCountersRef.current)) {
+            if (key.startsWith(prefix)) delete agentCountersRef.current[key];
+        }
+        for (const key of Array.from(toolOutputCacheRef.current.keys())) {
+            if (key.startsWith(prefix)) toolOutputCacheRef.current.delete(key);
+        }
+        setAvailableAgentsByServer((prev) => {
+            if (!(serverId in prev)) return prev;
+            const next = { ...prev };
+            delete next[serverId];
+            return next;
+        });
+        setRegistryAgentsByServer((prev) => {
+            if (!(serverId in prev)) return prev;
+            const next = { ...prev };
+            delete next[serverId];
+            return next;
+        });
         setSessions((prev) => {
             const copy = new Map(prev);
             for (const key of copy.keys()) {
-                if (key.startsWith(`${serverId}::`)) copy.delete(key);
+                if (key.startsWith(prefix)) copy.delete(key);
             }
             return copy;
         });
@@ -586,9 +658,10 @@ export const useRemote = ({ wsRef, isConnected }: UseRemoteParams) => {
     ) => {
         const key = makeRemoteSessionKey(serverId, agentId);
         const session = sessionsRef.current.get(key);
+        const isBusy = Boolean(session?.isProcessing || optimisticProcessingKeysRef.current.has(key));
         const normalizedAttachments = attachments.length > 0 ? attachments : undefined;
 
-        if (session?.isProcessing) {
+        if (isBusy) {
             const tempId = `queued-optimistic-${generateUUID()}`;
             const optimisticItem: AcpQueuedMessage = {
                 id: tempId,
@@ -623,6 +696,7 @@ export const useRemote = ({ wsRef, isConnected }: UseRemoteParams) => {
         }
 
         const clientId = generateUUID();
+        optimisticProcessingKeysRef.current.add(key);
         updateSession(key, (existing) => existing ? {
             ...existing,
             isProcessing: true,
@@ -639,6 +713,7 @@ export const useRemote = ({ wsRef, isConnected }: UseRemoteParams) => {
                 attachments,
             });
         } catch (err) {
+            optimisticProcessingKeysRef.current.delete(key);
             updateSession(key, (existing) => existing ? {
                 ...existing,
                 isProcessing: false,
@@ -675,7 +750,27 @@ export const useRemote = ({ wsRef, isConnected }: UseRemoteParams) => {
             includeDirty,
         } = params;
         const countKey = `${serverId}::${agent.id}`;
-        const nextNum = (agentCountersRef.current[countKey] ?? 0) + 1;
+        const idPrefix = `${agent.id}-`;
+        const usedNums = new Set<number>();
+        const recordId = (id: string) => {
+            if (!id.startsWith(idPrefix)) return;
+            const parsed = Number.parseInt(id.slice(idPrefix.length), 10);
+            if (Number.isFinite(parsed) && parsed > 0) {
+                usedNums.add(parsed);
+            }
+        };
+        for (const sess of sessionsRef.current.values()) {
+            if (sess.serverId === serverId) recordId(sess.agentId);
+        }
+        for (const srv of serversRef.current) {
+            if (srv.id === serverId) {
+                for (const a of srv.agents) recordId(a.id);
+            }
+        }
+        let nextNum = (agentCountersRef.current[countKey] ?? 0) + 1;
+        while (usedNums.has(nextNum)) {
+            nextNum += 1;
+        }
         agentCountersRef.current[countKey] = nextNum;
         const agentId = `${agent.id}-${nextNum}`;
         const key = makeRemoteSessionKey(serverId, agentId);
@@ -801,8 +896,16 @@ export const useRemote = ({ wsRef, isConnected }: UseRemoteParams) => {
 
     const stopAgent = useCallback(async (serverId: string, agentId: string) => {
         const key = makeRemoteSessionKey(serverId, agentId);
+        const sessionId = sessionsRef.current.get(key)?.sessionId;
         await remoteRpc(serverId, 'acp:stop', { agent_id: agentId }).catch(() => {});
         reconnectedKeysRef.current.delete(key);
+        optimisticProcessingKeysRef.current.delete(key);
+        if (sessionId) {
+            const cachePrefix = `${serverId}::${sessionId}::`;
+            for (const cacheKey of Array.from(toolOutputCacheRef.current.keys())) {
+                if (cacheKey.startsWith(cachePrefix)) toolOutputCacheRef.current.delete(cacheKey);
+            }
+        }
         updateSession(key, () => undefined);
     }, [remoteRpc, updateSession]);
 
@@ -891,7 +994,7 @@ export const useRemote = ({ wsRef, isConnected }: UseRemoteParams) => {
         }
     }, [remoteRpc]);
 
-    return {
+    return useMemo(() => ({
         servers,
         sessions,
         availableAgentsByServer,
@@ -932,7 +1035,48 @@ export const useRemote = ({ wsRef, isConnected }: UseRemoteParams) => {
         moveQueuedPrompt,
         sendQueuedPromptNow,
         getToolOutput,
-    };
+    }), [
+        servers,
+        sessions,
+        availableAgentsByServer,
+        registryAgentsByServer,
+        isLoading,
+        refreshServers,
+        remoteRpc,
+        addServer,
+        removeServer,
+        reconnectServer,
+        browseDir,
+        addProject,
+        syncProject,
+        cloneProject,
+        removeProject,
+        getProjectGitInfo,
+        pullProject,
+        createWorktree,
+        listWorktrees,
+        removeWorktree,
+        getWorktreeDiff,
+        subscribeDiffStats,
+        loadAvailableAgents,
+        installRegistryAgent,
+        syncAgent,
+        removeConfiguredAgent,
+        listAgentSessions,
+        startAgent,
+        authenticateAgent,
+        sendPrompt,
+        cancelPrompt,
+        stopAgent,
+        undoPrompt,
+        setSessionModel,
+        setSessionReasoning,
+        updateQueuedPrompt,
+        removeQueuedPrompt,
+        moveQueuedPrompt,
+        sendQueuedPromptNow,
+        getToolOutput,
+    ]);
 };
 
 export type UseRemoteReturn = ReturnType<typeof useRemote>;

@@ -77,36 +77,47 @@ const RemotePopover: React.FC<RemotePopoverProps> = ({
     children,
 }) => {
     const popoverRef = useRef<HTMLDivElement>(null);
-    const [popoverStyle] = useState<React.CSSProperties>(() => getRemotePopoverStyle(anchor, width));
+    const onCloseRef = useRef(onClose);
+    onCloseRef.current = onClose;
+    const popoverStyle = useMemo<React.CSSProperties>(
+        () => getRemotePopoverStyle(anchor, width),
+        [anchor, width],
+    );
 
     useEffect(() => {
         const handleKeyDown = (event: KeyboardEvent) => {
             if (event.key === 'Escape') {
-                onClose();
+                onCloseRef.current();
             }
         };
         const handleMouseDown = (event: MouseEvent) => {
             const target = event.target as Node;
             if (popoverRef.current?.contains(target)) return;
             if (anchor && anchor.contains(target)) return;
-            onClose();
+            onCloseRef.current();
         };
         const handleScroll = (event: Event) => {
-            if (popoverRef.current?.contains(event.target as Node)) return;
-            onClose();
+            const target = event.target;
+            if (target instanceof Node && popoverRef.current?.contains(target)) return;
+            // Only close on document/window scroll or scrolling an ancestor of the anchor
+            // so background panes scrolling (like live agent output) don't dismiss the popover.
+            if (target === document || target === window || (anchor && target instanceof Node && target.contains(anchor))) {
+                onCloseRef.current();
+            }
         };
+        const handleResize = () => onCloseRef.current();
 
         document.addEventListener('keydown', handleKeyDown);
         document.addEventListener('mousedown', handleMouseDown, true);
         window.addEventListener('scroll', handleScroll, true);
-        window.addEventListener('resize', onClose);
+        window.addEventListener('resize', handleResize);
         return () => {
             document.removeEventListener('keydown', handleKeyDown);
             document.removeEventListener('mousedown', handleMouseDown, true);
             window.removeEventListener('scroll', handleScroll, true);
-            window.removeEventListener('resize', onClose);
+            window.removeEventListener('resize', handleResize);
         };
-    }, [anchor, onClose]);
+    }, [anchor]);
 
     const header = (
         <div className="remote-popover-header">
@@ -1093,6 +1104,8 @@ export const PullWorktreeModal: React.FC<PullWorktreeModalProps> = ({
     useEffect(() => {
         let cancelled = false;
         setLoadingInfo(true);
+        setGitInfo(null);
+        setBranch('');
         setError(null);
         onLoadGitInfo(server.id, remotePath ? undefined : remoteProject.id, remotePath)
             .then((info) => {
@@ -1102,7 +1115,7 @@ export const PullWorktreeModal: React.FC<PullWorktreeModalProps> = ({
                 const stamp = `${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}-${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}`;
                 const serverSlug = sanitizeBranchSlug(server.name);
                 const targetLabel = sanitizeBranchSlug(info.branch || remoteLabel || remoteProject.name);
-                setBranch((prev) => prev || `remote/${serverSlug}/${targetLabel}-${stamp}`);
+                setBranch(`remote/${serverSlug}/${targetLabel}-${stamp}`);
             })
             .catch((err) => {
                 if (cancelled) return;
@@ -1114,7 +1127,7 @@ export const PullWorktreeModal: React.FC<PullWorktreeModalProps> = ({
         return () => {
             cancelled = true;
         };
-    }, [server.id, server.name, remoteProject.id, remoteProject.name, onLoadGitInfo]);
+    }, [server.id, server.name, remoteProject.id, remoteProject.name, remotePath, remoteLabel, onLoadGitInfo]);
 
     useEffect(() => {
         if (localProjects.length === 0) {
@@ -1329,7 +1342,8 @@ export const PullWorktreeModal: React.FC<PullWorktreeModalProps> = ({
                                 busy
                                 || loadingInfo
                                 || !localPath
-                                || (gitInfo ? !gitInfo.is_git_repo : false)
+                                || !gitInfo
+                                || !gitInfo.is_git_repo
                             }
                         >
                             {busy ? 'Pulling...' : 'Pull into Worktree'}

@@ -819,24 +819,79 @@ pub(crate) fn sanitize_project_dir_name(name: &str) -> String {
     }
 }
 
+const MAX_UNPACK_COMPRESSED_BYTES: usize = 64 * 1024 * 1024;
+const MAX_UNPACK_ARCHIVE_BYTES: u64 = 256 * 1024 * 1024;
+const MAX_UNPACK_ARCHIVE_ENTRIES: usize = 50_000;
+
+fn resolve_path_with_existing_ancestor(path: &std::path::Path) -> anyhow::Result<PathBuf> {
+    use std::path::Component;
+
+    if path
+        .components()
+        .any(|c| matches!(c, Component::ParentDir))
+    {
+        anyhow::bail!("Path cannot contain parent directory references ('..'): {}", path.display());
+    }
+    if path.exists() {
+        return Ok(std::fs::canonicalize(path)?);
+    }
+
+    let mut cur = path.to_path_buf();
+    let mut suffix: Vec<std::ffi::OsString> = Vec::new();
+    while !cur.exists() {
+        let Some(name) = cur.file_name() else {
+            return Ok(path.to_path_buf());
+        };
+        suffix.push(name.to_os_string());
+        if !cur.pop() {
+            return Ok(path.to_path_buf());
+        }
+    }
+
+    let mut resolved = std::fs::canonicalize(&cur)?;
+    for part in suffix.into_iter().rev() {
+        resolved.push(part);
+    }
+    Ok(resolved)
+}
+
 pub(crate) fn unpack_project_archive(
     archive_b64: &str,
     target_dir: &std::path::Path,
 ) -> anyhow::Result<()> {
     use base64::Engine as _;
     use flate2::read::GzDecoder;
+    use std::io::Read as _;
     use std::path::Component;
 
+    let trimmed_b64 = archive_b64.trim();
+    if trimmed_b64.len() > MAX_UNPACK_COMPRESSED_BYTES * 2 {
+        anyhow::bail!("Sync archive exceeds maximum encoded size");
+    }
     let compressed = base64::engine::general_purpose::STANDARD
-        .decode(archive_b64.trim())
+        .decode(trimmed_b64)
         .map_err(|e| anyhow::anyhow!("Invalid sync archive encoding: {}", e))?;
+    if compressed.len() > MAX_UNPACK_COMPRESSED_BYTES {
+        anyhow::bail!("Sync archive exceeds maximum compressed size");
+    }
     std::fs::create_dir_all(target_dir)?;
 
-    let gz = GzDecoder::new(&compressed[..]);
+    let gz = GzDecoder::new(&compressed[..]).take(MAX_UNPACK_ARCHIVE_BYTES + 1);
     let mut archive = tar::Archive::new(gz);
+    let mut entry_count: usize = 0;
+    let mut declared_bytes: u64 = 0;
 
     for entry in archive.entries()? {
         let mut entry = entry?;
+        entry_count += 1;
+        if entry_count > MAX_UNPACK_ARCHIVE_ENTRIES {
+            anyhow::bail!("Sync archive exceeds maximum entry count");
+        }
+        declared_bytes = declared_bytes
+            .saturating_add(entry.header().size().unwrap_or(0));
+        if declared_bytes > MAX_UNPACK_ARCHIVE_BYTES {
+            anyhow::bail!("Sync archive exceeds maximum unpacked size");
+        }
         let rel_path = entry.path()?.into_owned();
         if rel_path.is_absolute()
             || rel_path
@@ -855,11 +910,14 @@ pub(crate) fn unpack_project_archive(
             if let Some(parent) = dest.parent() {
                 std::fs::create_dir_all(parent)?;
             }
-            if dest.is_file() {
+            if dest.symlink_metadata().is_ok() {
                 let _ = std::fs::remove_file(&dest);
             }
             entry.unpack(&dest)?;
         }
+    }
+    if archive.into_inner().limit() == 0 {
+        anyhow::bail!("Sync archive exceeds maximum unpacked size");
     }
     Ok(())
 }
@@ -1061,32 +1119,40 @@ pub async fn dispatch_node_method(
         "workspace:clone" => {
             let req: CloneProjectRequest = serde_json::from_value(params)?;
             let url = req.url.trim().to_string();
-            if url.is_empty() {
-                anyhow::bail!("Git URL cannot be empty");
+            if url.is_empty() || url.starts_with('-') {
+                anyhow::bail!("Invalid Git URL");
             }
-            let repo_name = url
-                .rsplit('/')
-                .next()
-                .unwrap_or("project")
-                .trim_end_matches(".git")
-                .trim();
-            let repo_name = if repo_name.is_empty() { "project" } else { repo_name };
-            let target_path = match req.target_dir.filter(|s| !s.trim().is_empty()) {
-                Some(dir) => PathBuf::from(dir),
+            let repo_name = sanitize_project_dir_name(
+                url.rsplit('/')
+                    .next()
+                    .unwrap_or("project")
+                    .trim_end_matches(".git"),
+            );
+            let target_path = match req.target_dir.map(|s| s.trim().to_string()).filter(|s| !s.is_empty()) {
+                Some(dir) => {
+                    let raw_path = PathBuf::from(&dir);
+                    if !raw_path.is_absolute() {
+                        anyhow::bail!("Target directory must be an absolute path");
+                    }
+                    resolve_path_with_existing_ancestor(&raw_path)?
+                }
                 None => state.workspace.lock().await.starting_directory().join(repo_name),
             };
             if target_path.exists() {
                 anyhow::bail!("Target directory already exists: {}", target_path.display());
             }
             if let Some(parent) = target_path.parent() {
-                std::fs::create_dir_all(parent)?;
+                tokio::fs::create_dir_all(parent).await?;
             }
             let mut cmd = tokio::process::Command::new("git");
             cmd.arg("clone");
             if let Some(branch) = req.branch.as_deref().map(str::trim).filter(|b| !b.is_empty()) {
+                if branch.starts_with('-') {
+                    anyhow::bail!("Invalid branch name");
+                }
                 cmd.arg("--branch").arg(branch);
             }
-            cmd.arg(&url).arg(&target_path);
+            cmd.arg("--").arg(&url).arg(&target_path);
             let output = cmd.output().await?;
             if !output.status.success() {
                 let stderr = String::from_utf8_lossy(&output.stderr);
@@ -1107,6 +1173,8 @@ pub async fn dispatch_node_method(
             let req: SyncProjectRequest = serde_json::from_value(params)?;
             let dir_name = sanitize_project_dir_name(&req.name);
             let remote_projects_root = state.data_dir.join("remote-projects");
+            tokio::fs::create_dir_all(&remote_projects_root).await?;
+            let canon_remote_root = resolve_path_with_existing_ancestor(&remote_projects_root)?;
             let target_path = match req
                 .target_dir
                 .as_deref()
@@ -1114,20 +1182,19 @@ pub async fn dispatch_node_method(
                 .filter(|s| !s.is_empty())
             {
                 Some(dir) => {
-                    let candidate = PathBuf::from(dir);
-                    let in_workspace = state
-                        .workspace
-                        .lock()
-                        .await
-                        .projects()
-                        .into_iter()
-                        .any(|p| PathBuf::from(&p.root) == candidate);
-                    if !in_workspace && !candidate.starts_with(&remote_projects_root) {
+                    let candidate = resolve_path_with_existing_ancestor(&PathBuf::from(dir))?;
+                    let projects = state.workspace.lock().await.projects();
+                    let in_workspace = projects.into_iter().any(|p| {
+                        resolve_path_with_existing_ancestor(std::path::Path::new(&p.root))
+                            .map(|resolved| resolved == candidate)
+                            .unwrap_or(false)
+                    });
+                    if !in_workspace && !candidate.starts_with(&canon_remote_root) {
                         anyhow::bail!("Invalid sync target directory");
                     }
                     candidate
                 }
-                None => remote_projects_root.join(dir_name),
+                None => canon_remote_root.join(dir_name),
             };
             let unpack_target = target_path.clone();
             if let Some(git_payload) = req.git {
@@ -1793,6 +1860,11 @@ pub async fn dispatch_node_method(
                 None
             };
 
+            let isolated_wt_repo = if created_worktree.is_some() && node_req.worktree_path.as_deref().map(str::trim).filter(|s| !s.is_empty()).is_none() {
+                Some(base_root.clone())
+            } else {
+                None
+            };
             let agent_cwd = created_worktree
                 .as_ref()
                 .map(|w| w.path.clone())
@@ -1802,28 +1874,43 @@ pub async fn dispatch_node_method(
                 .map(|w| w.path.to_string_lossy().into_owned());
             let worktree_branch_str = created_worktree.as_ref().map(|w| w.branch.clone());
 
-            let (start_result, msg_rx) = {
+            let acp_start_outcome = {
                 let mut acp_manager = state.acp_manager.lock().await;
                 if acp_manager.get_agent(&req.agent_id).is_some() {
-                    anyhow::bail!("Agent {} already running", req.agent_id);
-                }
-                let start_result = acp_manager
-                    .start_agent(
-                        req.agent_id.clone(),
-                        req.agent_name,
-                        &req.command,
-                        &req.args,
-                        Some(req.env),
-                        req.resume_session_id,
-                        agent_cwd,
-                    )
-                    .await;
-                let msg_rx = if start_result.is_ok() {
-                    acp_manager.subscribe(&req.agent_id)
+                    Err(anyhow::anyhow!("Agent {} already running", req.agent_id))
                 } else {
-                    None
-                };
-                (start_result, msg_rx)
+                    let res = acp_manager
+                        .start_agent(
+                            req.agent_id.clone(),
+                            req.agent_name,
+                            &req.command,
+                            &req.args,
+                            Some(req.env),
+                            req.resume_session_id,
+                            agent_cwd,
+                        )
+                        .await;
+                    let msg_rx = if res.is_ok() {
+                        acp_manager.subscribe(&req.agent_id)
+                    } else {
+                        None
+                    };
+                    res.map(|outcome| (outcome, msg_rx))
+                }
+            };
+
+            let (start_result, msg_rx) = match acp_start_outcome {
+                Ok((outcome, msg_rx)) => (Ok(outcome), msg_rx),
+                Err(e) => {
+                    if let (Some(repo_root), Some(wt)) = (isolated_wt_repo, created_worktree.as_ref()) {
+                        let wt_path = wt.path.clone();
+                        let _ = tokio::task::spawn_blocking(move || {
+                            crate::git::remove_git_worktree(&repo_root, &wt_path)
+                        })
+                        .await;
+                    }
+                    (Err(e), None)
+                }
             };
 
             match start_result {

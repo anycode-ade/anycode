@@ -1030,6 +1030,13 @@ impl ServerHub {
             match self.connect_once(&state, &cfg, &pending, &cancel).await {
                 Ok(()) => {
                     backoff_secs = 1;
+                    let mut guard = self.remotes.lock().await;
+                    if let Some(r) = guard.get_mut(&cfg.id) {
+                        r.status = ServerConnectionStatus::Offline;
+                        r.error = None;
+                        r.req_tx = None;
+                        r.ping_ms = None;
+                    }
                 }
                 Err(err) => {
                     let msg = err.to_string();
@@ -1110,6 +1117,8 @@ impl ServerHub {
             }
         }
 
+        let conn_cancel = cancel.child_token();
+
         let writer = tokio::spawn(async move {
             while let Some(frame) = out_rx.recv().await {
                 let Ok(text) = serde_json::to_string(&frame) else {
@@ -1125,9 +1134,13 @@ impl ServerHub {
         let hub_sync = self.clone();
         let state_sync = state.clone();
         let id_sync = cfg.id.clone();
-        tokio::spawn(async move {
+        let sync_cancel = conn_cancel.clone();
+        let sync_task = tokio::spawn(async move {
             let started = Instant::now();
             if let Ok(info_val) = hub_sync.remote_rpc(&id_sync, "server:info", Value::Null).await {
+                if sync_cancel.is_cancelled() {
+                    return;
+                }
                 let rtt = started.elapsed().as_millis() as u64;
                 if let Ok(info) = serde_json::from_value::<NodeServerInfo>(info_val) {
                     if let Some(r) = hub_sync.remotes.lock().await.get_mut(&id_sync) {
@@ -1136,7 +1149,13 @@ impl ServerHub {
                     }
                 }
             }
+            if sync_cancel.is_cancelled() {
+                return;
+            }
             if let Ok(ws_state) = hub_sync.remote_rpc(&id_sync, "workspace:state", Value::Null).await {
+                if sync_cancel.is_cancelled() {
+                    return;
+                }
                 if let Ok(projects) = serde_json::from_value::<Vec<crate::workspace::ProjectInfo>>(
                     ws_state.get("projects").cloned().unwrap_or(Value::Array(vec![])),
                 ) {
@@ -1145,7 +1164,13 @@ impl ServerHub {
                     }
                 }
             }
+            if sync_cancel.is_cancelled() {
+                return;
+            }
             if let Ok(acp_reconn) = hub_sync.remote_rpc(&id_sync, "acp:reconnect", Value::Null).await {
+                if sync_cancel.is_cancelled() {
+                    return;
+                }
                 if let Ok(agents) = serde_json::from_value::<Vec<NodeAgentSummary>>(
                     acp_reconn.get("agents").cloned().unwrap_or(Value::Array(vec![])),
                 ) {
@@ -1154,28 +1179,58 @@ impl ServerHub {
                     }
                 }
             }
-            hub_sync.broadcast_servers(&state_sync).await;
+            if !sync_cancel.is_cancelled() {
+                hub_sync.broadcast_servers(&state_sync).await;
+            }
         });
 
         let mut ping_interval = tokio::time::interval(Duration::from_secs(15));
         ping_interval.tick().await;
+        let ping_in_flight = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let mut disconnect_err: Option<anyhow::Error> = None;
 
         loop {
             tokio::select! {
-                _ = cancel.cancelled() => break,
+                _ = conn_cancel.cancelled() => {
+                    if !cancel.is_cancelled() {
+                        disconnect_err = Some(anyhow!("Remote health check failed"));
+                    }
+                    break;
+                }
                 _ = ping_interval.tick() => {
+                    if ping_in_flight.swap(true, Ordering::AcqRel) {
+                        continue;
+                    }
                     let hub_p = self.clone();
                     let id_p = cfg.id.clone();
                     let state_p = state.clone();
+                    let ping_cancel = conn_cancel.clone();
+                    let in_flight = ping_in_flight.clone();
                     tokio::spawn(async move {
                         let started = Instant::now();
-                        if hub_p.remote_rpc(&id_p, "ping", Value::Null).await.is_ok() {
-                            let rtt = started.elapsed().as_millis() as u64;
-                            if let Some(r) = hub_p.remotes.lock().await.get_mut(&id_p) {
-                                r.ping_ms = Some(rtt);
+                        let ping_res = tokio::time::timeout(
+                            Duration::from_secs(10),
+                            hub_p.remote_rpc(&id_p, "ping", Value::Null),
+                        )
+                        .await;
+                        in_flight.store(false, Ordering::Release);
+                        if ping_cancel.is_cancelled() {
+                            return;
+                        }
+                        match ping_res {
+                            Ok(Ok(_)) => {
+                                let rtt = started.elapsed().as_millis() as u64;
+                                if let Some(r) = hub_p.remotes.lock().await.get_mut(&id_p) {
+                                    r.ping_ms = Some(rtt);
+                                }
+                                let _ = hub_p.refresh_remote_snapshot(&id_p).await;
+                                if !ping_cancel.is_cancelled() {
+                                    hub_p.broadcast_servers(&state_p).await;
+                                }
                             }
-                            let _ = hub_p.refresh_remote_snapshot(&id_p).await;
-                            hub_p.broadcast_servers(&state_p).await;
+                            Ok(Err(_)) | Err(_) => {
+                                ping_cancel.cancel();
+                            }
                         }
                     });
                 }
@@ -1227,8 +1282,13 @@ impl ServerHub {
             }
         }
 
+        conn_cancel.cancel();
+        sync_task.abort();
         drop(out_tx);
         let _ = writer.await;
+        if let Some(err) = disconnect_err {
+            return Err(err);
+        }
         Ok(())
     }
 }

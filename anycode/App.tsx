@@ -1159,8 +1159,9 @@ const App: React.FC<AppProps> = ({ initialWorkspace }) => {
         }));
     });
 
+    const { subscribeDiffStats, getWorktreeDiff } = remote;
     useEffect(() => {
-        return remote.subscribeDiffStats((evt) => {
+        return subscribeDiffStats((evt) => {
             if (!evt.worktree_path) return;
             const matches = Object.entries(multibufferReviewsRef.current).filter(
                 ([, rev]) =>
@@ -1169,7 +1170,7 @@ const App: React.FC<AppProps> = ({ initialWorkspace }) => {
             );
             if (matches.length === 0) return;
 
-            void remote.getWorktreeDiff(evt.server_id, evt.worktree_path, matches[0][1].remoteDiffTarget?.projectId)
+            void getWorktreeDiff(evt.server_id, evt.worktree_path, matches[0][1].remoteDiffTarget?.projectId)
                 .then((diff) => {
                     const files = toRemoteWorktreeMultibufferFiles(diff);
                     setMultibufferReviews((previous) => {
@@ -1202,7 +1203,7 @@ const App: React.FC<AppProps> = ({ initialWorkspace }) => {
                 })
                 .catch(() => {});
         });
-    }, [remote]);
+    }, [subscribeDiffStats, getWorktreeDiff]);
 
     const activeChangedFile = useMemo<ChangedFile | null>(() => {
         if (!activeContextFilePath) {

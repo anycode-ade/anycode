@@ -363,6 +363,7 @@ const MultibufferPanel: React.FC<MultibufferPanelProps> = ({
             currentCodeRef.current = null;
             originalCodeRef.current = null;
             loadedFileIdsRef.current.clear();
+            loadedSignaturesRef.current.clear();
             deletedEntriesRef.current.clear();
             setSharedEditor(null);
         };
