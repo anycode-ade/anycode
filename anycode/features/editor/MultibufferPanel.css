@@ -11,9 +11,12 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
+    gap: 8px;
     flex: 0 0 auto;
     padding: 0 4px 0 12px;
+    height: 32px;
     min-height: 32px;
+    overflow: hidden;
     background: var(--theme-tab-background, rgba(255, 255, 255, 0.025));
     font-family: var(--interface-font-family);
     font-size: var(--interface-font-size, 13px);
@@ -28,7 +31,23 @@
 }
 
 .multibuffer-toolbar-title {
+    flex: 1 1 auto;
+    min-width: 0;
     gap: 8px;
+    white-space: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+}
+
+.multibuffer-toolbar-title::-webkit-scrollbar {
+    display: none;
+}
+
+.multibuffer-toolbar-title > * {
+    flex-shrink: 0;
+    white-space: nowrap;
 }
 
 .multibuffer-toolbar-count {
@@ -40,7 +59,7 @@
 .multibuffer-toolbar-actions {
     display: flex;
     align-items: center;
-    gap: 8px;
+    flex: 0 0 auto;
     margin-left: auto;
 }
 
