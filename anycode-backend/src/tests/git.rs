@@ -625,3 +625,513 @@ fn benchmark_status_real() {
         "Real custom version must be faster than CLI!"
     );
 }
+
+#[test]
+fn cloud_git_sync_and_pull_worktree_roundtrip_with_commits_and_wip() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let local_dir = tmp.path().join("local-repo");
+    std::fs::create_dir_all(&local_dir).unwrap();
+
+    run_git_checked(&local_dir, &["init", "-b", "feature/demo"], &[]).unwrap();
+    run_git_checked(&local_dir, &["config", "user.name", "Alice"], &[]).unwrap();
+    run_git_checked(
+        &local_dir,
+        &["config", "user.email", "alice@example.com"],
+        &[],
+    )
+    .unwrap();
+
+    std::fs::write(local_dir.join(".gitignore"), "target/\n").unwrap();
+    std::fs::write(local_dir.join("main.txt"), "base-line\n").unwrap();
+    std::fs::write(local_dir.join("remove-me.txt"), "gone soon\n").unwrap();
+    run_git_checked(&local_dir, &["add", "."], &[]).unwrap();
+    run_git_checked(&local_dir, &["commit", "-m", "init"], &[]).unwrap();
+
+    // Local dirty working tree edits before sync.
+    std::fs::write(local_dir.join("local-dirty.txt"), "from-local\n").unwrap();
+    std::fs::remove_file(local_dir.join("remove-me.txt")).unwrap();
+
+    let payload = pack_git_sync_payload(&local_dir, "demo", TRANSFER_CHUNK_BYTES)
+        .unwrap()
+        .expect("git payload expected");
+
+    let remote_dir = tmp.path().join("remote-repo");
+    apply_git_sync_payload(&remote_dir, &payload).unwrap();
+    assert!(!remote_dir.join("remove-me.txt").exists());
+    assert_eq!(
+        std::fs::read_to_string(remote_dir.join("local-dirty.txt")).unwrap(),
+        "from-local\n"
+    );
+
+    // Remote agent commits work AND leaves additional uncommitted changes.
+    run_git_checked(&remote_dir, &["config", "user.name", "Remote Agent"], &[]).unwrap();
+    run_git_checked(
+        &remote_dir,
+        &["config", "user.email", "agent@example.com"],
+        &[],
+    )
+    .unwrap();
+    std::fs::write(remote_dir.join("main.txt"), "committed-by-agent\n").unwrap();
+    run_git_checked(&remote_dir, &["add", "main.txt"], &[]).unwrap();
+    run_git_checked(&remote_dir, &["commit", "-m", "agent commit"], &[]).unwrap();
+
+    std::fs::write(remote_dir.join("wip-note.txt"), "unstaged edit\n").unwrap();
+    std::fs::create_dir_all(remote_dir.join("target")).unwrap();
+    std::fs::write(remote_dir.join("target").join("build.bin"), "ignored").unwrap();
+
+    let info = inspect_remote_git_state(&remote_dir).unwrap();
+    assert!(info.is_git_repo);
+    assert_eq!(info.commits_ahead, 1);
+    assert!(info.dirty_count >= 1);
+
+    let known_bases = collect_local_known_bases(&local_dir).unwrap();
+    let pull = build_pull_bundle(&remote_dir, &known_bases, TRANSFER_CHUNK_BYTES).unwrap();
+    assert!(pull.changed);
+    assert!(pull.has_wip);
+    assert_eq!(pull.commits_count, 1);
+
+    let worktrees_root = tmp.path().join("worktrees");
+    let (wt_path, wt_branch) = apply_pull_bundle_to_worktree(
+        &local_dir,
+        &pull,
+        "alpha-node",
+        "demo",
+        &worktrees_root,
+        Some("cloud/test-wt"),
+        None,
+    )
+    .unwrap();
+
+    assert_eq!(wt_branch, "cloud/test-wt");
+    assert_eq!(
+        std::fs::read_to_string(wt_path.join("main.txt")).unwrap(),
+        "committed-by-agent\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(wt_path.join("wip-note.txt")).unwrap(),
+        "unstaged edit\n"
+    );
+    // Ignored target/ directory must NOT be pulled back.
+    assert!(!wt_path.join("target").join("build.bin").exists());
+    // Local checkout stays untouched.
+    assert_eq!(
+        std::fs::read_to_string(local_dir.join("main.txt")).unwrap(),
+        "base-line\n"
+    );
+    // Worktree HEAD should be the agent's real commit (not the synthetic WIP commit).
+    let wt_top_msg = run_git_checked(&wt_path, &["log", "-1", "--pretty=%s"], &[]).unwrap();
+    assert_eq!(wt_top_msg, "agent commit");
+}
+
+#[test]
+fn cloud_git_sync_over_existing_nongit_dir_keeps_ignored_and_pulls_zero_commit_wip() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let local_dir = tmp.path().join("local-repo");
+    std::fs::create_dir_all(&local_dir).unwrap();
+
+    run_git_checked(&local_dir, &["init", "-b", "main"], &[]).unwrap();
+    run_git_checked(&local_dir, &["config", "user.name", "Alice"], &[]).unwrap();
+    run_git_checked(
+        &local_dir,
+        &["config", "user.email", "alice@example.com"],
+        &[],
+    )
+    .unwrap();
+    std::fs::write(local_dir.join(".gitignore"), "node_modules/\n").unwrap();
+    std::fs::write(local_dir.join("app.ts"), "export const x = 1;\n").unwrap();
+    run_git_checked(&local_dir, &["add", "."], &[]).unwrap();
+    run_git_checked(&local_dir, &["commit", "-m", "initial"], &[]).unwrap();
+
+    // Simulate an older non-git sync folder that has ignored dependencies & a stale deleted file.
+    let remote_dir = tmp.path().join("remote-nongit");
+    std::fs::create_dir_all(remote_dir.join("node_modules/pkg")).unwrap();
+    std::fs::write(remote_dir.join("node_modules/pkg/index.js"), "dep").unwrap();
+    std::fs::write(remote_dir.join("stale.txt"), "old leftover").unwrap();
+    std::fs::write(remote_dir.join("app.ts"), "export const x = 0;\n").unwrap();
+
+    let payload = pack_git_sync_payload(&local_dir, "demo", TRANSFER_CHUNK_BYTES)
+        .unwrap()
+        .unwrap();
+    apply_git_sync_payload(&remote_dir, &payload).unwrap();
+
+    assert!(remote_dir.join("node_modules/pkg/index.js").is_file());
+    assert!(!remote_dir.join("stale.txt").exists());
+    assert_eq!(
+        std::fs::read_to_string(remote_dir.join("app.ts")).unwrap(),
+        "export const x = 1;\n"
+    );
+
+    // Pull when nothing changed yet -> changed == false.
+    let known = collect_local_known_bases(&local_dir).unwrap();
+    let empty_pull = build_pull_bundle(&remote_dir, &known, TRANSFER_CHUNK_BYTES).unwrap();
+    assert!(!empty_pull.changed);
+
+    // Agent edits file without making a git commit -> 0 commits, WIP only.
+    std::fs::write(remote_dir.join("app.ts"), "export const x = 42;\n").unwrap();
+    let wip_pull = build_pull_bundle(&remote_dir, &known, TRANSFER_CHUNK_BYTES).unwrap();
+    assert!(wip_pull.changed);
+    assert!(wip_pull.has_wip);
+    assert_eq!(wip_pull.commits_count, 0);
+
+    let worktrees_root = tmp.path().join("worktrees");
+    let (wt_path, _) = apply_pull_bundle_to_worktree(
+        &local_dir,
+        &wip_pull,
+        "air-node",
+        "demo",
+        &worktrees_root,
+        None,
+        None,
+    )
+    .unwrap();
+
+    assert_eq!(
+        std::fs::read_to_string(wt_path.join("app.ts")).unwrap(),
+        "export const x = 42;\n"
+    );
+    let wt_status = run_git_checked(&wt_path, &["status", "--short"], &[]).unwrap();
+    assert!(wt_status.contains("M app.ts"));
+}
+
+#[test]
+fn cloud_git_remote_worktree_create_commit_and_pull_delta() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let local_dir = tmp.path().join("local-repo");
+    std::fs::create_dir_all(&local_dir).unwrap();
+
+    run_git_checked(&local_dir, &["init", "-b", "main"], &[]).unwrap();
+    run_git_checked(&local_dir, &["config", "user.name", "Alice"], &[]).unwrap();
+    run_git_checked(
+        &local_dir,
+        &["config", "user.email", "alice@example.com"],
+        &[],
+    )
+    .unwrap();
+
+    // Multi-commit local history (full history should survive sync via --all HEAD).
+    std::fs::write(local_dir.join("app.txt"), "v1\n").unwrap();
+    run_git_checked(&local_dir, &["add", "."], &[]).unwrap();
+    run_git_checked(&local_dir, &["commit", "-m", "commit one"], &[]).unwrap();
+
+    std::fs::write(local_dir.join("app.txt"), "v2\n").unwrap();
+    run_git_checked(&local_dir, &["add", "."], &[]).unwrap();
+    run_git_checked(&local_dir, &["commit", "-m", "commit two"], &[]).unwrap();
+
+    // Local dirty edit that should be synced to remote base and carried into the new remote worktree.
+    std::fs::write(local_dir.join("notes.txt"), "local-wip\n").unwrap();
+
+    let packed = pack_git_sync_to_file(&local_dir, "demo")
+        .unwrap()
+        .expect("packed git sync expected");
+    assert!(packed.bundle_file.is_none());
+    let remote_base = tmp.path().join("remote-base");
+    apply_git_sync_payload(&remote_base, &packed.payload).unwrap();
+
+    // Verify full history was preserved on remote base (2 commits, not shallow 1).
+    let remote_count = run_git_checked(&remote_base, &["rev-list", "--count", "HEAD"], &[]).unwrap();
+    assert_eq!(remote_count, "2");
+
+    // Create a dedicated worktree on remote for an agent, carrying dirty changes.
+    let remote_wts = tmp.path().join("remote-worktrees");
+    let (remote_wt, remote_branch) = create_git_worktree(
+        &remote_base,
+        &remote_wts,
+        "demo",
+        CreateGitWorktreeOptions {
+            branch: Some("agent/task-1"),
+            include_dirty: true,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    assert_eq!(remote_branch, "agent/task-1");
+    let wt_dir_name = remote_wt.file_name().unwrap().to_str().unwrap();
+    assert_eq!(wt_dir_name.len(), 8);
+    assert!(wt_dir_name.chars().all(|c| c.is_ascii_lowercase()));
+    assert_eq!(
+        std::fs::read_to_string(remote_wt.join("notes.txt")).unwrap(),
+        "local-wip\n"
+    );
+
+    // Agent works inside remote_wt: commits new work AND leaves an uncommitted edit.
+    run_git_checked(&remote_wt, &["config", "user.name", "Agent"], &[]).unwrap();
+    run_git_checked(
+        &remote_wt,
+        &["config", "user.email", "agent@example.com"],
+        &[],
+    )
+    .unwrap();
+    std::fs::write(remote_wt.join("notes.txt"), "committed-note\n").unwrap();
+    run_git_checked(&remote_wt, &["add", "notes.txt"], &[]).unwrap();
+    run_git_checked(&remote_wt, &["commit", "-m", "agent task commit"], &[]).unwrap();
+    std::fs::write(remote_wt.join("app.txt"), "v2+wip\n").unwrap();
+
+    let wt_info = inspect_remote_git_state(&remote_wt).unwrap();
+    assert!(wt_info.is_git_repo);
+    assert!(wt_info.is_worktree);
+    assert_eq!(wt_info.commits_ahead, 1);
+    assert!(wt_info.dirty_count >= 1);
+
+    let known = collect_local_known_bases(&local_dir).unwrap();
+    let (pull, bundle_file_opt) = build_pull_bundle_to_file(&remote_wt, &known).unwrap();
+    assert!(pull.changed);
+    assert!(pull.has_wip);
+    assert_eq!(pull.commits_count, 1);
+    assert!(bundle_file_opt.is_none());
+
+    // Simulate file-based bundle fetch into local worktree.
+    let mut bundle_tmp = tempfile::NamedTempFile::new().unwrap();
+    let bundle_bytes = base64::Engine::decode(
+        &base64::engine::general_purpose::STANDARD,
+        pull.bundle_b64.as_deref().unwrap().trim(),
+    )
+    .unwrap();
+    std::io::Write::write_all(&mut bundle_tmp, &bundle_bytes).unwrap();
+    std::io::Write::flush(&mut bundle_tmp).unwrap();
+
+    let local_wts = tmp.path().join("local-worktrees");
+    let (pulled_wt, pulled_branch) = apply_pull_bundle_file_to_worktree(
+        &local_dir,
+        bundle_tmp.path(),
+        &pull,
+        "beta-node",
+        "demo",
+        &local_wts,
+        None,
+        None,
+    )
+    .unwrap();
+
+    assert!(pulled_branch.starts_with("cloud/beta-node/"));
+    assert_eq!(
+        std::fs::read_to_string(pulled_wt.join("notes.txt")).unwrap(),
+        "committed-note\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(pulled_wt.join("app.txt")).unwrap(),
+        "v2+wip\n"
+    );
+    let log_top = run_git_checked(&pulled_wt, &["log", "-1", "--pretty=%s"], &[]).unwrap();
+    assert_eq!(log_top, "agent task commit");
+
+    // Neither local base repo nor remote base repo was polluted by remote_wt commits.
+    assert_eq!(
+        run_git_checked(&local_dir, &["rev-list", "--count", "HEAD"], &[]).unwrap(),
+        "2"
+    );
+    assert_eq!(
+        run_git_checked(&remote_base, &["rev-list", "--count", "HEAD"], &[]).unwrap(),
+        "2"
+    );
+}
+
+#[test]
+fn list_and_remove_git_worktrees_tracks_status_and_cleans_up() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let repo_dir = tmp.path().join("repo");
+    std::fs::create_dir_all(&repo_dir).unwrap();
+
+    run_git_checked(&repo_dir, &["init"], &[]).unwrap();
+    run_git_checked(&repo_dir, &["config", "user.name", "Test"], &[]).unwrap();
+    run_git_checked(&repo_dir, &["config", "user.email", "test@local"], &[]).unwrap();
+    std::fs::write(repo_dir.join("main.txt"), "base\n").unwrap();
+    run_git_checked(&repo_dir, &["add", "."], &[]).unwrap();
+    run_git_checked(&repo_dir, &["commit", "-m", "initial"], &[]).unwrap();
+
+    assert!(list_git_worktrees(&repo_dir).unwrap().is_empty());
+
+    let wts_root = tmp.path().join("wts");
+    let (wt_path, branch) = create_git_worktree(
+        &repo_dir,
+        &wts_root,
+        "repo",
+        CreateGitWorktreeOptions {
+            include_dirty: false,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    assert!(branch.starts_with("agent/"));
+
+    std::fs::write(wt_path.join("main.txt"), "committed\n").unwrap();
+    run_git_checked(&wt_path, &["add", "."], &[]).unwrap();
+    run_git_checked(&wt_path, &["commit", "-m", "wt commit"], &[]).unwrap();
+    std::fs::write(wt_path.join("untracked.txt"), "wip\n").unwrap();
+
+    let entries = list_git_worktrees(&repo_dir).unwrap();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].commits_ahead, 1);
+    assert_eq!(entries[0].dirty_count, 1);
+    assert!(entries[0].is_dirty);
+    assert_eq!(entries[0].branch.as_deref(), Some(branch.as_str()));
+    assert_eq!(entries[0].id.len(), 8);
+
+    // Removing the main repo itself must be rejected.
+    assert!(remove_git_worktree(&repo_dir, &repo_dir).is_err());
+
+    remove_git_worktree(&repo_dir, &wt_path).unwrap();
+    assert!(!wt_path.exists());
+    assert!(list_git_worktrees(&repo_dir).unwrap().is_empty());
+}
+
+#[test]
+fn create_git_worktree_supports_custom_name_and_base_ref() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let repo_dir = tmp.path().join("repo");
+    std::fs::create_dir_all(&repo_dir).unwrap();
+
+    run_git_checked(&repo_dir, &["init", "-b", "main"], &[]).unwrap();
+    run_git_checked(&repo_dir, &["config", "user.name", "Test"], &[]).unwrap();
+    run_git_checked(&repo_dir, &["config", "user.email", "test@local"], &[]).unwrap();
+    std::fs::write(repo_dir.join("base.txt"), "main-v1\n").unwrap();
+    run_git_checked(&repo_dir, &["add", "."], &[]).unwrap();
+    run_git_checked(&repo_dir, &["commit", "-m", "main commit"], &[]).unwrap();
+
+    run_git_checked(&repo_dir, &["checkout", "-b", "older-feature", "main"], &[]).unwrap();
+    std::fs::write(repo_dir.join("old.txt"), "old\n").unwrap();
+    run_git_checked(&repo_dir, &["add", "."], &[]).unwrap();
+    run_git_checked(
+        &repo_dir,
+        &["commit", "-m", "older branch commit"],
+        &[("GIT_COMMITTER_DATE", "2026-01-02T00:00:00Z")],
+    )
+    .unwrap();
+
+    run_git_checked(&repo_dir, &["checkout", "-b", "cloud/newer-branch", "main"], &[]).unwrap();
+    std::fs::write(repo_dir.join("cloud.txt"), "cloud\n").unwrap();
+    run_git_checked(&repo_dir, &["add", "."], &[]).unwrap();
+    run_git_checked(
+        &repo_dir,
+        &["commit", "-m", "newer branch commit"],
+        &[("GIT_COMMITTER_DATE", "2026-02-01T00:00:00Z")],
+    )
+    .unwrap();
+
+    run_git_checked(&repo_dir, &["checkout", "-b", "alpha-feature", "main"], &[]).unwrap();
+    std::fs::write(repo_dir.join("feat.txt"), "feat\n").unwrap();
+    run_git_checked(&repo_dir, &["add", "."], &[]).unwrap();
+    run_git_checked(
+        &repo_dir,
+        &["commit", "-m", "feature commit"],
+        &[("GIT_COMMITTER_DATE", "2026-03-01T00:00:00Z")],
+    )
+    .unwrap();
+
+    let state = inspect_remote_git_state(&repo_dir).unwrap();
+    assert_eq!(state.branch.as_deref(), Some("alpha-feature"));
+    assert_eq!(
+        state.branches,
+        vec![
+            "alpha-feature".to_string(),
+            "main".to_string(),
+            "cloud/newer-branch".to_string(),
+            "older-feature".to_string(),
+        ]
+    );
+
+    let wts_root = tmp.path().join("wts");
+    let (wt_path, wt_branch) = create_git_worktree(
+        &repo_dir,
+        &wts_root,
+        "repo",
+        CreateGitWorktreeOptions {
+            worktree_name: Some("hotfix-ui"),
+            base_ref: Some("main"),
+            include_dirty: false,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+
+    assert_eq!(wt_path.file_name().and_then(|s| s.to_str()), Some("hotfix-ui"));
+    assert_eq!(wt_branch, "agent/hotfix-ui");
+    assert!(!wt_path.join("feat.txt").exists());
+    assert_eq!(
+        std::fs::read_to_string(wt_path.join("base.txt")).unwrap(),
+        "main-v1\n"
+    );
+
+    // Duplicate custom name fails cleanly instead of overwriting.
+    assert!(create_git_worktree(
+        &repo_dir,
+        &wts_root,
+        "repo",
+        CreateGitWorktreeOptions {
+            worktree_name: Some("hotfix-ui"),
+            include_dirty: false,
+            ..Default::default()
+        },
+    )
+    .is_err());
+}
+
+#[test]
+fn compute_worktree_diff_stats_and_collect_hunks_against_base_sha() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let repo_dir = tmp.path().join("repo");
+    let wts_root = tmp.path().join("wts");
+    std::fs::create_dir_all(&repo_dir).unwrap();
+
+    run_git_checked(&repo_dir, &["init", "-b", "main"], &[]).unwrap();
+    run_git_checked(&repo_dir, &["config", "user.email", "test@example.com"], &[]).unwrap();
+    run_git_checked(&repo_dir, &["config", "user.name", "Tester"], &[]).unwrap();
+
+    let mut initial = String::new();
+    for i in 1..=30 {
+        initial.push_str(&format!("line {}\n", i));
+    }
+    std::fs::write(repo_dir.join("app.rs"), &initial).unwrap();
+    run_git_checked(&repo_dir, &["add", "."], &[]).unwrap();
+    run_git_checked(&repo_dir, &["commit", "-m", "initial"], &[]).unwrap();
+
+    let (wt_path, _) = create_git_worktree(
+        &repo_dir,
+        &wts_root,
+        "repo",
+        CreateGitWorktreeOptions {
+            worktree_name: Some("agent-a"),
+            include_dirty: false,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+
+    // Clean worktree has 0 stats and 0 files
+    let empty_stats = compute_worktree_diff_stats(&wt_path).unwrap();
+    assert_eq!(empty_stats, WorktreeDiffStats { added: 0, removed: 0, files: 0 });
+
+    // Edit near top and commit inside worktree
+    let mut lines: Vec<String> = (1..=30).map(|i| format!("line {}", i)).collect();
+    lines[1] = "line 2 edited".to_string();
+    std::fs::write(wt_path.join("app.rs"), format!("{}\n", lines.join("\n"))).unwrap();
+    run_git_checked(&wt_path, &["add", "app.rs"], &[]).unwrap();
+    run_git_checked(&wt_path, &["commit", "-m", "wt commit"], &[]).unwrap();
+
+    // Edit near bottom (uncommitted) + add untracked file
+    lines[27] = "line 28 edited".to_string();
+    lines.push("line 31 added".to_string());
+    std::fs::write(wt_path.join("app.rs"), format!("{}\n", lines.join("\n"))).unwrap();
+    std::fs::write(wt_path.join("notes.txt"), "hello\nworld\n").unwrap();
+
+    let stats = compute_worktree_diff_stats(&wt_path).unwrap();
+    assert_eq!(stats, WorktreeDiffStats { added: 5, removed: 2, files: 2 });
+
+    let diff = collect_worktree_diff(&wt_path).unwrap();
+    assert_eq!(diff.added, 5);
+    assert_eq!(diff.removed, 2);
+    assert!(!diff.truncated);
+    assert_eq!(diff.files.len(), 2);
+
+    let app_file = diff.files.iter().find(|f| f.path == "app.rs").unwrap();
+    assert_eq!(app_file.status, "modified");
+    assert_eq!(app_file.added, 3);
+    assert_eq!(app_file.removed, 2);
+    assert_eq!(app_file.hunks.len(), 2);
+    assert!(app_file.hunks[0].new_start <= 2);
+    assert!(app_file.hunks[1].new_start >= 20);
+
+    let notes_file = diff.files.iter().find(|f| f.path == "notes.txt").unwrap();
+    assert_eq!(notes_file.status, "untracked");
+    assert_eq!(notes_file.added, 2);
+    assert_eq!(notes_file.hunks.len(), 1);
+}

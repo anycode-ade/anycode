@@ -6,6 +6,7 @@ import { AcpAvatar } from './AcpAvatar';
 import { AcpIcons } from './AcpIcons';
 import type { WorkspaceProject } from '../../workspace';
 import { copyTextToClipboard } from '../../utils';
+import './AcpEmptyPane.css';
 
 function getFirstMessagePreview(session: AcpSession): string | null {
   if (!session.messages || session.messages.length === 0) return null;

@@ -1,5 +1,4 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { flushSync } from 'react-dom';
 import {
   AcpMessage as AcpMessageType,
   AcpToolCall,
@@ -451,6 +450,7 @@ const AcpMessagesComponent: React.FC<AcpMessagesProps> = ({
   const [turnRange, setTurnRange] = useState({ start: 0, end: 0 });
   const layoutRef = useRef({ offsets: new Float64Array(1), count: 0, indexByKey: new Map<string, number>() });
   const rowObserverRef = useRef<ResizeObserver | null>(null);
+  const observedRowsRef = useRef(new WeakSet<HTMLElement>());
   const seenTurnKeysRef = useRef(new Set<string>());
   // A user's work-group toggle lives here, not in the group, so it survives the group unmounting.
   // It only applies while the group keeps its latest/historical state; otherwise the default wins.
@@ -547,32 +547,60 @@ const AcpMessagesComponent: React.FC<AcpMessagesProps> = ({
   }, [scrollerRef, updateTurnRange, measureRows]);
 
   // Height changes outside a React commit (images, fonts, resizes) are caught by the ResizeObserver.
-  useLayoutEffect(() => {
+  // Created in useEffect (after commit) so parent-attached scrollerRef.current is guaranteed non-null on mount.
+  useEffect(() => {
     const scroller = scrollerRef.current;
     if (!scroller) return;
+    const observed = new WeakSet<HTMLElement>();
+    observedRowsRef.current = observed;
     const observer = new ResizeObserver((entries) => {
       if (scroller.clientHeight === 0 || scroller.clientWidth === 0) return;
       const rows: HTMLElement[] = [];
       for (const entry of entries) {
         const row = entry.target as HTMLElement;
         if (row.isConnected && row.offsetParent !== null) rows.push(row);
-        else if (!row.isConnected) observer.unobserve(row);
+        else if (!row.isConnected) {
+          observer.unobserve(row);
+          observed.delete(row);
+        }
       }
-      if (rows.length > 0 && measureRows(rows)) flushSync(() => setHeightsVersion((version) => version + 1));
+      if (rows.length > 0 && measureRows(rows)) setHeightsVersion((version) => version + 1);
     });
     rowObserverRef.current = observer;
-    return () => observer.disconnect();
+    if (scroller.clientHeight > 0 && scroller.clientWidth > 0) {
+      const initialRows = Array.from(scroller.querySelectorAll<HTMLElement>('[data-turn-key]'));
+      for (const row of initialRows) {
+        observed.add(row);
+        observer.observe(row);
+      }
+      if (measureRows(initialRows)) setHeightsVersion((version) => version + 1);
+    }
+    return () => {
+      observer.disconnect();
+      if (rowObserverRef.current === observer) {
+        rowObserverRef.current = null;
+      }
+    };
   }, [scrollerRef, measureRows]);
 
-  // Runs after every commit, before paint: rows that just mounted are measured in the same frame, so the
-  // scroll compensation for rows above the viewport doesn't lag one frame behind the new layout.
+  // Runs after layout-relevant commits, before paint: newly mounted or toggled rows are measured in the
+  // same frame so scroll compensation for rows above the viewport doesn't lag one frame behind.
   useLayoutEffect(() => {
     const scroller = scrollerRef.current;
     if (!scroller || scroller.clientHeight === 0 || scroller.clientWidth === 0) return;
     const rows = Array.from(scroller.querySelectorAll<HTMLElement>('[data-turn-key]'));
-    rows.forEach((row) => rowObserverRef.current?.observe(row));
+    const observer = rowObserverRef.current;
+    const observed = observedRowsRef.current;
+    if (observer) {
+      for (const row of rows) {
+        if (!observed.has(row)) {
+          observed.add(row);
+          observer.observe(row);
+        }
+      }
+    }
     if (measureRows(rows)) setHeightsVersion((version) => version + 1);
-  });
+  }, [groupedItems, turnRange, expandedToolCalls, expandedToolResults, expandedThoughts, measureRows, scrollerRef]);
 
   const activeSearchTurn = useMemo(() => {
     if (activeSearchMessageIndex === undefined) return -1;

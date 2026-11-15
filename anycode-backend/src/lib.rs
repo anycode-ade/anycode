@@ -23,6 +23,9 @@ pub mod git;
 pub mod handlers;
 pub mod history;
 pub mod lsp;
+pub mod node_hub;
+pub mod node_protocol;
+pub mod node_server;
 pub mod path_env;
 pub mod search;
 pub mod terminal;
@@ -46,6 +49,8 @@ pub struct ServerOptions {
     pub port: u16,
     pub token: Option<String>,
     pub initial_workspace: Option<std::path::PathBuf>,
+    pub data_dir: Option<std::path::PathBuf>,
+    pub name: Option<String>,
 }
 
 impl Default for ServerOptions {
@@ -55,6 +60,8 @@ impl Default for ServerOptions {
             port: 3000,
             token: None,
             initial_workspace: None,
+            data_dir: None,
+            name: None,
         }
     }
 }
@@ -75,12 +82,14 @@ pub async fn start_server(
     } else {
         StartupProject::Skip
     };
-    let state = AppState::new_for_server(
+    let state = AppState::new_for_server_with_options(
         diagnostic_tx,
         acp_fs_tx,
         options.token.clone(),
         startup_root,
         startup,
+        options.data_dir.clone(),
+        options.name.clone(),
     );
 
     let (layer, io) = SocketIo::builder().with_state(state.clone()).build_layer();
@@ -92,11 +101,13 @@ pub async fn start_server(
 
     // Watcher must be kept alive — dropping it stops file watching
     background_tasks::spawn_all(&state, &io, diagnostic_rx, acp_fs_rx).await?;
+    state.node_hub.start(state.clone(), io.clone()).await;
 
     io.ns("/", handle_connect.with(auth_middleware));
 
     let app = axum::Router::new()
         .route("/api/local-image", axum::routing::get(local_image_handler))
+        .route("/ws/node", axum::routing::get(node_server::ws_node_handler))
         .fallback(static_handler)
         .with_state(state.clone())
         .layer(cors);

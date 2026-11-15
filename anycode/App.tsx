@@ -34,6 +34,9 @@ import type { MultibufferFile } from './features/editor/MultibufferPanel';
 import { TerminalPanel } from './features/terminal/TerminalPanel';
 import { AgentPanel } from './features/agents/AgentPanel';
 import { BrowserPanel } from './features/browser/BrowserPanel';
+import { CloudPanel } from './features/cloud/CloudPanel';
+import { useCloud } from './features/cloud/useCloud';
+import type { WorktreeDiffResponse } from './features/cloud/types';
 import { type DiffMode } from './types/diffMode';
 import { announceWarp, getLanguageFromFileName, normalizePath, pathBelongsToProject, uriToFilePath } from './utils';
 import { useSettings } from './hooks/useSettings';
@@ -63,6 +66,44 @@ const toMultibufferFiles = (files: ChangedFile[]): MultibufferFile[] => files.ma
     status: file.status,
 }));
 
+const toRemoteWorktreeMultibufferFiles = (diff: WorktreeDiffResponse): MultibufferFile[] =>
+    diff.files.map((file) => {
+        const language = getLanguageFromFileName(file.path) || 'text';
+        const hunks = file.hunks.length > 0
+            ? file.hunks.map((h) => ({
+                oldStart: h.old_start,
+                newStart: h.new_start,
+                lines: h.lines,
+            }))
+            : [{
+                oldStart: 1,
+                newStart: 1,
+                lines: [{
+                    kind: 'context' as const,
+                    text: file.is_binary ? '(binary file changed)' : '(no diff lines)',
+                }],
+            }];
+        const signature = `${file.status}:${file.added}:${file.removed}:${hunks.length}:${hunks.map((h) => `${h.oldStart}:${h.newStart}:${h.lines.length}`).join(',')}`;
+        return {
+            id: file.path,
+            path: file.path,
+            displayPath: file.path,
+            added: file.added,
+            removed: file.removed,
+            status: file.status,
+            language,
+            hunks,
+            signature,
+        };
+    });
+
+type CloudDiffReviewTarget = {
+    serverId: string;
+    worktreePath: string;
+    projectId?: string;
+    title: string;
+};
+
 type ReviewSession = {
     projectId: string;
     files: MultibufferFile[];
@@ -71,6 +112,7 @@ type ReviewSession = {
     openedByReview: string[];
     activeFileId: string | null;
     focusRequest?: { path: string; line?: number; column?: number; token: number };
+    cloudDiffTarget?: CloudDiffReviewTarget;
 };
 
 const ACTIVE_PROJECT_SESSION_KEY = 'anycode.activeProjectId';
@@ -187,6 +229,7 @@ const App: React.FC<AppProps> = ({ initialWorkspace }) => {
     const git = useGit({ wsRef, isConnected, projectId: activeProjectId });
     const search = useSearch({ wsRef, isConnected, projectId: selectedSearchProjectId });
     const agents = useAgents({ wsRef, isConnected, projectId: activeProjectId });
+    const cloud = useCloud({ wsRef, isConnected });
     const refreshProjectGit = useEvent((projectId: string, restoreStatus = false) => {
         if (restoreStatus) git.restoreProjectStatus(projectId);
         git.fetchGitStatus(projectId);
@@ -201,6 +244,8 @@ const App: React.FC<AppProps> = ({ initialWorkspace }) => {
     useZoom();
     const layoutActionsRef = useRef<LayoutActions | null>(null);
     const [multibufferReviews, setMultibufferReviews] = React.useState<Record<string, ReviewSession>>({});
+    const multibufferReviewsRef = useRef(multibufferReviews);
+    multibufferReviewsRef.current = multibufferReviews;
     const [markdownPreviews, setMarkdownPreviews] = React.useState<Record<string, boolean>>({});
     const activeReview = multibufferReviews[editors.activeEditorPaneId];
     const activeReviewFile = activeReview?.files.find((file) => file.id === activeReview.activeFileId);
@@ -1062,6 +1107,100 @@ const App: React.FC<AppProps> = ({ initialWorkspace }) => {
         }));
     });
 
+    const handleOpenCloudWorktreeDiff = useEvent(async (params: {
+        serverId: string;
+        worktreePath: string;
+        projectId?: string;
+        title?: string;
+    }) => {
+        const diff = await cloud.getWorktreeDiff(params.serverId, params.worktreePath, params.projectId);
+        const files = toRemoteWorktreeMultibufferFiles(diff);
+        if (files.length === 0) {
+            window.alert('No changes in this worktree yet.');
+            return;
+        }
+
+        const existingPaneEntry = Object.entries(multibufferReviewsRef.current).find(
+            ([, rev]) =>
+                rev.cloudDiffTarget?.serverId === params.serverId
+                && rev.cloudDiffTarget?.worktreePath === params.worktreePath,
+        );
+        const paneId = existingPaneEntry?.[0]
+            ? layoutActionsRef.current?.ensureEditorPanel(existingPaneEntry[0])
+            : resolveEditorPaneId();
+        if (!paneId) return;
+
+        if (!existingPaneEntry) {
+            closeReview(paneId);
+        }
+        editors.setActiveEditorPaneId(paneId);
+        editors.setEditorDiffMode(paneId, 'diff');
+        const label = params.title || diff.branch || 'Worktree Diff';
+        const title = diff.truncated ? `${label} (truncated)` : label;
+        setMultibufferReviews((previous) => ({
+            ...previous,
+            [paneId]: {
+                projectId: params.projectId ?? '',
+                files,
+                title,
+                ignoreEdits: true,
+                openedByReview: [],
+                activeFileId: previous[paneId]?.activeFileId ?? files[0]?.id ?? null,
+                cloudDiffTarget: {
+                    serverId: params.serverId,
+                    worktreePath: params.worktreePath,
+                    projectId: params.projectId,
+                    title: label,
+                },
+            },
+        }));
+    });
+
+    useEffect(() => {
+        return cloud.subscribeDiffStats((evt) => {
+            if (!evt.worktree_path) return;
+            const matches = Object.entries(multibufferReviewsRef.current).filter(
+                ([, rev]) =>
+                    rev.cloudDiffTarget?.serverId === evt.server_id
+                    && rev.cloudDiffTarget?.worktreePath === evt.worktree_path,
+            );
+            if (matches.length === 0) return;
+
+            void cloud.getWorktreeDiff(evt.server_id, evt.worktree_path, matches[0][1].cloudDiffTarget?.projectId)
+                .then((diff) => {
+                    const files = toRemoteWorktreeMultibufferFiles(diff);
+                    setMultibufferReviews((previous) => {
+                        let changed = false;
+                        const next = { ...previous };
+                        for (const [paneId] of matches) {
+                            const cur = next[paneId];
+                            if (
+                                !cur?.cloudDiffTarget
+                                || cur.cloudDiffTarget.serverId !== evt.server_id
+                                || cur.cloudDiffTarget.worktreePath !== evt.worktree_path
+                            ) {
+                                continue;
+                            }
+                            const title = diff.truncated
+                                ? `${cur.cloudDiffTarget.title} (truncated)`
+                                : cur.cloudDiffTarget.title;
+                            next[paneId] = {
+                                ...cur,
+                                title,
+                                files,
+                                activeFileId: cur.activeFileId && files.some((f) => f.id === cur.activeFileId)
+                                    ? cur.activeFileId
+                                    : (files[0]?.id ?? null),
+                            };
+                            changed = true;
+                        }
+                        return changed ? next : previous;
+                    });
+                })
+                .catch(() => {});
+        });
+    }, [cloud]);
+
     const activeChangedFile = useMemo<ChangedFile | null>(() => {
         if (!activeContextFilePath) {
             return null;
@@ -1480,6 +1619,15 @@ const App: React.FC<AppProps> = ({ initialWorkspace }) => {
                 );
             case 'browser':
                 return <BrowserPanel panelKey={panelKey} />;
+            case 'cloud':
+                return (
+                    <CloudPanel
+                        cloud={cloud}
+                        isConnected={isConnected}
+                        workspaceProjects={workspaceState.projects}
+                        onOpenWorktreeDiff={handleOpenCloudWorktreeDiff}
+                    />
+                );
             case 'toolbar':
                 return (
                     <Toolbar

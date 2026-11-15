@@ -469,12 +469,54 @@
 }
 
 .acp-input .acp-input-project-chip,
-.acp-input .acp-input-profile-chip {
+.acp-input .acp-input-profile-chip,
+.acp-input .acp-input-worktree-chip {
     padding: 0;
     color: var(--text-color-secondary, rgba(255, 255, 255, 0.6));
     font-family: system-ui, sans-serif;
     font-weight: 400;
     font-size: 0.79em;
+}
+
+.acp-input .acp-input-worktree-chip {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    opacity: 0.78;
+}
+
+.acp-input .acp-input-diff-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 1px 4px;
+    border-radius: 5px;
+    border: none;
+    background: transparent;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.78em;
+    font-weight: 600;
+    line-height: 1.35;
+    cursor: pointer;
+    transition: background 0.14s ease, opacity 0.14s ease;
+}
+
+.acp-input .acp-input-diff-chip:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.acp-input .acp-input-diff-chip:disabled {
+    cursor: default;
+}
+
+.acp-input .acp-input-diff-added {
+    color: #3fb950;
+}
+
+.acp-input .acp-input-diff-removed {
+    color: #f85149;
+}
+
+.acp-input .acp-input-diff-neutral {
+    color: var(--text-color-secondary, rgba(255, 255, 255, 0.65));
 }
 
 .acp-input-agent-chip-label {
@@ -743,12 +785,13 @@
 }
 
 .acp-input-spinner {
-    width: 14px;
-    height: 14px;
-    border: 2px solid rgba(255, 255, 255, 0.25);
+    width: 13px;
+    height: 13px;
+    box-sizing: border-box;
+    border: 1.75px solid rgba(255, 255, 255, 0.22);
     border-radius: 50%;
-    border-top-color: #60a5fa;
-    animation: acp-input-spin 0.8s linear infinite;
+    border-top-color: var(--theme-accent-background, #60a5fa);
+    animation: acp-input-spin 0.75s linear infinite;
     display: inline-block;
     flex-shrink: 0;
 }

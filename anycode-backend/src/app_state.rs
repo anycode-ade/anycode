@@ -17,6 +17,12 @@ use tokio::sync::{Mutex, mpsc};
 use tokio_util::sync::CancellationToken;
 use std::path::PathBuf;
 
+#[derive(Debug, Clone)]
+pub struct AgentWorktreeInfo {
+    pub path: PathBuf,
+    pub branch: String,
+}
+
 #[derive(Clone)]
 pub struct AppState {
     pub config: Arc<Config>,
@@ -28,11 +34,15 @@ pub struct AppState {
     pub socket2data: Arc<Mutex<HashMap<String, SocketData>>>,
     pub terminals: Arc<Mutex<HashMap<String, TerminalData>>>,
     pub agent_project_ids: Arc<Mutex<HashMap<String, String>>>,
+    pub agent_worktrees: Arc<Mutex<HashMap<String, AgentWorktreeInfo>>>,
     pub acp_db: Arc<crate::acp_db::AcpDb>,
     pub auth_token: Option<String>,
     pub workspace: Arc<Mutex<crate::workspace::WorkspaceManager>>,
     pub workspace_lifecycle: Arc<Mutex<()>>,
     pub watcher_control: Arc<std::sync::Mutex<Option<tokio::sync::mpsc::UnboundedSender<crate::background_tasks::ProjectWatchCommand>>>>,
+    pub data_dir: PathBuf,
+    pub server_name: String,
+    pub node_hub: Arc<crate::node_hub::ServerHub>,
 }
 
 #[derive(Clone, Default)]
@@ -96,6 +106,8 @@ impl AppState {
             auth_token,
             startup_root,
             StartupProject::IfEmpty,
+            None,
+            None,
         )
     }
 
@@ -106,12 +118,34 @@ impl AppState {
         startup_root: PathBuf,
         startup: StartupProject,
     ) -> Self {
+        Self::new_for_server_with_options(
+            diagnostic_tx,
+            acp_fs_tx,
+            auth_token,
+            startup_root,
+            startup,
+            None,
+            None,
+        )
+    }
+
+    pub fn new_for_server_with_options(
+        diagnostic_tx: mpsc::Sender<PublishDiagnosticsParams>,
+        acp_fs_tx: mpsc::Sender<acp_fs::AcpFsCommand>,
+        auth_token: Option<String>,
+        startup_root: PathBuf,
+        startup: StartupProject,
+        data_dir: Option<PathBuf>,
+        server_name: Option<String>,
+    ) -> Self {
         Self::new_with_workspace(
             diagnostic_tx,
             acp_fs_tx,
             auth_token,
             startup_root,
             startup,
+            data_dir,
+            server_name,
         )
     }
 
@@ -121,13 +155,19 @@ impl AppState {
         auth_token: Option<String>,
         startup_root: PathBuf,
         startup: StartupProject,
+        data_dir: Option<PathBuf>,
+        server_name: Option<String>,
     ) -> Self {
         let config = crate::config::get();
 
-        let db_path = dirs::home_dir()
-            .unwrap_or_else(|| startup_root.clone())
-            .join(".anycode")
-            .join("agent.db");
+        let resolved_data_dir = data_dir.unwrap_or_else(|| {
+            dirs::home_dir()
+                .unwrap_or_else(|| startup_root.clone())
+                .join(".anycode")
+        });
+        let _ = std::fs::create_dir_all(&resolved_data_dir);
+
+        let db_path = resolved_data_dir.join("agent.db");
         let acp_db = match crate::acp_db::AcpDb::new(&db_path) {
             Ok(db) => Arc::new(db),
             Err(e) => {
@@ -141,13 +181,19 @@ impl AppState {
 
         let acp_manager = AcpManager::new(acp_fs_tx, Some(acp_db.clone()));
         let acp_registry = crate::acp_registry::AcpRegistryManager::new();
-        let workspace = crate::workspace::WorkspaceManager::new(
+        let workspace = crate::workspace::WorkspaceManager::new_with_data_dir(
             startup_root.clone(),
             startup,
             config.clone(),
             diagnostic_tx,
+            &resolved_data_dir,
         );
         let git_manager = GitManager::new(startup_root);
+        let node_hub = Arc::new(crate::node_hub::ServerHub::new(&resolved_data_dir));
+        let resolved_server_name = server_name
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| "Local".to_string());
 
         Self {
             config: Arc::new(config),
@@ -159,11 +205,15 @@ impl AppState {
             socket2data: Arc::new(Mutex::new(HashMap::new())),
             terminals: Arc::new(Mutex::new(HashMap::new())),
             agent_project_ids: Arc::new(Mutex::new(HashMap::new())),
+            agent_worktrees: Arc::new(Mutex::new(HashMap::new())),
             acp_db,
             auth_token,
             workspace: Arc::new(Mutex::new(workspace)),
             workspace_lifecycle: Arc::new(Mutex::new(())),
             watcher_control: Arc::new(std::sync::Mutex::new(None)),
+            data_dir: resolved_data_dir,
+            server_name: resolved_server_name,
+            node_hub,
         }
     }
 

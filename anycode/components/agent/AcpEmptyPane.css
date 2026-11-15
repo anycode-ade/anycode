@@ -86,6 +86,11 @@
     outline-offset: 2px;
 }
 
+.acp-start-card[aria-disabled="true"] {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
 .acp-start-card-icon-box {
     width: 40px;
     height: 40px;
@@ -791,13 +796,13 @@
 }
 
 .acp-pane-opened-spinner {
-    width: 9px;
-    height: 9px;
+    width: 11px;
+    height: 11px;
     box-sizing: border-box;
-    border: 1.5px solid currentColor;
-    border-right-color: transparent;
+    border: 1.75px solid rgba(255, 255, 255, 0.22);
+    border-top-color: var(--theme-accent-background, #60a5fa);
     border-radius: 50%;
-    animation: acp-pane-spin 0.7s linear infinite;
+    animation: acp-pane-spin 0.75s linear infinite;
     flex-shrink: 0;
 }
 

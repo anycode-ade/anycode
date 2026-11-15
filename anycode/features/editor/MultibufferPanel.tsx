@@ -1,6 +1,6 @@
 import React, { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { AnycodeEditorReact } from 'anycode-editor-react';
-import { AnycodeEditor, Code, MultiBufferCode, type MultiBufferEntry, type DefinitionRequest, type DefinitionResponse, type HoverRequest, type CompletionRequest, type Completion, type ReferencesRequest } from 'anycode-editor';
+import { AnycodeEditor, Code, MultiBufferCode, buildHunkDiffBuffers, type DiffHunkInput, type MultiBufferEntry, type DefinitionRequest, type DefinitionResponse, type HoverRequest, type CompletionRequest, type Completion, type ReferencesRequest } from 'anycode-editor';
 import type { DockviewPanelApi } from 'dockview';
 import { Icons } from '../../components/Icons';
 import { type FileIconStyle, getFileIconClassName, useFileIconStyleSheet } from '../../components/FileIcon';
@@ -19,6 +19,9 @@ export type MultibufferFile = {
     added?: number;
     removed?: number;
     status?: string;
+    language?: string;
+    hunks?: DiffHunkInput[];
+    signature?: string;
 };
 
 type MultibufferPanelProps = {
@@ -47,6 +50,9 @@ type ReadyFile = {
     editor?: AnycodeEditor;
     code?: Code;
     originalCode?: Code;
+    lineNumbers?: number[];
+    originalLineNumbers?: number[];
+    prebuiltDiff?: MultiBufferEntry['prebuiltDiff'];
 };
 
 type DeletedEntry = {
@@ -90,6 +96,7 @@ const MultibufferPanel: React.FC<MultibufferPanelProps> = ({
     const editorStatesRef = useRef(editorStates);
     const onActiveFileChangeRef = useRef(onActiveFileChange);
     const loadedFileIdsRef = useRef(new Set<string>());
+    const loadedSignaturesRef = useRef(new Map<string, string | undefined>());
     const unsubscribeFileChangesRef = useRef(new Map<string, () => void>());
     const deletedEntriesRef = useRef(new Map<string, DeletedEntry>());
     const syncingRef = useRef(false);
@@ -100,6 +107,19 @@ const MultibufferPanel: React.FC<MultibufferPanelProps> = ({
     const fileById = useMemo(() => new Map(openFiles.map((file) => [file.id, file])), [openFiles]);
     const reviewFiles = files;
     const readyFiles = useMemo<ReadyFile[]>(() => files.flatMap((file): ReadyFile[] => {
+            if (file.hunks) {
+                const lang = file.language ?? getLanguageFromFileName(file.path) ?? 'text';
+                const built = buildHunkDiffBuffers(file.path, lang, file.hunks, file.added, file.removed);
+                return [{
+                    file,
+                    code: built.code,
+                    originalCode: built.originalCode,
+                    lineNumbers: built.lineNumbers,
+                    originalLineNumbers: built.originalLineNumbers,
+                    prebuiltDiff: built.prebuiltDiff,
+                }];
+            }
+
             const fileState = fileById.get(file.id);
             const editor = editorStates.get(file.id);
             if (fileState && editor) return [{ file, fileState, editor }];
@@ -218,7 +238,7 @@ const MultibufferPanel: React.FC<MultibufferPanelProps> = ({
     }, [panel, sharedEditor]);
 
     useEffect(() => {
-        const deletedFiles = files.filter((file) => file.status === 'deleted');
+        const deletedFiles = files.filter((file) => file.status === 'deleted' && !file.hunks);
         const deletedIds = new Set(deletedFiles.map((file) => file.id));
         let entriesChanged = false;
 
@@ -350,7 +370,7 @@ const MultibufferPanel: React.FC<MultibufferPanelProps> = ({
 
     useEffect(() => {
         const generation = generationRef.current;
-        const toEntry = ({ file, fileState, editor, code, originalCode }: ReadyFile): MultiBufferEntry => {
+        const toEntry = ({ file, fileState, editor, code, originalCode, lineNumbers, originalLineNumbers, prebuiltDiff }: ReadyFile): MultiBufferEntry => {
             const iconClassName = iconsEnabledRef.current ? getFileIconClassName(file.path) : undefined;
             if (code && originalCode) {
                 return {
@@ -361,6 +381,9 @@ const MultibufferPanel: React.FC<MultibufferPanelProps> = ({
                     added: file.added,
                     removed: file.removed,
                     readOnly: true,
+                    lineNumbers,
+                    originalLineNumbers,
+                    prebuiltDiff,
                     code,
                     originalCode,
                 };
@@ -460,6 +483,7 @@ const MultibufferPanel: React.FC<MultibufferPanelProps> = ({
                     currentCode = new MultiBufferCode(entries);
                     originalCode = new MultiBufferCode(entries.map((entry) => ({
                         ...entry,
+                        lineNumbers: entry.originalLineNumbers ?? entry.lineNumbers,
                         code: entry.originalCode,
                         originalCode: entry.originalCode,
                     })));
@@ -498,13 +522,17 @@ const MultibufferPanel: React.FC<MultibufferPanelProps> = ({
                     editor.setDiffMode(initialMode);
                     setSharedEditor(editor);
                     setAllFilesExpanded(editor.areAllMultibufferFilesExpanded());
-                    initialFiles.forEach(({ file }) => loadedFileIdsRef.current.add(file.id));
+                    initialFiles.forEach(({ file }) => {
+                        loadedFileIdsRef.current.add(file.id);
+                        loadedSignaturesRef.current.set(file.id, file.signature);
+                    });
                     updateMultibufferErrors();
                 }
 
                 const currentFileIds = new Set(readyFilesRef.current.map(({ file }) => file.id));
                 const removedFileIds = [...loadedFileIdsRef.current]
                     .filter((fileId) => !currentFileIds.has(fileId));
+                let updatedAny = false;
                 if (removedFileIds.length > 0) {
                     currentCode.removeEntries(removedFileIds);
                     originalCode.removeEntries(removedFileIds);
@@ -512,9 +540,28 @@ const MultibufferPanel: React.FC<MultibufferPanelProps> = ({
                         unsubscribeFileChangesRef.current.get(fileId)?.();
                         unsubscribeFileChangesRef.current.delete(fileId);
                         loadedFileIdsRef.current.delete(fileId);
+                        loadedSignaturesRef.current.delete(fileId);
                     });
-                    editor.refreshAfterExternalChange();
-                    updateMultibufferErrors();
+                    updatedAny = true;
+                }
+
+                const updatedFiles = readyFilesRef.current.filter(({ file }) => (
+                    loadedFileIdsRef.current.has(file.id)
+                    && file.signature !== undefined
+                    && loadedSignaturesRef.current.get(file.id) !== file.signature
+                ));
+                for (const updatedFile of updatedFiles) {
+                    const entry = toEntry(updatedFile);
+                    await currentCode.replaceEntry(updatedFile.file.id, entry);
+                    await originalCode.replaceEntry(updatedFile.file.id, {
+                        ...entry,
+                        lineNumbers: entry.originalLineNumbers ?? entry.lineNumbers,
+                        code: entry.originalCode,
+                        originalCode: entry.originalCode,
+                    });
+                    if (generationRef.current !== generation) return;
+                    loadedSignaturesRef.current.set(updatedFile.file.id, updatedFile.file.signature);
+                    updatedAny = true;
                 }
 
                 const pendingFiles = readyFilesRef.current
@@ -526,6 +573,7 @@ const MultibufferPanel: React.FC<MultibufferPanelProps> = ({
                         await currentCode.addEntries([entry], insertionIndex);
                         await originalCode.addEntries([{
                             ...entry,
+                            lineNumbers: entry.originalLineNumbers ?? entry.lineNumbers,
                             code: entry.originalCode,
                             originalCode: entry.originalCode,
                         }], insertionIndex);
@@ -533,7 +581,12 @@ const MultibufferPanel: React.FC<MultibufferPanelProps> = ({
 
                         subscribeToFile(pendingFile);
                         loadedFileIdsRef.current.add(pendingFile.file.id);
+                        loadedSignaturesRef.current.set(pendingFile.file.id, pendingFile.file.signature);
                     }
+                    updatedAny = true;
+                }
+
+                if (updatedAny) {
                     editor.refreshAfterExternalChange();
                     updateMultibufferErrors();
                 }

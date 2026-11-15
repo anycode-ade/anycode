@@ -324,6 +324,28 @@ pub fn get_file_name(input: &str) -> String {
     file_name(input)
 }
 
+/// Generate a lowercase ASCII identifier of `len` characters (`a..=z`).
+pub fn short_alpha_id(len: usize) -> String {
+    static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos() as u64)
+        .unwrap_or(0);
+    let mut x = nanos
+        ^ ((std::process::id() as u64) << 32)
+        ^ SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let mut out = String::with_capacity(len);
+    for _ in 0..len {
+        x = x.wrapping_add(0x9e37_79b9_7f4a_7c15);
+        let mut z = x;
+        z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+        z ^= z >> 31;
+        out.push((b'a' + (z % 26) as u8) as char);
+    }
+    out
+}
+
 pub fn path_to_uri(path: &str) -> anyhow::Result<Uri> {
     let path_obj = std::path::Path::new(path);
     if !path_obj.is_absolute() {

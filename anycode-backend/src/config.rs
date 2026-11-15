@@ -117,15 +117,21 @@ fn print_help() {
     println!("    anycode update [--version <TAG> | --commit <SHA> | --check]");
     println!();
     println!("OPTIONS:");
-    println!("    -h, --help           Print help information");
-    println!("    -v, -V, --version    Print version information");
-    println!("    -u, --update         Update anycode to the latest release");
-    println!("    -p, --port <PORT>    Port to listen on (default: 3000)");
-    println!("    -t, --token <TOKEN>  Require authentication token to access anycode");
+    println!("    -h, --help             Print help information");
+    println!("    -v, -V, --version      Print version information");
+    println!("    -u, --update           Update anycode to the latest release");
+    println!("    -p, --port <PORT>      Port to listen on (default: 3000)");
+    println!("    -t, --token <TOKEN>    Require authentication token to access anycode");
+    println!("    --profile <NAME>       Isolate instance state under ~/.anycode/instances/<NAME>");
+    println!("    --data-dir <PATH>      Isolate instance state in custom directory");
+    println!("    --name <LABEL>         Display name for this server node");
     println!();
     println!("ENVIRONMENT:");
     println!("    ANYCODE_PORT                  Port to listen on (default: 3000)");
     println!("    ANYCODE_TOKEN                 Require authentication token to access anycode");
+    println!("    ANYCODE_PROFILE               Instance profile name for isolated state");
+    println!("    ANYCODE_DATA_DIR              Custom directory for isolated instance state");
+    println!("    ANYCODE_NAME                  Display name for this server node");
     println!("    ANYCODE_HOME                  Path to configuration directory");
     println!("    ANYCODE_ACP_PERMISSION_MODE   ACP permission mode: full_access (default) or ask");
     println!();
@@ -202,6 +208,9 @@ pub fn handle_early_cli_flags() {
                 // Skip value for token flag in early pass.
                 let _ = args.next();
             }
+            "--profile" | "--data-dir" | "--name" => {
+                let _ = args.next();
+            }
             _ => {}
         }
     }
@@ -213,10 +222,24 @@ fn parse_port(value: &str, source: &str) -> Result<u16> {
         .map_err(|_| anyhow::anyhow!("Invalid {source}: {value}"))
 }
 
+fn sanitize_profile_name(value: &str) -> Result<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        anyhow::bail!("Profile name cannot be empty");
+    }
+    if trimmed.contains('/') || trimmed.contains('\\') || trimmed.contains("..") {
+        anyhow::bail!("Invalid profile name: {value}");
+    }
+    Ok(trimmed.to_string())
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ServerOptions {
     pub port: u16,
     pub token: Option<String>,
+    pub profile: Option<String>,
+    pub data_dir: Option<std::path::PathBuf>,
+    pub name: Option<String>,
 }
 
 pub fn parse_server_options_from_iter_and_env<I, F>(mut args: I, get_env: F) -> Result<ServerOptions>
@@ -226,6 +249,9 @@ where
 {
     let mut cli_port: Option<u16> = None;
     let mut cli_token: Option<String> = None;
+    let mut cli_profile: Option<String> = None;
+    let mut cli_data_dir: Option<std::path::PathBuf> = None;
+    let mut cli_name: Option<String> = None;
 
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -255,6 +281,33 @@ where
             _ if arg.starts_with("--token=") => {
                 cli_token = Some(arg["--token=".len()..].to_string());
             }
+            "--profile" => {
+                let value = args
+                    .next()
+                    .ok_or_else(|| anyhow::anyhow!("Missing value for {arg}"))?;
+                cli_profile = Some(sanitize_profile_name(&value)?);
+            }
+            _ if arg.starts_with("--profile=") => {
+                cli_profile = Some(sanitize_profile_name(&arg["--profile=".len()..])?);
+            }
+            "--data-dir" => {
+                let value = args
+                    .next()
+                    .ok_or_else(|| anyhow::anyhow!("Missing value for {arg}"))?;
+                cli_data_dir = Some(std::path::PathBuf::from(value));
+            }
+            _ if arg.starts_with("--data-dir=") => {
+                cli_data_dir = Some(std::path::PathBuf::from(&arg["--data-dir=".len()..]));
+            }
+            "--name" => {
+                let value = args
+                    .next()
+                    .ok_or_else(|| anyhow::anyhow!("Missing value for {arg}"))?;
+                cli_name = Some(value);
+            }
+            _ if arg.starts_with("--name=") => {
+                cli_name = Some(arg["--name=".len()..].to_string());
+            }
             _ if arg.starts_with('-') => {
                 anyhow::bail!("Unknown option: {arg}");
             }
@@ -278,7 +331,51 @@ where
         .map(|t| t.trim().to_string())
         .filter(|t| !t.is_empty());
 
-    Ok(ServerOptions { port, token })
+    let profile = match cli_profile {
+        Some(p) => Some(p),
+        None => match get_env("ANYCODE_PROFILE") {
+            Ok(val) if !val.trim().is_empty() => Some(sanitize_profile_name(&val)?),
+            _ => None,
+        },
+    };
+
+    let data_dir = cli_data_dir.or_else(|| {
+        get_env("ANYCODE_DATA_DIR")
+            .ok()
+            .map(|v| v.trim().to_string())
+            .filter(|v| !v.is_empty())
+            .map(std::path::PathBuf::from)
+    });
+
+    let name = cli_name
+        .or_else(|| get_env("ANYCODE_NAME").ok())
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty());
+
+    Ok(ServerOptions {
+        port,
+        token,
+        profile,
+        data_dir,
+        name,
+    })
+}
+
+pub fn resolve_instance_data_dir(
+    data_dir: Option<&std::path::Path>,
+    profile: Option<&str>,
+    fallback_root: &std::path::Path,
+) -> std::path::PathBuf {
+    if let Some(dir) = data_dir {
+        return dir.to_path_buf();
+    }
+    let base = dirs::home_dir()
+        .unwrap_or_else(|| fallback_root.to_path_buf())
+        .join(".anycode");
+    if let Some(prof) = profile {
+        return base.join("instances").join(prof);
+    }
+    base
 }
 
 pub fn parse_server_options_from_iter<I>(args: I) -> Result<ServerOptions>
@@ -383,5 +480,47 @@ mod congif_tests {
         .unwrap();
         assert_eq!(opts.port, 4567);
         assert_eq!(opts.token, Some("my_env_token".to_string()));
+    }
+
+    #[test]
+    fn test_parse_server_options_profile_data_dir_and_name() {
+        let args = vec![
+            "-p".to_string(),
+            "3001".to_string(),
+            "--profile".to_string(),
+            "srv-eu".to_string(),
+            "--name".to_string(),
+            "EU Worker".to_string(),
+        ];
+        let opts = parse_server_options_from_iter_and_env(args.into_iter(), |_| {
+            Err(std::env::VarError::NotPresent)
+        })
+        .unwrap();
+        assert_eq!(opts.port, 3001);
+        assert_eq!(opts.profile.as_deref(), Some("srv-eu"));
+        assert_eq!(opts.name.as_deref(), Some("EU Worker"));
+        assert_eq!(opts.data_dir, None);
+
+        let args_dir = vec!["--data-dir=/tmp/anycode-custom".to_string()];
+        let opts_dir = parse_server_options_from_iter_and_env(args_dir.into_iter(), |_| {
+            Err(std::env::VarError::NotPresent)
+        })
+        .unwrap();
+        assert_eq!(
+            opts_dir.data_dir,
+            Some(std::path::PathBuf::from("/tmp/anycode-custom"))
+        );
+    }
+
+    #[test]
+    fn test_resolve_instance_data_dir_isolation() {
+        let fallback = std::path::PathBuf::from("/tmp/fallback");
+        let custom = std::path::PathBuf::from("/tmp/custom-dir");
+        assert_eq!(
+            resolve_instance_data_dir(Some(&custom), Some("p1"), &fallback),
+            custom
+        );
+        let prof_dir = resolve_instance_data_dir(None, Some("srv1"), &fallback);
+        assert!(prof_dir.ends_with(".anycode/instances/srv1"));
     }
 }

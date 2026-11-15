@@ -2187,6 +2187,2019 @@ fn parse_timezone_offset(value: &str) -> Option<i32> {
     })?
 }
 
+/// Inline payload limit before switching to chunked `/ws/node` transfers (8 MiB raw -> ~10.7 MiB b64).
+pub(crate) const TRANSFER_CHUNK_BYTES: usize = 8 * 1024 * 1024;
+/// Maximum size for uncommitted working-tree overlay tar.gz (ignored build artifacts are excluded).
+pub(crate) const MAX_DIRTY_OVERLAY_BYTES: usize = 32 * 1024 * 1024;
+const MAX_DIRTY_SUMMARY_ITEMS: usize = 100;
+const MAX_KNOWN_BASES: usize = 200;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CloudSyncMetadata {
+    pub base_sha: String,
+    #[serde(default)]
+    pub branch: Option<String>,
+    #[serde(default)]
+    pub source_root: Option<String>,
+    #[serde(default)]
+    pub source_name: Option<String>,
+    #[serde(default)]
+    pub overlay_paths: Vec<String>,
+    #[serde(default)]
+    pub synced_at_epoch: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SyncGitPayload {
+    #[serde(default)]
+    pub bundle_b64: String,
+    #[serde(default)]
+    pub bundle_transfer_id: Option<String>,
+    pub head_sha: String,
+    #[serde(default)]
+    pub branch: Option<String>,
+    #[serde(default)]
+    pub shallow: Option<String>,
+    #[serde(default)]
+    pub overlay_b64: Option<String>,
+    #[serde(default)]
+    pub deleted_files: Vec<String>,
+    #[serde(default)]
+    pub overlay_paths: Vec<String>,
+    #[serde(default)]
+    pub source_root: Option<String>,
+    #[serde(default)]
+    pub source_name: Option<String>,
+}
+
+pub struct PackedGitSync {
+    pub payload: SyncGitPayload,
+    pub bundle_file: Option<tempfile::NamedTempFile>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RemoteGitStateInfo {
+    pub is_git_repo: bool,
+    #[serde(default)]
+    pub is_worktree: bool,
+    #[serde(default)]
+    pub has_commits: bool,
+    #[serde(default)]
+    pub head_sha: Option<String>,
+    #[serde(default)]
+    pub branch: Option<String>,
+    #[serde(default)]
+    pub branches: Vec<String>,
+    #[serde(default)]
+    pub dirty_count: usize,
+    #[serde(default)]
+    pub dirty_files: Vec<String>,
+    #[serde(default)]
+    pub commits_ahead: usize,
+    #[serde(default)]
+    pub commits_summary: Vec<String>,
+    #[serde(default)]
+    pub sync_meta: Option<CloudSyncMetadata>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PullGitBundleResponse {
+    pub changed: bool,
+    pub head_sha: String,
+    #[serde(default)]
+    pub branch: Option<String>,
+    #[serde(default)]
+    pub base_sha: Option<String>,
+    pub has_wip: bool,
+    pub commits_count: usize,
+    pub dirty_count: usize,
+    #[serde(default)]
+    pub commits_summary: Vec<String>,
+    #[serde(default)]
+    pub dirty_files: Vec<String>,
+    #[serde(default)]
+    pub bundle_b64: Option<String>,
+    #[serde(default)]
+    pub bundle_transfer_id: Option<String>,
+    #[serde(default)]
+    pub bundle_size: Option<u64>,
+    #[serde(default)]
+    pub ref_name: Option<String>,
+}
+
+struct CloudRefGuard<'a> {
+    repo_dir: &'a Path,
+    ref_name: String,
+}
+
+impl<'a> CloudRefGuard<'a> {
+    fn new(repo_dir: &'a Path, ref_name: String) -> Self {
+        Self { repo_dir, ref_name }
+    }
+}
+
+impl Drop for CloudRefGuard<'_> {
+    fn drop(&mut self) {
+        if !self.ref_name.is_empty() {
+            let mut cmd = git_command();
+            let _ = cmd
+                .current_dir(self.repo_dir)
+                .args(["update-ref", "-d", &self.ref_name])
+                .output();
+        }
+    }
+}
+
+fn unix_epoch_secs() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+fn run_git_raw(
+    cwd: &Path,
+    args: &[&str],
+    extra_env: &[(&str, &str)],
+) -> Result<std::process::Output> {
+    let mut cmd = git_command();
+    cmd.current_dir(cwd).args(args);
+    for (k, v) in extra_env {
+        cmd.env(k, v);
+    }
+    cmd.output()
+        .with_context(|| format!("Failed to spawn git {:?} in {}", args, cwd.display()))
+}
+
+fn run_git_checked(cwd: &Path, args: &[&str], extra_env: &[(&str, &str)]) -> Result<String> {
+    let out = run_git_raw(cwd, args, extra_env)?;
+    if !out.status.success() {
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        let msg = if !stderr.trim().is_empty() {
+            stderr.trim().to_string()
+        } else {
+            stdout.trim().to_string()
+        };
+        anyhow::bail!("git {} failed: {}", args.join(" "), msg);
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
+}
+
+fn git_ok(cwd: &Path, args: &[&str]) -> bool {
+    run_git_raw(cwd, args, &[])
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
+fn validate_safe_rel_path(rel_str: &str) -> Result<PathBuf> {
+    use std::path::Component;
+
+    let rel = Path::new(rel_str);
+    if rel_str.is_empty() || rel.is_absolute() {
+        anyhow::bail!("Unsafe relative path: {}", rel_str);
+    }
+    let mut first = None;
+    for comp in rel.components() {
+        match comp {
+            Component::Normal(s) => {
+                if first.is_none() {
+                    first = Some(s.to_string_lossy().into_owned());
+                }
+            }
+            Component::CurDir => {}
+            Component::ParentDir | Component::RootDir | Component::Prefix(_) => {
+                anyhow::bail!("Unsafe path traversal component: {}", rel_str);
+            }
+        }
+    }
+    if first.as_deref() == Some(".git") {
+        anyhow::bail!("Refusing to modify .git path via overlay: {}", rel_str);
+    }
+    Ok(rel.to_path_buf())
+}
+
+fn sync_metadata_path(git_dir: &Path) -> PathBuf {
+    git_dir.join("anycode-cloud-sync.json")
+}
+
+fn resolve_git_dir(repo_dir: &Path) -> Result<PathBuf> {
+    let raw = run_git_checked(repo_dir, &["rev-parse", "--git-dir"], &[])?;
+    let p = PathBuf::from(&raw);
+    if p.is_absolute() {
+        Ok(p)
+    } else {
+        Ok(repo_dir.join(p))
+    }
+}
+
+fn read_sync_metadata(repo_dir: &Path) -> Option<CloudSyncMetadata> {
+    let git_dir = resolve_git_dir(repo_dir).ok()?;
+    let path = sync_metadata_path(&git_dir);
+    let raw = std::fs::read_to_string(path).ok()?;
+    serde_json::from_str(&raw).ok()
+}
+
+fn write_sync_metadata(repo_dir: &Path, meta: &CloudSyncMetadata) -> Result<()> {
+    let git_dir = resolve_git_dir(repo_dir)?;
+    let path = sync_metadata_path(&git_dir);
+    let encoded = serde_json::to_string_pretty(meta)?;
+    std::fs::write(path, encoded)?;
+    Ok(())
+}
+
+fn current_branch_name(repo_dir: &Path) -> Option<String> {
+    run_git_checked(repo_dir, &["symbolic-ref", "--short", "HEAD"], &[])
+        .ok()
+        .filter(|s| !s.is_empty())
+}
+
+fn collect_dirty_overlay(
+    repo_dir: &Path,
+    max_bytes: usize,
+) -> Result<(Option<String>, Vec<String>, Vec<String>)> {
+    use base64::Engine as _;
+    use flate2::Compression;
+    use flate2::write::GzEncoder;
+    use std::collections::BTreeSet;
+
+    let out = run_git_raw(repo_dir, &["status", "--porcelain=v1", "-z", "-uall"], &[])?;
+    if !out.status.success() {
+        anyhow::bail!(
+            "git status failed: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        );
+    }
+
+    let raw_bytes = out.stdout;
+    if raw_bytes.is_empty() {
+        return Ok((None, Vec::new(), Vec::new()));
+    }
+
+    let tokens: Vec<&[u8]> = raw_bytes.split(|&b| b == 0).collect();
+    let mut files_to_pack: BTreeSet<String> = BTreeSet::new();
+    let mut deleted_files: BTreeSet<String> = BTreeSet::new();
+
+    let mut i = 0;
+    while i < tokens.len() {
+        let tok = tokens[i];
+        i += 1;
+        if tok.is_empty() || tok.len() < 4 || tok[2] != b' ' {
+            continue;
+        }
+        let x = tok[0] as char;
+        let y = tok[1] as char;
+        let path_str = String::from_utf8_lossy(&tok[3..]).into_owned();
+
+        if matches!(x, 'R' | 'C') || matches!(y, 'R' | 'C') {
+            if i < tokens.len() {
+                let orig_bytes = tokens[i];
+                i += 1;
+                if !orig_bytes.is_empty() {
+                    let orig_str = String::from_utf8_lossy(orig_bytes).into_owned();
+                    if x == 'R' && !repo_dir.join(&orig_str).exists() {
+                        deleted_files.insert(orig_str);
+                    }
+                }
+            }
+        }
+
+        let full_path = repo_dir.join(&path_str);
+        if y == 'D' || (x == 'D' && y == ' ') || !full_path.exists() {
+            if !full_path.exists() {
+                deleted_files.insert(path_str);
+            }
+            continue;
+        }
+
+        if let Ok(meta) = std::fs::symlink_metadata(&full_path) {
+            if !meta.file_type().is_symlink() && meta.is_file() {
+                files_to_pack.insert(path_str);
+            }
+        }
+    }
+
+    if files_to_pack.is_empty() {
+        return Ok((None, deleted_files.into_iter().collect(), Vec::new()));
+    }
+
+    struct VecLimitedWriter {
+        buf: Vec<u8>,
+        max: usize,
+    }
+    impl std::io::Write for VecLimitedWriter {
+        fn write(&mut self, data: &[u8]) -> std::io::Result<usize> {
+            if self.buf.len().saturating_add(data.len()) > self.max {
+                return Err(std::io::Error::other(format!(
+                    "Dirty overlay archive exceeds {} MiB limit",
+                    self.max / (1024 * 1024)
+                )));
+            }
+            self.buf.extend_from_slice(data);
+            Ok(data.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    let gz = GzEncoder::new(
+        VecLimitedWriter {
+            buf: Vec::new(),
+            max: max_bytes,
+        },
+        Compression::fast(),
+    );
+    let mut builder = tar::Builder::new(gz);
+    let mut packed_paths = Vec::new();
+    for rel in &files_to_pack {
+        let safe_rel = validate_safe_rel_path(rel)?;
+        let full = repo_dir.join(&safe_rel);
+        if let Ok(meta) = std::fs::symlink_metadata(&full) {
+            if !meta.file_type().is_symlink() && meta.is_file() {
+                builder.append_path_with_name(&full, &safe_rel)?;
+                packed_paths.push(rel.clone());
+            }
+        }
+    }
+    let gz = builder.into_inner()?;
+    let writer = gz.finish()?;
+    let overlay_b64 = if packed_paths.is_empty() {
+        None
+    } else {
+        Some(base64::engine::general_purpose::STANDARD.encode(writer.buf))
+    };
+
+    Ok((
+        overlay_b64,
+        deleted_files.into_iter().collect(),
+        packed_paths,
+    ))
+}
+
+/// Package a local Git repository as a full `git bundle --all HEAD` (+ dirty working-tree overlay).
+/// Bundles smaller than `TRANSFER_CHUNK_BYTES` are inlined; larger ones are returned on disk for chunked transfer.
+/// Returns `Ok(None)` if `root` is not a Git repository or has no commits yet.
+pub fn pack_git_sync_to_file(root: &Path, source_name: &str) -> Result<Option<PackedGitSync>> {
+    use base64::Engine as _;
+
+    if !git_ok(root, &["rev-parse", "--is-inside-work-tree"]) {
+        return Ok(None);
+    }
+    if !git_ok(root, &["rev-parse", "--verify", "HEAD"]) {
+        return Ok(None);
+    }
+
+    let head_sha = run_git_checked(root, &["rev-parse", "HEAD"], &[])?;
+    let branch = current_branch_name(root);
+    let tmp_bundle = tempfile::NamedTempFile::new()?;
+    let bundle_arg = tmp_bundle.path().to_string_lossy().into_owned();
+    run_git_checked(root, &["bundle", "create", &bundle_arg, "--all", "HEAD"], &[])?;
+
+    let bundle_len = std::fs::metadata(tmp_bundle.path())?.len();
+    let (bundle_b64, bundle_file) = if bundle_len <= TRANSFER_CHUNK_BYTES as u64 {
+        let bytes = std::fs::read(tmp_bundle.path())?;
+        (
+            base64::engine::general_purpose::STANDARD.encode(bytes),
+            None,
+        )
+    } else {
+        (String::new(), Some(tmp_bundle))
+    };
+
+    let (overlay_b64, deleted_files, overlay_paths) =
+        collect_dirty_overlay(root, MAX_DIRTY_OVERLAY_BYTES)?;
+
+    Ok(Some(PackedGitSync {
+        payload: SyncGitPayload {
+            bundle_b64,
+            bundle_transfer_id: None,
+            head_sha,
+            branch,
+            shallow: None,
+            overlay_b64,
+            deleted_files,
+            overlay_paths,
+            source_root: Some(root.to_string_lossy().into_owned()),
+            source_name: Some(source_name.to_string()),
+        },
+        bundle_file,
+    }))
+}
+
+/// Inline wrapper for smaller repositories and tests.
+pub fn pack_git_sync_payload(
+    root: &Path,
+    source_name: &str,
+    max_bytes: usize,
+) -> Result<Option<SyncGitPayload>> {
+    use base64::Engine as _;
+
+    let Some(mut packed) = pack_git_sync_to_file(root, source_name)? else {
+        return Ok(None);
+    };
+    if let Some(file) = packed.bundle_file.take() {
+        let bytes = std::fs::read(file.path())?;
+        if bytes.len() > max_bytes {
+            anyhow::bail!(
+                "Git bundle size ({:.1} MiB) exceeds {} MiB limit",
+                bytes.len() as f64 / (1024.0 * 1024.0),
+                max_bytes / (1024 * 1024)
+            );
+        }
+        packed.payload.bundle_b64 = base64::engine::general_purpose::STANDARD.encode(bytes);
+    }
+    Ok(Some(packed.payload))
+}
+
+fn merge_shallow_file(git_dir: &Path, incoming_shallow: &str) -> Result<()> {
+    use std::collections::BTreeSet;
+
+    let shallow_path = git_dir.join("shallow");
+    let mut lines: BTreeSet<String> = if shallow_path.is_file() {
+        std::fs::read_to_string(&shallow_path)?
+            .lines()
+            .map(str::trim)
+            .filter(|l| !l.is_empty())
+            .map(str::to_string)
+            .collect()
+    } else {
+        BTreeSet::new()
+    };
+
+    for line in incoming_shallow.lines() {
+        let trimmed = line.trim();
+        if !trimmed.is_empty() {
+            lines.insert(trimmed.to_string());
+        }
+    }
+
+    if !lines.is_empty() {
+        let content = lines.into_iter().collect::<Vec<_>>().join("\n") + "\n";
+        std::fs::write(shallow_path, content)?;
+    }
+    Ok(())
+}
+
+/// Apply a `SyncGitPayload` using an on-disk bundle file into `target_path`.
+pub fn apply_git_sync_from_bundle_file(
+    target_path: &Path,
+    bundle_path: &Path,
+    payload: &SyncGitPayload,
+) -> Result<()> {
+    use std::collections::HashSet;
+
+    std::fs::create_dir_all(target_path)?;
+    let prev_meta = read_sync_metadata(target_path);
+    let bundle_str = bundle_path.to_string_lossy().into_owned();
+
+    let already_git = target_path.join(".git").exists()
+        || git_ok(target_path, &["rev-parse", "--is-inside-work-tree"]);
+    if !already_git {
+        run_git_checked(target_path, &["init"], &[])?;
+    } else if let Ok(prev_head) = run_git_checked(target_path, &["rev-parse", "HEAD"], &[]) {
+        if prev_head != payload.head_sha {
+            let backup_ref = format!("refs/anycode-backup/{}", unix_epoch_secs());
+            let _ = run_git_raw(target_path, &["update-ref", &backup_ref, &prev_head], &[]);
+        }
+    }
+
+    let git_dir = resolve_git_dir(target_path)?;
+    if let Some(shallow) = payload.shallow.as_deref().filter(|s| !s.trim().is_empty()) {
+        merge_shallow_file(&git_dir, shallow)?;
+    } else {
+        // Unshallow repos that came from an older shallow sync now that bundles carry full history.
+        let shallow_path = git_dir.join("shallow");
+        if shallow_path.is_file() {
+            let _ = std::fs::remove_file(shallow_path);
+        }
+    }
+
+    let staging_ref = "refs/anycode-sync/head";
+    let _staging_guard = CloudRefGuard::new(target_path, staging_ref.to_string());
+    let head_refspec = format!("HEAD:{}", staging_ref);
+    run_git_checked(target_path, &["fetch", &bundle_str, &head_refspec], &[])?;
+
+    // Detach briefly so all local branches in the bundle can be updated in place.
+    run_git_checked(target_path, &["checkout", "-f", "--detach", &payload.head_sha], &[])?;
+    let _ = run_git_raw(
+        target_path,
+        &["fetch", "--force", &bundle_str, "refs/heads/*:refs/heads/*"],
+        &[],
+    );
+
+    if let Some(branch) = payload
+        .branch
+        .as_deref()
+        .map(str::trim)
+        .filter(|b| !b.is_empty())
+    {
+        run_git_checked(
+            target_path,
+            &["checkout", "-f", "-B", branch, &payload.head_sha],
+            &[],
+        )?;
+    } else {
+        run_git_checked(
+            target_path,
+            &["checkout", "-f", "--detach", &payload.head_sha],
+            &[],
+        )?;
+    }
+
+    if !already_git {
+        // Drop stale non-ignored leftovers from an earlier non-git sync while keeping .gitignore'd build caches.
+        let _ = run_git_raw(target_path, &["clean", "-fd"], &[]);
+    }
+
+    if let Some(old) = prev_meta {
+        let new_set: HashSet<&str> = payload.overlay_paths.iter().map(String::as_str).collect();
+        for old_path in old.overlay_paths {
+            if !new_set.contains(old_path.as_str()) {
+                if let Ok(rel) = validate_safe_rel_path(&old_path) {
+                    let full = target_path.join(&rel);
+                    if full.is_file() {
+                        let _ = std::fs::remove_file(&full);
+                    }
+                }
+            }
+        }
+    }
+
+    for del in &payload.deleted_files {
+        let rel = validate_safe_rel_path(del)?;
+        let full = target_path.join(rel);
+        if full.is_file() || full.is_symlink() {
+            let _ = std::fs::remove_file(full);
+        }
+    }
+
+    if let Some(overlay_b64) = payload.overlay_b64.as_deref().filter(|s| !s.trim().is_empty()) {
+        crate::node_server::unpack_project_archive(overlay_b64, target_path)?;
+    }
+
+    let meta = CloudSyncMetadata {
+        base_sha: payload.head_sha.clone(),
+        branch: payload.branch.clone(),
+        source_root: payload.source_root.clone(),
+        source_name: payload.source_name.clone(),
+        overlay_paths: payload.overlay_paths.clone(),
+        synced_at_epoch: unix_epoch_secs(),
+    };
+    write_sync_metadata(target_path, &meta)?;
+    Ok(())
+}
+
+/// Apply an inline base64 `SyncGitPayload` into `target_path` on a node server.
+pub fn apply_git_sync_payload(target_path: &Path, payload: &SyncGitPayload) -> Result<()> {
+    use base64::Engine as _;
+
+    let bundle_bytes = base64::engine::general_purpose::STANDARD
+        .decode(payload.bundle_b64.trim())
+        .map_err(|e| anyhow::anyhow!("Invalid git bundle encoding: {}", e))?;
+    let tmp = tempfile::NamedTempFile::new()?;
+    std::fs::write(tmp.path(), bundle_bytes)?;
+    apply_git_sync_from_bundle_file(target_path, tmp.path(), payload)
+}
+
+fn collect_dirty_summary(repo_dir: &Path) -> Result<(usize, Vec<String>)> {
+    let out = run_git_raw(repo_dir, &["status", "--porcelain=v1", "-uall"], &[])?;
+    if !out.status.success() {
+        anyhow::bail!(
+            "git status failed: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        );
+    }
+    let text = String::from_utf8_lossy(&out.stdout);
+    let mut all = Vec::new();
+    for line in text.lines() {
+        if !line.trim().is_empty() {
+            all.push(line.to_string());
+        }
+    }
+    let count = all.len();
+    all.truncate(MAX_DIRTY_SUMMARY_ITEMS);
+    Ok((count, all))
+}
+
+fn filter_existing_commits(repo_dir: &Path, candidates: &[String], cap: usize) -> Vec<String> {
+    use std::collections::HashSet;
+
+    let mut out = Vec::new();
+    let mut seen = HashSet::new();
+    for sha in candidates {
+        let trimmed = sha.trim();
+        if trimmed.is_empty() || !seen.insert(trimmed.to_string()) {
+            continue;
+        }
+        let rev = format!("{}^{{commit}}", trimmed);
+        if git_ok(repo_dir, &["cat-file", "-e", &rev]) {
+            out.push(trimmed.to_string());
+            if out.len() >= cap {
+                break;
+            }
+        }
+    }
+    out
+}
+
+fn is_git_linked_worktree(repo_dir: &Path) -> bool {
+    let Ok(git_dir_raw) = run_git_checked(repo_dir, &["rev-parse", "--git-dir"], &[]) else {
+        return false;
+    };
+    let Ok(common_raw) = run_git_checked(repo_dir, &["rev-parse", "--git-common-dir"], &[]) else {
+        return false;
+    };
+    let git_dir = if Path::new(&git_dir_raw).is_absolute() {
+        PathBuf::from(&git_dir_raw)
+    } else {
+        repo_dir.join(&git_dir_raw)
+    };
+    let common_dir = if Path::new(&common_raw).is_absolute() {
+        PathBuf::from(&common_raw)
+    } else {
+        repo_dir.join(&common_raw)
+    };
+    let a = std::fs::canonicalize(&git_dir).unwrap_or(git_dir);
+    let b = std::fs::canonicalize(&common_dir).unwrap_or(common_dir);
+    a != b
+}
+
+fn list_local_branches(repo_dir: &Path, current: Option<&str>) -> Vec<String> {
+    let raw = run_git_checked(
+        repo_dir,
+        &[
+            "for-each-ref",
+            "--sort=-committerdate",
+            "--format=%(refname:short)",
+            "refs/heads",
+        ],
+        &[],
+    )
+    .unwrap_or_default();
+
+    let mut seen = std::collections::HashSet::new();
+    let mut branches: Vec<String> = raw
+        .lines()
+        .map(str::trim)
+        .filter(|s| !s.is_empty() && seen.insert((*s).to_string()))
+        .map(str::to_string)
+        .collect();
+
+    fn branch_tier(current: Option<&str>, name: &str) -> (u8, usize) {
+        if current == Some(name) {
+            return (0, 0);
+        }
+        if let Some(pos) = ["main", "master", "develop", "dev", "trunk"]
+            .iter()
+            .position(|&p| p == name)
+        {
+            return (1, pos);
+        }
+        (2, 0)
+    }
+
+    // `sort_by_key` is stable, so `--sort=-committerdate` order is preserved within each tier.
+    branches.sort_by_key(|name| branch_tier(current, name));
+    branches
+}
+
+pub fn inspect_remote_git_state(repo_dir: &Path) -> Result<RemoteGitStateInfo> {
+    if !git_ok(repo_dir, &["rev-parse", "--is-inside-work-tree"]) {
+        return Ok(RemoteGitStateInfo {
+            is_git_repo: false,
+            is_worktree: false,
+            has_commits: false,
+            head_sha: None,
+            branch: None,
+            branches: Vec::new(),
+            dirty_count: 0,
+            dirty_files: Vec::new(),
+            commits_ahead: 0,
+            commits_summary: Vec::new(),
+            sync_meta: None,
+        });
+    }
+
+    let is_worktree = is_git_linked_worktree(repo_dir);
+    let sync_meta = read_sync_metadata(repo_dir);
+    let (dirty_count, dirty_files) = collect_dirty_summary(repo_dir)?;
+    let branch = current_branch_name(repo_dir);
+    let branches = list_local_branches(repo_dir, branch.as_deref());
+    let Ok(head_sha) = run_git_checked(repo_dir, &["rev-parse", "HEAD"], &[]) else {
+        return Ok(RemoteGitStateInfo {
+            is_git_repo: true,
+            is_worktree,
+            has_commits: false,
+            head_sha: None,
+            branch,
+            branches,
+            dirty_count,
+            dirty_files,
+            commits_ahead: 0,
+            commits_summary: Vec::new(),
+            sync_meta,
+        });
+    };
+
+    let (commits_ahead, commits_summary) = sync_meta
+        .as_ref()
+        .map(|m| count_commits_ahead_of(repo_dir, &m.base_sha, true))
+        .unwrap_or((0, Vec::new()));
+
+    Ok(RemoteGitStateInfo {
+        is_git_repo: true,
+        is_worktree,
+        has_commits: true,
+        head_sha: Some(head_sha),
+        branch,
+        branches,
+        dirty_count,
+        dirty_files,
+        commits_ahead,
+        commits_summary,
+        sync_meta,
+    })
+}
+
+fn count_commits_ahead_of(
+    repo_dir: &Path,
+    base_sha: &str,
+    with_summary: bool,
+) -> (usize, Vec<String>) {
+    let base_rev = format!("{}^{{commit}}", base_sha);
+    if !git_ok(repo_dir, &["cat-file", "-e", &base_rev]) {
+        return (0, Vec::new());
+    }
+    let range = format!("{}..HEAD", base_sha);
+    let commits_ahead = run_git_checked(repo_dir, &["rev-list", "--count", &range], &[])
+        .ok()
+        .and_then(|cnt| cnt.parse::<usize>().ok())
+        .unwrap_or(0);
+    let commits_summary = if with_summary {
+        run_git_checked(repo_dir, &["log", "--oneline", "-n", "20", &range], &[])
+            .ok()
+            .map(|log| {
+                log.lines()
+                    .map(str::trim)
+                    .filter(|l| !l.is_empty())
+                    .map(str::to_string)
+                    .collect()
+            })
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+    (commits_ahead, commits_summary)
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RemoteWorktreeEntry {
+    pub id: String,
+    pub path: String,
+    pub branch: Option<String>,
+    pub head_sha: Option<String>,
+    pub short_sha: Option<String>,
+    pub commits_ahead: usize,
+    pub dirty_count: usize,
+    pub is_dirty: bool,
+    pub base_sha: Option<String>,
+    pub is_main: bool,
+    #[serde(default)]
+    pub diff_added: usize,
+    #[serde(default)]
+    pub diff_removed: usize,
+    #[serde(default)]
+    pub diff_files: usize,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct WorktreeDiffStats {
+    pub added: usize,
+    pub removed: usize,
+    pub files: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorktreeDiffHunkLine {
+    pub kind: String,
+    pub text: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorktreeDiffHunk {
+    pub old_start: usize,
+    pub new_start: usize,
+    pub lines: Vec<WorktreeDiffHunkLine>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorktreeDiffFile {
+    pub path: String,
+    pub status: String,
+    pub added: usize,
+    pub removed: usize,
+    pub is_binary: bool,
+    pub hunks: Vec<WorktreeDiffHunk>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorktreeDiffResponse {
+    pub worktree_path: String,
+    pub base_sha: Option<String>,
+    pub branch: Option<String>,
+    pub added: usize,
+    pub removed: usize,
+    pub truncated: bool,
+    pub files: Vec<WorktreeDiffFile>,
+}
+
+#[derive(Debug, Default)]
+struct PorcelainWorktreeStanza {
+    path: String,
+    head_sha: Option<String>,
+    branch: Option<String>,
+    bare: bool,
+    prunable: bool,
+}
+
+fn parse_worktree_porcelain(raw: &str) -> Vec<PorcelainWorktreeStanza> {
+    let mut entries = Vec::new();
+    let mut cur: Option<PorcelainWorktreeStanza> = None;
+
+    for raw_line in raw.lines() {
+        let line = raw_line.trim_end_matches('\r');
+        if line.is_empty() {
+            if let Some(stanza) = cur.take() {
+                if !stanza.path.is_empty() {
+                    entries.push(stanza);
+                }
+            }
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix("worktree ") {
+            if let Some(stanza) = cur.take() {
+                if !stanza.path.is_empty() {
+                    entries.push(stanza);
+                }
+            }
+            cur = Some(PorcelainWorktreeStanza {
+                path: rest.to_string(),
+                ..Default::default()
+            });
+            continue;
+        }
+        if let Some(ref mut stanza) = cur {
+            if let Some(sha) = line.strip_prefix("HEAD ") {
+                let s = sha.trim();
+                if !s.is_empty() && !s.chars().all(|c| c == '0') {
+                    stanza.head_sha = Some(s.to_string());
+                }
+            } else if let Some(bref) = line.strip_prefix("branch ") {
+                let trimmed = bref.trim();
+                let short = trimmed.strip_prefix("refs/heads/").unwrap_or(trimmed);
+                if !short.is_empty() {
+                    stanza.branch = Some(short.to_string());
+                }
+            } else if line == "bare" {
+                stanza.bare = true;
+            } else if line == "prunable" || line.starts_with("prunable ") {
+                stanza.prunable = true;
+            }
+        }
+    }
+    if let Some(stanza) = cur.take() {
+        if !stanza.path.is_empty() {
+            entries.push(stanza);
+        }
+    }
+    entries
+}
+
+/// List secondary `git worktree` entries associated with `repo_dir`.
+pub fn list_git_worktrees(repo_dir: &Path) -> Result<Vec<RemoteWorktreeEntry>> {
+    if !repo_dir.exists() || !git_ok(repo_dir, &["rev-parse", "--git-dir"]) {
+        return Ok(Vec::new());
+    }
+    let _ = run_git_raw(repo_dir, &["worktree", "prune"], &[]);
+    let raw = run_git_checked(repo_dir, &["worktree", "list", "--porcelain"], &[])?;
+    let stanzas = parse_worktree_porcelain(&raw);
+    let main_canon = stanzas
+        .first()
+        .map(|s| Path::new(&s.path))
+        .and_then(|p| std::fs::canonicalize(p).ok())
+        .or_else(|| std::fs::canonicalize(repo_dir).ok());
+    let fallback_base = run_git_checked(repo_dir, &["rev-parse", "HEAD"], &[]).ok();
+
+    let mut out = Vec::new();
+    for (idx, stanza) in stanzas.into_iter().enumerate() {
+        if idx == 0 || stanza.bare || stanza.prunable {
+            continue;
+        }
+        let wt_path = PathBuf::from(&stanza.path);
+        if !wt_path.is_dir() {
+            continue;
+        }
+        let canon = std::fs::canonicalize(&wt_path).unwrap_or_else(|_| wt_path.clone());
+        if main_canon.as_ref().is_some_and(|m| m == &canon) {
+            continue;
+        }
+
+        let sync_meta = read_sync_metadata(&canon);
+        let base_sha = sync_meta
+            .as_ref()
+            .map(|m| m.base_sha.clone())
+            .or_else(|| fallback_base.clone());
+        let (commits_ahead, _) = base_sha
+            .as_deref()
+            .map(|b| count_commits_ahead_of(&canon, b, false))
+            .unwrap_or((0, Vec::new()));
+        let (dirty_count, _dirty_files) = collect_dirty_summary(&canon)?;
+        let diff_stats = compute_worktree_diff_stats(&canon).unwrap_or_default();
+        let short_sha = stanza
+            .head_sha
+            .as_ref()
+            .map(|s| s.chars().take(7).collect::<String>());
+        let id = canon
+            .file_name()
+            .and_then(|n| n.to_str())
+            .filter(|s| !s.is_empty())
+            .unwrap_or("worktree")
+            .to_string();
+
+        out.push(RemoteWorktreeEntry {
+            id,
+            path: canon.to_string_lossy().into_owned(),
+            branch: stanza.branch,
+            head_sha: stanza.head_sha,
+            short_sha,
+            commits_ahead,
+            dirty_count,
+            is_dirty: dirty_count > 0,
+            base_sha,
+            is_main: false,
+            diff_added: diff_stats.added,
+            diff_removed: diff_stats.removed,
+            diff_files: diff_stats.files,
+        });
+    }
+
+    Ok(out)
+}
+
+/// Force-remove a secondary `git worktree` belonging to `repo_dir` and clean up
+/// auto-generated `agent/*` branches if present.
+pub fn remove_git_worktree(repo_dir: &Path, worktree_path: &Path) -> Result<()> {
+    if !repo_dir.exists() || !git_ok(repo_dir, &["rev-parse", "--git-dir"]) {
+        anyhow::bail!("Path is not a git repository: {}", repo_dir.display());
+    }
+    let raw = run_git_checked(repo_dir, &["worktree", "list", "--porcelain"], &[])?;
+    let stanzas = parse_worktree_porcelain(&raw);
+    let target_canon = std::fs::canonicalize(worktree_path).unwrap_or_else(|_| worktree_path.to_path_buf());
+
+    let matched = stanzas.iter().enumerate().find(|(_, s)| {
+        let p = Path::new(&s.path);
+        std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf()) == target_canon
+    });
+    let Some((idx, stanza)) = matched else {
+        anyhow::bail!(
+            "Worktree is not registered in this repository: {}",
+            worktree_path.display()
+        );
+    };
+    if idx == 0 {
+        anyhow::bail!("Refusing to remove the main repository worktree");
+    }
+
+    let wt_arg = target_canon.to_string_lossy().into_owned();
+    run_git_checked(repo_dir, &["worktree", "remove", "--force", &wt_arg], &[])?;
+    let _ = run_git_raw(repo_dir, &["worktree", "prune"], &[]);
+
+    if let Some(branch) = stanza.branch.as_deref() {
+        if branch.starts_with("agent/") {
+            let _ = run_git_raw(repo_dir, &["branch", "-D", branch], &[]);
+        }
+    }
+
+    Ok(())
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct CreateGitWorktreeOptions<'a> {
+    pub branch: Option<&'a str>,
+    pub worktree_dir: Option<&'a str>,
+    pub worktree_name: Option<&'a str>,
+    pub base_ref: Option<&'a str>,
+    pub include_dirty: bool,
+}
+
+/// Create an isolated `git worktree` from `repo_dir` under `worktrees_root`,
+/// preserving sync metadata (`base_sha`, `source_root`, `source_name`) and optionally dirty edits.
+pub fn create_git_worktree(
+    repo_dir: &Path,
+    worktrees_root: &Path,
+    project_name: &str,
+    opts: CreateGitWorktreeOptions<'_>,
+) -> Result<(PathBuf, String)> {
+    if !git_ok(repo_dir, &["rev-parse", "--is-inside-work-tree"]) {
+        anyhow::bail!(
+            "Project at {} is not a Git repository",
+            repo_dir.display()
+        );
+    }
+    if !git_ok(repo_dir, &["rev-parse", "--verify", "HEAD"]) {
+        anyhow::bail!("Git repository has no commits yet");
+    }
+
+    let base_rev_arg = opts
+        .base_ref
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(|b| format!("{}^{{commit}}", b))
+        .unwrap_or_else(|| "HEAD".to_string());
+    let head_sha = run_git_checked(repo_dir, &["rev-parse", "--verify", &base_rev_arg], &[])?;
+    let parent_meta = read_sync_metadata(repo_dir);
+    let requested_branch_clean = opts
+        .branch
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    let requested_name_raw = opts
+        .worktree_name
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+
+    let (wt_path, default_branch) = match opts.worktree_dir.map(str::trim).filter(|s| !s.is_empty()) {
+        Some(explicit) => {
+            let p = PathBuf::from(explicit);
+            if p.exists() {
+                anyhow::bail!("Target worktree directory already exists: {}", p.display());
+            }
+            let id = requested_name_raw
+                .map(|raw| sanitize_slug(raw, false))
+                .filter(|s| !s.is_empty())
+                .unwrap_or_else(|| crate::utils::short_alpha_id(8));
+            (p, format!("agent/{}", id))
+        }
+        None => {
+            let proj_slug = sanitize_slug(project_name, false);
+            let proj_slug = if proj_slug.is_empty() { "project" } else { &proj_slug };
+            let parent = worktrees_root.join(proj_slug);
+            if let Some(raw_name) = requested_name_raw {
+                let slug = sanitize_slug(raw_name, false);
+                if slug.is_empty() {
+                    anyhow::bail!("Invalid worktree name: {}", raw_name);
+                }
+                let candidate = parent.join(&slug);
+                if candidate.exists() {
+                    anyhow::bail!("Worktree '{}' already exists", slug);
+                }
+                (candidate, format!("agent/{}", slug))
+            } else {
+                let mut chosen = None;
+                for _ in 0..1000u32 {
+                    let id = crate::utils::short_alpha_id(8);
+                    let candidate = parent.join(&id);
+                    let branch_candidate = format!("agent/{}", id);
+                    let branch_ref = format!("refs/heads/{}", branch_candidate);
+                    let branch_taken = requested_branch_clean.is_none()
+                        && git_ok(repo_dir, &["show-ref", "--verify", "--quiet", &branch_ref]);
+                    if !candidate.exists() && !branch_taken {
+                        chosen = Some((candidate, branch_candidate));
+                        break;
+                    }
+                }
+                chosen.context("Could not allocate a unique worktree directory")?
+            }
+        }
+    };
+
+    let branch = pick_available_branch(repo_dir, requested_branch_clean, &default_branch)?;
+
+    if let Some(parent) = wt_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+
+    let wt_str = wt_path.to_string_lossy().into_owned();
+    run_git_checked(
+        repo_dir,
+        &["worktree", "add", "-b", &branch, &wt_str, &head_sha],
+        &[],
+    )?;
+
+    if opts.include_dirty {
+        let (overlay_b64, deleted_files, _) =
+            collect_dirty_overlay(repo_dir, MAX_DIRTY_OVERLAY_BYTES)?;
+        for del in &deleted_files {
+            if let Ok(rel) = validate_safe_rel_path(del) {
+                let full = wt_path.join(rel);
+                if full.is_file() || full.is_symlink() {
+                    let _ = std::fs::remove_file(full);
+                }
+            }
+        }
+        if let Some(b64) = overlay_b64.as_deref().filter(|s| !s.trim().is_empty()) {
+            crate::node_server::unpack_project_archive(b64, &wt_path)?;
+        }
+    }
+
+    let meta = CloudSyncMetadata {
+        base_sha: head_sha,
+        branch: Some(branch.clone()),
+        source_root: parent_meta.as_ref().and_then(|m| m.source_root.clone()),
+        source_name: parent_meta
+            .as_ref()
+            .and_then(|m| m.source_name.clone())
+            .or_else(|| Some(project_name.to_string())),
+        overlay_paths: Vec::new(),
+        synced_at_epoch: unix_epoch_secs(),
+    };
+    write_sync_metadata(&wt_path, &meta)?;
+
+    let canonical_wt = std::fs::canonicalize(&wt_path).unwrap_or(wt_path);
+    Ok((canonical_wt, branch))
+}
+
+fn build_wip_snapshot_commit(repo_dir: &Path, head_sha: &str) -> Result<Option<String>> {
+    let head_tree = run_git_checked(repo_dir, &["rev-parse", "HEAD^{tree}"], &[])?;
+    let tmp = tempfile::TempDir::new()?;
+    let tmp_idx = tmp.path().join("wip.index");
+    let idx_str = tmp_idx.to_string_lossy().into_owned();
+    let idx_env = [("GIT_INDEX_FILE", idx_str.as_str())];
+
+    run_git_checked(repo_dir, &["read-tree", "HEAD"], &idx_env)?;
+    run_git_checked(repo_dir, &["add", "-A"], &idx_env)?;
+    let wip_tree = run_git_checked(repo_dir, &["write-tree"], &idx_env)?;
+
+    if wip_tree == head_tree {
+        return Ok(None);
+    }
+
+    let author_env = [
+        ("GIT_AUTHOR_NAME", "Anycode Agent"),
+        ("GIT_AUTHOR_EMAIL", "anycode@local"),
+        ("GIT_COMMITTER_NAME", "Anycode Agent"),
+        ("GIT_COMMITTER_EMAIL", "anycode@local"),
+    ];
+    let wip_sha = run_git_checked(
+        repo_dir,
+        &[
+            "commit-tree",
+            &wip_tree,
+            "-p",
+            head_sha,
+            "-m",
+            "WIP: uncommitted changes from remote node",
+        ],
+        &author_env,
+    )?;
+    Ok(Some(wip_sha))
+}
+
+/// Package remote commits and any uncommitted working-tree edits into a delta git bundle file.
+/// Bundles smaller than `TRANSFER_CHUNK_BYTES` are inlined; larger ones are returned on disk for chunked transfer.
+pub fn build_pull_bundle_to_file(
+    repo_dir: &Path,
+    known_bases: &[String],
+) -> Result<(PullGitBundleResponse, Option<tempfile::NamedTempFile>)> {
+    use base64::Engine as _;
+
+    if !git_ok(repo_dir, &["rev-parse", "--is-inside-work-tree"]) {
+        anyhow::bail!(
+            "Remote project at {} is not a Git repository. Re-sync it from your local project first.",
+            repo_dir.display()
+        );
+    }
+    if !git_ok(repo_dir, &["rev-parse", "--verify", "HEAD"]) {
+        anyhow::bail!("Remote Git repository has no commits yet");
+    }
+
+    let head_sha = run_git_checked(repo_dir, &["rev-parse", "HEAD"], &[])?;
+    let branch = current_branch_name(repo_dir);
+    let sync_meta = read_sync_metadata(repo_dir);
+    let base_sha = sync_meta.as_ref().map(|m| m.base_sha.clone());
+
+    let (dirty_count, dirty_files) = collect_dirty_summary(repo_dir)?;
+    let wip_sha = if dirty_count > 0 {
+        build_wip_snapshot_commit(repo_dir, &head_sha)?
+    } else {
+        None
+    };
+    let has_wip = wip_sha.is_some();
+    let final_sha = wip_sha.unwrap_or_else(|| head_sha.clone());
+
+    let mut candidate_bases = Vec::with_capacity(known_bases.len() + 1);
+    if let Some(ref base) = base_sha {
+        if known_bases.iter().any(|k| k == base) {
+            candidate_bases.push(base.clone());
+        }
+    }
+    candidate_bases.extend(known_bases.iter().cloned());
+    let exclude_bases = filter_existing_commits(repo_dir, &candidate_bases, 64);
+
+    let mut count_args: Vec<String> = vec!["rev-list".into(), "--count".into()];
+    for b in &exclude_bases {
+        count_args.push(format!("^{}", b));
+    }
+    count_args.push(final_sha.clone());
+    let count_arg_refs: Vec<&str> = count_args.iter().map(String::as_str).collect();
+    let total_objects_ahead: usize = run_git_checked(repo_dir, &count_arg_refs, &[])?
+        .parse()
+        .unwrap_or(0);
+
+    if total_objects_ahead == 0 {
+        return Ok((
+            PullGitBundleResponse {
+                changed: false,
+                head_sha,
+                branch,
+                base_sha,
+                has_wip: false,
+                commits_count: 0,
+                dirty_count: 0,
+                commits_summary: Vec::new(),
+                dirty_files: Vec::new(),
+                bundle_b64: None,
+                bundle_transfer_id: None,
+                bundle_size: None,
+                ref_name: None,
+            },
+            None,
+        ));
+    }
+
+    let mut commit_count_args: Vec<String> = vec!["rev-list".into(), "--count".into()];
+    for b in &exclude_bases {
+        commit_count_args.push(format!("^{}", b));
+    }
+    commit_count_args.push(head_sha.clone());
+    let commit_count_refs: Vec<&str> = commit_count_args.iter().map(String::as_str).collect();
+    let commits_count: usize = run_git_checked(repo_dir, &commit_count_refs, &[])?
+        .parse()
+        .unwrap_or(0);
+
+    let mut log_args: Vec<String> =
+        vec!["log".into(), "--oneline".into(), "-n".into(), "20".into()];
+    for b in &exclude_bases {
+        log_args.push(format!("^{}", b));
+    }
+    log_args.push(head_sha.clone());
+    let log_refs: Vec<&str> = log_args.iter().map(String::as_str).collect();
+    let commits_summary = run_git_checked(repo_dir, &log_refs, &[])
+        .unwrap_or_default()
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .map(str::to_string)
+        .collect();
+
+    let ref_name = format!(
+        "refs/anycode-pull/res-{}-{}",
+        std::process::id(),
+        unix_epoch_secs()
+    );
+    let _ref_guard = CloudRefGuard::new(repo_dir, ref_name.clone());
+    run_git_checked(repo_dir, &["update-ref", &ref_name, &final_sha], &[])?;
+
+    let tmp_bundle = tempfile::NamedTempFile::new()?;
+    let bundle_str = tmp_bundle.path().to_string_lossy().into_owned();
+
+    let mut bundle_args: Vec<String> = vec!["bundle".into(), "create".into(), bundle_str.clone()];
+    for b in &exclude_bases {
+        bundle_args.push(format!("^{}", b));
+    }
+    bundle_args.push(ref_name.clone());
+    let bundle_refs: Vec<&str> = bundle_args.iter().map(String::as_str).collect();
+    run_git_checked(repo_dir, &bundle_refs, &[])?;
+
+    let bundle_len = std::fs::metadata(tmp_bundle.path())?.len();
+    let (bundle_b64, transfer_file) = if bundle_len <= TRANSFER_CHUNK_BYTES as u64 {
+        let bytes = std::fs::read(tmp_bundle.path())?;
+        (
+            Some(base64::engine::general_purpose::STANDARD.encode(bytes)),
+            None,
+        )
+    } else {
+        (None, Some(tmp_bundle))
+    };
+
+    Ok((
+        PullGitBundleResponse {
+            changed: true,
+            head_sha,
+            branch,
+            base_sha,
+            has_wip,
+            commits_count,
+            dirty_count,
+            commits_summary,
+            dirty_files,
+            bundle_b64,
+            bundle_transfer_id: None,
+            bundle_size: Some(bundle_len),
+            ref_name: Some(ref_name),
+        },
+        transfer_file,
+    ))
+}
+
+/// Inline wrapper for smaller deltas and tests.
+pub fn build_pull_bundle(
+    repo_dir: &Path,
+    known_bases: &[String],
+    max_bytes: usize,
+) -> Result<PullGitBundleResponse> {
+    use base64::Engine as _;
+
+    let (mut resp, file_opt) = build_pull_bundle_to_file(repo_dir, known_bases)?;
+    if let Some(file) = file_opt {
+        let bytes = std::fs::read(file.path())?;
+        if bytes.len() > max_bytes {
+            anyhow::bail!(
+                "Pull delta bundle ({:.1} MiB) exceeds {} MiB limit",
+                bytes.len() as f64 / (1024.0 * 1024.0),
+                max_bytes / (1024 * 1024)
+            );
+        }
+        resp.bundle_b64 = Some(base64::engine::general_purpose::STANDARD.encode(bytes));
+    }
+    Ok(resp)
+}
+
+pub fn resolve_git_toplevel(dir: &Path) -> Result<PathBuf> {
+    let raw = run_git_checked(dir, &["rev-parse", "--show-toplevel"], &[])
+        .with_context(|| format!("Local project is not a Git repository: {}", dir.display()))?;
+    Ok(std::fs::canonicalize(&raw).unwrap_or_else(|_| PathBuf::from(raw)))
+}
+
+pub fn collect_local_known_bases(repo_dir: &Path) -> Result<Vec<String>> {
+    let Ok(raw) = run_git_checked(
+        repo_dir,
+        &[
+            "rev-list",
+            &format!("--max-count={}", MAX_KNOWN_BASES),
+            "--all",
+        ],
+        &[],
+    ) else {
+        return Ok(Vec::new());
+    };
+    Ok(raw
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .map(str::to_string)
+        .collect())
+}
+
+fn sanitize_slug(input: &str, allow_slash: bool) -> String {
+    let mut out = String::with_capacity(input.len());
+    for ch in input.chars() {
+        let ok = ch.is_ascii_alphanumeric()
+            || matches!(ch, '-' | '_' | '.')
+            || (allow_slash && ch == '/');
+        if ok {
+            out.push(ch);
+        } else {
+            out.push('-');
+        }
+    }
+    while out.contains("//") {
+        out = out.replace("//", "/");
+    }
+    while out.contains("..") {
+        out = out.replace("..", "-");
+    }
+    out.trim_matches(|c| c == '/' || c == '.' || c == '-')
+        .trim_end_matches(".lock")
+        .to_string()
+}
+
+fn pick_available_branch(
+    repo_dir: &Path,
+    requested: Option<&str>,
+    default_base: &str,
+) -> Result<String> {
+    if let Some(explicit) = requested.map(str::trim).filter(|s| !s.is_empty()) {
+        if !git_ok(repo_dir, &["check-ref-format", "--branch", explicit]) {
+            anyhow::bail!("Invalid Git branch name: {}", explicit);
+        }
+        let full_ref = format!("refs/heads/{}", explicit);
+        if git_ok(repo_dir, &["show-ref", "--verify", "--quiet", &full_ref]) {
+            anyhow::bail!("Local branch '{}' already exists", explicit);
+        }
+        return Ok(explicit.to_string());
+    }
+
+    let base = sanitize_slug(default_base, true);
+    let base = if base.is_empty() || !git_ok(repo_dir, &["check-ref-format", "--branch", &base]) {
+        format!("cloud/pull-{}", unix_epoch_secs())
+    } else {
+        base
+    };
+
+    for idx in 0..1000u32 {
+        let candidate = if idx == 0 {
+            base.clone()
+        } else {
+            format!("{}-{}", base, idx + 1)
+        };
+        let full_ref = format!("refs/heads/{}", candidate);
+        if !git_ok(repo_dir, &["show-ref", "--verify", "--quiet", &full_ref])
+            && git_ok(repo_dir, &["check-ref-format", "--branch", &candidate])
+        {
+            return Ok(candidate);
+        }
+    }
+    anyhow::bail!("Could not allocate a unique branch name")
+}
+
+fn pick_worktree_path(
+    worktrees_root: &Path,
+    project_name: &str,
+    branch_name: &str,
+    requested_dir: Option<&str>,
+) -> Result<PathBuf> {
+    if let Some(explicit) = requested_dir.map(str::trim).filter(|s| !s.is_empty()) {
+        let path = PathBuf::from(explicit);
+        if path.exists() {
+            anyhow::bail!("Target worktree directory already exists: {}", path.display());
+        }
+        return Ok(path);
+    }
+
+    let proj_slug = sanitize_slug(project_name, false);
+    let proj_slug = if proj_slug.is_empty() {
+        "project"
+    } else {
+        &proj_slug
+    };
+    let branch_slug = sanitize_slug(&branch_name.replace('/', "-"), false);
+    let branch_slug = if branch_slug.is_empty() {
+        format!("wt-{}", unix_epoch_secs())
+    } else {
+        branch_slug
+    };
+
+    let parent = worktrees_root.join(proj_slug);
+    for idx in 0..1000u32 {
+        let folder = if idx == 0 {
+            branch_slug.clone()
+        } else {
+            format!("{}-{}", branch_slug, idx + 1)
+        };
+        let candidate = parent.join(folder);
+        if !candidate.exists() {
+            return Ok(candidate);
+        }
+    }
+    anyhow::bail!("Could not allocate a unique worktree directory")
+}
+
+/// Fetch an on-disk delta bundle into `local_repo_root` and check it out into a fresh git worktree.
+pub fn apply_pull_bundle_file_to_worktree(
+    local_repo_root: &Path,
+    bundle_path: &Path,
+    pull: &PullGitBundleResponse,
+    server_name: &str,
+    project_name: &str,
+    worktrees_root: &Path,
+    requested_branch: Option<&str>,
+    requested_worktree_dir: Option<&str>,
+) -> Result<(PathBuf, String)> {
+    let remote_ref = pull
+        .ref_name
+        .as_deref()
+        .filter(|s| !s.trim().is_empty())
+        .context("Missing source ref name in pull response")?;
+    let bundle_str = bundle_path.to_string_lossy().into_owned();
+
+    let staging_ref = format!(
+        "refs/anycode-cloud-stage/pull-{}-{}",
+        std::process::id(),
+        unix_epoch_secs()
+    );
+    let _staging_guard = CloudRefGuard::new(local_repo_root, staging_ref.clone());
+    let refspec = format!("{}:{}", remote_ref, staging_ref);
+    run_git_checked(local_repo_root, &["fetch", &bundle_str, &refspec], &[])?;
+
+    let srv_slug = sanitize_slug(&server_name.to_lowercase(), false);
+    let srv_slug = if srv_slug.is_empty() { "node" } else { &srv_slug };
+    let base_label = pull
+        .branch
+        .as_deref()
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or(project_name);
+    let stamp = chrono::Local::now().format("%m%d-%H%M%S");
+    let default_branch = format!("cloud/{}/{}-{}", srv_slug, base_label, stamp);
+
+    let branch = pick_available_branch(local_repo_root, requested_branch, &default_branch)?;
+    let worktree_path = pick_worktree_path(
+        worktrees_root,
+        project_name,
+        &branch,
+        requested_worktree_dir,
+    )?;
+
+    if let Some(parent) = worktree_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+
+    let wt_str = worktree_path.to_string_lossy().into_owned();
+    run_git_checked(
+        local_repo_root,
+        &["worktree", "add", "-b", &branch, &wt_str, &staging_ref],
+        &[],
+    )?;
+
+    if pull.has_wip && git_ok(&worktree_path, &["rev-parse", "--verify", "HEAD~1"]) {
+        run_git_checked(&worktree_path, &["reset", "--mixed", "HEAD~1"], &[])?;
+    }
+
+    let canonical_wt = std::fs::canonicalize(&worktree_path).unwrap_or(worktree_path);
+    Ok((canonical_wt, branch))
+}
+
+/// Fetch an inline base64 delta bundle into `local_repo_root` and check it out into a fresh git worktree.
+pub fn apply_pull_bundle_to_worktree(
+    local_repo_root: &Path,
+    pull: &PullGitBundleResponse,
+    server_name: &str,
+    project_name: &str,
+    worktrees_root: &Path,
+    requested_branch: Option<&str>,
+    requested_worktree_dir: Option<&str>,
+) -> Result<(PathBuf, String)> {
+    use base64::Engine as _;
+
+    let bundle_b64 = pull
+        .bundle_b64
+        .as_deref()
+        .context("Missing delta bundle in remote response")?;
+    let bundle_bytes = base64::engine::general_purpose::STANDARD
+        .decode(bundle_b64.trim())
+        .map_err(|e| anyhow::anyhow!("Invalid pull bundle encoding: {}", e))?;
+    let tmp_bundle = tempfile::NamedTempFile::new()?;
+    std::fs::write(tmp_bundle.path(), bundle_bytes)?;
+
+    apply_pull_bundle_file_to_worktree(
+        local_repo_root,
+        tmp_bundle.path(),
+        pull,
+        server_name,
+        project_name,
+        worktrees_root,
+        requested_branch,
+        requested_worktree_dir,
+    )
+}
+
+const MAX_WORKTREE_UNTRACKED_BYTES: u64 = 512 * 1024;
+const MAX_WORKTREE_DIFF_PAYLOAD_BYTES: usize = 4 * 1024 * 1024;
+
+fn resolve_worktree_base_sha(worktree_path: &Path) -> Option<String> {
+    if let Some(meta) = read_sync_metadata(worktree_path) {
+        let base = meta.base_sha.trim();
+        if !base.is_empty() && git_ok(worktree_path, &["cat-file", "-e", base]) {
+            return Some(base.to_string());
+        }
+    }
+    run_git_checked(worktree_path, &["rev-parse", "--verify", "HEAD"], &[]).ok()
+}
+
+fn collect_untracked_files(worktree_path: &Path) -> Result<Vec<String>> {
+    let out = run_git_raw(
+        worktree_path,
+        &[
+            "-c",
+            "core.quotePath=false",
+            "ls-files",
+            "--others",
+            "--exclude-standard",
+            "-z",
+        ],
+        &[],
+    )?;
+    if !out.status.success() {
+        return Ok(Vec::new());
+    }
+    Ok(out
+        .stdout
+        .split(|&b| b == 0)
+        .filter(|slice| !slice.is_empty())
+        .map(|slice| String::from_utf8_lossy(slice).into_owned())
+        .collect())
+}
+
+fn read_untracked_text(worktree_path: &Path, rel_path: &str) -> Option<String> {
+    let full = worktree_path.join(rel_path);
+    let meta = std::fs::symlink_metadata(&full).ok()?;
+    if !meta.is_file() || meta.len() > MAX_WORKTREE_UNTRACKED_BYTES {
+        return None;
+    }
+    let bytes = std::fs::read(&full).ok()?;
+    let sample = &bytes[..bytes.len().min(8192)];
+    if sample.contains(&0) {
+        return None;
+    }
+    String::from_utf8(bytes).ok()
+}
+
+fn parse_hunk_header(header: &str) -> Option<(usize, usize)> {
+    let rest = header.strip_prefix("@@ -")?;
+    let end_marker = rest.find(" @@")?;
+    let coords = &rest[..end_marker];
+    let mut parts = coords.split(" +");
+    let old_part = parts.next()?;
+    let new_part = parts.next()?;
+    let old_start = old_part.split(',').next()?.parse::<usize>().ok()?;
+    let new_start = new_part.split(',').next()?.parse::<usize>().ok()?;
+    Some((old_start.max(1), new_start.max(1)))
+}
+
+fn strip_diff_prefix(raw: &str, prefix: &str) -> Option<String> {
+    let trimmed = raw.trim_end_matches('\r');
+    if trimmed == "/dev/null" {
+        return None;
+    }
+    Some(trimmed.strip_prefix(prefix).unwrap_or(trimmed).to_string())
+}
+
+fn collect_numstat_map(
+    worktree_path: &Path,
+    base_sha: &str,
+) -> Result<std::collections::HashMap<String, (usize, usize, bool)>> {
+    let mut map = std::collections::HashMap::new();
+    let out = run_git_raw(
+        worktree_path,
+        &[
+            "-c",
+            "core.quotePath=false",
+            "diff",
+            "--numstat",
+            "--no-renames",
+            "-z",
+            base_sha,
+        ],
+        &[],
+    )?;
+    if !out.status.success() {
+        return Ok(map);
+    }
+
+    for entry in out.stdout.split(|&b| b == 0).filter(|s| !s.is_empty()) {
+        let s = String::from_utf8_lossy(entry);
+        let mut parts = s.splitn(3, '\t');
+        let add_str = parts.next().unwrap_or("");
+        let del_str = parts.next().unwrap_or("");
+        let Some(path) = parts.next() else {
+            continue;
+        };
+        if path.is_empty() {
+            continue;
+        }
+        let is_binary = add_str == "-" || del_str == "-";
+        let added = add_str.parse::<usize>().unwrap_or(0);
+        let removed = del_str.parse::<usize>().unwrap_or(0);
+        map.insert(path.to_string(), (added, removed, is_binary));
+    }
+    Ok(map)
+}
+
+fn collect_name_status_map(
+    worktree_path: &Path,
+    base_sha: &str,
+) -> Result<std::collections::HashMap<String, String>> {
+    let mut map = std::collections::HashMap::new();
+    let out = run_git_raw(
+        worktree_path,
+        &[
+            "-c",
+            "core.quotePath=false",
+            "diff",
+            "--name-status",
+            "--no-renames",
+            "-z",
+            base_sha,
+        ],
+        &[],
+    )?;
+    if !out.status.success() {
+        return Ok(map);
+    }
+
+    let fields: Vec<&[u8]> = out.stdout.split(|&b| b == 0).filter(|s| !s.is_empty()).collect();
+    let mut i = 0;
+    while i + 1 < fields.len() {
+        let status_code = String::from_utf8_lossy(fields[i]);
+        let path = String::from_utf8_lossy(fields[i + 1]).into_owned();
+        let status = match status_code.chars().next() {
+            Some('A') => "added",
+            Some('D') => "deleted",
+            Some('R') => "renamed",
+            _ => "modified",
+        };
+        map.insert(path, status.to_string());
+        i += 2;
+    }
+    Ok(map)
+}
+
+/// Compute aggregate diff line counts (`+added`, `-removed`, `files`) for a worktree against its base commit.
+pub fn compute_worktree_diff_stats(worktree_path: &Path) -> Result<WorktreeDiffStats> {
+    if !worktree_path.exists() || !git_ok(worktree_path, &["rev-parse", "--is-inside-work-tree"]) {
+        return Ok(WorktreeDiffStats::default());
+    }
+
+    let mut stats = WorktreeDiffStats::default();
+    if let Some(base_sha) = resolve_worktree_base_sha(worktree_path) {
+        let numstat = collect_numstat_map(worktree_path, &base_sha)?;
+        for (_, (added, removed, _is_binary)) in numstat {
+            stats.files += 1;
+            stats.added += added;
+            stats.removed += removed;
+        }
+    }
+
+    for rel_path in collect_untracked_files(worktree_path)? {
+        stats.files += 1;
+        if let Some(text) = read_untracked_text(worktree_path, &rel_path) {
+            stats.added += text.lines().count();
+        }
+    }
+
+    Ok(stats)
+}
+
+/// Collect unified diff hunks against `base_sha` plus untracked text files for fast multibuffer rendering.
+pub fn collect_worktree_diff(worktree_path: &Path) -> Result<WorktreeDiffResponse> {
+    if !worktree_path.exists() || !git_ok(worktree_path, &["rev-parse", "--is-inside-work-tree"]) {
+        anyhow::bail!("Path is not a git worktree: {}", worktree_path.display());
+    }
+
+    let canonical_wt = std::fs::canonicalize(worktree_path).unwrap_or_else(|_| worktree_path.to_path_buf());
+    let base_sha = resolve_worktree_base_sha(&canonical_wt);
+    let branch = run_git_checked(&canonical_wt, &["rev-parse", "--abbrev-ref", "HEAD"], &[])
+        .ok()
+        .filter(|b| !b.is_empty() && b != "HEAD");
+
+    let mut files: Vec<WorktreeDiffFile> = Vec::new();
+    let mut total_added = 0usize;
+    let mut total_removed = 0usize;
+    let mut payload_bytes = 0usize;
+    let mut truncated = false;
+
+    if let Some(ref base) = base_sha {
+        let numstat_map = collect_numstat_map(&canonical_wt, base)?;
+        let status_map = collect_name_status_map(&canonical_wt, base)?;
+
+        let out = run_git_raw(
+            &canonical_wt,
+            &[
+                "-c",
+                "core.quotePath=false",
+                "diff",
+                "-U3",
+                "--no-color",
+                "--no-ext-diff",
+                "--no-renames",
+                base,
+            ],
+            &[],
+        )?;
+        if !out.status.success() {
+            let err = String::from_utf8_lossy(&out.stderr);
+            anyhow::bail!("git diff failed: {}", err.trim());
+        }
+
+        let diff_text = String::from_utf8_lossy(&out.stdout);
+
+        struct PendingFile {
+            old_path: Option<String>,
+            new_path: Option<String>,
+            fallback_path: Option<String>,
+            is_binary: bool,
+            hunks: Vec<WorktreeDiffHunk>,
+            current_hunk: Option<WorktreeDiffHunk>,
+        }
+
+        let flush_pending = |pending_opt: Option<PendingFile>,
+                             files: &mut Vec<WorktreeDiffFile>,
+                             total_added: &mut usize,
+                             total_removed: &mut usize| {
+            let Some(mut pending) = pending_opt else {
+                return;
+            };
+            if let Some(hunk) = pending.current_hunk.take() {
+                pending.hunks.push(hunk);
+            }
+            let Some(path) = pending
+                .new_path
+                .or(pending.old_path)
+                .or(pending.fallback_path)
+            else {
+                return;
+            };
+            let status = status_map
+                .get(&path)
+                .cloned()
+                .unwrap_or_else(|| "modified".to_string());
+            let (added, removed, numstat_binary) = numstat_map
+                .get(&path)
+                .copied()
+                .unwrap_or((0, 0, false));
+            *total_added += added;
+            *total_removed += removed;
+            files.push(WorktreeDiffFile {
+                path,
+                status,
+                added,
+                removed,
+                is_binary: pending.is_binary || numstat_binary,
+                hunks: pending.hunks,
+            });
+        };
+
+        let mut current: Option<PendingFile> = None;
+
+        for raw_line in diff_text.split('\n') {
+            let line = raw_line.strip_suffix('\r').unwrap_or(raw_line);
+            if let Some(rest) = line.strip_prefix("diff --git ") {
+                flush_pending(current.take(), &mut files, &mut total_added, &mut total_removed);
+                if payload_bytes >= MAX_WORKTREE_DIFF_PAYLOAD_BYTES {
+                    truncated = true;
+                    break;
+                }
+                let fallback_path = rest
+                    .split(" b/")
+                    .nth(1)
+                    .map(|p| p.to_string());
+                current = Some(PendingFile {
+                    old_path: None,
+                    new_path: None,
+                    fallback_path,
+                    is_binary: false,
+                    hunks: Vec::new(),
+                    current_hunk: None,
+                });
+                continue;
+            }
+
+            let Some(ref mut pending) = current else {
+                continue;
+            };
+
+            if pending.current_hunk.is_none() {
+                if let Some(p) = line.strip_prefix("--- ") {
+                    pending.old_path = strip_diff_prefix(p, "a/");
+                    continue;
+                }
+                if let Some(p) = line.strip_prefix("+++ ") {
+                    pending.new_path = strip_diff_prefix(p, "b/");
+                    continue;
+                }
+                if line.starts_with("Binary files ") || line == "GIT binary patch" {
+                    pending.is_binary = true;
+                    continue;
+                }
+            }
+
+            if line.starts_with("@@ -") {
+                if let Some(hunk) = pending.current_hunk.take() {
+                    pending.hunks.push(hunk);
+                }
+                if let Some((old_start, new_start)) = parse_hunk_header(line) {
+                    pending.current_hunk = Some(WorktreeDiffHunk {
+                        old_start,
+                        new_start,
+                        lines: Vec::new(),
+                    });
+                }
+                continue;
+            }
+
+            if let Some(ref mut hunk) = pending.current_hunk {
+                if line.starts_with('\\') {
+                    continue;
+                }
+                if let Some(body) = line.strip_prefix(' ') {
+                    payload_bytes += body.len() + 16;
+                    hunk.lines.push(WorktreeDiffHunkLine {
+                        kind: "context".to_string(),
+                        text: body.to_string(),
+                    });
+                } else if let Some(body) = line.strip_prefix('+') {
+                    payload_bytes += body.len() + 16;
+                    hunk.lines.push(WorktreeDiffHunkLine {
+                        kind: "add".to_string(),
+                        text: body.to_string(),
+                    });
+                } else if let Some(body) = line.strip_prefix('-') {
+                    payload_bytes += body.len() + 16;
+                    hunk.lines.push(WorktreeDiffHunkLine {
+                        kind: "del".to_string(),
+                        text: body.to_string(),
+                    });
+                }
+                if payload_bytes >= MAX_WORKTREE_DIFF_PAYLOAD_BYTES {
+                    truncated = true;
+                    break;
+                }
+            }
+        }
+
+        flush_pending(current.take(), &mut files, &mut total_added, &mut total_removed);
+
+        // Include any changed files reported by numstat that had empty hunks (e.g. mode-only or skipped after cap)
+        let seen: std::collections::HashSet<String> = files.iter().map(|f| f.path.clone()).collect();
+        for (path, (added, removed, is_binary)) in &numstat_map {
+            if seen.contains(path) {
+                continue;
+            }
+            let status = status_map
+                .get(path)
+                .cloned()
+                .unwrap_or_else(|| "modified".to_string());
+            total_added += *added;
+            total_removed += *removed;
+            files.push(WorktreeDiffFile {
+                path: path.clone(),
+                status,
+                added: *added,
+                removed: *removed,
+                is_binary: *is_binary,
+                hunks: Vec::new(),
+            });
+        }
+    }
+
+    for rel_path in collect_untracked_files(&canonical_wt)? {
+        if payload_bytes >= MAX_WORKTREE_DIFF_PAYLOAD_BYTES {
+            truncated = true;
+            files.push(WorktreeDiffFile {
+                path: rel_path,
+                status: "untracked".to_string(),
+                added: 0,
+                removed: 0,
+                is_binary: false,
+                hunks: Vec::new(),
+            });
+            continue;
+        }
+
+        if let Some(text) = read_untracked_text(&canonical_wt, &rel_path) {
+            let lines: Vec<WorktreeDiffHunkLine> = text
+                .lines()
+                .map(|line| {
+                    payload_bytes += line.len() + 16;
+                    WorktreeDiffHunkLine {
+                        kind: "add".to_string(),
+                        text: line.to_string(),
+                    }
+                })
+                .collect();
+            let line_count = lines.len();
+            total_added += line_count;
+            files.push(WorktreeDiffFile {
+                path: rel_path,
+                status: "untracked".to_string(),
+                added: line_count,
+                removed: 0,
+                is_binary: false,
+                hunks: if lines.is_empty() {
+                    Vec::new()
+                } else {
+                    vec![WorktreeDiffHunk {
+                        old_start: 1,
+                        new_start: 1,
+                        lines,
+                    }]
+                },
+            });
+        } else {
+            files.push(WorktreeDiffFile {
+                path: rel_path,
+                status: "untracked".to_string(),
+                added: 0,
+                removed: 0,
+                is_binary: true,
+                hunks: Vec::new(),
+            });
+        }
+    }
+
+    files.sort_by(|a, b| a.path.cmp(&b.path));
+
+    Ok(WorktreeDiffResponse {
+        worktree_path: canonical_wt.to_string_lossy().into_owned(),
+        base_sha,
+        branch,
+        added: total_added,
+        removed: total_removed,
+        truncated,
+        files,
+    })
+}
+
 #[cfg(test)]
 #[path = "tests/git.rs"]
 mod tests;

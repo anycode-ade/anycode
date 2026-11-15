@@ -219,9 +219,9 @@ export class LineRenderer {
             div.appendChild(runSpan);
         }
 
-        if (gapBefore) {
+        if (gapBefore && gapBefore.hiddenEnd >= gapBefore.hiddenStart) {
             div.appendChild(this.createGapExpandButton(gapBefore, 'up'));
-        } else if (gapAfter) {
+        } else if (gapAfter && gapAfter.hiddenEnd >= gapAfter.hiddenStart) {
             div.appendChild(this.createGapExpandButton(gapAfter, 'down'));
         }
 

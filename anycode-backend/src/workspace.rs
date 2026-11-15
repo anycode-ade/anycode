@@ -70,6 +70,22 @@ impl WorkspaceManager {
         Self::load(startup_root, startup, config, diagnostic_tx, None)
     }
 
+    pub fn new_with_data_dir(
+        startup_root: PathBuf,
+        startup: StartupProject,
+        config: Config,
+        diagnostic_tx: tokio::sync::mpsc::Sender<PublishDiagnosticsParams>,
+        data_dir: &Path,
+    ) -> Self {
+        Self::load(
+            startup_root,
+            startup,
+            config,
+            diagnostic_tx,
+            Some(data_dir.join("workspaces.json")),
+        )
+    }
+
     #[cfg(test)]
     fn new_with_config_path(
         startup_root: PathBuf,

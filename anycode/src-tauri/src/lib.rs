@@ -314,6 +314,7 @@ pub fn run() {
           port: 0,
           token: Some(secret_for_server),
           initial_workspace: active_workspace.clone(),
+          ..Default::default()
         };
 
         if let Err(e) = anycode::start_server(opts, Some(ready_tx), Some(shutdown_for_backend)).await {

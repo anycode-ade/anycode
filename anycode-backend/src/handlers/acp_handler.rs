@@ -404,32 +404,12 @@ fn find_local_paths(text: &str, project_root: &std::path::Path) -> Vec<PathBuf> 
     paths
 }
 
-pub async fn handle_acp_prompt(
-    Data(request): Data<AcpPromptRequest>,
-    ack: AckSender,
-    state: State<AppState>,
+pub(crate) fn prepare_prompt_attachments(
+    prompt: &str,
+    project_root: &Path,
+    attachments: &mut Vec<AcpPromptAttachment>,
 ) {
-    info!("handle_acp_prompt {:?}", request);
-    let AcpPromptRequest {
-        agent_id,
-        prompt,
-        mut attachments,
-    } = request;
-
-    let project_root = {
-        let project_id = state.agent_project_ids.lock().await.get(&agent_id).cloned();
-        let Some(project_id) = project_id else {
-            error_ack!(ack, &agent_id, "Agent {} not found", agent_id);
-        };
-        let project = state.workspace.lock().await.get(&project_id);
-        let Some(project) = project else {
-            error_ack!(ack, &agent_id, "Agent project is no longer available");
-        };
-        PathBuf::from(project.info.root)
-    };
-
-    // Resolve relative paths against the agent's immutable project root.
-    let detected_paths = find_local_paths(&prompt, &project_root);
+    let detected_paths = find_local_paths(prompt, project_root);
     for path in detected_paths {
         info!("Detected local file path in prompt: {:?}", path);
         if let Ok(bytes) = std::fs::read(&path) {
@@ -456,6 +436,34 @@ pub async fn handle_acp_prompt(
             }
         }
     }
+}
+
+pub async fn handle_acp_prompt(
+    Data(request): Data<AcpPromptRequest>,
+    ack: AckSender,
+    state: State<AppState>,
+) {
+    info!("handle_acp_prompt {:?}", request);
+    let AcpPromptRequest {
+        agent_id,
+        prompt,
+        mut attachments,
+    } = request;
+
+    let project_root = {
+        let project_id = state.agent_project_ids.lock().await.get(&agent_id).cloned();
+        let Some(project_id) = project_id else {
+            error_ack!(ack, &agent_id, "Agent {} not found", agent_id);
+        };
+        let project = state.workspace.lock().await.get(&project_id);
+        let Some(project) = project else {
+            error_ack!(ack, &agent_id, "Agent project is no longer available");
+        };
+        PathBuf::from(project.info.root)
+    };
+
+    // Resolve relative paths against the agent's immutable project root.
+    prepare_prompt_attachments(&prompt, &project_root, &mut attachments);
 
     let mut acp_manager = state.acp_manager.lock().await;
 

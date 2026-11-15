@@ -1,8 +1,8 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { type AcpAgent, type AcpSession, type AcpSessionSummary } from '../../types';
-import { parseAgentDisplayName, resolveAgentDisplay, getAgentAvatar } from '../../agents';
+import { parseAgentDisplayName } from '../../agents';
 import { AgentIcon } from './AgentIcon';
-import { AcpAvatar } from './AcpAvatar';
+import { AcpStartCard, groupAvailableAgents } from './AcpStartCard';
 import { Icons } from '../Icons';
 import { loadSelectedProfiles, saveSelectedProfiles } from '../../storage';
 import { AcpOpenedAgentCard } from './AcpOpenedAgentCard';
@@ -174,213 +174,86 @@ export const AcpEmptyPane: React.FC<AcpEmptyPaneProps> = ({
         <div className="acp-pane-start-agents acp-pane-start-agents-wide">
           <div className="acp-pane-start-agents-title">Start a new agent</div>
           <div className="acp-pane-empty-actions">
-            {(() => {
-              // Group available agents by baseName
-              interface AgentGroup {
-                baseName: string;
-                defaultAgent: AcpAgent;
-                profiles: { agent: AcpAgent; profileName: string }[];
-              }
-              const groupsMap = new Map<string, AgentGroup>();
-
-              availableAgents.forEach((agent) => {
-                const { baseName, accountName } = resolveAgentDisplay(agent, availableAgents);
-                let group = groupsMap.get(baseName);
-                if (!group) {
-                  group = {
-                    baseName,
-                    defaultAgent: agent,
-                    profiles: [],
-                  };
-                  groupsMap.set(baseName, group);
+            {groupAvailableAgents(availableAgents).map((group) => (
+              <AcpStartCard
+                key={group.baseName}
+                group={group}
+                selectedAgentId={selectedProfiles[group.baseName]}
+                onSelectProfile={handleSelectProfile}
+                onStart={startAgent}
+                disabled={!selectedProjectId}
+                title={
+                  selectedProjectId
+                    ? `Start ${group.baseName} in ${selectedProject?.name ?? 'selected project'}`
+                    : 'Select a project before starting an agent'
                 }
-                const profileLabel = accountName || 'Default';
-                group.profiles.push({ agent, profileName: profileLabel });
-              });
-
-              return Array.from(groupsMap.values()).map((group) => {
-                const hasMultipleProfiles = group.profiles.length > 1;
-                const hasSingleProfileWithAccount = group.profiles.length === 1 && group.profiles[0].profileName !== 'Default';
-                const selectedAgent = selectedProfiles[group.baseName]
-                  ? group.profiles.find((p) => p.agent.id === selectedProfiles[group.baseName])?.agent || group.defaultAgent
-                  : group.defaultAgent;
-
-                const authorsLabel = selectedAgent.authors?.filter((author) => author.trim()).join(', ');
-                const baseLower = group.baseName.toLowerCase();
-
-                const rawDescription =
-                  selectedAgent.description ||
-                  (baseLower.includes('antigravity')
-                    ? "Google's AI coding agent"
-                    : baseLower.includes('codex')
-                    ? "OpenAI's coding assistant"
-                    : baseLower.includes('claude')
-                    ? "Anthropic's coding assistant"
-                    : null);
-                const descriptionText = rawDescription
-                  ? rawDescription.replace(/\s*\[Profile:[^\]]*\]/gi, '').trim()
-                  : null;
-
-                return (
-                  <div
-                    key={group.baseName}
-                    className="acp-start-card"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      startAgent(selectedAgent);
-                    }}
-                    role="button"
-                    tabIndex={0}
-                    aria-disabled={!selectedProjectId}
-                    onKeyDown={(e) => {
-                      if (e.target !== e.currentTarget) return;
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        startAgent(selectedAgent);
-                      }
-                    }}
-                    title={selectedProjectId ? `Start ${group.baseName} in ${selectedProject?.name ?? 'selected project'}` : 'Select a project before starting an agent'}
-                  >
-                    <div className={`acp-start-card-icon-box ${selectedAgent.avatar || getAgentAvatar(selectedAgent.id, group.baseName) ? 'has-avatar' : ''}`}>
-                      <AcpAvatar
-                        type="agent"
-                        agentId={selectedAgent.id}
-                        agentTitle={group.baseName}
-                        avatar={selectedAgent.avatar}
-                        size={18}
-                      />
-                    </div>
-
-                    <div className="acp-start-card-content">
-                      <div className="acp-start-card-title-row">
-                        <span className="acp-start-card-title">{group.baseName}</span>
-                        {authorsLabel && (
-                          <span className="acp-start-card-authors" title={`Authors: ${authorsLabel}`}>by {authorsLabel}</span>
-                        )}
+                footerExtra={
+                  <>
+                    {projects.length > 1 ? (
+                      <div
+                        className="acp-start-card-project-wrap"
+                        onClick={(event) => event.stopPropagation()}
+                        onPointerDown={(event) => event.stopPropagation()}
+                      >
+                        <svg className="acp-start-card-meta-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                        </svg>
+                        <span className="acp-start-card-project-label">
+                          {selectedProject?.name ?? 'Select project'}
+                        </span>
+                        <span className="acp-start-card-profile-arrow">▾</span>
+                        <select
+                          className="acp-start-card-project-select"
+                          value={selectedProjectId}
+                          onChange={(event) => {
+                            event.stopPropagation();
+                            onSelectProject(event.target.value);
+                          }}
+                          title={selectedProject?.root ?? 'Select the project for this agent'}
+                          aria-label={`Project for ${group.baseName}`}
+                        >
+                          {projects.map((project) => (
+                            <option key={project.id} value={project.id}>{project.name}</option>
+                          ))}
+                        </select>
                       </div>
-
-                      {descriptionText && (
-                        <div className="acp-start-card-desc" title={descriptionText}>
-                          {descriptionText}
-                        </div>
-                      )}
-
-                      <div className="acp-start-card-footer">
-                        {hasMultipleProfiles ? (
-                          <div
-                            className="acp-start-card-profile-wrap"
-                            onClick={(e) => e.stopPropagation()}
-                            onPointerDown={(e) => e.stopPropagation()}
-                          >
-                            <svg className="acp-start-card-meta-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                              <circle cx="12" cy="8" r="4" />
-                              <path d="M20 21a8 8 0 1 0-16 0" />
-                            </svg>
-                            {(() => {
-                              const currentProfileName = group.profiles.find((p) => p.agent.id === selectedAgent.id)?.profileName || selectedAgent.profile || 'Default';
-                              return (
-                                <>
-                                  <span className="acp-start-card-profile-label">{currentProfileName}</span>
-                                  <span className="acp-start-card-profile-arrow">▾</span>
-                                  <select
-                                    className="acp-start-card-profile-select"
-                                    value={selectedAgent.id}
-                                    onChange={(e) => {
-                                      e.stopPropagation();
-                                      handleSelectProfile(group.baseName, e.target.value);
-                                    }}
-                                    title="Select profile"
-                                  >
-                                    {group.profiles.map((p) => (
-                                      <option key={p.agent.id} value={p.agent.id}>
-                                        {p.profileName}
-                                      </option>
-                                    ))}
-                                  </select>
-                                </>
-                              );
-                            })()}
-                          </div>
-                        ) : hasSingleProfileWithAccount ? (
-                          <div className="acp-start-card-profile-static">
-                            <svg className="acp-start-card-meta-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                              <circle cx="12" cy="8" r="4" />
-                              <path d="M20 21a8 8 0 1 0-16 0" />
-                            </svg>
-                            <span>{group.profiles[0].profileName}</span>
-                          </div>
-                        ) : null}
-
-                        {projects.length > 1 ? (
-                          <div
-                            className="acp-start-card-project-wrap"
-                            onClick={(event) => event.stopPropagation()}
-                            onPointerDown={(event) => event.stopPropagation()}
-                          >
-                            <svg className="acp-start-card-meta-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-                            </svg>
-                            <span className="acp-start-card-project-label">
-                              {selectedProject?.name ?? 'Select project'}
-                            </span>
-                            <span className="acp-start-card-profile-arrow">▾</span>
-                            <select
-                              className="acp-start-card-project-select"
-                              value={selectedProjectId}
-                              onChange={(event) => {
-                                event.stopPropagation();
-                                onSelectProject(event.target.value);
-                              }}
-                              title={selectedProject?.root ?? 'Select the project for this agent'}
-                              aria-label={`Project for ${group.baseName}`}
-                            >
-                              {projects.map((project) => (
-                                <option key={project.id} value={project.id}>{project.name}</option>
-                              ))}
-                            </select>
-                          </div>
-                        ) : projects.length === 1 ? (
-                          // A single project has nothing to choose; a static label keeps clicks on the card.
-                          <div className="acp-start-card-profile-static">
-                            <svg className="acp-start-card-meta-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-                            </svg>
-                            <span>{selectedProject?.name ?? 'Select project'}</span>
-                          </div>
-                        ) : null}
-
-                        {onLoadSessions && onResumeSession && (
-                          <button
-                            className="acp-start-card-sessions-btn"
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setActiveSessionsAgent({
-                                agent: selectedAgent,
-                                baseName: group.baseName,
-                              });
-                            }}
-                            title={`Browse ${group.baseName} sessions`}
-                          >
-                            <svg className="acp-start-card-meta-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                              <circle cx="12" cy="12" r="10" />
-                              <polyline points="12 6 12 12 16 14" />
-                            </svg>
-                            <span>Sessions</span>
-                          </button>
-                        )}
+                    ) : projects.length === 1 ? (
+                      // A single project has nothing to choose; a static label keeps clicks on the card.
+                      <div className="acp-start-card-profile-static">
+                        <svg className="acp-start-card-meta-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                        </svg>
+                        <span>{selectedProject?.name ?? 'Select project'}</span>
                       </div>
-                    </div>
+                    ) : null}
 
-                    <div className="acp-start-card-arrow">
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <polyline points="9 18 15 12 9 6" />
-                      </svg>
-                    </div>
-                  </div>
-                );
-              });
-            })()}
+                    {onLoadSessions && onResumeSession && (
+                      <button
+                        className="acp-start-card-sessions-btn"
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const activeAgent = selectedProfiles[group.baseName]
+                            ? group.profiles.find((p) => p.agent.id === selectedProfiles[group.baseName])?.agent || group.defaultAgent
+                            : group.defaultAgent;
+                          setActiveSessionsAgent({
+                            agent: activeAgent,
+                            baseName: group.baseName,
+                          });
+                        }}
+                        title={`Browse ${group.baseName} sessions`}
+                      >
+                        <svg className="acp-start-card-meta-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <circle cx="12" cy="12" r="10" />
+                          <polyline points="12 6 12 12 16 14" />
+                        </svg>
+                        <span>Sessions</span>
+                      </button>
+                    )}
+                  </>
+                }
+              />
+            ))}
           </div>
           {(onOpenSettings || onOpenRegistry) && (
             <div className="acp-pane-settings-wrap">

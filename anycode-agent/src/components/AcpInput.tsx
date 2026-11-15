@@ -101,6 +101,9 @@ interface AcpInputProps {
   agentLabel?: string;
   projectName?: string;
   projectPath?: string;
+  worktreeLabel?: string;
+  diffStats?: { added: number; removed: number; files?: number } | null;
+  onOpenDiff?: () => void;
   onCloseAgent?: () => void;
   isConnected: boolean;
   isStarting?: boolean;
@@ -130,6 +133,9 @@ const AcpInputComponent: React.FC<AcpInputProps> = ({
   agentLabel,
   projectName,
   projectPath,
+  worktreeLabel,
+  diffStats,
+  onOpenDiff,
   isConnected,
   isStarting = false,
   isProcessing = false,
@@ -885,8 +891,7 @@ const AcpInputComponent: React.FC<AcpInputProps> = ({
   const hasImages = blocks.some((b) => b.type === 'image');
   const canSubmit =
     (hasText || hasQuotes || hasImages || attachments.length > 0) &&
-    isConnected &&
-    !isStarting;
+    isConnected;
 
   const handleSend = React.useCallback(() => {
     if (canSubmit) {
@@ -1080,7 +1085,7 @@ const AcpInputComponent: React.FC<AcpInputProps> = ({
           type="button"
           className="acp-stop-prompt-btn acp-prompt-action-active"
           onClick={onCancel}
-          disabled={!isConnected}
+          disabled={!isConnected || isStarting}
           aria-label="Cancel prompt"
           title="Cancel prompt"
         >
@@ -1093,9 +1098,9 @@ const AcpInputComponent: React.FC<AcpInputProps> = ({
         onClick={handleSend}
         disabled={!canSubmit}
         aria-hidden={isProcessing && !canSubmit}
-        title={isStarting ? `Starting ${agentLabel || 'agent'}…` : isBusy ? 'Queue prompt' : undefined}
+        title={isStarting && !canSubmit ? `Starting ${agentLabel || 'agent'}…` : isStarting ? 'Send when agent is ready' : isBusy ? 'Queue prompt' : undefined}
       >
-        {isStarting ? (
+        {isStarting && !canSubmit ? (
           <span className="acp-input-spinner" />
         ) : (
           <AcpIcons.Send />
@@ -1418,6 +1423,33 @@ const AcpInputComponent: React.FC<AcpInputProps> = ({
               <span className="acp-pane-opened-context-item acp-pane-opened-project acp-input-project-chip" title={projectPath}>
                 <span>{projectName}</span>
               </span>
+            )}
+            {worktreeLabel && (
+              <span
+                className="acp-pane-opened-context-item acp-pane-opened-profile acp-input-worktree-chip"
+                title={projectPath ? `Worktree: ${projectPath}` : `Worktree: ${worktreeLabel}`}
+              >
+                <span>{worktreeLabel}</span>
+              </span>
+            )}
+            {diffStats && (diffStats.added > 0 || diffStats.removed > 0 || (diffStats.files ?? 0) > 0) && (
+              <button
+                type="button"
+                className="acp-input-diff-chip"
+                onClick={onOpenDiff}
+                disabled={!onOpenDiff}
+                title={`Open worktree diff (${diffStats.files ?? 0} changed files)`}
+              >
+                {diffStats.added > 0 && (
+                  <span className="acp-input-diff-added">+{diffStats.added}</span>
+                )}
+                {diffStats.removed > 0 && (
+                  <span className="acp-input-diff-removed">-{diffStats.removed}</span>
+                )}
+                {diffStats.added === 0 && diffStats.removed === 0 && (
+                  <span className="acp-input-diff-neutral">{diffStats.files}f</span>
+                )}
+              </button>
             )}
           </div>
         </div>

@@ -256,6 +256,10 @@ export class LruCache<K, V> {
     }
 }
 
+export type CodeOptions = {
+    fastSyntax?: boolean;
+};
+
 export class Code {
     public filename: string
     private buffer: PieceTreeBase
@@ -268,6 +272,7 @@ export class Code {
     private foldRanges: FoldRange[] = []
     private foldRangesInvalidated: boolean = true;
     private useFastSyntax: boolean = false;
+    private readonly forceFastSyntax: boolean = false;
 
     public runnables: Map<number, any> = new Map()
 
@@ -297,13 +302,17 @@ export class Code {
         return this.versionId;
     }
 
-    constructor(content: string = '', filename: string = '', language: string = 'text') {
+    constructor(content: string = '', filename: string = '', language: string = 'text', options?: CodeOptions) {
         const builder = new PieceTreeTextBufferBuilder();
         builder.acceptChunk(content);
         const pieceTree = builder.finish(true).create(1);
         this.buffer = pieceTree;
         this.language = language;
         this.filename = filename;
+        this.forceFastSyntax = Boolean(options?.fastSyntax);
+        if (this.forceFastSyntax) {
+            this.useFastSyntax = true;
+        }
         this.input = this.input.bind(this);
     }
 
@@ -325,6 +334,12 @@ export class Code {
     }
 
     public async init() {
+        if (this.forceFastSyntax) {
+            this.useFastSyntax = true;
+            this.clearSyntaxState();
+            return;
+        }
+
         if (this.linesLength() > MAX_TREE_SITTER_LINES) {
             this.useFastSyntax = true;
             this.clearSyntaxState();
@@ -989,7 +1004,8 @@ export class Code {
         const lineText = this.line(line) || "\u200B";
 
         if (this.useFastSyntax || !this.language || !this.tree || !this.query) {
-            const lang = this.language || FastSyntaxHighlighter.detectLanguage(this.filename);
+            const detected = this.filename ? FastSyntaxHighlighter.detectLanguage(this.filename) : 'plain';
+            const lang = detected !== 'plain' ? detected : this.language;
             const nodes = FastSyntaxHighlighter.tokenize(lineText, lang);
             const binary = BinaryTokens.encode(nodes);
             this.linesCache.set(line, binary);
@@ -1160,6 +1176,10 @@ export class Code {
 
     public isSameFileBody(_lineA: number, _lineB: number): boolean {
         return true;
+    }
+
+    public hasLineGapBetween(_prevLine: number, _nextLine: number): boolean {
+        return false;
     }
 
     public getAlwaysVisibleLines(_totalLines: number): Set<number> | null {

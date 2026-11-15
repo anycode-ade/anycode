@@ -396,6 +396,9 @@ export interface AgentSessionProps {
   agentAuthors?: string[];
   projectName?: string;
   projectPath?: string;
+  worktreeLabel?: string;
+  diffStats?: { added: number; removed: number; files?: number } | null;
+  onOpenDiff?: () => void;
   isConnected: boolean;
   isProcessing?: boolean;
   isStarting?: boolean;
@@ -448,6 +451,9 @@ const AgentSessionComponent: React.FC<AgentSessionProps> = ({
   agentAuthors,
   projectName,
   projectPath,
+  worktreeLabel,
+  diffStats,
+  onOpenDiff,
   isConnected,
   isProcessing = false,
   isStarting = false,
@@ -752,7 +758,7 @@ const AgentSessionComponent: React.FC<AgentSessionProps> = ({
 
   const handleSend = useCallback((attachments: AcpPromptAttachment[] = [], promptOverride?: string) => {
     const finalPrompt = promptOverride !== undefined ? promptOverride : inputValue.trim();
-    if ((finalPrompt || attachments.length > 0) && isConnected && !isStarting) {
+    if ((finalPrompt || attachments.length > 0) && isConnected && !startError) {
       enableAutoScroll();
       onSendPrompt(agentId, finalPrompt, attachments);
       setInputValues((prev) => {
@@ -766,13 +772,13 @@ const AgentSessionComponent: React.FC<AgentSessionProps> = ({
         };
       });
     }
-  }, [agentId, enableAutoScroll, inputValue, isConnected, isStarting, onSendPrompt]);
+  }, [agentId, enableAutoScroll, inputValue, isConnected, startError, onSendPrompt]);
 
   // useEvent keeps the identity stable; handleSend changes on every keystroke (it reads the draft).
   const handleSelectTemplate = useEvent((template: AgentPromptTemplate, sendImmediately = true) => {
     const promptText = (template.text || template.prompt || template.label || template.title || '').trim();
     if (!promptText) return;
-    if (sendImmediately && isConnected && !isStarting && !isProcessing) {
+    if (sendImmediately && isConnected && !startError && !isProcessing) {
       handleSend([], promptText);
     } else {
       handleInputChange(promptText);
@@ -990,7 +996,7 @@ const AgentSessionComponent: React.FC<AgentSessionProps> = ({
           onKeyUp={handleCheckMessagesSelection}
         >
           <div className="acp-messages-inner" ref={innerRef}>
-            {isStarting && (
+            {isStarting && messages.length === 0 && !startError && (
               <div className="acp-session-starting" role="status" aria-live="polite">
                 <div className="acp-session-starting-content">
                   <div className="acp-session-starting-icon-container">
@@ -998,11 +1004,7 @@ const AgentSessionComponent: React.FC<AgentSessionProps> = ({
                   </div>
                   <div className="acp-session-starting-title">Starting {title}…</div>
                   <div className="acp-session-starting-status">Connecting to ACP server and preparing session</div>
-                  <div className="acp-session-starting-dots" aria-hidden="true">
-                    <span />
-                    <span />
-                    <span />
-                  </div>
+                  <div className="acp-session-starting-spinner" aria-hidden="true" />
                 </div>
               </div>
             )}
@@ -1025,7 +1027,7 @@ const AgentSessionComponent: React.FC<AgentSessionProps> = ({
                 </div>
               </div>
             )}
-            {!isStarting && !startError && (
+            {!startError && (!isStarting || messages.length > 0) && (
               <AcpMessages
                 emptyState={renderedEmptyState}
                 messages={messages}
@@ -1062,6 +1064,9 @@ const AgentSessionComponent: React.FC<AgentSessionProps> = ({
               agentLabel={title}
               projectName={projectName}
               projectPath={projectPath}
+              worktreeLabel={worktreeLabel}
+              diffStats={diffStats}
+              onOpenDiff={onOpenDiff}
               onCloseAgent={handleCloseAgent}
               isConnected={isConnected && !authRequired}
               isStarting={isStarting}

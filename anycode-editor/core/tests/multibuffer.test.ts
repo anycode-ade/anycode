@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { Code } from '../src/code';
-import { MultiBufferCode } from '../src/multibuffer';
+import { MultiBufferCode, buildHunkDiffBuffers } from '../src/multibuffer';
+import { DiffRenderer } from '../src/renderer/DiffRenderer';
 import { Selection } from '../src/selection';
 import { setWasmBasePath } from '../src/utils';
 import * as path from 'path';
@@ -548,5 +549,75 @@ describe('MultiBufferCode header layout', () => {
 
     it('is null for plain code', () => {
         expect(new Code('a\nb', 'plain.ts', '').getHeaderLayout()).toBeNull();
+    });
+});
+
+describe('buildHunkDiffBuffers and fastSyntax', () => {
+    it('skips tree-sitter when fastSyntax is true and tokenizes lines cleanly', async () => {
+        const code = new Code('const value = 42;\nreturn value;', 'sample.ts', 'typescript', { fastSyntax: true });
+        await code.init();
+        expect((code as any).tree).toBeUndefined();
+        const nodes = code.getLineNodes(0);
+        expect(nodes.some((n) => n.name === 'keyword' && n.text === 'const')).toBe(true);
+    });
+
+    it('builds hunk-only buffers with real line numbers, gap boundaries, and independent per-hunk diffs', async () => {
+        const built = buildHunkDiffBuffers('src/app.ts', 'typescript', [
+            {
+                oldStart: 10,
+                newStart: 10,
+                lines: [
+                    { kind: 'context', text: 'const a = 1;' },
+                    { kind: 'del', text: 'const b = 2;' },
+                    { kind: 'add', text: 'const b = 20;' },
+                    { kind: 'context', text: 'const c = 3;' },
+                ],
+            },
+            {
+                oldStart: 100,
+                newStart: 100,
+                lines: [
+                    { kind: 'context', text: 'function run() {' },
+                    { kind: 'add', text: '    console.log("ok");' },
+                    { kind: 'context', text: '}' },
+                ],
+            },
+        ]);
+
+        await built.code.init();
+        await built.originalCode.init();
+
+        const multibuffer = new MultiBufferCode([
+            {
+                id: 'src/app.ts',
+                path: 'src/app.ts',
+                readOnly: true,
+                code: built.code,
+                originalCode: built.originalCode,
+                lineNumbers: built.lineNumbers,
+                originalLineNumbers: built.originalLineNumbers,
+                prebuiltDiff: built.prebuiltDiff,
+            },
+        ]);
+
+        expect(multibuffer.getMultibufferLineNumber(1)).toBe(9);
+        expect(multibuffer.getMultibufferLineNumber(3)).toBe(11);
+        expect(multibuffer.getMultibufferLineNumber(4)).toBe(99);
+        expect(multibuffer.hasLineGapBetween(3, 4)).toBe(true);
+        expect(multibuffer.hasLineGapBetween(1, 2)).toBe(false);
+        expect(multibuffer.isSameFileBody(3, 4)).toBe(false);
+
+        const diffs = multibuffer.getMultibufferDiffs();
+        expect(diffs.added).toBe(2);
+        expect(diffs.removed).toBe(1);
+        expect(diffs.getHunks()).toHaveLength(2);
+
+        const diffRenderer = new DiffRenderer({} as any, {} as any, {} as any, {} as any);
+        diffRenderer.setFocusedDiffMode(true, 1);
+        const ranges = diffRenderer.computeVisibleRanges(multibuffer.linesLength(), diffs, multibuffer);
+        expect(ranges).toBeDefined();
+        expect(ranges!.length).toBe(2);
+        expect(ranges![0].end).toBe(3);
+        expect(ranges![1].start).toBe(4);
     });
 });

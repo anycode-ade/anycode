@@ -30,49 +30,8 @@ pub async fn handle_workspace_add_project(
         return;
     };
 
-    let _lifecycle = state.workspace_lifecycle.lock().await;
-    let project_root = state.workspace.lock().await.starting_directory();
-    let requested_path = PathBuf::from(&path);
-    let requested_path = if requested_path.is_absolute() {
-        requested_path
-    } else {
-        project_root.join(requested_path)
-    };
-    let canonical_path = match canonical_directory(&requested_path) {
-        Ok(path) => path,
-        Err(error) => {
-            send_response(ack, Err(error));
-            return;
-        }
-    };
-    let already_present = state
-        .workspace
-        .lock()
-        .await
-        .get(&canonical_path.to_string_lossy())
-        .is_some();
-    let project_info = match project_info_for_path(&canonical_path) {
-        Ok(info) => info,
-        Err(error) => {
-            send_response(ack, Err(error));
-            return;
-        }
-    };
-    if let Err(error) = state
-        .send_project_watch_command(|reply| {
-            crate::background_tasks::ProjectWatchCommand::Add(project_info, reply)
-        })
-        .await
-    {
-        send_response(ack, Err(error));
-        return;
-    }
-    let info = {
-        let mut workspace = state.workspace.lock().await;
-        workspace.add_project(&canonical_path)
-    };
-    match info {
-        Ok(project) => {
+    match add_project_to_workspace(&state, &path).await {
+        Ok((project, already_present)) => {
             let sid = socket.id.as_str().to_string();
             state
                 .socket2data
@@ -85,21 +44,29 @@ pub async fn handle_workspace_add_project(
                 let _ = socket
                     .broadcast()
                     .emit("workspace:project-added", &project);
+                state.node_hub.broadcast_servers(&state).await;
             }
             send_response(ack, workspace_state(&socket, &state).await);
         }
-        Err(error) => {
-            if !already_present {
-                let _ = state
-                    .send_project_watch_command(|reply| {
-                        crate::background_tasks::ProjectWatchCommand::Remove(
-                            canonical_path.to_string_lossy().into_owned(),
-                            reply,
-                        )
-                    })
-                    .await;
-            }
-            send_response(ack, Err(error));
+        Err(error) => send_response(ack, Err(error)),
+    }
+}
+
+pub(crate) async fn close_terminals_for_project(state: &AppState, project_id: Option<&str>) {
+    let to_close = {
+        let mut terminals = state.terminals.lock().await;
+        let keys: Vec<String> = terminals
+            .iter()
+            .filter(|(_, t)| project_id.is_none_or(|pid| t.project_id == pid))
+            .map(|(k, _)| k.clone())
+            .collect();
+        keys.into_iter()
+            .filter_map(|k| terminals.remove(&k))
+            .collect::<Vec<_>>()
+    };
+    for terminal_data in to_close {
+        if let Err(err) = terminal_data.terminal.kill().await {
+            tracing::warn!("Failed to kill project terminal during close: {}", err);
         }
     }
 }
@@ -111,21 +78,6 @@ pub async fn handle_workspace_remove_project(
     state: State<AppState>,
 ) {
     let _lifecycle = state.workspace_lifecycle.lock().await;
-    let has_running_terminal = state
-        .terminals
-        .lock()
-        .await
-        .values()
-        .any(|terminal| terminal.project_id == request.project_id);
-    if has_running_terminal {
-        send_response(
-            ack,
-            Err(anyhow::anyhow!(
-                "Close this project's running terminals before removing it"
-            )),
-        );
-        return;
-    }
     if state
         .agent_project_ids
         .lock()
@@ -160,6 +112,7 @@ pub async fn handle_workspace_remove_project(
     };
     match result {
         Ok(project) => {
+            close_terminals_for_project(&state, Some(&request.project_id)).await;
             let root = PathBuf::from(&project.root);
             if let Some(project_runtime) = project_runtime {
                 project_runtime.lsp.lock().await.stop_all().await;
@@ -193,6 +146,7 @@ pub async fn handle_workspace_remove_project(
             let _ = socket
                 .broadcast()
                 .emit("workspace:project-removed", &json!({ "project_id": request.project_id }));
+            state.node_hub.broadcast_servers(&state).await;
             send_response(ack, workspace_state(&socket, &state).await);
         }
         Err(error) => send_response(ack, Err(error)),
@@ -238,15 +192,6 @@ pub async fn handle_workspace_close(
     state: State<AppState>,
 ) {
     let _lifecycle = state.workspace_lifecycle.lock().await;
-    if !state.terminals.lock().await.is_empty() {
-        send_response(
-            ack,
-            Err(anyhow::anyhow!(
-                "Close running terminals before closing this workspace"
-            )),
-        );
-        return;
-    }
     if !state.agent_project_ids.lock().await.is_empty() {
         send_response(
             ack,
@@ -319,6 +264,7 @@ pub async fn handle_workspace_close(
     for project in &runtime_projects {
         project.lsp.lock().await.stop_all().await;
     }
+    close_terminals_for_project(&state, None).await;
 
     let roots = removed
         .iter()
@@ -362,46 +308,33 @@ pub async fn handle_workspace_close(
         "workspace:closed",
         &json!({ "project_ids": project_ids }),
     );
+    state.node_hub.broadcast_servers(&state).await;
     send_response(ack, workspace_state(&socket, &state).await);
 }
 
-pub async fn handle_workspace_browse(
-    Data(request): Data<BrowseRequest>,
-    ack: AckSender,
-    state: State<AppState>,
-) {
+pub(crate) async fn browse_workspace_dir(
+    state: &AppState,
+    path: Option<String>,
+) -> anyhow::Result<Value> {
     let default_path = state.workspace.lock().await.starting_directory();
-    let requested = request
-        .path
-        .filter(|path| !path.trim().is_empty())
-        .map(|path| {
-            let path = PathBuf::from(path);
-            if path.is_absolute() {
-                path
+    let requested = path
+        .filter(|p| !p.trim().is_empty())
+        .map(|p| {
+            let p = PathBuf::from(p);
+            if p.is_absolute() {
+                p
             } else {
-                default_path.join(path)
+                default_path.join(p)
             }
         })
         .unwrap_or(default_path);
-    let path = match canonical_directory(&requested) {
-        Ok(path) => path,
-        Err(error) => {
-            send_response(ack, Err(error));
-            return;
-        }
-    };
-    let (directories, _) = match list_directory_entries(&path) {
-        Ok(entries) => entries,
-        Err(error) => {
-            send_response(ack, Err(error));
-            return;
-        }
-    };
+    let path = canonical_directory(&requested)?;
+    let (directories, _) = list_directory_entries(&path)?;
     let parent = path
         .parent()
         .filter(|parent| *parent != path)
         .map(|parent| parent.to_string_lossy().into_owned());
-    let result = json!({
+    Ok(json!({
         "path": path.to_string_lossy(),
         "name": path.file_name().and_then(|name| name.to_str()).unwrap_or("/"),
         "parent": parent,
@@ -409,8 +342,91 @@ pub async fn handle_workspace_browse(
             .into_iter()
             .map(|(name, path)| json!({ "name": name, "path": path }))
             .collect::<Vec<_>>(),
-    });
-    send_response(ack, Ok(result));
+    }))
+}
+
+pub(crate) async fn add_project_to_workspace(
+    state: &AppState,
+    path: &str,
+) -> anyhow::Result<(crate::workspace::ProjectInfo, bool)> {
+    let _lifecycle = state.workspace_lifecycle.lock().await;
+    let project_root = state.workspace.lock().await.starting_directory();
+    let requested_path = PathBuf::from(path);
+    let requested_path = if requested_path.is_absolute() {
+        requested_path
+    } else {
+        project_root.join(requested_path)
+    };
+    let canonical_path = canonical_directory(&requested_path)?;
+    let already_present = state
+        .workspace
+        .lock()
+        .await
+        .get(&canonical_path.to_string_lossy())
+        .is_some();
+    let project_info = project_info_for_path(&canonical_path)?;
+    state
+        .send_project_watch_command(|reply| {
+            crate::background_tasks::ProjectWatchCommand::Add(project_info, reply)
+        })
+        .await?;
+    let info = {
+        let mut workspace = state.workspace.lock().await;
+        workspace.add_project(&canonical_path)
+    };
+    match info {
+        Ok(project) => Ok((project, already_present)),
+        Err(error) => {
+            if !already_present {
+                let _ = state
+                    .send_project_watch_command(|reply| {
+                        crate::background_tasks::ProjectWatchCommand::Remove(
+                            canonical_path.to_string_lossy().into_owned(),
+                            reply,
+                        )
+                    })
+                    .await;
+            }
+            Err(error)
+        }
+    }
+}
+
+pub(crate) async fn workspace_state_snapshot(
+    state: &AppState,
+    active_project_id: Option<String>,
+) -> Value {
+    let (projects, recent_workspaces, default_project_id) = {
+        let workspace = state.workspace.lock().await;
+        (
+            workspace.projects(),
+            workspace.recent_workspaces().to_vec(),
+            workspace.default_project_id(),
+        )
+    };
+    let recent = recent_workspaces
+        .iter()
+        .map(|item| {
+            json!({
+                "path": item.path,
+                "name": item.name,
+                "last_opened": item.last_opened,
+            })
+        })
+        .collect::<Vec<_>>();
+    json!({
+        "projects": projects,
+        "active_project_id": active_project_id.or(default_project_id),
+        "recent_workspaces": recent,
+    })
+}
+
+pub async fn handle_workspace_browse(
+    Data(request): Data<BrowseRequest>,
+    ack: AckSender,
+    state: State<AppState>,
+) {
+    send_response(ack, browse_workspace_dir(&state, request.path).await);
 }
 
 #[derive(Debug, Deserialize)]
@@ -432,31 +448,6 @@ pub async fn handle_workspace_remove_recent(
 }
 
 async fn workspace_state(socket: &SocketRef, state: &State<AppState>) -> anyhow::Result<Value> {
-    let (projects, recent_workspaces, default_project_id) = {
-        let workspace = state.workspace.lock().await;
-        (
-            workspace.projects(),
-            workspace.recent_workspaces().to_vec(),
-            workspace.default_project_id(),
-        )
-    };
-    let recent = recent_workspaces
-        .iter()
-        .map(|item| {
-            json!({
-                "path": item.path,
-                "name": item.name,
-                "last_opened": item.last_opened,
-            })
-        })
-        .collect::<Vec<_>>();
-    let active_project_id = state
-        .active_project_id(socket.id.as_str())
-        .await
-        .or(default_project_id);
-    Ok(json!({
-        "projects": projects,
-        "active_project_id": active_project_id,
-        "recent_workspaces": recent,
-    }))
+    let active_project_id = state.active_project_id(socket.id.as_str()).await;
+    Ok(workspace_state_snapshot(state, active_project_id).await)
 }

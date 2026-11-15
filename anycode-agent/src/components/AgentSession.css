@@ -329,10 +329,11 @@
 .acp-auth-spinner {
     width: 16px;
     height: 16px;
-    border: 2px solid rgba(255, 255, 255, 0.25);
+    box-sizing: border-box;
+    border: 2px solid rgba(255, 255, 255, 0.22);
     border-radius: 50%;
-    border-top-color: #60a5fa;
-    animation: acp-spin 0.8s linear infinite;
+    border-top-color: var(--theme-accent-background, #60a5fa);
+    animation: acp-spin 0.75s linear infinite;
 }
 
 @keyframes acp-spin {
@@ -420,36 +421,13 @@
     border: 1px solid rgba(239, 68, 68, 0.2);
 }
 
-.acp-session-starting-dots {
-    display: flex;
-    gap: 6px;
-    align-items: center;
+.acp-session-starting-spinner {
+    width: 18px;
+    height: 18px;
     margin-top: 4px;
-}
-
-.acp-session-starting-dots span {
-    width: 6px;
-    height: 6px;
+    box-sizing: border-box;
+    border: 2px solid rgba(255, 255, 255, 0.22);
     border-radius: 50%;
-    background: #60a5fa;
-    animation: acp-dot-pulse 1.4s ease-in-out infinite;
-}
-
-.acp-session-starting-dots span:nth-child(2) {
-    animation-delay: 0.2s;
-}
-
-.acp-session-starting-dots span:nth-child(3) {
-    animation-delay: 0.4s;
-}
-
-@keyframes acp-dot-pulse {
-    0%, 100% {
-        opacity: 0.2;
-        transform: scale(0.8);
-    }
-    50% {
-        opacity: 1;
-        transform: scale(1.2);
-    }
+    border-top-color: var(--theme-accent-background, #60a5fa);
+    animation: acp-spin 0.75s linear infinite;
 }

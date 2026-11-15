@@ -324,8 +324,9 @@ export class DiffRenderer {
         for (let i = 1; i < rawRanges.length; i++) {
             const current = rawRanges[i];
             const prev = merged[merged.length - 1];
+            const hasExplicitGap = code?.hasLineGapBetween?.(prev.end, current.start) ?? false;
 
-            if (current.start <= prev.end + 1) {
+            if (!hasExplicitGap && current.start <= prev.end + 1) {
                 prev.end = Math.max(prev.end, current.end);
             } else {
                 merged.push(current);
@@ -441,7 +442,9 @@ export class DiffRenderer {
     ): { code: HTMLElement; gutter: HTMLElement; btn: HTMLElement; fold: HTMLElement } {
         const code = document.createElement('div');
         code.className = `${CSS_CLASS.LINE} ${CSS_CLASS.DIFF_GAP}`;
-        code.title = `Click to expand ${row.hiddenCount} hidden ${row.hiddenCount === 1 ? 'line' : 'lines'}`;
+        code.title = row.hiddenEnd >= row.hiddenStart
+            ? `Click to expand ${row.hiddenCount} hidden ${row.hiddenCount === 1 ? 'line' : 'lines'}`
+            : 'Collapsed unchanged lines';
         setGapElementData(code, {
             hiddenStart: row.hiddenStart,
             hiddenEnd: row.hiddenEnd,

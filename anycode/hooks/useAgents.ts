@@ -337,6 +337,11 @@ export const useAgents = ({
     const agentCounterRef = useRef<Map<string, number>>(new Map());
     const acpSessionsRef = useRef<Map<string, AcpSession>>(new Map());
     const closedAgentIdsRef = useRef<Set<string>>(new Set());
+    const startingAgentIdsRef = useRef<Set<string>>(new Set());
+    const pendingPromptsOnStartRef = useRef<Map<string, Array<
+        | { kind: 'primary'; prompt: string; attachments: AcpPromptAttachment[]; clientId: string }
+        | { kind: 'queued'; prompt: string; attachments: AcpPromptAttachment[]; queueTempId: string }
+    >>>(new Map());
     const pendingEventsRef = useRef<PendingAcpEvent[]>([]);
     const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -444,6 +449,8 @@ export const useAgents = ({
     }, []);
 
     const removeAgentFromSessions = useCallback((agentId: string, wasSelected: boolean) => {
+        startingAgentIdsRef.current.delete(agentId);
+        pendingPromptsOnStartRef.current.delete(agentId);
         setAcpSessions((prev) => {
             const newSessions = new Map(prev);
             const sessionToRemove = newSessions.get(agentId);
@@ -1039,6 +1046,67 @@ export const useAgents = ({
         });
     }, [wsRef, isConnected, selectedAgentId]);
 
+    const emitPrimaryPrompt = useCallback((agentId: string, prompt: string, attachments: AcpPromptAttachment[], clientId: string) => {
+        const socket = wsRef.current;
+        if (!socket) return;
+
+        socket.emit('acp:prompt', { agent_id: agentId, prompt, attachments }, (response: any) => {
+            if (response.success) return;
+
+            alert('Failed to send prompt: ' + response.error);
+            updateSession(agentId, (existing) => {
+                if (!existing) return existing;
+                return {
+                    ...existing,
+                    messages: existing.messages.filter((message) => ('client_id' in message ? message.client_id !== clientId : true)),
+                    isProcessing: false,
+                };
+            });
+        });
+    }, [wsRef, updateSession]);
+
+    const emitQueuedPrompt = useCallback((agentId: string, prompt: string, attachments: AcpPromptAttachment[], queueTempId: string) => {
+        const socket = wsRef.current;
+        if (!socket) return;
+
+        socket.emit('acp:prompt', { agent_id: agentId, prompt, attachments }, (response: any) => {
+            if (response.success) {
+                if (response.id) {
+                    updateSession(agentId, (existing) => {
+                        if (!existing) return existing;
+                        return {
+                            ...existing,
+                            queue: existing.queue?.map((q) => q.id === queueTempId ? { ...q, id: response.id } : q),
+                        };
+                    });
+                }
+                return;
+            }
+
+            alert('Failed to queue prompt: ' + response.error);
+            updateSession(agentId, (existing) => {
+                if (!existing) return existing;
+                return {
+                    ...existing,
+                    queue: existing.queue?.filter((q) => q.id !== queueTempId),
+                };
+            });
+        });
+    }, [wsRef, updateSession]);
+
+    const flushPendingPromptsOnStart = useCallback((agentId: string) => {
+        const pending = pendingPromptsOnStartRef.current.get(agentId);
+        if (!pending || pending.length === 0) return;
+        pendingPromptsOnStartRef.current.delete(agentId);
+        for (const item of pending) {
+            if (item.kind === 'primary') {
+                emitPrimaryPrompt(agentId, item.prompt, item.attachments, item.clientId);
+            } else {
+                emitQueuedPrompt(agentId, item.prompt, item.attachments, item.queueTempId);
+            }
+        }
+    }, [emitPrimaryPrompt, emitQueuedPrompt]);
+
     const startAgent = useCallback((agent: AcpAgent | undefined, options?: { resumeSessionId?: string; projectId?: string }) => {
         if (!agent || !wsRef.current || !isConnected) return null;
         const targetProjectId = options?.projectId ?? projectId ?? undefined;
@@ -1046,6 +1114,8 @@ export const useAgents = ({
         const { id, name, command, args, env, profile } = agent;
         const aid = generateAgentId(id);
         closedAgentIdsRef.current.delete(aid);
+        startingAgentIdsRef.current.add(aid);
+        pendingPromptsOnStartRef.current.delete(aid);
 
         // Optimistically create session with isStarting: true
         setAcpSessions((prev) => {
@@ -1077,7 +1147,14 @@ export const useAgents = ({
             resume_session_id: options?.resumeSessionId ?? null,
             project_id: targetProjectId ?? null,
         }, (response: any) => {
+            startingAgentIdsRef.current.delete(aid);
+            if (closedAgentIdsRef.current.has(aid)) {
+                pendingPromptsOnStartRef.current.delete(aid);
+                return;
+            }
+
             if (response.success) {
+                const authRequired = Boolean(response.auth_required);
                 setAcpSessions((prev) => {
                     const newSessions = new Map(prev);
                     const existing = newSessions.get(aid);
@@ -1093,8 +1170,8 @@ export const useAgents = ({
                         isActive: true,
                         isStarting: false,
                         startError: undefined,
-                        isProcessing: existing?.isProcessing ?? false,
-                        authRequired: response.auth_required ? {
+                        isProcessing: authRequired ? false : (existing?.isProcessing ?? false),
+                        authRequired: authRequired ? {
                             methods: response.auth_methods ?? [],
                         } : undefined,
                     });
@@ -1102,7 +1179,14 @@ export const useAgents = ({
                 });
                 setSelectedAgentId(aid);
                 onAgentStarted?.();
+                if (!authRequired) {
+                    flushPendingPromptsOnStart(aid);
+                }
             } else {
+                const dropped = pendingPromptsOnStartRef.current.get(aid);
+                pendingPromptsOnStartRef.current.delete(aid);
+                const droppedClientIds = new Set(dropped?.flatMap((item) => item.kind === 'primary' ? [item.clientId] : []) ?? []);
+                const droppedQueueIds = new Set(dropped?.flatMap((item) => item.kind === 'queued' ? [item.queueTempId] : []) ?? []);
                 const errorMessage = response.error || `Failed to start agent ${aid}`;
                 setAcpSessions((prev) => {
                     const newSessions = new Map(prev);
@@ -1111,7 +1195,14 @@ export const useAgents = ({
                         newSessions.set(aid, {
                             ...existing,
                             isStarting: false,
+                            isProcessing: false,
                             startError: errorMessage,
+                            messages: droppedClientIds.size > 0
+                                ? existing.messages.filter((m) => !('client_id' in m && m.client_id && droppedClientIds.has(m.client_id)))
+                                : existing.messages,
+                            queue: droppedQueueIds.size > 0
+                                ? existing.queue?.filter((q) => !droppedQueueIds.has(q.id))
+                                : existing.queue,
                         });
                     }
                     return newSessions;
@@ -1119,7 +1210,7 @@ export const useAgents = ({
             }
         });
         return aid;
-    }, [wsRef, isConnected, generateAgentId, onAgentStarted, projectId]);
+    }, [wsRef, isConnected, generateAgentId, onAgentStarted, projectId, flushPendingPromptsOnStart]);
 
     const authenticateAgent = useCallback((agentId: string, methodId: string) => {
         if (!wsRef.current || !isConnected) return;
@@ -1140,6 +1231,9 @@ export const useAgents = ({
             agent_id: agentId,
             method_id: methodId,
         }, (response: any) => {
+            const hasPrimaryPending = response.success
+                && (pendingPromptsOnStartRef.current.get(agentId) ?? []).some((item) => item.kind === 'primary');
+
             setAcpSessions((prev) => {
                 const newSessions = new Map(prev);
                 const existing = newSessions.get(agentId);
@@ -1152,6 +1246,7 @@ export const useAgents = ({
                         authRequired: undefined,
                         isAuthenticating: false,
                         pendingAuthMethod: undefined,
+                        isProcessing: hasPrimaryPending ? true : existing.isProcessing,
                     });
                 } else {
                     newSessions.set(agentId, {
@@ -1164,8 +1259,12 @@ export const useAgents = ({
                 }
                 return newSessions;
             });
+
+            if (response.success) {
+                flushPendingPromptsOnStart(agentId);
+            }
         });
-    }, [wsRef, isConnected]);
+    }, [wsRef, isConnected, flushPendingPromptsOnStart]);
 
     const fetchAvailableSessions = useCallback((agent: AcpAgent | undefined, targetProjectId?: string): Promise<AcpSessionSummary[]> => {
         return new Promise((resolve, reject) => {
@@ -1205,7 +1304,9 @@ export const useAgents = ({
         if (!wsRef.current || !isConnected) return;
 
         const currentSession = acpSessionsRef.current.get(agentId);
-        const isProcessing = currentSession?.isProcessing;
+        const isStarting = Boolean(currentSession?.isStarting || startingAgentIdsRef.current.has(agentId));
+        const hasPendingStart = (pendingPromptsOnStartRef.current.get(agentId)?.length ?? 0) > 0;
+        const isProcessing = currentSession?.isProcessing || hasPendingStart;
         const hasQueue = (currentSession?.queue?.length ?? 0) > 0;
 
         if (isProcessing || hasQueue) {
@@ -1224,29 +1325,14 @@ export const useAgents = ({
                 };
             });
 
-            wsRef.current.emit('acp:prompt', { agent_id: agentId, prompt, attachments }, (response: any) => {
-                if (response.success) {
-                    if (response.id) {
-                        updateSession(agentId, (existing) => {
-                            if (!existing) return existing;
-                            return {
-                                ...existing,
-                                queue: existing.queue?.map((q) => q.id === tempQueuedItem.id ? { ...q, id: response.id } : q),
-                            };
-                        });
-                    }
-                    return;
-                }
+            if (isStarting) {
+                const list = pendingPromptsOnStartRef.current.get(agentId) ?? [];
+                list.push({ kind: 'queued', prompt, attachments, queueTempId: tempQueuedItem.id });
+                pendingPromptsOnStartRef.current.set(agentId, list);
+                return;
+            }
 
-                alert('Failed to queue prompt: ' + response.error);
-                updateSession(agentId, (existing) => {
-                    if (!existing) return existing;
-                    return {
-                        ...existing,
-                        queue: existing.queue?.filter((q) => q.id !== tempQueuedItem.id),
-                    };
-                });
-            });
+            emitQueuedPrompt(agentId, prompt, attachments, tempQueuedItem.id);
             return;
         }
 
@@ -1267,20 +1353,15 @@ export const useAgents = ({
             };
         });
 
-        wsRef.current.emit('acp:prompt', { agent_id: agentId, prompt, attachments }, (response: any) => {
-            if (response.success) return;
+        if (isStarting) {
+            const list = pendingPromptsOnStartRef.current.get(agentId) ?? [];
+            list.push({ kind: 'primary', prompt, attachments, clientId });
+            pendingPromptsOnStartRef.current.set(agentId, list);
+            return;
+        }
 
-            alert('Failed to send prompt: ' + response.error);
-            updateSession(agentId, (existing) => {
-                if (!existing) return existing;
-                return {
-                    ...existing,
-                    messages: existing.messages.filter((message) => ('client_id' in message ? message.client_id !== clientId : true)),
-                    isProcessing: false,
-                };
-            });
-        });
-    }, [wsRef, isConnected, updateSession]);
+        emitPrimaryPrompt(agentId, prompt, attachments, clientId);
+    }, [wsRef, isConnected, updateSession, emitPrimaryPrompt, emitQueuedPrompt]);
 
     const updateQueuedPrompt = useCallback((agentId: string, itemId: string, prompt: string) => {
         if (!wsRef.current || !isConnected) return;
@@ -1425,6 +1506,8 @@ export const useAgents = ({
 
     const closeAgent = useCallback((agentId: string) => {
         closedAgentIdsRef.current.add(agentId);
+        startingAgentIdsRef.current.delete(agentId);
+        pendingPromptsOnStartRef.current.delete(agentId);
         const wasSelected = selectedAgentId === agentId;
         const session = acpSessionsRef.current.get(agentId);
 
@@ -1451,6 +1534,8 @@ export const useAgents = ({
                 flushTimerRef.current = null;
             }
             pendingEventsRef.current = [];
+            startingAgentIdsRef.current.clear();
+            pendingPromptsOnStartRef.current.clear();
         };
     }, []);
 

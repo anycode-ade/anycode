@@ -311,8 +311,12 @@ export class Renderer {
             const range = baseIntervals[r];
 
             // Gap before this range?
-            if (focusedRanges !== undefined && range.start > lastRealEnd + 1) {
-                const hiddenStart = lastRealEnd + 1;
+            const hasExplicitGap = focusedRanges !== undefined
+                && lastRealEnd >= 0
+                && range.start === lastRealEnd + 1
+                && code.hasLineGapBetween(lastRealEnd, range.start);
+            if (focusedRanges !== undefined && (range.start > lastRealEnd + 1 || hasExplicitGap)) {
+                const hiddenStart = hasExplicitGap ? range.start : lastRealEnd + 1;
                 const hiddenEnd = range.start - 1;
                 segments.push({
                     kind: 'separator',
@@ -322,10 +326,12 @@ export class Renderer {
                 });
                 currentVisualIndex += 1;
 
-                if (lastRealEnd >= 0) {
-                    gapAfterMap.set(lastRealEnd, { hiddenStart, hiddenEnd });
+                if (!hasExplicitGap) {
+                    if (lastRealEnd >= 0) {
+                        gapAfterMap.set(lastRealEnd, { hiddenStart, hiddenEnd });
+                    }
+                    gapBeforeMap.set(range.start, { hiddenStart, hiddenEnd });
                 }
-                gapBeforeMap.set(range.start, { hiddenStart, hiddenEnd });
             }
 
             // Real lines within this range (handling folds and ghosts)

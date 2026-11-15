@@ -3,6 +3,125 @@ import { BinaryTokens } from './tokens';
 import { Selection } from './selection';
 import { computeGitChangesWithStats, type DiffHunk, DiffModel } from './diff';
 
+export type DiffHunkLineKind = 'context' | 'add' | 'del';
+
+export type DiffHunkLine = {
+    kind: DiffHunkLineKind;
+    text: string;
+};
+
+export type DiffHunkInput = {
+    oldStart: number;
+    newStart: number;
+    lines: DiffHunkLine[];
+};
+
+export type HunkDiffBuffers = {
+    code: Code;
+    originalCode: Code;
+    lineNumbers: number[];
+    originalLineNumbers: number[];
+    prebuiltDiff: {
+        diffs: DiffModel;
+        added: number;
+        removed: number;
+    };
+};
+
+/**
+ * Builds fast-syntax Code buffers and an accurate per-hunk DiffModel + line-number maps
+ * from git diff hunks without transferring full files or running Tree-Sitter WASM.
+ */
+export function buildHunkDiffBuffers(
+    path: string,
+    language: string,
+    hunks: readonly DiffHunkInput[],
+    fallbackAdded?: number,
+    fallbackRemoved?: number,
+): HunkDiffBuffers {
+    const allNewLines: string[] = [];
+    const allNewLineNumbers: number[] = [];
+    const allOldLines: string[] = [];
+    const allOldLineNumbers: number[] = [];
+    const allDiffHunks: DiffHunk[] = [];
+    let added = 0;
+    let removed = 0;
+    let nextHunkId = 0;
+
+    for (const hunk of hunks) {
+        const hunkOldLines: string[] = [];
+        const hunkNewLines: string[] = [];
+        let oldCursor = Math.max(0, hunk.oldStart - 1);
+        let newCursor = Math.max(0, hunk.newStart - 1);
+        const oldBaseOffset = allOldLines.length;
+        const newBaseOffset = allNewLines.length;
+
+        for (const line of hunk.lines) {
+            if (line.kind === 'context') {
+                hunkOldLines.push(line.text);
+                allOldLines.push(line.text);
+                allOldLineNumbers.push(oldCursor++);
+                hunkNewLines.push(line.text);
+                allNewLines.push(line.text);
+                allNewLineNumbers.push(newCursor++);
+            } else if (line.kind === 'del') {
+                hunkOldLines.push(line.text);
+                allOldLines.push(line.text);
+                allOldLineNumbers.push(oldCursor++);
+            } else if (line.kind === 'add') {
+                hunkNewLines.push(line.text);
+                allNewLines.push(line.text);
+                allNewLineNumbers.push(newCursor++);
+            }
+        }
+
+        const result = computeGitChangesWithStats(hunkOldLines, hunkNewLines);
+        added += result.added;
+        removed += result.removed;
+
+        for (const diffHunk of result.diffs.getHunks()) {
+            allDiffHunks.push({
+                ...diffHunk,
+                hunkId: nextHunkId++,
+                startLine: diffHunk.startLine + newBaseOffset,
+                ghostAnchorLine: diffHunk.ghostAnchorLine !== undefined
+                    ? diffHunk.ghostAnchorLine + newBaseOffset
+                    : undefined,
+                oldLineNumbers: diffHunk.oldLineNumbers?.map((line) => line + oldBaseOffset),
+            });
+        }
+    }
+
+    const totalNewLineCount = Math.max(1, allNewLines.length);
+    for (let i = 0; i < allDiffHunks.length; i++) {
+        if (allDiffHunks[i].changeType === 'deleted' && allDiffHunks[i].startLine > totalNewLineCount) {
+            allDiffHunks[i] = {
+                ...allDiffHunks[i],
+                startLine: totalNewLineCount,
+            };
+        }
+    }
+
+    if (allNewLines.length === 0) {
+        allNewLineNumbers.push(0);
+    }
+
+    const effectiveAdded = fallbackAdded ?? added;
+    const effectiveRemoved = fallbackRemoved ?? removed;
+
+    return {
+        code: new Code(allNewLines.join('\n'), path, language, { fastSyntax: true }),
+        originalCode: new Code(allOldLines.join('\n'), path, language, { fastSyntax: true }),
+        lineNumbers: allNewLineNumbers,
+        originalLineNumbers: allOldLineNumbers,
+        prebuiltDiff: {
+            diffs: new DiffModel(allDiffHunks, effectiveAdded, effectiveRemoved),
+            added: effectiveAdded,
+            removed: effectiveRemoved,
+        },
+    };
+}
+
 export type MultiBufferEntry = {
     id: string;
     path: string;
@@ -11,6 +130,13 @@ export type MultiBufferEntry = {
     added?: number;
     removed?: number;
     readOnly?: boolean;
+    lineNumbers?: number[];
+    originalLineNumbers?: number[];
+    prebuiltDiff?: {
+        diffs: DiffModel;
+        added: number;
+        removed: number;
+    };
     code: Code;
     originalCode: Code;
 };
@@ -164,6 +290,18 @@ export class MultiBufferCode extends Code {
         this.indexDirty = true;
     }
 
+    public async replaceEntry(fileId: string, nextEntry: MultiBufferEntry): Promise<boolean> {
+        const index = this.entries.findIndex((entry) => entry.id === fileId);
+        if (index < 0) return false;
+        this.entries[index] = nextEntry;
+        this.fileVersions[index] += 1;
+        this.headerPaths[index] = formatEntryHeaderPath(nextEntry);
+        this.fileDiffs.delete(fileId);
+        await nextEntry.originalCode.init();
+        this.indexDirty = true;
+        return true;
+    }
+
     public setOnFileChange(callback: ((change: MultiBufferFileChange) => void) | null): void {
         this.onFileChangeCallback = callback;
     }
@@ -187,7 +325,12 @@ export class MultiBufferCode extends Code {
         this.ensureIndex();
         const fileRange = this.findFileRangeByLine(line);
         if (!fileRange || line === fileRange.headerLine) return null;
-        return line - fileRange.bodyStartLine;
+        const localLine = line - fileRange.bodyStartLine;
+        const entry = this.entries[fileRange.fileIndex];
+        if (entry?.lineNumbers && localLine >= 0 && localLine < entry.lineNumbers.length) {
+            return entry.lineNumbers[localLine];
+        }
+        return localLine;
     }
 
     public getMultibufferLineForLocalLine(fileId: string, localLine: number): number | null {
@@ -369,7 +512,39 @@ export class MultiBufferCode extends Code {
         const fileRangeB = this.findFileRangeByLine(lineB);
         if (!fileRangeA || !fileRangeB) return false;
         if (lineA === fileRangeA.headerLine || lineB === fileRangeB.headerLine) return false;
-        return fileRangeA.fileIndex === fileRangeB.fileIndex;
+        if (fileRangeA.fileIndex !== fileRangeB.fileIndex) return false;
+        const entry = this.entries[fileRangeA.fileIndex];
+        if (entry?.lineNumbers) {
+            const localA = lineA - fileRangeA.bodyStartLine;
+            const localB = lineB - fileRangeA.bodyStartLine;
+            if (
+                localA >= 0 && localA < entry.lineNumbers.length &&
+                localB >= 0 && localB < entry.lineNumbers.length
+            ) {
+                return entry.lineNumbers[localB] - entry.lineNumbers[localA] === lineB - lineA;
+            }
+        }
+        return true;
+    }
+
+    public override hasLineGapBetween(prevLine: number, nextLine: number): boolean {
+        this.ensureIndex();
+        if (nextLine !== prevLine + 1) return false;
+        const fileRangeA = this.findFileRangeByLine(prevLine);
+        const fileRangeB = this.findFileRangeByLine(nextLine);
+        if (!fileRangeA || !fileRangeB || fileRangeA.fileIndex !== fileRangeB.fileIndex) return false;
+        if (prevLine === fileRangeA.headerLine || nextLine === fileRangeB.headerLine) return false;
+        const entry = this.entries[fileRangeA.fileIndex];
+        if (!entry?.lineNumbers) return false;
+        const localPrev = prevLine - fileRangeA.bodyStartLine;
+        const localNext = nextLine - fileRangeA.bodyStartLine;
+        if (
+            localPrev < 0 || localPrev >= entry.lineNumbers.length ||
+            localNext < 0 || localNext >= entry.lineNumbers.length
+        ) {
+            return false;
+        }
+        return entry.lineNumbers[localNext] !== entry.lineNumbers[localPrev] + 1;
     }
 
     public isMultibufferSameFileBody(lineA: number, lineB: number): boolean {
@@ -984,6 +1159,14 @@ export class MultiBufferCode extends Code {
         const entry = this.entries[fileIndex];
         if (!entry) return { version: 0, diffs: DiffModel.empty(), added: 0, removed: 0 };
         const version = this.fileVersions[fileIndex];
+        if (entry.prebuiltDiff) {
+            return {
+                version,
+                diffs: entry.prebuiltDiff.diffs,
+                added: entry.added ?? entry.prebuiltDiff.added,
+                removed: entry.removed ?? entry.prebuiltDiff.removed,
+            };
+        }
         let cached = this.fileDiffs.get(entry.id);
         if (!cached || cached.version !== version) {
             const originalLines = entry.originalCode ? entry.originalCode.getLines() : entry.code.getLines();
