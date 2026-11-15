@@ -2287,18 +2287,18 @@ pub struct PullGitBundleResponse {
     pub ref_name: Option<String>,
 }
 
-struct CloudRefGuard<'a> {
+struct RemoteRefGuard<'a> {
     repo_dir: &'a Path,
     ref_name: String,
 }
 
-impl<'a> CloudRefGuard<'a> {
+impl<'a> RemoteRefGuard<'a> {
     fn new(repo_dir: &'a Path, ref_name: String) -> Self {
         Self { repo_dir, ref_name }
     }
 }
 
-impl Drop for CloudRefGuard<'_> {
+impl Drop for RemoteRefGuard<'_> {
     fn drop(&mut self) {
         if !self.ref_name.is_empty() {
             let mut cmd = git_command();
@@ -2380,7 +2380,15 @@ fn validate_safe_rel_path(rel_str: &str) -> Result<PathBuf> {
 }
 
 fn sync_metadata_path(git_dir: &Path) -> PathBuf {
-    git_dir.join("anycode-cloud-sync.json")
+    let modern = git_dir.join("anycode-remote-sync.json");
+    if modern.exists() {
+        return modern;
+    }
+    let legacy = git_dir.join("anycode-cloud-sync.json");
+    if legacy.exists() {
+        return legacy;
+    }
+    modern
 }
 
 fn resolve_git_dir(repo_dir: &Path) -> Result<PathBuf> {
@@ -2676,7 +2684,7 @@ pub fn apply_git_sync_from_bundle_file(
     }
 
     let staging_ref = "refs/anycode-sync/head";
-    let _staging_guard = CloudRefGuard::new(target_path, staging_ref.to_string());
+    let _staging_guard = RemoteRefGuard::new(target_path, staging_ref.to_string());
     let head_refspec = format!("HEAD:{}", staging_ref);
     run_git_checked(target_path, &["fetch", &bundle_str, &head_refspec], &[])?;
 
@@ -3457,7 +3465,7 @@ pub fn build_pull_bundle_to_file(
         std::process::id(),
         unix_epoch_secs()
     );
-    let _ref_guard = CloudRefGuard::new(repo_dir, ref_name.clone());
+    let _ref_guard = RemoteRefGuard::new(repo_dir, ref_name.clone());
     run_git_checked(repo_dir, &["update-ref", &ref_name, &final_sha], &[])?;
 
     let tmp_bundle = tempfile::NamedTempFile::new()?;
@@ -3592,7 +3600,7 @@ fn pick_available_branch(
 
     let base = sanitize_slug(default_base, true);
     let base = if base.is_empty() || !git_ok(repo_dir, &["check-ref-format", "--branch", &base]) {
-        format!("cloud/pull-{}", unix_epoch_secs())
+        format!("remote/pull-{}", unix_epoch_secs())
     } else {
         base
     };
@@ -3674,11 +3682,11 @@ pub fn apply_pull_bundle_file_to_worktree(
     let bundle_str = bundle_path.to_string_lossy().into_owned();
 
     let staging_ref = format!(
-        "refs/anycode-cloud-stage/pull-{}-{}",
+        "refs/anycode-remote-stage/pull-{}-{}",
         std::process::id(),
         unix_epoch_secs()
     );
-    let _staging_guard = CloudRefGuard::new(local_repo_root, staging_ref.clone());
+    let _staging_guard = RemoteRefGuard::new(local_repo_root, staging_ref.clone());
     let refspec = format!("{}:{}", remote_ref, staging_ref);
     run_git_checked(local_repo_root, &["fetch", &bundle_str, &refspec], &[])?;
 
@@ -3690,7 +3698,7 @@ pub fn apply_pull_bundle_file_to_worktree(
         .filter(|s| !s.trim().is_empty())
         .unwrap_or(project_name);
     let stamp = chrono::Local::now().format("%m%d-%H%M%S");
-    let default_branch = format!("cloud/{}/{}-{}", srv_slug, base_label, stamp);
+    let default_branch = format!("remote/{}/{}-{}", srv_slug, base_label, stamp);
 
     let branch = pick_available_branch(local_repo_root, requested_branch, &default_branch)?;
     let worktree_path = pick_worktree_path(

@@ -627,7 +627,7 @@ fn benchmark_status_real() {
 }
 
 #[test]
-fn cloud_git_sync_and_pull_worktree_roundtrip_with_commits_and_wip() {
+fn remote_git_sync_and_pull_worktree_roundtrip_with_commits_and_wip() {
     let tmp = tempfile::TempDir::new().unwrap();
     let local_dir = tmp.path().join("local-repo");
     std::fs::create_dir_all(&local_dir).unwrap();
@@ -697,12 +697,12 @@ fn cloud_git_sync_and_pull_worktree_roundtrip_with_commits_and_wip() {
         "alpha-node",
         "demo",
         &worktrees_root,
-        Some("cloud/test-wt"),
+        Some("remote/test-wt"),
         None,
     )
     .unwrap();
 
-    assert_eq!(wt_branch, "cloud/test-wt");
+    assert_eq!(wt_branch, "remote/test-wt");
     assert_eq!(
         std::fs::read_to_string(wt_path.join("main.txt")).unwrap(),
         "committed-by-agent\n"
@@ -724,7 +724,7 @@ fn cloud_git_sync_and_pull_worktree_roundtrip_with_commits_and_wip() {
 }
 
 #[test]
-fn cloud_git_sync_over_existing_nongit_dir_keeps_ignored_and_pulls_zero_commit_wip() {
+fn remote_git_sync_over_existing_nongit_dir_keeps_ignored_and_pulls_zero_commit_wip() {
     let tmp = tempfile::TempDir::new().unwrap();
     let local_dir = tmp.path().join("local-repo");
     std::fs::create_dir_all(&local_dir).unwrap();
@@ -794,7 +794,7 @@ fn cloud_git_sync_over_existing_nongit_dir_keeps_ignored_and_pulls_zero_commit_w
 }
 
 #[test]
-fn cloud_git_remote_worktree_create_commit_and_pull_delta() {
+fn remote_git_remote_worktree_create_commit_and_pull_delta() {
     let tmp = tempfile::TempDir::new().unwrap();
     let local_dir = tmp.path().join("local-repo");
     std::fs::create_dir_all(&local_dir).unwrap();
@@ -902,7 +902,7 @@ fn cloud_git_remote_worktree_create_commit_and_pull_delta() {
     )
     .unwrap();
 
-    assert!(pulled_branch.starts_with("cloud/beta-node/"));
+    assert!(pulled_branch.starts_with("remote/beta-node/"));
     assert_eq!(
         std::fs::read_to_string(pulled_wt.join("notes.txt")).unwrap(),
         "committed-note\n"
@@ -997,8 +997,8 @@ fn create_git_worktree_supports_custom_name_and_base_ref() {
     )
     .unwrap();
 
-    run_git_checked(&repo_dir, &["checkout", "-b", "cloud/newer-branch", "main"], &[]).unwrap();
-    std::fs::write(repo_dir.join("cloud.txt"), "cloud\n").unwrap();
+    run_git_checked(&repo_dir, &["checkout", "-b", "remote/newer-branch", "main"], &[]).unwrap();
+    std::fs::write(repo_dir.join("remote.txt"), "cloud\n").unwrap();
     run_git_checked(&repo_dir, &["add", "."], &[]).unwrap();
     run_git_checked(
         &repo_dir,
@@ -1024,7 +1024,7 @@ fn create_git_worktree_supports_custom_name_and_base_ref() {
         vec![
             "alpha-feature".to_string(),
             "main".to_string(),
-            "cloud/newer-branch".to_string(),
+            "remote/newer-branch".to_string(),
             "older-feature".to_string(),
         ]
     );

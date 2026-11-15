@@ -1619,6 +1619,7 @@ const App: React.FC<AppProps> = ({ initialWorkspace }) => {
                 );
             case 'browser':
                 return <BrowserPanel panelKey={panelKey} />;
+            case 'remote':
             case 'cloud':
                 return (
                     <RemotePanel

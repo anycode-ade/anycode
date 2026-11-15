@@ -19,19 +19,19 @@ pub struct ServerIdRequest {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct CloudRpcRequest {
+pub struct RemoteRpcRequest {
     pub server_id: String,
     pub method: String,
     #[serde(default)]
     pub params: Value,
 }
 
-pub async fn handle_cloud_servers_list(ack: AckSender, state: State<AppState>) {
+pub async fn handle_remote_servers_list(ack: AckSender, state: State<AppState>) {
     let servers = state.node_hub.list_servers(&state).await;
     let _ = ack.send(&json!({ "success": true, "servers": servers }));
 }
 
-pub async fn handle_cloud_servers_add(
+pub async fn handle_remote_servers_add(
     Data(req): Data<AddServerRequest>,
     ack: AckSender,
     state: State<AppState>,
@@ -50,7 +50,7 @@ pub async fn handle_cloud_servers_add(
     }
 }
 
-pub async fn handle_cloud_servers_remove(
+pub async fn handle_remote_servers_remove(
     Data(req): Data<ServerIdRequest>,
     ack: AckSender,
     state: State<AppState>,
@@ -65,7 +65,7 @@ pub async fn handle_cloud_servers_remove(
     }
 }
 
-pub async fn handle_cloud_servers_reconnect(
+pub async fn handle_remote_servers_reconnect(
     Data(req): Data<ServerIdRequest>,
     ack: AckSender,
     state: State<AppState>,
@@ -80,8 +80,8 @@ pub async fn handle_cloud_servers_reconnect(
     }
 }
 
-pub async fn handle_cloud_rpc(
-    Data(req): Data<CloudRpcRequest>,
+pub async fn handle_remote_rpc(
+    Data(req): Data<RemoteRpcRequest>,
     ack: AckSender,
     state: State<AppState>,
 ) {

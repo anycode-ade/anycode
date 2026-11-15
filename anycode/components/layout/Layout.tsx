@@ -248,7 +248,7 @@ export const Split: React.FC<SplitProps> = ({ direction, panes, className }) => 
     );
 };
 
-export type PanelId = 'files' | 'search' | 'changes' | 'history' | 'projects' | 'cloud' | 'editor' | 'agent' | 'terminal' | 'browser' | 'toolbar' | 'settings';
+export type PanelId = 'files' | 'search' | 'changes' | 'history' | 'projects' | 'remote' | 'cloud' | 'editor' | 'agent' | 'terminal' | 'browser' | 'toolbar' | 'settings';
 
 type PanelParams = {
     panelKey: string;
@@ -394,7 +394,7 @@ const panelDefinitions = [
         ],
     },
     {
-        id: 'cloud',
+        id: 'remote',
         title: 'Remote',
         pickerVisible: true,
         defaultPlacements: [
@@ -459,14 +459,15 @@ const getLayoutPanelTitle = (panelId: LayoutPanelId): string => (
     panelId === 'picker' ? 'Empty' : panelTitles[panelId]
 );
 
-const panelSyncOrder: PanelId[] = ['files', 'editor', 'agent', 'search', 'changes', 'history', 'projects', 'cloud', 'terminal', 'browser', 'settings'];
+const panelSyncOrder: PanelId[] = ['files', 'editor', 'agent', 'search', 'changes', 'history', 'projects', 'remote', 'terminal', 'browser', 'settings'];
 const loadPanelVisibility = (): PanelVisibility => ({
     files: (loadItem<number>(LAYOUT_VERSION_STORAGE_KEY) ?? 0) < CURRENT_LAYOUT_VERSION ? true : loadFilesPanelVisible(),
     search: (loadItem<number>(LAYOUT_VERSION_STORAGE_KEY) ?? 0) < CURRENT_LAYOUT_VERSION ? true : (loadItem<boolean>('searchPanelVisible') ?? false),
     changes: (loadItem<number>(LAYOUT_VERSION_STORAGE_KEY) ?? 0) < CURRENT_LAYOUT_VERSION ? true : (loadItem<boolean>('changesPanelVisible') ?? false),
     history: (loadItem<boolean>('historyPanelVisible') ?? true),
     projects: (loadItem<boolean>('projectsPanelVisible') ?? false),
-    cloud: (loadItem<boolean>('cloudPanelVisible') ?? false),
+    remote: (loadItem<boolean>('remotePanelVisible') ?? loadItem<boolean>('cloudPanelVisible') ?? false),
+    cloud: false,
     editor: (loadItem<number>(LAYOUT_VERSION_STORAGE_KEY) ?? 0) < CURRENT_LAYOUT_VERSION ? true : loadEditorPanelVisible(),
     agent: (loadItem<number>(LAYOUT_VERSION_STORAGE_KEY) ?? 0) < CURRENT_LAYOUT_VERSION ? true : loadAgentPanelVisible(),
     terminal: loadTerminalPanelVisible(),
@@ -549,6 +550,7 @@ const pickerIconMap: Record<PanelId, React.ComponentType | undefined> = {
     changes: Icons.Git,
     history: Icons.Git,
     projects: Icons.Folder,
+    remote: Icons.Agent,
     cloud: Icons.Agent,
     editor: Icons.Editor,
     agent: Icons.Agent,
@@ -920,6 +922,7 @@ export const Layout: React.FC<LayoutProps> = ({
         saveItem('changesPanelVisible', visibility.changes);
         saveItem('historyPanelVisible', visibility.history);
         saveItem('projectsPanelVisible', visibility.projects);
+        saveItem('remotePanelVisible', visibility.remote);
         saveItem('cloudPanelVisible', visibility.cloud);
         saveItem('editorPanelVisible', visibility.editor);
         saveItem('agentPanelVisible', visibility.agent);

@@ -386,10 +386,18 @@ struct ActiveTransfer {
 }
 
 const TRANSFER_TTL: Duration = Duration::from_secs(30 * 60);
-const CLOUD_WORKTREES_DIR: &str = "cloud-worktrees";
+const REMOTE_WORKTREES_DIR: &str = "remote-worktrees";
 
-fn cloud_worktrees_root(state: &AppState) -> PathBuf {
-    state.data_dir.join(CLOUD_WORKTREES_DIR)
+fn remote_worktrees_root(state: &AppState) -> PathBuf {
+    let modern = state.data_dir.join(REMOTE_WORKTREES_DIR);
+    if modern.exists() {
+        return modern;
+    }
+    let legacy = state.data_dir.join("cloud-worktrees");
+    if legacy.exists() {
+        return legacy;
+    }
+    modern
 }
 
 fn transfer_store() -> &'static std::sync::Mutex<HashMap<String, ActiveTransfer>> {
@@ -969,7 +977,7 @@ async fn resolve_registered_project_root(
         }) {
             return Ok(candidate);
         }
-        let managed_root = cloud_worktrees_root(state);
+        let managed_root = remote_worktrees_root(state);
         if let Ok(managed_canon) = std::fs::canonicalize(&managed_root) {
             if candidate.starts_with(&managed_canon) && candidate.is_dir() {
                 return Ok(candidate);
@@ -1106,7 +1114,8 @@ pub async fn dispatch_node_method(
         "workspace:sync" => {
             let req: SyncProjectRequest = serde_json::from_value(params)?;
             let dir_name = sanitize_project_dir_name(&req.name);
-            let cloud_projects_root = state.data_dir.join("cloud-projects");
+            let remote_projects_root = state.data_dir.join("remote-projects");
+            let legacy_cloud_projects_root = state.data_dir.join("cloud-projects");
             let target_path = match req
                 .target_dir
                 .as_deref()
@@ -1122,12 +1131,15 @@ pub async fn dispatch_node_method(
                         .projects()
                         .into_iter()
                         .any(|p| PathBuf::from(&p.root) == candidate);
-                    if !in_workspace && !candidate.starts_with(&cloud_projects_root) {
+                    if !in_workspace
+                        && !candidate.starts_with(&remote_projects_root)
+                        && !candidate.starts_with(&legacy_cloud_projects_root)
+                    {
                         anyhow::bail!("Invalid sync target directory");
                     }
                     candidate
                 }
-                None => cloud_projects_root.join(dir_name),
+                None => remote_projects_root.join(dir_name),
             };
             let unpack_target = target_path.clone();
             if let Some(git_payload) = req.git {
@@ -1215,7 +1227,7 @@ pub async fn dispatch_node_method(
                 .map(|s| s.to_string_lossy().to_string())
                 .filter(|s| !s.is_empty())
                 .unwrap_or_else(|| "project".to_string());
-            let worktrees_root = cloud_worktrees_root(state);
+            let worktrees_root = remote_worktrees_root(state);
             let requested_branch = req.branch.clone();
             let requested_dir = req.worktree_dir.clone();
             let requested_name = req.worktree_name.clone();
@@ -1762,7 +1774,7 @@ pub async fn dispatch_node_method(
                 } else if node_req.isolate_worktree {
                     let wt_root_parent = base_root.clone();
                     let project_name = project.info.name.clone();
-                    let worktrees_root = cloud_worktrees_root(state);
+                    let worktrees_root = remote_worktrees_root(state);
                     let requested_branch = node_req.worktree_branch.clone();
                     let requested_name = node_req.worktree_name.clone();
                     let base_ref = node_req.base_ref.clone();

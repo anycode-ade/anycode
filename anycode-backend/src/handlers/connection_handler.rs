@@ -5,7 +5,7 @@ use tracing::{error, info};
 
 use crate::app_state::AppState;
 use crate::handlers::{
-    acp_handler::*, acp_registry_handler::*, cloud_handler::*, git_handler::*, io_handler::*,
+    acp_handler::*, acp_registry_handler::*, remote_handler::*, git_handler::*, io_handler::*,
     lsp_handler::*, search_handler::*, terminal_handler::*, theme_handler::*, workspace_handler::*,
 };
 
@@ -99,11 +99,11 @@ pub async fn setup_socket(socket: &SocketRef, state: &AppState) {
     socket.on("workspace:remove-recent", handle_workspace_remove_recent);
     socket.on("workspace:select-project", handle_workspace_select_project);
     socket.on("workspace:close", handle_workspace_close);
-    socket.on("remote:servers:list", handle_cloud_servers_list);
-    socket.on("remote:servers:add", handle_cloud_servers_add);
-    socket.on("remote:servers:remove", handle_cloud_servers_remove);
-    socket.on("remote:servers:reconnect", handle_cloud_servers_reconnect);
-    socket.on("remote:rpc", handle_cloud_rpc);
+    socket.on("remote:servers:list", handle_remote_servers_list);
+    socket.on("remote:servers:add", handle_remote_servers_add);
+    socket.on("remote:servers:remove", handle_remote_servers_remove);
+    socket.on("remote:servers:reconnect", handle_remote_servers_reconnect);
+    socket.on("remote:rpc", handle_remote_rpc);
 
     socket.on("theme:list", handle_theme_list);
     socket.on("theme:get", handle_theme_get);
