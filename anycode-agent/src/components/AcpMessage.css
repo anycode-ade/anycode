@@ -379,15 +379,30 @@
 
 .acp-code .anyeditor .code,
 .acp-code .anyeditor .code .line {
-    height: auto !important;
-    min-height: 0 !important;
     overflow: visible !important;
     contain: none !important;
     font-size: 12px !important;
 }
 
+.acp-code .anyeditor .code,
+.acp-code .anyeditor .code .line:not(.diff-gap) {
+    height: auto !important;
+    min-height: 0 !important;
+}
+
+/* Keep diff lines and collapsed diff-gap separators locked to --anycode-line-height so .code stays aligned with .gutter. */
+.acp-code .anyeditor .code .line.diff-gap,
+.acp-diff-code .anyeditor .code .line {
+    height: var(--anycode-line-height) !important;
+    min-height: var(--anycode-line-height) !important;
+}
+
+.acp-code .anyeditor .code .line {
+    padding-left: 8px;
+}
+
 .acp-code .anyeditor .gutter {
-    padding: 0 8px 0 var(--acp-code-inset);
+    padding: 0 0 0 var(--acp-code-inset);
 }
 
 .acp-code .anyeditor .gutter .ln {
@@ -1077,6 +1092,15 @@
     }
 
     .acp-code .anyeditor .code div {
+        line-height: 17px !important;
+    }
+
+    .acp-code .anyeditor .code .line.diff-gap,
+    .acp-diff-code .anyeditor .code .line,
+    .acp-diff-code .anyeditor .gutter .ln,
+    .acp-diff-code .anyeditor .gutter .diff-gap-gutter {
+        height: 17px !important;
+        min-height: 17px !important;
         line-height: 17px !important;
     }
 
