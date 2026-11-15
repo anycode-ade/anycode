@@ -152,7 +152,6 @@ impl ServerHub {
         };
         let servers = self.list_servers(state).await;
         let _ = io.emit("remote:servers:updated", &json!({ "servers": servers })).await;
-        let _ = io.emit("cloud:servers:updated", &json!({ "servers": servers })).await;
     }
 
     async fn emit_node_event(&self, server_id: &str, event: &str, data: Value) {
@@ -166,7 +165,6 @@ impl ServerHub {
                     obj.insert("server_id".to_string(), Value::String(server_id.to_string()));
                 }
                 let _ = io.emit("remote:acp:message", &payload).await;
-                let _ = io.emit("cloud:acp:message", &payload).await;
             }
             "acp:history" => {
                 let mut payload = data;
@@ -174,7 +172,6 @@ impl ServerHub {
                     obj.insert("server_id".to_string(), Value::String(server_id.to_string()));
                 }
                 let _ = io.emit("remote:acp:history", &payload).await;
-                let _ = io.emit("cloud:acp:history", &payload).await;
             }
             "acp:queue" => {
                 let mut payload = data;
@@ -182,7 +179,6 @@ impl ServerHub {
                     obj.insert("server_id".to_string(), Value::String(server_id.to_string()));
                 }
                 let _ = io.emit("remote:acp:queue", &payload).await;
-                let _ = io.emit("cloud:acp:queue", &payload).await;
             }
             "acp:diff_stats" => {
                 let agent_id = data.get("agent_id").and_then(|v| v.as_str());
@@ -206,7 +202,6 @@ impl ServerHub {
                     obj.insert("server_id".to_string(), Value::String(server_id.to_string()));
                 }
                 let _ = io.emit("remote:acp:diff_stats", &payload).await;
-                let _ = io.emit("cloud:acp:diff_stats", &payload).await;
             }
             _ => {}
         }
@@ -291,13 +286,13 @@ impl ServerHub {
         method: &str,
         params: Value,
     ) -> Result<Value> {
-        if method == "remote:sync_project" || method == "cloud:sync_project" {
+        if method == "remote:sync_project" {
             return self.sync_project_to_server(state, server_id, params).await;
         }
-        if method == "remote:pull_project" || method == "cloud:pull_project" {
+        if method == "remote:pull_project" {
             return self.pull_project_from_server(state, server_id, params).await;
         }
-        if method == "remote:sync_agent" || method == "cloud:sync_agent" {
+        if method == "remote:sync_agent" {
             return self.sync_agent_to_server(state, server_id, params).await;
         }
 

@@ -104,11 +104,7 @@ pub async fn setup_socket(socket: &SocketRef, state: &AppState) {
     socket.on("remote:servers:remove", handle_cloud_servers_remove);
     socket.on("remote:servers:reconnect", handle_cloud_servers_reconnect);
     socket.on("remote:rpc", handle_cloud_rpc);
-    socket.on("cloud:servers:list", handle_cloud_servers_list);
-    socket.on("cloud:servers:add", handle_cloud_servers_add);
-    socket.on("cloud:servers:remove", handle_cloud_servers_remove);
-    socket.on("cloud:servers:reconnect", handle_cloud_servers_reconnect);
-    socket.on("cloud:rpc", handle_cloud_rpc);
+
     socket.on("theme:list", handle_theme_list);
     socket.on("theme:get", handle_theme_get);
     socket.on_disconnect(handle_disconnect);

@@ -454,4 +454,3 @@ export const applyAcpHistory = (
     };
 };
 
-export const mergeCloudQueue = mergeRemoteQueue;

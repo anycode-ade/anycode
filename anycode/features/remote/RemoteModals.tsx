@@ -1102,7 +1102,7 @@ export const PullWorktreeModal: React.FC<PullWorktreeModalProps> = ({
                 const stamp = `${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}-${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}`;
                 const serverSlug = sanitizeBranchSlug(server.name);
                 const targetLabel = sanitizeBranchSlug(info.branch || remoteLabel || remoteProject.name);
-                setBranch((prev) => prev || `cloud/${serverSlug}/${targetLabel}-${stamp}`);
+                setBranch((prev) => prev || `remote/${serverSlug}/${targetLabel}-${stamp}`);
             })
             .catch((err) => {
                 if (cancelled) return;
@@ -1306,7 +1306,7 @@ export const PullWorktreeModal: React.FC<PullWorktreeModalProps> = ({
                             className="remote-input"
                             value={branch}
                             onChange={(e) => setBranch(e.target.value)}
-                            placeholder="cloud/node/branch"
+                            placeholder="remote/node/branch"
                             disabled={busy}
                         />
                     </div>

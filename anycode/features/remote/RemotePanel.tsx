@@ -26,8 +26,7 @@ import type { UseRemoteReturn } from './useRemote';
 import './RemotePanel.css';
 
 export interface RemotePanelProps {
-    remote?: UseRemoteReturn;
-    cloud?: UseRemoteReturn;
+    remote: UseRemoteReturn;
     isConnected: boolean;
     workspaceProjects?: RemoteProjectInfo[];
     onOpenWorktreeDiff?: (params: {
@@ -37,7 +36,6 @@ export interface RemotePanelProps {
         title?: string;
     }) => Promise<void> | void;
 }
-export type CloudPanelProps = RemotePanelProps;
 
 const statusLabel: Record<RemoteServerView['status'], string> = {
     online: 'Online',
@@ -54,14 +52,11 @@ const statusBadgeClass: Record<RemoteServerView['status'], string> = {
 };
 
 export const RemotePanel: React.FC<RemotePanelProps> = ({
-    remote: remoteProp,
-    cloud: cloudProp,
+    remote,
     isConnected,
     workspaceProjects,
     onOpenWorktreeDiff,
 }) => {
-    const remote = (remoteProp ?? cloudProp)!;
-    const cloud = remote;
     const [selection, setSelection] = useState<RemoteSelection>({
         kind: 'server',
         serverId: 'local',
@@ -147,16 +142,16 @@ export const RemotePanel: React.FC<RemotePanelProps> = ({
     };
 
     useEffect(() => {
-        if (cloud.servers.length === 0) return;
-        const exists = cloud.servers.some((s) => s.id === selection.serverId);
+        if (remote.servers.length === 0) return;
+        const exists = remote.servers.some((s) => s.id === selection.serverId);
         if (!exists) {
-            setSelection({ kind: 'server', serverId: cloud.servers[0].id });
+            setSelection({ kind: 'server', serverId: remote.servers[0].id });
         }
-    }, [cloud.servers, selection.serverId]);
+    }, [remote.servers, selection.serverId]);
 
     const selectedServer = useMemo(
-        () => cloud.servers.find((s) => s.id === selection.serverId) ?? cloud.servers[0],
-        [cloud.servers, selection.serverId],
+        () => remote.servers.find((s) => s.id === selection.serverId) ?? remote.servers[0],
+        [remote.servers, selection.serverId],
     );
 
     const selectedProject = useMemo(() => {
@@ -166,28 +161,28 @@ export const RemotePanel: React.FC<RemotePanelProps> = ({
         }
         if (selection.kind === 'agent') {
             const key = makeRemoteSessionKey(selection.serverId, selection.agentId);
-            const sess = cloud.sessions.get(key);
+            const sess = remote.sessions.get(key);
             if (sess?.projectId) {
                 return selectedServer.projects.find((p) => p.id === sess.projectId);
             }
         }
         return undefined;
-    }, [selectedServer, selection, cloud.sessions]);
+    }, [selectedServer, selection, remote.sessions]);
 
     const selectedSession = useMemo(() => {
         if (selection.kind !== 'agent') return undefined;
-        return cloud.sessions.get(makeRemoteSessionKey(selection.serverId, selection.agentId));
-    }, [selection, cloud.sessions]);
+        return remote.sessions.get(makeRemoteSessionKey(selection.serverId, selection.agentId));
+    }, [selection, remote.sessions]);
 
     const sessionsByServer = useMemo(() => {
         const grouped = new Map<string, RemoteAgentSession[]>();
-        for (const sess of cloud.sessions.values()) {
+        for (const sess of remote.sessions.values()) {
             const list = grouped.get(sess.serverId) ?? [];
             list.push(sess);
             grouped.set(sess.serverId, list);
         }
         return grouped;
-    }, [cloud.sessions]);
+    }, [remote.sessions]);
 
     const selectedProjectAgentKey = useMemo(() => {
         if (selection.kind !== 'project' || !selectedServer || !selectedProject) return '';
@@ -213,7 +208,7 @@ export const RemotePanel: React.FC<RemotePanelProps> = ({
         let cancelled = false;
         setWorktreesLoading(true);
         setProjectGitInfo(null);
-        cloud
+        remote
             .listWorktrees(selectedServer.id, selectedProject.id)
             .then((entries) => {
                 if (!cancelled) setWorktrees(entries);
@@ -224,7 +219,7 @@ export const RemotePanel: React.FC<RemotePanelProps> = ({
             .finally(() => {
                 if (!cancelled) setWorktreesLoading(false);
             });
-        cloud
+        remote
             .getProjectGitInfo(selectedServer.id, selectedProject.id)
             .then((info) => {
                 if (!cancelled) setProjectGitInfo(info);
@@ -242,8 +237,8 @@ export const RemotePanel: React.FC<RemotePanelProps> = ({
         selectedProject?.id,
         selectedProjectAgentKey,
         worktreesRefreshTick,
-        cloud.listWorktrees,
-        cloud.getProjectGitInfo,
+        remote.listWorktrees,
+        remote.getProjectGitInfo,
     ]);
 
     const handleRemoveWorktree = async (
@@ -254,7 +249,7 @@ export const RemotePanel: React.FC<RemotePanelProps> = ({
         setActionError(null);
         setRemovingWorktreePath(worktreePath);
         try {
-            await cloud.removeWorktree(serverId, projectId, worktreePath);
+            await remote.removeWorktree(serverId, projectId, worktreePath);
             setWorktrees((prev) => prev.filter((w) => w.path !== worktreePath));
             setWorktreesRefreshTick((t) => t + 1);
         } catch (err) {
@@ -278,7 +273,7 @@ export const RemotePanel: React.FC<RemotePanelProps> = ({
     const handleRemoveProject = async (serverId: string, projectId: string) => {
         setActionError(null);
         try {
-            await cloud.removeProject(serverId, projectId);
+            await remote.removeProject(serverId, projectId);
             setSelection({ kind: 'server', serverId });
         } catch (err) {
             setActionError(err instanceof Error ? err.message : String(err));
@@ -287,13 +282,13 @@ export const RemotePanel: React.FC<RemotePanelProps> = ({
 
     const handleStopAgent = async (serverId: string, agentId: string, e?: React.MouseEvent) => {
         e?.stopPropagation();
-        await cloud.stopAgent(serverId, agentId);
+        await remote.stopAgent(serverId, agentId);
         if (
             selection.kind === 'agent'
             && selection.serverId === serverId
             && selection.agentId === agentId
         ) {
-            const sess = cloud.sessions.get(makeRemoteSessionKey(serverId, agentId));
+            const sess = remote.sessions.get(makeRemoteSessionKey(serverId, agentId));
             if (sess?.projectId) {
                 setSelection({ kind: 'project', serverId, projectId: sess.projectId });
             } else {
@@ -338,7 +333,7 @@ export const RemotePanel: React.FC<RemotePanelProps> = ({
             agent.worktreePath && (diffAdded > 0 || diffRemoved > 0 || diffFiles > 0),
         );
         const showSubRow = Boolean(wtBadge || hasDiffStats);
-        const srv = cloud.servers.find((s) => s.id === serverId);
+        const srv = remote.servers.find((s) => s.id === serverId);
         const proj = srv?.projects.find((p) => p.id === agent.projectId);
 
         return (
@@ -434,7 +429,7 @@ export const RemotePanel: React.FC<RemotePanelProps> = ({
         agents: RemoteAgentSession[],
         emptyText: string,
     ) => {
-        const availableAgents = cloud.availableAgentsByServer[server.id] ?? [];
+        const availableAgents = remote.availableAgentsByServer[server.id] ?? [];
         return (
             <div className="remote-section">
                 <div className="remote-section-header">
@@ -470,9 +465,9 @@ export const RemotePanel: React.FC<RemotePanelProps> = ({
 
     useEffect(() => {
         if (!selectedServer || selectedServer.status !== 'online') return;
-        if (cloud.availableAgentsByServer[selectedServer.id]) return;
-        cloud.loadAvailableAgents(selectedServer.id).catch(() => {});
-    }, [selectedServer, cloud.availableAgentsByServer, cloud.loadAvailableAgents]);
+        if (remote.availableAgentsByServer[selectedServer.id]) return;
+        remote.loadAvailableAgents(selectedServer.id).catch(() => {});
+    }, [selectedServer, remote.availableAgentsByServer, remote.loadAvailableAgents]);
 
     const handleTreeMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
         const origin = e.target as HTMLElement;
@@ -492,14 +487,14 @@ export const RemotePanel: React.FC<RemotePanelProps> = ({
     const sidebarPane = (
         <aside className="remote-sidebar">
             <div className="remote-sidebar-header">
-                <span className="remote-sidebar-title">Servers ({cloud.servers.length})</span>
+                <span className="remote-sidebar-title">Servers ({remote.servers.length})</span>
                 <div className="remote-sidebar-actions">
                     <button
                         type="button"
                         className="remote-header-btn"
                         title="Refresh servers"
                         aria-label="Refresh servers"
-                        onClick={() => cloud.refreshServers()}
+                        onClick={() => remote.refreshServers()}
                         disabled={!isConnected}
                     >
                         <Icons.Refresh size={14} />
@@ -521,7 +516,7 @@ export const RemotePanel: React.FC<RemotePanelProps> = ({
             </div>
 
             <div className="remote-tree" onMouseMove={handleTreeMouseMove}>
-                {cloud.servers.map((srv) => {
+                {remote.servers.map((srv) => {
                     const isCollapsed = Boolean(collapsedServers[srv.id]);
                     const serverSelected = selection.kind === 'server' && selection.serverId === srv.id;
                     const serverSessions = sessionsByServer.get(srv.id) ?? [];
@@ -597,7 +592,7 @@ export const RemotePanel: React.FC<RemotePanelProps> = ({
                                             title="Reconnect"
                                             onClick={(e) => {
                                                 e.stopPropagation();
-                                                cloud.reconnectServer(srv.id);
+                                                remote.reconnectServer(srv.id);
                                             }}
                                         >
                                             ↻
@@ -607,7 +602,7 @@ export const RemotePanel: React.FC<RemotePanelProps> = ({
                                         confirmKey: `server:${srv.id}`,
                                         title: 'Disconnect & remove server',
                                         confirmTitle: 'Click again to remove server',
-                                        onConfirm: () => cloud.removeServer(srv.id),
+                                        onConfirm: () => remote.removeServer(srv.id),
                                     })}
                                 </div>
                             </div>
@@ -769,16 +764,16 @@ export const RemotePanel: React.FC<RemotePanelProps> = ({
                             messages={selectedSession.messages}
                             queue={selectedSession.queue}
                             onUpdateQueueItem={(aid, itemId, prompt) =>
-                                cloud.updateQueuedPrompt(selectedSession.serverId, aid, itemId, prompt)
+                                remote.updateQueuedPrompt(selectedSession.serverId, aid, itemId, prompt)
                             }
                             onRemoveQueueItem={(aid, itemId) =>
-                                cloud.removeQueuedPrompt(selectedSession.serverId, aid, itemId)
+                                remote.removeQueuedPrompt(selectedSession.serverId, aid, itemId)
                             }
                             onMoveQueueItem={(aid, itemId, dir) =>
-                                cloud.moveQueuedPrompt(selectedSession.serverId, aid, itemId, dir)
+                                remote.moveQueuedPrompt(selectedSession.serverId, aid, itemId, dir)
                             }
                             onSendQueueItemNow={(aid, itemId) =>
-                                cloud.sendQueuedPromptNow(selectedSession.serverId, aid, itemId)
+                                remote.sendQueuedPromptNow(selectedSession.serverId, aid, itemId)
                             }
                             modelSelector={selectedSession.modelSelector}
                             reasoningSelector={selectedSession.reasoningSelector}
@@ -788,31 +783,31 @@ export const RemotePanel: React.FC<RemotePanelProps> = ({
                             isAuthenticating={selectedSession.isAuthenticating}
                             pendingAuthMethod={selectedSession.pendingAuthMethod}
                             onAuthenticate={(aid, methodId) => {
-                                cloud.authenticateAgent(selectedSession.serverId, aid, methodId).catch((err) => {
+                                remote.authenticateAgent(selectedSession.serverId, aid, methodId).catch((err) => {
                                     setActionError(err instanceof Error ? err.message : String(err));
                                 });
                             }}
                             onFocusPane={() => {}}
                             onSendPrompt={(aid, prompt, attachments) => {
-                                cloud.sendPrompt(selectedSession.serverId, aid, prompt, attachments).catch((err) => {
+                                remote.sendPrompt(selectedSession.serverId, aid, prompt, attachments).catch((err) => {
                                     setActionError(err instanceof Error ? err.message : String(err));
                                 });
                             }}
-                            onCancelPrompt={(aid) => cloud.cancelPrompt(selectedSession.serverId, aid)}
+                            onCancelPrompt={(aid) => remote.cancelPrompt(selectedSession.serverId, aid)}
                             onUndoPrompt={(aid, checkpointId, prompt) => {
-                                cloud.undoPrompt(selectedSession.serverId, aid, checkpointId, prompt).catch((err) => {
+                                remote.undoPrompt(selectedSession.serverId, aid, checkpointId, prompt).catch((err) => {
                                     setActionError(err instanceof Error ? err.message : String(err));
                                 });
                             }}
                             onCloseAgent={(aid) => handleStopAgent(selectedSession.serverId, aid)}
                             onSelectModel={(aid, opt) =>
-                                cloud.setSessionModel(selectedSession.serverId, aid, opt)
+                                remote.setSessionModel(selectedSession.serverId, aid, opt)
                             }
                             onSelectReasoning={(aid, opt) =>
-                                cloud.setSessionReasoning(selectedSession.serverId, aid, opt)
+                                remote.setSessionReasoning(selectedSession.serverId, aid, opt)
                             }
                             onGetToolOutput={(toolId, sessionId) =>
-                                cloud.getToolOutput(selectedSession.serverId, toolId, sessionId)
+                                remote.getToolOutput(selectedSession.serverId, toolId, sessionId)
                             }
                         />
                         </div>
@@ -1169,7 +1164,7 @@ export const RemotePanel: React.FC<RemotePanelProps> = ({
                                         <button
                                             type="button"
                                             className="remote-btn subtle"
-                                            onClick={() => cloud.reconnectServer(selectedServer.id)}
+                                            onClick={() => remote.reconnectServer(selectedServer.id)}
                                         >
                                             Reconnect
                                         </button>
@@ -1340,7 +1335,7 @@ export const RemotePanel: React.FC<RemotePanelProps> = ({
                     anchor={addServerAnchor}
                     onClose={() => setAddServerAnchor(null)}
                     onAdd={async (name, url, token) => {
-                        const srv = await cloud.addServer(name, url, token);
+                        const srv = await remote.addServer(name, url, token);
                         setSelection({ kind: 'server', serverId: srv.id });
                     }}
                 />
@@ -1350,17 +1345,17 @@ export const RemotePanel: React.FC<RemotePanelProps> = ({
                 <AddProjectModal
                     anchor={addProjectState.anchor}
                     server={
-                        cloud.servers.find((s) => s.id === addProjectState.server.id)
+                        remote.servers.find((s) => s.id === addProjectState.server.id)
                         ?? addProjectState.server
                     }
                     projects={
-                        cloud.servers.find((s) => s.is_local)?.projects
+                        remote.servers.find((s) => s.is_local)?.projects
                         ?? workspaceProjects
                         ?? []
                     }
                     onClose={() => setAddProjectState(null)}
                     onSyncProject={async (sid, path, name, options) => {
-                        await cloud.syncProject(sid, path, name, options);
+                        await remote.syncProject(sid, path, name, options);
                     }}
                 />
             )}
@@ -1369,13 +1364,13 @@ export const RemotePanel: React.FC<RemotePanelProps> = ({
                 <SyncAgentsModal
                     anchor={syncAgentsState.anchor}
                     server={
-                        cloud.servers.find((s) => s.id === syncAgentsState.server.id)
+                        remote.servers.find((s) => s.id === syncAgentsState.server.id)
                         ?? syncAgentsState.server
                     }
-                    availableAgentsByServer={cloud.availableAgentsByServer}
-                    onLoadAvailableAgents={cloud.loadAvailableAgents}
-                    onSyncAgent={cloud.syncAgent}
-                    onRemoveAgent={cloud.removeConfiguredAgent}
+                    availableAgentsByServer={remote.availableAgentsByServer}
+                    onLoadAvailableAgents={remote.loadAvailableAgents}
+                    onSyncAgent={remote.syncAgent}
+                    onRemoveAgent={remote.removeConfiguredAgent}
                     onClose={() => setSyncAgentsState(null)}
                 />
             )}
@@ -1383,20 +1378,20 @@ export const RemotePanel: React.FC<RemotePanelProps> = ({
             {startAgentTarget && (
                 <StartAgentModal
                     anchor={startAgentTarget.anchor}
-                    servers={cloud.servers}
+                    servers={remote.servers}
                     initialServerId={startAgentTarget.serverId}
                     initialProjectId={startAgentTarget.projectId}
                     initialWorktreePath={startAgentTarget.worktreePath}
                     initialWorktreeBranch={startAgentTarget.worktreeBranch}
-                    availableAgentsByServer={cloud.availableAgentsByServer}
-                    registryAgentsByServer={cloud.registryAgentsByServer}
-                    onLoadAvailableAgents={cloud.loadAvailableAgents}
-                    onInstallRegistryAgent={cloud.installRegistryAgent}
-                    onSyncAgent={cloud.syncAgent}
-                    onRemoveAgent={cloud.removeConfiguredAgent}
-                    onLoadGitInfo={cloud.getProjectGitInfo}
-                    onLoadWorktrees={cloud.listWorktrees}
-                    onStartAgent={cloud.startAgent}
+                    availableAgentsByServer={remote.availableAgentsByServer}
+                    registryAgentsByServer={remote.registryAgentsByServer}
+                    onLoadAvailableAgents={remote.loadAvailableAgents}
+                    onInstallRegistryAgent={remote.installRegistryAgent}
+                    onSyncAgent={remote.syncAgent}
+                    onRemoveAgent={remote.removeConfiguredAgent}
+                    onLoadGitInfo={remote.getProjectGitInfo}
+                    onLoadWorktrees={remote.listWorktrees}
+                    onStartAgent={remote.startAgent}
                     onClose={() => setStartAgentTarget(null)}
                     onStarted={(sid, aid) =>
                         setSelection({ kind: 'agent', serverId: sid, agentId: aid })
@@ -1408,19 +1403,19 @@ export const RemotePanel: React.FC<RemotePanelProps> = ({
                 <PullWorktreeModal
                     anchor={pullWorktreeState.anchor}
                     server={
-                        cloud.servers.find((s) => s.id === pullWorktreeState.server.id)
+                        remote.servers.find((s) => s.id === pullWorktreeState.server.id)
                         ?? pullWorktreeState.server
                     }
                     remoteProject={pullWorktreeState.project}
                     remotePath={pullWorktreeState.remotePath}
                     remoteLabel={pullWorktreeState.remoteLabel}
                     localProjects={
-                        cloud.servers.find((s) => s.is_local)?.projects
+                        remote.servers.find((s) => s.is_local)?.projects
                         ?? workspaceProjects
                         ?? []
                     }
-                    onLoadGitInfo={cloud.getProjectGitInfo}
-                    onPullProject={cloud.pullProject}
+                    onLoadGitInfo={remote.getProjectGitInfo}
+                    onPullProject={remote.pullProject}
                     onOpenPulledProject={(projectId) =>
                         setSelection({ kind: 'project', serverId: 'local', projectId })
                     }
@@ -1432,11 +1427,11 @@ export const RemotePanel: React.FC<RemotePanelProps> = ({
                 <CreateWorktreeModal
                     anchor={createWorktreeState.anchor}
                     server={
-                        cloud.servers.find((s) => s.id === createWorktreeState.server.id)
+                        remote.servers.find((s) => s.id === createWorktreeState.server.id)
                         ?? createWorktreeState.server
                     }
                     project={createWorktreeState.project}
-                    onCreateWorktree={cloud.createWorktree}
+                    onCreateWorktree={remote.createWorktree}
                     onCreated={(serverId, projectId) => {
                         setWorktreesRefreshTick((t) => t + 1);
                         setSelection({ kind: 'project', serverId, projectId });
@@ -1447,5 +1442,3 @@ export const RemotePanel: React.FC<RemotePanelProps> = ({
         </div>
     );
 };
-
-export const CloudPanel = RemotePanel;

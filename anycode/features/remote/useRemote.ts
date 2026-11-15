@@ -31,11 +31,6 @@ export interface UseRemoteParams {
     wsRef: React.RefObject<Socket | null>;
     isConnected: boolean;
 }
-export type UseCloudParams = UseRemoteParams;
-interface _Unused_UseCloudParams {
-    wsRef: React.RefObject<Socket | null>;
-    isConnected: boolean;
-}
 
 type PendingRemoteEvent = {
     server_id: string;
@@ -309,29 +304,19 @@ export const useRemote = ({ wsRef, isConnected }: UseRemoteParams) => {
         };
 
         socket.on('remote:servers:updated', handleServersUpdated);
-        socket.on('cloud:servers:updated', handleServersUpdated);
         socket.on('remote:acp:message', handleRemoteAcpMessage);
-        socket.on('cloud:acp:message', handleRemoteAcpMessage);
         socket.on('remote:acp:history', handleRemoteAcpHistory);
-        socket.on('cloud:acp:history', handleRemoteAcpHistory);
         socket.on('remote:acp:queue', handleRemoteAcpQueue);
-        socket.on('cloud:acp:queue', handleRemoteAcpQueue);
         socket.on('remote:acp:diff_stats', handleRemoteAcpDiffStats);
-        socket.on('cloud:acp:diff_stats', handleRemoteAcpDiffStats);
 
         refreshServers().catch(() => {});
 
         return () => {
             socket.off('remote:servers:updated', handleServersUpdated);
-            socket.off('cloud:servers:updated', handleServersUpdated);
             socket.off('remote:acp:message', handleRemoteAcpMessage);
-            socket.off('cloud:acp:message', handleRemoteAcpMessage);
             socket.off('remote:acp:history', handleRemoteAcpHistory);
-            socket.off('cloud:acp:history', handleRemoteAcpHistory);
             socket.off('remote:acp:queue', handleRemoteAcpQueue);
-            socket.off('cloud:acp:queue', handleRemoteAcpQueue);
             socket.off('remote:acp:diff_stats', handleRemoteAcpDiffStats);
-            socket.off('cloud:acp:diff_stats', handleRemoteAcpDiffStats);
             reconnectedKeysRef.current.clear();
             if (flushTimerRef.current) {
                 clearTimeout(flushTimerRef.current);
@@ -914,7 +899,6 @@ export const useRemote = ({ wsRef, isConnected }: UseRemoteParams) => {
         isLoading,
         refreshServers,
         remoteRpc,
-        cloudRpc: remoteRpc,
         addServer,
         removeServer,
         reconnectServer,
@@ -952,5 +936,3 @@ export const useRemote = ({ wsRef, isConnected }: UseRemoteParams) => {
 };
 
 export type UseRemoteReturn = ReturnType<typeof useRemote>;
-export const useCloud = useRemote;
-export type UseCloudReturn = UseRemoteReturn;
