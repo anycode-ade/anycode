@@ -95,14 +95,14 @@ export const useRemote = ({ wsRef, isConnected }: UseRemoteParams) => {
         });
     }, []);
 
-    const cloudRpc = useCallback(async <T = any>(
+    const remoteRpc = useCallback(async <T = any>(
         serverId: string,
         method: string,
         params: Record<string, unknown> | null = {},
     ): Promise<T> => {
         const res = await emitWithAck<{ success: true; data: T }>(
             wsRef.current,
-            'cloud:rpc',
+            'remote:rpc',
             { server_id: serverId, method, params: params ?? {} },
         );
         return res.data;
@@ -182,13 +182,13 @@ export const useRemote = ({ wsRef, isConnected }: UseRemoteParams) => {
         });
 
         for (const [serverId, keys] of reconnectByServer.entries()) {
-            cloudRpc(serverId, 'acp:reconnect', {}).catch(() => {
+            remoteRpc(serverId, 'acp:reconnect', {}).catch(() => {
                 for (const key of keys) {
                     reconnectedKeysRef.current.delete(key);
                 }
             });
         }
-    }, [cloudRpc]);
+    }, [remoteRpc]);
 
     const refreshServers = useCallback(async () => {
         if (!wsRef.current || !isConnected) return;
@@ -196,7 +196,7 @@ export const useRemote = ({ wsRef, isConnected }: UseRemoteParams) => {
         try {
             const res = await emitWithAck<{ success: true; servers: RemoteServerView[] }>(
                 wsRef.current,
-                'cloud:servers:list',
+                'remote:servers:list',
                 {},
             );
             setServers(res.servers);
@@ -232,7 +232,7 @@ export const useRemote = ({ wsRef, isConnected }: UseRemoteParams) => {
             reconcileSessionsFromServers(data.servers);
         };
 
-        const handleCloudAcpMessage = (data: PendingRemoteEvent) => {
+        const handleRemoteAcpMessage = (data: PendingRemoteEvent) => {
             if (!data?.server_id || !data?.agent_id || !data?.item) return;
             pendingEventsRef.current.push(data);
             if (!flushTimerRef.current) {
@@ -240,7 +240,7 @@ export const useRemote = ({ wsRef, isConnected }: UseRemoteParams) => {
             }
         };
 
-        const handleCloudAcpHistory = (data: {
+        const handleRemoteAcpHistory = (data: {
             server_id: string;
             agent_id: string;
             history: AcpMessage[];
@@ -253,7 +253,7 @@ export const useRemote = ({ wsRef, isConnected }: UseRemoteParams) => {
             );
         };
 
-        const handleCloudAcpQueue = (data: {
+        const handleRemoteAcpQueue = (data: {
             server_id: string;
             agent_id: string;
             queue: AcpQueuedMessage[];
@@ -276,7 +276,7 @@ export const useRemote = ({ wsRef, isConnected }: UseRemoteParams) => {
             });
         };
 
-        const handleCloudAcpDiffStats = (data: RemoteDiffStatsEvent) => {
+        const handleRemoteAcpDiffStats = (data: RemoteDiffStatsEvent) => {
             if (!data?.server_id || !data?.agent_id) return;
             const key = makeRemoteSessionKey(data.server_id, data.agent_id);
             updateSession(key, (existing) => {
@@ -308,20 +308,30 @@ export const useRemote = ({ wsRef, isConnected }: UseRemoteParams) => {
             }
         };
 
+        socket.on('remote:servers:updated', handleServersUpdated);
         socket.on('cloud:servers:updated', handleServersUpdated);
-        socket.on('cloud:acp:message', handleCloudAcpMessage);
-        socket.on('cloud:acp:history', handleCloudAcpHistory);
-        socket.on('cloud:acp:queue', handleCloudAcpQueue);
-        socket.on('cloud:acp:diff_stats', handleCloudAcpDiffStats);
+        socket.on('remote:acp:message', handleRemoteAcpMessage);
+        socket.on('cloud:acp:message', handleRemoteAcpMessage);
+        socket.on('remote:acp:history', handleRemoteAcpHistory);
+        socket.on('cloud:acp:history', handleRemoteAcpHistory);
+        socket.on('remote:acp:queue', handleRemoteAcpQueue);
+        socket.on('cloud:acp:queue', handleRemoteAcpQueue);
+        socket.on('remote:acp:diff_stats', handleRemoteAcpDiffStats);
+        socket.on('cloud:acp:diff_stats', handleRemoteAcpDiffStats);
 
         refreshServers().catch(() => {});
 
         return () => {
+            socket.off('remote:servers:updated', handleServersUpdated);
             socket.off('cloud:servers:updated', handleServersUpdated);
-            socket.off('cloud:acp:message', handleCloudAcpMessage);
-            socket.off('cloud:acp:history', handleCloudAcpHistory);
-            socket.off('cloud:acp:queue', handleCloudAcpQueue);
-            socket.off('cloud:acp:diff_stats', handleCloudAcpDiffStats);
+            socket.off('remote:acp:message', handleRemoteAcpMessage);
+            socket.off('cloud:acp:message', handleRemoteAcpMessage);
+            socket.off('remote:acp:history', handleRemoteAcpHistory);
+            socket.off('cloud:acp:history', handleRemoteAcpHistory);
+            socket.off('remote:acp:queue', handleRemoteAcpQueue);
+            socket.off('cloud:acp:queue', handleRemoteAcpQueue);
+            socket.off('remote:acp:diff_stats', handleRemoteAcpDiffStats);
+            socket.off('cloud:acp:diff_stats', handleRemoteAcpDiffStats);
             reconnectedKeysRef.current.clear();
             if (flushTimerRef.current) {
                 clearTimeout(flushTimerRef.current);
@@ -333,14 +343,14 @@ export const useRemote = ({ wsRef, isConnected }: UseRemoteParams) => {
     const addServer = useCallback(async (name: string, url: string, token?: string) => {
         const res = await emitWithAck<{ success: true; server: RemoteServerView }>(
             wsRef.current,
-            'cloud:servers:add',
+            'remote:servers:add',
             { name, url, token: token?.trim() || null },
         );
         return res.server;
     }, [wsRef]);
 
     const removeServer = useCallback(async (serverId: string) => {
-        await emitWithAck(wsRef.current, 'cloud:servers:remove', { server_id: serverId });
+        await emitWithAck(wsRef.current, 'remote:servers:remove', { server_id: serverId });
         setSessions((prev) => {
             const copy = new Map(prev);
             for (const key of copy.keys()) {
@@ -351,16 +361,16 @@ export const useRemote = ({ wsRef, isConnected }: UseRemoteParams) => {
     }, [wsRef]);
 
     const reconnectServer = useCallback(async (serverId: string) => {
-        await emitWithAck(wsRef.current, 'cloud:servers:reconnect', { server_id: serverId });
+        await emitWithAck(wsRef.current, 'remote:servers:reconnect', { server_id: serverId });
     }, [wsRef]);
 
     const browseDir = useCallback(async (serverId: string, path?: string): Promise<RemoteBrowseResponse> => {
-        return cloudRpc<RemoteBrowseResponse>(serverId, 'workspace:browse', path ? { path } : {});
-    }, [cloudRpc]);
+        return remoteRpc<RemoteBrowseResponse>(serverId, 'workspace:browse', path ? { path } : {});
+    }, [remoteRpc]);
 
     const addProject = useCallback(async (serverId: string, path: string) => {
-        return cloudRpc(serverId, 'workspace:add-project', { path });
-    }, [cloudRpc]);
+        return remoteRpc(serverId, 'workspace:add-project', { path });
+    }, [remoteRpc]);
 
     const syncProject = useCallback(async (
         serverId: string,
@@ -368,13 +378,13 @@ export const useRemote = ({ wsRef, isConnected }: UseRemoteParams) => {
         name?: string,
         options?: { targetDir?: string; forceSync?: boolean },
     ) => {
-        return cloudRpc(serverId, 'cloud:sync_project', {
+        return remoteRpc(serverId, 'remote:sync_project', {
             path,
             name: name?.trim() || null,
             target_dir: options?.targetDir?.trim() || null,
             force_sync: options?.forceSync ?? false,
         });
-    }, [cloudRpc]);
+    }, [remoteRpc]);
 
     const cloneProject = useCallback(async (
         serverId: string,
@@ -382,27 +392,27 @@ export const useRemote = ({ wsRef, isConnected }: UseRemoteParams) => {
         targetDir?: string,
         branch?: string,
     ) => {
-        return cloudRpc(serverId, 'workspace:clone', {
+        return remoteRpc(serverId, 'workspace:clone', {
             url,
             target_dir: targetDir?.trim() || null,
             branch: branch?.trim() || null,
         });
-    }, [cloudRpc]);
+    }, [remoteRpc]);
 
     const removeProject = useCallback(async (serverId: string, projectId: string) => {
-        return cloudRpc(serverId, 'workspace:remove-project', { project_id: projectId });
-    }, [cloudRpc]);
+        return remoteRpc(serverId, 'workspace:remove-project', { project_id: projectId });
+    }, [remoteRpc]);
 
     const getProjectGitInfo = useCallback(async (
         serverId: string,
         projectId?: string,
         remotePath?: string,
     ): Promise<RemoteGitStateInfo> => {
-        return cloudRpc<RemoteGitStateInfo>(serverId, 'workspace:git-info', {
+        return remoteRpc<RemoteGitStateInfo>(serverId, 'workspace:git-info', {
             project_id: projectId?.trim() || null,
             path: remotePath?.trim() || null,
         });
-    }, [cloudRpc]);
+    }, [remoteRpc]);
 
     const pullProject = useCallback(async (
         serverId: string,
@@ -414,14 +424,14 @@ export const useRemote = ({ wsRef, isConnected }: UseRemoteParams) => {
             worktreeDir?: string;
         },
     ): Promise<PullProjectResult> => {
-        return cloudRpc<PullProjectResult>(serverId, 'cloud:pull_project', {
+        return remoteRpc<PullProjectResult>(serverId, 'remote:pull_project', {
             remote_project_id: options.remoteProjectId?.trim() || null,
             remote_path: options.remotePath?.trim() || null,
             local_project_path: options.localProjectPath,
             branch: options.branch?.trim() || null,
             worktree_dir: options.worktreeDir?.trim() || null,
         });
-    }, [cloudRpc]);
+    }, [remoteRpc]);
 
     const createWorktree = useCallback(async (
         serverId: string,
@@ -432,20 +442,20 @@ export const useRemote = ({ wsRef, isConnected }: UseRemoteParams) => {
             registerInWorkspace?: boolean;
         },
     ): Promise<CreateWorktreeResult> => {
-        return cloudRpc<CreateWorktreeResult>(serverId, 'workspace:worktree:create', {
+        return remoteRpc<CreateWorktreeResult>(serverId, 'workspace:worktree:create', {
             project_id: options.projectId,
             branch: options.branch?.trim() || null,
             include_dirty: options.includeDirty ?? true,
             register_in_workspace: options.registerInWorkspace ?? false,
         });
-    }, [cloudRpc]);
+    }, [remoteRpc]);
 
     const listWorktrees = useCallback(async (
         serverId: string,
         projectId?: string,
         remotePath?: string,
     ): Promise<RemoteWorktreeEntry[]> => {
-        const res = await cloudRpc<{ worktrees?: RemoteWorktreeEntry[] }>(
+        const res = await remoteRpc<{ worktrees?: RemoteWorktreeEntry[] }>(
             serverId,
             'workspace:worktree:list',
             {
@@ -454,29 +464,29 @@ export const useRemote = ({ wsRef, isConnected }: UseRemoteParams) => {
             },
         );
         return Array.isArray(res?.worktrees) ? res.worktrees : [];
-    }, [cloudRpc]);
+    }, [remoteRpc]);
 
     const removeWorktree = useCallback(async (
         serverId: string,
         projectId: string,
         worktreePath: string,
     ): Promise<{ removed?: string }> => {
-        return cloudRpc<{ removed?: string }>(serverId, 'workspace:worktree:remove', {
+        return remoteRpc<{ removed?: string }>(serverId, 'workspace:worktree:remove', {
             project_id: projectId,
             worktree_path: worktreePath,
         });
-    }, [cloudRpc]);
+    }, [remoteRpc]);
 
     const getWorktreeDiff = useCallback(async (
         serverId: string,
         worktreePath: string,
         projectId?: string,
     ): Promise<WorktreeDiffResponse> => {
-        return cloudRpc<WorktreeDiffResponse>(serverId, 'workspace:worktree:diff', {
+        return remoteRpc<WorktreeDiffResponse>(serverId, 'workspace:worktree:diff', {
             project_id: projectId?.trim() || null,
             worktree_path: worktreePath,
         });
-    }, [cloudRpc]);
+    }, [remoteRpc]);
 
     const subscribeDiffStats = useCallback((listener: (event: RemoteDiffStatsEvent) => void) => {
         diffStatsListenersRef.current.add(listener);
@@ -487,8 +497,8 @@ export const useRemote = ({ wsRef, isConnected }: UseRemoteParams) => {
 
     const loadAvailableAgents = useCallback(async (serverId: string, forceRefresh = false) => {
         const [cfgRes, regRes] = await Promise.allSettled([
-            cloudRpc<{ agents: AcpAgent[] }>(serverId, 'acp:agents:get', {}),
-            cloudRpc<{ agents: AcpRegistryAgentSummary[] }>(serverId, 'acp:registry:list', {
+            remoteRpc<{ agents: AcpAgent[] }>(serverId, 'acp:agents:get', {}),
+            remoteRpc<{ agents: AcpRegistryAgentSummary[] }>(serverId, 'acp:registry:list', {
                 force_refresh: forceRefresh,
             }),
         ]);
@@ -502,10 +512,10 @@ export const useRemote = ({ wsRef, isConnected }: UseRemoteParams) => {
         setAvailableAgentsByServer((prev) => ({ ...prev, [serverId]: configured }));
         setRegistryAgentsByServer((prev) => ({ ...prev, [serverId]: registry }));
         return { configured, registry };
-    }, [cloudRpc]);
+    }, [remoteRpc]);
 
     const installRegistryAgent = useCallback(async (serverId: string, agentId: string): Promise<AcpAgent> => {
-        const res = await cloudRpc<{ preset: AcpAgent }>(serverId, 'acp:registry:install', {
+        const res = await remoteRpc<{ preset: AcpAgent }>(serverId, 'acp:registry:install', {
             agent_id: agentId,
         });
         const installedAgent: AcpAgent = {
@@ -520,14 +530,14 @@ export const useRemote = ({ wsRef, isConnected }: UseRemoteParams) => {
             return { ...prev, [serverId]: next };
         });
         return installedAgent;
-    }, [cloudRpc]);
+    }, [remoteRpc]);
 
     const syncAgent = useCallback(async (serverId: string, agentId: string): Promise<AcpAgent> => {
-        const res = await cloudRpc<{
+        const res = await remoteRpc<{
             agent: AcpAgent;
             agents?: AcpAgent[];
             installed_from_registry?: boolean;
-        }>(serverId, 'cloud:sync_agent', {
+        }>(serverId, 'remote:sync_agent', {
             agent_id: agentId,
         });
         const synced = res.agent;
@@ -545,14 +555,14 @@ export const useRemote = ({ wsRef, isConnected }: UseRemoteParams) => {
             loadAvailableAgents(serverId).catch(() => {});
         }
         return synced;
-    }, [cloudRpc, loadAvailableAgents]);
+    }, [remoteRpc, loadAvailableAgents]);
 
     const removeConfiguredAgent = useCallback(async (
         serverId: string,
         agentId: string,
         removeProfile = true,
     ) => {
-        const res = await cloudRpc<{
+        const res = await remoteRpc<{
             removed: boolean;
             agents?: AcpAgent[];
         }>(serverId, 'acp:agent:remove', {
@@ -568,20 +578,20 @@ export const useRemote = ({ wsRef, isConnected }: UseRemoteParams) => {
                 [serverId]: (prev[serverId] ?? []).filter((a) => a.id !== agentId),
             };
         });
-    }, [cloudRpc]);
+    }, [remoteRpc]);
 
     const listAgentSessions = useCallback(async (
         serverId: string,
         projectId: string,
         agent: AcpAgent,
     ): Promise<AcpSessionSummary[]> => {
-        const res = await cloudRpc<{ sessions: AcpSessionSummary[] }>(serverId, 'acp:sessions_list', {
+        const res = await remoteRpc<{ sessions: AcpSessionSummary[] }>(serverId, 'acp:sessions_list', {
             command: agent.command,
             args: agent.args,
             project_id: projectId,
         });
         return res.sessions ?? [];
-    }, [cloudRpc]);
+    }, [remoteRpc]);
 
     const sendPrompt = useCallback(async (
         serverId: string,
@@ -606,7 +616,7 @@ export const useRemote = ({ wsRef, isConnected }: UseRemoteParams) => {
                 queue: [...(existing.queue ?? []), optimisticItem],
             } : existing);
             try {
-                const res = await cloudRpc<{ id?: string }>(serverId, 'acp:prompt', {
+                const res = await remoteRpc<{ id?: string }>(serverId, 'acp:prompt', {
                     agent_id: agentId,
                     prompt,
                     attachments,
@@ -638,7 +648,7 @@ export const useRemote = ({ wsRef, isConnected }: UseRemoteParams) => {
         } : existing);
 
         try {
-            await cloudRpc(serverId, 'acp:prompt', {
+            await remoteRpc(serverId, 'acp:prompt', {
                 agent_id: agentId,
                 prompt,
                 attachments,
@@ -651,7 +661,7 @@ export const useRemote = ({ wsRef, isConnected }: UseRemoteParams) => {
             } : existing);
             throw err;
         }
-    }, [cloudRpc, updateSession]);
+    }, [remoteRpc, updateSession]);
 
     const startAgent = useCallback((params: {
         serverId: string;
@@ -711,7 +721,7 @@ export const useRemote = ({ wsRef, isConnected }: UseRemoteParams) => {
 
         (async () => {
             try {
-                const res = await cloudRpc<{
+                const res = await remoteRpc<{
                     agent_id: string;
                     project_id: string;
                     session_id?: string;
@@ -768,7 +778,7 @@ export const useRemote = ({ wsRef, isConnected }: UseRemoteParams) => {
         })();
 
         return agentId;
-    }, [cloudRpc, updateSession, sendPrompt]);
+    }, [remoteRpc, updateSession, sendPrompt]);
 
     const authenticateAgent = useCallback(async (serverId: string, agentId: string, methodId: string) => {
         const key = makeRemoteSessionKey(serverId, agentId);
@@ -778,7 +788,7 @@ export const useRemote = ({ wsRef, isConnected }: UseRemoteParams) => {
             pendingAuthMethod: methodId,
         } : existing);
         try {
-            const res = await cloudRpc<{ session_id?: string }>(serverId, 'acp:authenticate', {
+            const res = await remoteRpc<{ session_id?: string }>(serverId, 'acp:authenticate', {
                 agent_id: agentId,
                 method_id: methodId,
             });
@@ -798,18 +808,18 @@ export const useRemote = ({ wsRef, isConnected }: UseRemoteParams) => {
             } : existing);
             throw err;
         }
-    }, [cloudRpc, updateSession]);
+    }, [remoteRpc, updateSession]);
 
     const cancelPrompt = useCallback((serverId: string, agentId: string) => {
-        cloudRpc(serverId, 'acp:cancel', { agent_id: agentId }).catch(() => {});
-    }, [cloudRpc]);
+        remoteRpc(serverId, 'acp:cancel', { agent_id: agentId }).catch(() => {});
+    }, [remoteRpc]);
 
     const stopAgent = useCallback(async (serverId: string, agentId: string) => {
         const key = makeRemoteSessionKey(serverId, agentId);
-        await cloudRpc(serverId, 'acp:stop', { agent_id: agentId }).catch(() => {});
+        await remoteRpc(serverId, 'acp:stop', { agent_id: agentId }).catch(() => {});
         reconnectedKeysRef.current.delete(key);
         updateSession(key, () => undefined);
-    }, [cloudRpc, updateSession]);
+    }, [remoteRpc, updateSession]);
 
     const undoPrompt = useCallback(async (
         serverId: string,
@@ -818,7 +828,7 @@ export const useRemote = ({ wsRef, isConnected }: UseRemoteParams) => {
         prompt?: string,
     ) => {
         const key = makeRemoteSessionKey(serverId, agentId);
-        await cloudRpc(serverId, 'acp:undo', {
+        await remoteRpc(serverId, 'acp:undo', {
             agent_id: agentId,
             checkpoint_id: checkpointId,
             prompt,
@@ -839,7 +849,7 @@ export const useRemote = ({ wsRef, isConnected }: UseRemoteParams) => {
             }
             return existing;
         });
-    }, [cloudRpc, updateSession]);
+    }, [remoteRpc, updateSession]);
 
     const setSessionModel = useCallback((serverId: string, agentId: string, option: AcpSelectOption) => {
         const key = makeRemoteSessionKey(serverId, agentId);
@@ -847,8 +857,8 @@ export const useRemote = ({ wsRef, isConnected }: UseRemoteParams) => {
             ...existing,
             modelSelector: { ...existing.modelSelector, current_value: option.value },
         } : existing);
-        cloudRpc(serverId, 'acp:set_model', { agent_id: agentId, option }).catch(() => {});
-    }, [cloudRpc, updateSession]);
+        remoteRpc(serverId, 'acp:set_model', { agent_id: agentId, option }).catch(() => {});
+    }, [remoteRpc, updateSession]);
 
     const setSessionReasoning = useCallback((serverId: string, agentId: string, option: AcpSelectOption) => {
         const key = makeRemoteSessionKey(serverId, agentId);
@@ -856,24 +866,24 @@ export const useRemote = ({ wsRef, isConnected }: UseRemoteParams) => {
             ...existing,
             reasoningSelector: { ...existing.reasoningSelector, current_value: option.value },
         } : existing);
-        cloudRpc(serverId, 'acp:set_reasoning', { agent_id: agentId, option }).catch(() => {});
-    }, [cloudRpc, updateSession]);
+        remoteRpc(serverId, 'acp:set_reasoning', { agent_id: agentId, option }).catch(() => {});
+    }, [remoteRpc, updateSession]);
 
     const updateQueuedPrompt = useCallback((serverId: string, agentId: string, itemId: string, prompt: string) => {
-        cloudRpc(serverId, 'acp:queue:update', { agent_id: agentId, item_id: itemId, prompt }).catch(() => {});
-    }, [cloudRpc]);
+        remoteRpc(serverId, 'acp:queue:update', { agent_id: agentId, item_id: itemId, prompt }).catch(() => {});
+    }, [remoteRpc]);
 
     const removeQueuedPrompt = useCallback((serverId: string, agentId: string, itemId: string) => {
-        cloudRpc(serverId, 'acp:queue:remove', { agent_id: agentId, item_id: itemId }).catch(() => {});
-    }, [cloudRpc]);
+        remoteRpc(serverId, 'acp:queue:remove', { agent_id: agentId, item_id: itemId }).catch(() => {});
+    }, [remoteRpc]);
 
     const moveQueuedPrompt = useCallback((serverId: string, agentId: string, itemId: string, direction: 'up' | 'down') => {
-        cloudRpc(serverId, 'acp:queue:move', { agent_id: agentId, item_id: itemId, direction }).catch(() => {});
-    }, [cloudRpc]);
+        remoteRpc(serverId, 'acp:queue:move', { agent_id: agentId, item_id: itemId, direction }).catch(() => {});
+    }, [remoteRpc]);
 
     const sendQueuedPromptNow = useCallback((serverId: string, agentId: string, itemId: string) => {
-        cloudRpc(serverId, 'acp:queue:send_now', { agent_id: agentId, item_id: itemId }).catch(() => {});
-    }, [cloudRpc]);
+        remoteRpc(serverId, 'acp:queue:send_now', { agent_id: agentId, item_id: itemId }).catch(() => {});
+    }, [remoteRpc]);
 
     const getToolOutput = useCallback(async (
         serverId: string,
@@ -884,7 +894,7 @@ export const useRemote = ({ wsRef, isConnected }: UseRemoteParams) => {
         const cached = toolOutputCacheRef.current.get(cacheKey);
         if (cached !== undefined) return cached;
         try {
-            const res = await cloudRpc<{ output?: string }>(serverId, 'acp:get_tool_output', {
+            const res = await remoteRpc<{ output?: string }>(serverId, 'acp:get_tool_output', {
                 tool_id: toolId,
                 session_id: sessionId,
             });
@@ -894,7 +904,7 @@ export const useRemote = ({ wsRef, isConnected }: UseRemoteParams) => {
         } catch {
             return null;
         }
-    }, [cloudRpc]);
+    }, [remoteRpc]);
 
     return {
         servers,
@@ -903,7 +913,8 @@ export const useRemote = ({ wsRef, isConnected }: UseRemoteParams) => {
         registryAgentsByServer,
         isLoading,
         refreshServers,
-        cloudRpc,
+        remoteRpc,
+        cloudRpc: remoteRpc,
         addServer,
         removeServer,
         reconnectServer,

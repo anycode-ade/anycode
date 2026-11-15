@@ -99,6 +99,11 @@ pub async fn setup_socket(socket: &SocketRef, state: &AppState) {
     socket.on("workspace:remove-recent", handle_workspace_remove_recent);
     socket.on("workspace:select-project", handle_workspace_select_project);
     socket.on("workspace:close", handle_workspace_close);
+    socket.on("remote:servers:list", handle_cloud_servers_list);
+    socket.on("remote:servers:add", handle_cloud_servers_add);
+    socket.on("remote:servers:remove", handle_cloud_servers_remove);
+    socket.on("remote:servers:reconnect", handle_cloud_servers_reconnect);
+    socket.on("remote:rpc", handle_cloud_rpc);
     socket.on("cloud:servers:list", handle_cloud_servers_list);
     socket.on("cloud:servers:add", handle_cloud_servers_add);
     socket.on("cloud:servers:remove", handle_cloud_servers_remove);
