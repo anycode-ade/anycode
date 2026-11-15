@@ -992,7 +992,12 @@
 .remote-badge-btn {
     border: none;
     cursor: pointer;
-    font: inherit;
+    font-family: inherit;
+    transition: filter 0.14s ease;
+}
+
+.remote-badge-btn:hover {
+    filter: brightness(1.18);
 }
 
 /* Popovers */

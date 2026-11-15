@@ -2260,6 +2260,12 @@ pub struct RemoteGitStateInfo {
     pub commits_summary: Vec<String>,
     #[serde(default)]
     pub sync_meta: Option<RemoteSyncMetadata>,
+    #[serde(default)]
+    pub diff_added: usize,
+    #[serde(default)]
+    pub diff_removed: usize,
+    #[serde(default)]
+    pub diff_files: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -2878,6 +2884,9 @@ pub fn inspect_remote_git_state(repo_dir: &Path) -> Result<RemoteGitStateInfo> {
             commits_ahead: 0,
             commits_summary: Vec::new(),
             sync_meta: None,
+            diff_added: 0,
+            diff_removed: 0,
+            diff_files: 0,
         });
     }
 
@@ -2886,6 +2895,11 @@ pub fn inspect_remote_git_state(repo_dir: &Path) -> Result<RemoteGitStateInfo> {
     let (dirty_count, dirty_files) = collect_dirty_summary(repo_dir)?;
     let branch = current_branch_name(repo_dir);
     let branches = list_local_branches(repo_dir, branch.as_deref());
+    let diff_stats = if dirty_count > 0 || is_worktree || sync_meta.is_some() {
+        compute_worktree_diff_stats(repo_dir).unwrap_or_default()
+    } else {
+        WorktreeDiffStats::default()
+    };
     let Ok(head_sha) = run_git_checked(repo_dir, &["rev-parse", "HEAD"], &[]) else {
         return Ok(RemoteGitStateInfo {
             is_git_repo: true,
@@ -2899,6 +2913,9 @@ pub fn inspect_remote_git_state(repo_dir: &Path) -> Result<RemoteGitStateInfo> {
             commits_ahead: 0,
             commits_summary: Vec::new(),
             sync_meta,
+            diff_added: diff_stats.added,
+            diff_removed: diff_stats.removed,
+            diff_files: diff_stats.files,
         });
     };
 
@@ -2919,6 +2936,9 @@ pub fn inspect_remote_git_state(repo_dir: &Path) -> Result<RemoteGitStateInfo> {
         commits_ahead,
         commits_summary,
         sync_meta,
+        diff_added: diff_stats.added,
+        diff_removed: diff_stats.removed,
+        diff_files: diff_stats.files,
     })
 }
 

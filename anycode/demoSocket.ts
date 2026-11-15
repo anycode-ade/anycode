@@ -1,6 +1,23 @@
 // demoSocket.ts - In-memory Mock Socket for Anycode Live Demo
 import { Code } from 'anycode-editor';
 import { DEMO_RESUME_SESSION_ID, buildDemoResumeHistory } from './demoSessionHistory';
+import type {
+    RemoteServerView,
+    RemoteProjectInfo,
+    NodeAgentSummary,
+    RemoteWorktreeEntry,
+    WorktreeDiffResponse,
+    RemoteGitStateInfo,
+    PullProjectResult,
+    CreateWorktreeResult,
+    RemoteBrowseResponse,
+} from './features/remote/types';
+import type {
+    AcpAgent,
+    AcpRegistryAgentSummary,
+    AcpQueuedMessage,
+    AcpSelectOption,
+} from './types';
 
 type EventHandler = (...args: any[]) => void;
 
@@ -331,6 +348,177 @@ interface DemoRunningAgent {
     project_id: string | null;
 }
 
+
+const createInitialRemoteServers = (): RemoteServerView[] => [
+    {
+        id: 'local',
+        name: 'Local',
+        url: 'http://127.0.0.1:3000',
+        open_url: 'http://127.0.0.1:3000',
+        is_local: true,
+        status: 'online',
+        ping_ms: 1,
+        info: {
+            name: 'Local',
+            os: 'macos',
+            arch: 'arm64',
+            version: '0.1.0',
+        },
+        projects: [
+            { id: DEMO_PROJECT_ID, name: 'anycode-demo', root: '.' },
+        ],
+        agents: [],
+    },
+    {
+        id: 'srv-demo-1',
+        name: 'eu-west-gpu',
+        url: 'http://10.0.1.42:3000',
+        open_url: 'http://10.0.1.42:3000',
+        is_local: false,
+        status: 'online',
+        ping_ms: 18,
+        info: {
+            name: 'eu-west-gpu',
+            os: 'linux',
+            arch: 'x86_64',
+            version: '0.1.0',
+        },
+        projects: [
+            {
+                id: 'proj-gpu-1',
+                name: 'gpu-inference',
+                root: '/home/ubuntu/gpu-inference',
+            },
+            {
+                id: 'proj-models-2',
+                name: 'model-weights',
+                root: '/data/models',
+            },
+        ],
+        agents: [
+            {
+                id: 'claude-1',
+                project_id: 'proj-gpu-1',
+                name: 'Claude 3.7 Sonnet',
+                session_id: 'sess-remote-claude-1',
+                is_processing: false,
+                queue: [],
+                worktree_path: '/home/ubuntu/gpu-inference-wt-1',
+                worktree_branch: 'agent/fix-cuda-alloc',
+                diff_added: 14,
+                diff_removed: 3,
+                diff_files: 2,
+            },
+        ],
+    },
+];
+
+const createInitialRemoteWorktrees = (): Map<string, RemoteWorktreeEntry[]> => {
+    const map = new Map<string, RemoteWorktreeEntry[]>();
+    map.set('srv-demo-1::proj-gpu-1', [
+        {
+            id: 'wt-cuda-1',
+            path: '/home/ubuntu/gpu-inference-wt-1',
+            branch: 'agent/fix-cuda-alloc',
+            head_sha: 'd3adb33f00000001',
+            short_sha: 'd3adb33',
+            commits_ahead: 1,
+            dirty_count: 0,
+            is_dirty: false,
+            base_sha: '0000000000000000',
+            is_main: false,
+            diff_added: 14,
+            diff_removed: 3,
+            diff_files: 2,
+        },
+    ]);
+    return map;
+};
+
+const DEFAULT_REMOTE_CONFIGURED_AGENTS: AcpAgent[] = [
+    {
+        id: 'claude',
+        name: 'Claude Code',
+        command: 'claude-code-acp',
+        args: [],
+        description: 'Anthropic Claude Code via ACP',
+        profile: 'claude',
+    },
+    {
+        id: 'codex',
+        name: 'Codex ACP',
+        command: 'codex-acp',
+        args: [],
+        description: 'OpenAI Codex agent via ACP',
+        profile: 'codex',
+    },
+];
+
+const DEFAULT_LOCAL_CONFIGURED_AGENTS: AcpAgent[] = [
+    {
+        id: 'demo-agent',
+        name: 'Demo Agent',
+        command: 'demo-acp',
+        args: [],
+        description: 'Local demo mock agent',
+    },
+];
+
+const DEFAULT_REMOTE_REGISTRY_AGENTS: AcpRegistryAgentSummary[] = [
+    {
+        id: 'claude-code-acp',
+        name: 'Claude Code',
+        version: '0.2.14',
+        description: 'Anthropic Claude Code CLI ACP bridge',
+        authors: ['Anthropic', 'Anycode'],
+        distribution_type: 'binary',
+        is_supported: true,
+        has_update: false,
+        is_installed: true,
+        installed_version: '0.2.14',
+        installed_path: 'claude-code-acp',
+        binary_target: {
+            archive: 'claude-code-acp-linux-x64.tar.gz',
+            cmd: 'claude-code-acp',
+            args: [],
+        },
+    },
+    {
+        id: 'codex-acp',
+        name: 'Codex ACP',
+        version: '0.1.8',
+        description: 'OpenAI Codex reasoning and code generation agent',
+        authors: ['OpenAI', 'Anycode'],
+        distribution_type: 'binary',
+        is_supported: true,
+        has_update: false,
+        is_installed: true,
+        installed_version: '0.1.8',
+        installed_path: 'codex-acp',
+        binary_target: {
+            archive: 'codex-acp-linux-x64.tar.gz',
+            cmd: 'codex-acp',
+            args: [],
+        },
+    },
+    {
+        id: 'gemini-acp',
+        name: 'Gemini CLI',
+        version: '1.2.0',
+        description: 'Google DeepMind Gemini agent for coding',
+        authors: ['Google DeepMind'],
+        distribution_type: 'binary',
+        is_supported: true,
+        has_update: false,
+        is_installed: false,
+        binary_target: {
+            archive: 'gemini-acp-linux-x64.tar.gz',
+            cmd: 'gemini-acp',
+            args: [],
+        },
+    },
+];
+
 export class DemoSocket {
     public connected: boolean = true;
     public active: boolean = true;
@@ -341,6 +529,17 @@ export class DemoSocket {
     private terminalCurrentDir: string = '.';
     private agentNames: Map<string, string> = new Map();
     private runningAgents: Map<string, DemoRunningAgent> = new Map();
+    public remoteServers: RemoteServerView[] = createInitialRemoteServers();
+    private remoteWorktrees: Map<string, RemoteWorktreeEntry[]> = createInitialRemoteWorktrees();
+    private remoteConfiguredAgents: Map<string, AcpAgent[]> = new Map([
+        ['local', [...DEFAULT_LOCAL_CONFIGURED_AGENTS]],
+        ['srv-demo-1', [...DEFAULT_REMOTE_CONFIGURED_AGENTS]],
+    ]);
+    private remoteRegistryAgents: Map<string, AcpRegistryAgentSummary[]> = new Map([
+        ['local', [...DEFAULT_REMOTE_REGISTRY_AGENTS]],
+        ['srv-demo-1', [...DEFAULT_REMOTE_REGISTRY_AGENTS]],
+    ]);
+    private remotePromptTimers: Map<string, ReturnType<typeof setTimeout>[]> = new Map();
 
     constructor() {
         // Trigger connect event on next tick
@@ -383,6 +582,8 @@ export class DemoSocket {
     public disconnect(): this {
         this.connected = false;
         this.active = false;
+        this.remotePromptTimers.forEach((timers) => timers.forEach(clearTimeout));
+        this.remotePromptTimers.clear();
         this.emitLocal('disconnect', 'client disconnect');
         return this;
     }
@@ -410,6 +611,31 @@ export class DemoSocket {
 
     private handleEvent(event: string, payload: any, callback: ((res: any) => void) | null): void {
         switch (event) {
+            case 'remote:servers:list': {
+                callback?.({ success: true, servers: [...this.remoteServers] });
+                break;
+            }
+
+            case 'remote:servers:add': {
+                this.handleRemoteServersAdd(payload, callback);
+                break;
+            }
+
+            case 'remote:servers:remove': {
+                this.handleRemoteServersRemove(payload, callback);
+                break;
+            }
+
+            case 'remote:servers:reconnect': {
+                this.handleRemoteServersReconnect(payload, callback);
+                break;
+            }
+
+            case 'remote:rpc': {
+                this.handleRemoteRpc(payload, callback);
+                break;
+            }
+
             case 'workspace:state':
             case 'workspace:select-project':
             case 'workspace:add-project':
@@ -1437,4 +1663,835 @@ export class DemoSocket {
             }
         }
     }
+
+    private getWorktreesForProject(serverId: string, projectId?: string | null): RemoteWorktreeEntry[] {
+        const key = `${serverId}::${projectId || ''}`;
+        if (!this.remoteWorktrees.has(key)) {
+            this.remoteWorktrees.set(key, []);
+        }
+        return this.remoteWorktrees.get(key)!;
+    }
+
+    private getConfiguredAgents(serverId: string): AcpAgent[] {
+        if (!this.remoteConfiguredAgents.has(serverId)) {
+            this.remoteConfiguredAgents.set(serverId, [...DEFAULT_REMOTE_CONFIGURED_AGENTS]);
+        }
+        return this.remoteConfiguredAgents.get(serverId)!;
+    }
+
+    private getRegistryAgents(serverId: string): AcpRegistryAgentSummary[] {
+        if (!this.remoteRegistryAgents.has(serverId)) {
+            this.remoteRegistryAgents.set(serverId, [...DEFAULT_REMOTE_REGISTRY_AGENTS]);
+        }
+        return this.remoteRegistryAgents.get(serverId)!;
+    }
+
+    private handleRemoteServersAdd(payload: any, callback: ((res: any) => void) | null): void {
+        const url = (payload?.url || '').trim();
+        const name = (payload?.name || '').trim() || url.replace(/^https?:\/\//, '').split(/[:/]/)[0] || 'remote-node';
+        if (!url) {
+            callback?.({ success: false, error: 'Server URL is required' });
+            return;
+        }
+        if (!/^https?:\/\//i.test(url)) {
+            callback?.({ success: false, error: 'Server URL must start with http:// or https://' });
+            return;
+        }
+
+        const id = `srv-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+        let status: 'online' | 'offline' | 'auth_error' = 'online';
+        let error: string | null = null;
+        let ping_ms: number | null = 22;
+
+        if (url.includes('offline') || url.includes('unreachable')) {
+            status = 'offline';
+            error = 'Connection refused (host unreachable)';
+            ping_ms = null;
+        } else if (url.includes('bad-token') || url.includes('auth-error') || payload?.token === 'invalid') {
+            status = 'auth_error';
+            error = 'Authentication failed: invalid token';
+            ping_ms = null;
+        }
+
+        const newServer: RemoteServerView = {
+            id,
+            name,
+            url,
+            open_url: url,
+            is_local: false,
+            status,
+            error,
+            ping_ms,
+            info: status === 'online' ? {
+                name,
+                os: 'linux',
+                arch: 'x86_64',
+                version: '0.1.0',
+            } : null,
+            projects: status === 'online' ? [
+                {
+                    id: `proj-${id}-1`,
+                    name: `${name}-work`,
+                    root: `/home/ubuntu/${name}-work`,
+                },
+            ] : [],
+            agents: [],
+        };
+
+        this.remoteServers.push(newServer);
+        this.emitLocal('remote:servers:updated', { servers: [...this.remoteServers] });
+        callback?.({ success: true, server: newServer });
+    }
+
+    private handleRemoteServersRemove(payload: any, callback: ((res: any) => void) | null): void {
+        const serverId = payload?.server_id;
+        const index = this.remoteServers.findIndex((s) => s.id === serverId);
+        if (index !== -1) {
+            this.remoteServers.splice(index, 1);
+            this.emitLocal('remote:servers:updated', { servers: [...this.remoteServers] });
+            callback?.({ success: true });
+        } else {
+            callback?.({ success: false, error: `Server ${serverId} not found` });
+        }
+    }
+
+    private handleRemoteServersReconnect(payload: any, callback: ((res: any) => void) | null): void {
+        const serverId = payload?.server_id;
+        const srv = this.remoteServers.find((s) => s.id === serverId);
+        if (srv) {
+            srv.status = 'connecting';
+            srv.error = null;
+            this.emitLocal('remote:servers:updated', { servers: [...this.remoteServers] });
+            setTimeout(() => {
+                srv.status = 'online';
+                srv.ping_ms = 19;
+                srv.error = null;
+                if (!srv.info) {
+                    srv.info = {
+                        name: srv.name,
+                        os: 'linux',
+                        arch: 'x86_64',
+                        version: '0.1.0',
+                    };
+                }
+                this.emitLocal('remote:servers:updated', { servers: [...this.remoteServers] });
+            }, 60);
+            callback?.({ success: true });
+        } else {
+            callback?.({ success: false, error: `Server ${serverId} not found` });
+        }
+    }
+
+    private runRemoteAgentPrompt(serverId: string, agent: NodeAgentSummary, prompt: string, attachments: any[]): void {
+        const server = this.remoteServers.find((s) => s.id === serverId);
+        agent.is_processing = true;
+        this.emitLocal('remote:acp:message', {
+            server_id: serverId,
+            agent_id: agent.id,
+            item: { role: 'prompt_state', is_processing: true },
+        });
+
+        const chunks = [
+            `I am **${agent.name}** on remote node **${server?.name || serverId}**.\n\n`,
+            `Processing task: "${prompt}".\n\n`,
+            `Verified environment on ${server?.info?.os || 'linux'} (${server?.info?.arch || 'x86_64'}). Everything is operational!\n\n`,
+            `> ℹ️ **Demo Mode Notice**: Remote agent responded successfully.`,
+        ];
+
+        const timerKey = `${serverId}::${agent.id}`;
+        const timers: ReturnType<typeof setTimeout>[] = [];
+        this.remotePromptTimers.set(timerKey, timers);
+
+        chunks.forEach((chunk, index) => {
+            const t = setTimeout(() => {
+                this.emitLocal('remote:acp:message', {
+                    server_id: serverId,
+                    agent_id: agent.id,
+                    item: { role: 'assistant', content: chunk, is_chunk: true },
+                });
+            }, (index + 1) * 120);
+            timers.push(t);
+        });
+
+        const finishTimer = setTimeout(() => {
+            if (agent.worktree_path) {
+                agent.diff_added = (agent.diff_added ?? 0) + 4;
+                agent.diff_removed = (agent.diff_removed ?? 0) + 1;
+                agent.diff_files = Math.max(1, agent.diff_files ?? 1);
+                this.emitLocal('remote:acp:diff_stats', {
+                    server_id: serverId,
+                    agent_id: agent.id,
+                    worktree_path: agent.worktree_path,
+                    diff_added: agent.diff_added,
+                    diff_removed: agent.diff_removed,
+                    diff_files: agent.diff_files,
+                });
+            }
+
+            this.emitLocal('remote:acp:message', {
+                server_id: serverId,
+                agent_id: agent.id,
+                item: { role: 'prompt_state', is_processing: false },
+            });
+            agent.is_processing = false;
+            this.remotePromptTimers.delete(timerKey);
+
+            if (agent.queue.length > 0) {
+                const next = agent.queue.shift()!;
+                this.emitLocal('remote:acp:queue', {
+                    server_id: serverId,
+                    agent_id: agent.id,
+                    queue: [...agent.queue],
+                });
+                setTimeout(() => {
+                    this.runRemoteAgentPrompt(serverId, agent, next.prompt, next.attachments || []);
+                }, 20);
+            }
+        }, (chunks.length + 1) * 120);
+        timers.push(finishTimer);
+    }
+
+    private handleRemoteRpc(payload: any, callback: ((res: any) => void) | null): void {
+        const { server_id, method, params } = payload || {};
+        const server = this.remoteServers.find((s) => s.id === server_id);
+        if (!server && method !== 'workspace:browse') {
+            callback?.({ success: false, error: `Server ${server_id} not found` });
+            return;
+        }
+
+        switch (method) {
+            case 'workspace:browse': {
+                const reqPath = params?.path || '/home/ubuntu';
+                const normPath = reqPath.replace(/\/$/, '') || '/';
+                const name = normPath.split('/').filter(Boolean).pop() || 'ubuntu';
+                const parent = normPath === '/' ? null : normPath.split('/').slice(0, -1).join('/') || '/';
+                const res: RemoteBrowseResponse = {
+                    path: normPath,
+                    name,
+                    parent,
+                    directories: [
+                        { name: 'gpu-inference', path: `${normPath}/gpu-inference` },
+                        { name: 'model-weights', path: `${normPath}/model-weights` },
+                        { name: 'experiments', path: `${normPath}/experiments` },
+                        { name: 'logs', path: `${normPath}/logs` },
+                    ],
+                };
+                callback?.({ success: true, data: res });
+                break;
+            }
+
+            case 'workspace:add-project': {
+                const reqPath = (params?.path || '').trim();
+                const name = reqPath.split('/').filter(Boolean).pop() || 'project';
+                const newProj: RemoteProjectInfo = {
+                    id: `proj-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                    name,
+                    root: reqPath,
+                };
+                server!.projects.push(newProj);
+                this.emitLocal('remote:servers:updated', { servers: [...this.remoteServers] });
+                callback?.({ success: true, data: { project: newProj } });
+                break;
+            }
+
+            case 'workspace:remove-project': {
+                const projectId = params?.project_id;
+                server!.projects = server!.projects.filter((p) => p.id !== projectId);
+                server!.agents = server!.agents.filter((a) => a.project_id !== projectId);
+                this.remoteWorktrees.delete(`${server_id}::${projectId}`);
+                this.emitLocal('remote:servers:updated', { servers: [...this.remoteServers] });
+                callback?.({ success: true, data: {} });
+                break;
+            }
+
+            case 'workspace:clone': {
+                const url = (params?.url || '').trim();
+                const name = (url.split('/').pop() || 'cloned-repo').replace(/\.git$/, '');
+                const root = params?.target_dir || `/home/ubuntu/${name}`;
+                const newProj: RemoteProjectInfo = {
+                    id: `proj-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                    name,
+                    root,
+                };
+                server!.projects.push(newProj);
+                this.emitLocal('remote:servers:updated', { servers: [...this.remoteServers] });
+                callback?.({ success: true, data: { project: newProj } });
+                break;
+            }
+
+            case 'remote:sync_project': {
+                const reqPath = (params?.path || '').trim();
+                const name = (params?.name || '').trim() || reqPath.split('/').filter(Boolean).pop() || 'synced-project';
+                const root = params?.target_dir || `/home/ubuntu/${name}`;
+                const newProj: RemoteProjectInfo = {
+                    id: `proj-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                    name,
+                    root,
+                };
+                server!.projects.push(newProj);
+                this.emitLocal('remote:servers:updated', { servers: [...this.remoteServers] });
+                callback?.({ success: true, data: { project: newProj } });
+                break;
+            }
+
+            case 'workspace:git-info': {
+                const reqPath = params?.path || '';
+                const isWt = Boolean(reqPath.includes('-wt-'));
+                const res: RemoteGitStateInfo = {
+                    is_git_repo: true,
+                    is_worktree: isWt,
+                    has_commits: true,
+                    head_sha: 'd3adb33f00000001',
+                    branch: isWt ? (reqPath.split('-wt-')[1] ? `agent/${reqPath.split('-wt-')[1]}` : 'worktree') : 'main',
+                    branches: ['main', 'dev', 'agent/fix-cuda-alloc'],
+                    dirty_count: 1,
+                    dirty_files: ['src/inference.py'],
+                    commits_ahead: 1,
+                    commits_summary: ['fix(cuda): optimize tensor allocation'],
+                    diff_added: isWt ? 14 : 3,
+                    diff_removed: isWt ? 3 : 1,
+                    diff_files: isWt ? 2 : 1,
+                    sync_meta: {
+                        base_sha: '0000000000000000',
+                        branch: 'main',
+                        source_root: '.',
+                        source_name: 'anycode-demo',
+                        synced_at_epoch: 1735689600,
+                    },
+                };
+                callback?.({ success: true, data: res });
+                break;
+            }
+
+            case 'remote:pull_project': {
+                const res: PullProjectResult = {
+                    success: true,
+                    changed: true,
+                    worktree_path: `${params?.local_project_path || '.'}-pulled-wt`,
+                    branch: params?.branch || 'agent/pulled-branch',
+                    project: {
+                        id: 'local-pulled',
+                        name: 'pulled-worktree',
+                        root: `${params?.local_project_path || '.'}-pulled-wt`,
+                    },
+                    head_sha: '1234567890abcdef',
+                    has_wip: false,
+                    commits_count: 2,
+                    dirty_count: 0,
+                    commits_summary: ['feat: updated inference pipeline', 'fix: cuda allocation logic'],
+                    dirty_files: [],
+                };
+                callback?.({ success: true, data: res });
+                break;
+            }
+
+            case 'workspace:worktree:create': {
+                const projectId = params?.project_id;
+                const project = server!.projects.find((p) => p.id === projectId);
+                const wtNum = Date.now().toString().slice(-4);
+                const branchName = params?.branch || `agent/worktree-${wtNum}`;
+                const root = project?.root || '/home/ubuntu/workspace';
+                const wtPath = `${root}-wt-${wtNum}`;
+                const wtEntry: RemoteWorktreeEntry = {
+                    id: `wt-${wtNum}`,
+                    path: wtPath,
+                    branch: branchName,
+                    head_sha: 'd3adb33f00000003',
+                    short_sha: 'd3adb33',
+                    commits_ahead: 0,
+                    dirty_count: params?.include_dirty ? 1 : 0,
+                    is_dirty: Boolean(params?.include_dirty),
+                    base_sha: '0000000000000000',
+                    is_main: false,
+                    diff_added: 5,
+                    diff_removed: 1,
+                    diff_files: 1,
+                };
+                const list = this.getWorktreesForProject(server_id, projectId);
+                list.push(wtEntry);
+
+                if (params?.register_in_workspace) {
+                    server!.projects.push({
+                        id: `proj-wt-${wtNum}`,
+                        name: `${project?.name || 'wt'} (${branchName})`,
+                        root: wtPath,
+                    });
+                    this.emitLocal('remote:servers:updated', { servers: [...this.remoteServers] });
+                }
+
+                const result: CreateWorktreeResult = {
+                    worktree_path: wtPath,
+                    branch: branchName,
+                    project: project ? { id: project.id, name: project.name, root: project.root } : undefined,
+                    already_present: false,
+                };
+                callback?.({ success: true, data: result });
+                break;
+            }
+
+            case 'workspace:worktree:list': {
+                const projectId = params?.project_id;
+                const list = this.getWorktreesForProject(server_id, projectId);
+                callback?.({ success: true, data: { worktrees: [...list] } });
+                break;
+            }
+
+            case 'workspace:worktree:remove': {
+                const projectId = params?.project_id;
+                const wtPath = params?.worktree_path;
+                const list = this.getWorktreesForProject(server_id, projectId);
+                const idx = list.findIndex((w) => w.path === wtPath);
+                if (idx !== -1) {
+                    list.splice(idx, 1);
+                }
+                callback?.({ success: true, data: { removed: wtPath } });
+                break;
+            }
+
+            case 'workspace:worktree:diff': {
+                const wtPath = params?.worktree_path || '';
+                const res: WorktreeDiffResponse = {
+                    worktree_path: wtPath,
+                    base_sha: '0000000000000000',
+                    branch: 'agent/fix-cuda-alloc',
+                    added: 14,
+                    removed: 3,
+                    truncated: false,
+                    files: [
+                        {
+                            path: 'src/inference.py',
+                            status: 'modified',
+                            added: 10,
+                            removed: 2,
+                            is_binary: false,
+                            hunks: [
+                                {
+                                    old_start: 1,
+                                    new_start: 1,
+                                    lines: [
+                                        { kind: 'context', text: 'import torch' },
+                                        { kind: 'del', text: 'def allocate_memory():' },
+                                        { kind: 'del', text: '    return torch.empty(1024)' },
+                                        { kind: 'add', text: 'def allocate_memory(device: str = "cuda"):' },
+                                        { kind: 'add', text: '    """Allocate CUDA tensor with caching allocator."""' },
+                                        { kind: 'add', text: '    if not torch.cuda.is_available():' },
+                                        { kind: 'add', text: '        return torch.empty(1024, device="cpu")' },
+                                        { kind: 'add', text: '    return torch.empty(1024, device=device)' },
+                                        { kind: 'context', text: '' },
+                                        { kind: 'context', text: 'def run():' },
+                                        { kind: 'add', text: '    tensor = allocate_memory()' },
+                                        { kind: 'add', text: '    print(f"Allocated: {tensor.shape}")' },
+                                    ],
+                                },
+                            ],
+                        },
+                        {
+                            path: 'README.md',
+                            status: 'modified',
+                            added: 4,
+                            removed: 1,
+                            is_binary: false,
+                            hunks: [
+                                {
+                                    old_start: 5,
+                                    new_start: 5,
+                                    lines: [
+                                        { kind: 'context', text: '## Requirements' },
+                                        { kind: 'del', text: '- CUDA 11.8' },
+                                        { kind: 'add', text: '- CUDA 12.1+' },
+                                        { kind: 'add', text: '- PyTorch 2.2+' },
+                                        { kind: 'add', text: '- NCCL enabled' },
+                                        { kind: 'add', text: '- 16GB+ VRAM recommended' },
+                                    ],
+                                },
+                            ],
+                        },
+                    ],
+                };
+                callback?.({ success: true, data: res });
+                break;
+            }
+
+            case 'acp:agents:get': {
+                callback?.({ success: true, data: { agents: [...this.getConfiguredAgents(server_id)] } });
+                break;
+            }
+
+            case 'acp:registry:list': {
+                callback?.({ success: true, data: { agents: [...this.getRegistryAgents(server_id)] } });
+                break;
+            }
+
+            case 'acp:registry:install': {
+                const agentId = params?.agent_id;
+                const regList = this.getRegistryAgents(server_id);
+                const regItem = regList.find((r) => r.id === agentId);
+                const installed: AcpAgent = {
+                    id: agentId,
+                    name: regItem?.name || agentId,
+                    command: regItem?.binary_target?.cmd || agentId,
+                    args: regItem?.binary_target?.args || [],
+                    description: regItem?.description,
+                };
+                const configured = this.getConfiguredAgents(server_id);
+                const existingIdx = configured.findIndex((a) => a.id === agentId);
+                if (existingIdx !== -1) {
+                    configured[existingIdx] = installed;
+                } else {
+                    configured.push(installed);
+                }
+                if (regItem) {
+                    regItem.is_installed = true;
+                    regItem.installed_version = regItem.version;
+                    regItem.installed_path = installed.command;
+                }
+                callback?.({ success: true, data: { preset: installed } });
+                break;
+            }
+
+            case 'remote:sync_agent': {
+                const agentId = params?.agent_id;
+                const regItem = this.getRegistryAgents(server_id).find((r) => r.id === agentId);
+                const synced: AcpAgent = {
+                    id: agentId,
+                    name: regItem?.name || agentId,
+                    command: regItem?.binary_target?.cmd || agentId,
+                    args: regItem?.binary_target?.args || [],
+                    description: regItem?.description || 'Synced agent',
+                };
+                const configured = this.getConfiguredAgents(server_id);
+                if (!configured.some((a) => a.id === agentId)) {
+                    configured.push(synced);
+                }
+                callback?.({
+                    success: true,
+                    data: {
+                        agent: synced,
+                        agents: [...configured],
+                        installed_from_registry: Boolean(regItem),
+                    },
+                });
+                break;
+            }
+
+            case 'acp:agent:remove': {
+                const agentId = params?.agent_id;
+                const configured = this.getConfiguredAgents(server_id);
+                const nextList = configured.filter((a) => a.id !== agentId);
+                this.remoteConfiguredAgents.set(server_id, nextList);
+                callback?.({ success: true, data: { removed: true, agents: nextList } });
+                break;
+            }
+
+            case 'acp:sessions_list': {
+                callback?.({ success: true, data: { sessions: [] } });
+                break;
+            }
+
+            case 'acp:reconnect': {
+                if (server) {
+                    for (const agent of server.agents) {
+                        if (agent.id === 'claude-1') {
+                            this.emitLocal('remote:acp:history', {
+                                server_id,
+                                agent_id: agent.id,
+                                history: [
+                                    {
+                                        role: 'session_model_selector',
+                                        current_value: 'claude-3-7-sonnet',
+                                        options: [
+                                            { config_id: 'model', value: 'claude-3-7-sonnet', name: 'Claude 3.7 Sonnet' },
+                                            { config_id: 'model', value: 'claude-3-5-sonnet', name: 'Claude 3.5 Sonnet' },
+                                        ],
+                                    },
+                                    { role: 'user', content: 'Inspect the GPU memory leak in CUDA allocator' },
+                                    {
+                                        role: 'assistant',
+                                        content: 'I analyzed the CUDA tensor allocations in `src/inference.py`. The tensors were allocated on the default allocator without clearing the cache on OOM. I have added `torch.cuda.empty_cache()` and updated the allocation helper.',
+                                    },
+                                ],
+                            });
+                            this.emitLocal('remote:acp:diff_stats', {
+                                server_id,
+                                agent_id: agent.id,
+                                worktree_path: agent.worktree_path,
+                                diff_added: 14,
+                                diff_removed: 3,
+                                diff_files: 2,
+                            });
+                        }
+                        if (agent.queue.length > 0) {
+                            this.emitLocal('remote:acp:queue', {
+                                server_id,
+                                agent_id: agent.id,
+                                queue: [...agent.queue],
+                            });
+                        }
+                    }
+                }
+                callback?.({ success: true, data: { agents: server ? [...server.agents] : [] } });
+                break;
+            }
+
+            case 'acp:start': {
+                const agentId = params?.agent_id || `agent-${Date.now()}`;
+                const agentName = params?.agent_name || params?.name || 'AI Agent';
+                const project = server!.projects.find((p) => p.id === params?.project_id);
+
+                let wtPath: string | null = params?.worktree_path || null;
+                let wtBranch: string | null = params?.worktree_branch || null;
+
+                if (params?.isolate_worktree && !wtPath) {
+                    const hash = params?.worktree_name || Math.random().toString(36).slice(2, 10);
+                    wtBranch = params?.worktree_branch || `agent/${hash}`;
+                    wtPath = `${project?.root || '/home/ubuntu/workspace'}-wt-${hash}`;
+
+                    const projectKey = `${server_id}::${project?.id || ''}`;
+                    const list = this.remoteWorktrees.get(projectKey) || [];
+                    const wtEntry: RemoteWorktreeEntry = {
+                        id: `wt-${hash.slice(0, 8)}`,
+                        path: wtPath,
+                        branch: wtBranch,
+                        head_sha: 'd3adb33f00000004',
+                        short_sha: 'd3adb33',
+                        commits_ahead: 0,
+                        dirty_count: 0,
+                        is_dirty: false,
+                        base_sha: '0000000000000000',
+                        is_main: false,
+                        diff_added: 0,
+                        diff_removed: 0,
+                        diff_files: 0,
+                    };
+                    list.push(wtEntry);
+                    this.remoteWorktrees.set(projectKey, list);
+                }
+
+                const summary: NodeAgentSummary = {
+                    id: agentId,
+                    project_id: params?.project_id ?? null,
+                    name: agentName,
+                    session_id: params?.resume_session_id || `sess-${server_id}-${agentId}`,
+                    is_processing: false,
+                    queue: [],
+                    worktree_path: wtPath,
+                    worktree_branch: wtBranch,
+                    diff_added: 0,
+                    diff_removed: 0,
+                    diff_files: 0,
+                };
+
+                const existingIdx = server!.agents.findIndex((a) => a.id === agentId);
+                if (existingIdx !== -1) {
+                    server!.agents[existingIdx] = summary;
+                } else {
+                    server!.agents.push(summary);
+                }
+                this.emitLocal('remote:servers:updated', { servers: [...this.remoteServers] });
+
+                callback?.({
+                    success: true,
+                    data: {
+                        agent_id: agentId,
+                        project_id: params?.project_id,
+                        session_id: summary.session_id,
+                        worktree_path: wtPath,
+                        worktree_branch: wtBranch,
+                        diff_added: 0,
+                        diff_removed: 0,
+                        diff_files: 0,
+                        auth_required: false,
+                        auth_methods: [],
+                    },
+                });
+                break;
+            }
+
+            case 'acp:stop': {
+                const agentId = params?.agent_id;
+                server!.agents = server!.agents.filter((a) => a.id !== agentId);
+                const timerKey = `${server_id}::${agentId}`;
+                const timers = this.remotePromptTimers.get(timerKey);
+                if (timers) {
+                    timers.forEach(clearTimeout);
+                    this.remotePromptTimers.delete(timerKey);
+                }
+                this.emitLocal('remote:servers:updated', { servers: [...this.remoteServers] });
+                callback?.({ success: true, data: {} });
+                break;
+            }
+
+            case 'acp:authenticate': {
+                callback?.({
+                    success: true,
+                    data: { session_id: `sess-${server_id}-${params?.agent_id}-auth` },
+                });
+                break;
+            }
+
+            case 'acp:prompt': {
+                const agentId = params?.agent_id;
+                const prompt = params?.prompt || '';
+                const attachments = params?.attachments || [];
+                const agent = server!.agents.find((a) => a.id === agentId);
+
+                if (!agent) {
+                    callback?.({ success: false, error: `Agent ${agentId} not found` });
+                    return;
+                }
+
+                if (agent.is_processing) {
+                    const queuedItem: AcpQueuedMessage = {
+                        id: `queue-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                        prompt,
+                        attachments: attachments.length ? attachments : undefined,
+                        created_at: Math.floor(Date.now() / 1000),
+                    };
+                    agent.queue.push(queuedItem);
+                    this.emitLocal('remote:acp:queue', {
+                        server_id,
+                        agent_id: agentId,
+                        queue: [...agent.queue],
+                    });
+                    callback?.({ success: true, data: { id: queuedItem.id } });
+                    return;
+                }
+
+                callback?.({ success: true, data: {} });
+                this.runRemoteAgentPrompt(server_id, agent, prompt, attachments);
+                break;
+            }
+
+            case 'acp:cancel': {
+                const agentId = params?.agent_id;
+                const agent = server!.agents.find((a) => a.id === agentId);
+                if (agent) {
+                    const timerKey = `${server_id}::${agentId}`;
+                    const timers = this.remotePromptTimers.get(timerKey);
+                    if (timers) {
+                        timers.forEach(clearTimeout);
+                        this.remotePromptTimers.delete(timerKey);
+                    }
+                    agent.is_processing = false;
+                    this.emitLocal('remote:acp:message', {
+                        server_id,
+                        agent_id: agentId,
+                        item: { role: 'prompt_state', is_processing: false },
+                    });
+                }
+                callback?.({ success: true, data: {} });
+                break;
+            }
+
+            case 'acp:undo':
+            case 'acp:set_model':
+            case 'acp:set_reasoning': {
+                callback?.({ success: true, data: {} });
+                break;
+            }
+
+            case 'acp:get_tool_output': {
+                callback?.({
+                    success: true,
+                    data: {
+                        output: `[Remote output for ${params?.tool_id || 'tool'}]\nSuccessfully retrieved from ${server!.name}.`,
+                    },
+                });
+                break;
+            }
+
+            case 'acp:queue:update': {
+                const agentId = params?.agent_id;
+                const itemId = params?.item_id;
+                const prompt = params?.prompt || '';
+                const agent = server!.agents.find((a) => a.id === agentId);
+                if (agent) {
+                    const item = agent.queue.find((q) => q.id === itemId);
+                    if (item) item.prompt = prompt;
+                    this.emitLocal('remote:acp:queue', {
+                        server_id,
+                        agent_id: agentId,
+                        queue: [...agent.queue],
+                    });
+                }
+                callback?.({ success: true, data: {} });
+                break;
+            }
+
+            case 'acp:queue:remove': {
+                const agentId = params?.agent_id;
+                const itemId = params?.item_id;
+                const agent = server!.agents.find((a) => a.id === agentId);
+                if (agent) {
+                    agent.queue = agent.queue.filter((q) => q.id !== itemId);
+                    this.emitLocal('remote:acp:queue', {
+                        server_id,
+                        agent_id: agentId,
+                        queue: [...agent.queue],
+                    });
+                }
+                callback?.({ success: true, data: {} });
+                break;
+            }
+
+            case 'acp:queue:move': {
+                const agentId = params?.agent_id;
+                const itemId = params?.item_id;
+                const dir = params?.direction;
+                const agent = server!.agents.find((a) => a.id === agentId);
+                if (agent) {
+                    const idx = agent.queue.findIndex((q) => q.id === itemId);
+                    if (idx !== -1) {
+                        const targetIdx = dir === 'up' ? idx - 1 : idx + 1;
+                        if (targetIdx >= 0 && targetIdx < agent.queue.length) {
+                            const [item] = agent.queue.splice(idx, 1);
+                            agent.queue.splice(targetIdx, 0, item);
+                            this.emitLocal('remote:acp:queue', {
+                                server_id,
+                                agent_id: agentId,
+                                queue: [...agent.queue],
+                            });
+                        }
+                    }
+                }
+                callback?.({ success: true, data: {} });
+                break;
+            }
+
+            case 'acp:queue:send_now': {
+                const agentId = params?.agent_id;
+                const itemId = params?.item_id;
+                const agent = server!.agents.find((a) => a.id === agentId);
+                if (agent) {
+                    const idx = agent.queue.findIndex((q) => q.id === itemId);
+                    if (idx !== -1) {
+                        const [item] = agent.queue.splice(idx, 1);
+                        if (!agent.is_processing) {
+                            this.emitLocal('remote:acp:queue', {
+                                server_id,
+                                agent_id: agentId,
+                                queue: [...agent.queue],
+                            });
+                            this.runRemoteAgentPrompt(server_id, agent, item.prompt, item.attachments || []);
+                        } else {
+                            agent.queue.unshift(item);
+                            this.emitLocal('remote:acp:queue', {
+                                server_id,
+                                agent_id: agentId,
+                                queue: [...agent.queue],
+                            });
+                        }
+                    }
+                }
+                callback?.({ success: true, data: {} });
+                break;
+            }
+
+            default: {
+                callback?.({ success: false, error: `Unknown remote RPC method: ${method}` });
+                break;
+            }
+        }
+    }
+
 }

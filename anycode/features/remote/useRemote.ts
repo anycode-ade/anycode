@@ -50,7 +50,7 @@ type PendingRemoteEvent = {
     item: AcpMessage;
 };
 
-const emitWithAck = <T = any>(
+export const emitWithAck = <T = any>(
     socket: Socket | null,
     event: string,
     payload: unknown,

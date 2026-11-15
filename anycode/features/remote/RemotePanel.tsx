@@ -51,6 +51,40 @@ const statusBadgeClass: Record<RemoteServerView['status'], string> = {
     auth_error: 'err',
 };
 
+interface DiffStatPillProps {
+    added: number;
+    removed: number;
+    files: number;
+    title: string;
+    stopPropagation?: boolean;
+    onClick: () => void;
+}
+
+const DiffStatPill: React.FC<DiffStatPillProps> = ({
+    added,
+    removed,
+    files,
+    title,
+    stopPropagation = false,
+    onClick,
+}) => (
+    <button
+        type="button"
+        className="remote-diff-pill"
+        title={title}
+        onClick={(e) => {
+            if (stopPropagation) e.stopPropagation();
+            onClick();
+        }}
+    >
+        {added > 0 && <span className="remote-diff-added">+{added}</span>}
+        {removed > 0 && <span className="remote-diff-removed">-{removed}</span>}
+        {added === 0 && removed === 0 && (
+            <span className="remote-diff-neutral">{files}f</span>
+        )}
+    </button>
+);
+
 export const RemotePanel: React.FC<RemotePanelProps> = ({
     remote,
     isConnected,
@@ -392,30 +426,21 @@ export const RemotePanel: React.FC<RemotePanelProps> = ({
                                 </span>
                             )}
                             {hasDiffStats && agent.worktreePath && (
-                                <button
-                                    type="button"
-                                    className="remote-diff-pill"
+                                <DiffStatPill
+                                    added={diffAdded}
+                                    removed={diffRemoved}
+                                    files={diffFiles}
                                     title={`Open worktree diff (${diffFiles} ${diffFiles === 1 ? 'file' : 'files'})`}
-                                    onClick={(e) => {
-                                        e.stopPropagation();
+                                    stopPropagation
+                                    onClick={() =>
                                         triggerOpenWorktreeDiff({
                                             serverId,
                                             worktreePath: agent.worktreePath!,
                                             projectId: agent.projectId,
                                             title: `${proj?.name ? `${proj.name} · ` : ''}${wtBadge ?? 'Diff'}`,
-                                        });
-                                    }}
-                                >
-                                    {diffAdded > 0 && (
-                                        <span className="remote-diff-added">+{diffAdded}</span>
-                                    )}
-                                    {diffRemoved > 0 && (
-                                        <span className="remote-diff-removed">-{diffRemoved}</span>
-                                    )}
-                                    {diffAdded === 0 && diffRemoved === 0 && (
-                                        <span className="remote-diff-neutral">{diffFiles}f</span>
-                                    )}
-                                </button>
+                                        })
+                                    }
+                                />
                             )}
                         </div>
                     )}
@@ -836,9 +861,39 @@ export const RemotePanel: React.FC<RemotePanelProps> = ({
                                                     </span>
                                                 )}
                                                 {projectGitInfo.dirty_count > 0 && (
-                                                    <span className="remote-badge warn">
+                                                    <button
+                                                        type="button"
+                                                        className="remote-badge warn remote-badge-btn"
+                                                        title={`Open read-only diff (${projectGitInfo.dirty_count} changed ${projectGitInfo.dirty_count === 1 ? 'file' : 'files'})`}
+                                                        onClick={() =>
+                                                            triggerOpenWorktreeDiff({
+                                                                serverId: selectedServer.id,
+                                                                worktreePath: selectedProject.root,
+                                                                projectId: selectedProject.id,
+                                                                title: `${selectedProject.name} · ${projectGitInfo.branch || 'changes'}`,
+                                                            })
+                                                        }
+                                                    >
                                                         {projectGitInfo.dirty_count} dirty
-                                                    </span>
+                                                    </button>
+                                                )}
+                                                {((projectGitInfo.diff_added ?? 0) > 0
+                                                    || (projectGitInfo.diff_removed ?? 0) > 0
+                                                    || (projectGitInfo.diff_files ?? 0) > 0) && (
+                                                    <DiffStatPill
+                                                        added={projectGitInfo.diff_added ?? 0}
+                                                        removed={projectGitInfo.diff_removed ?? 0}
+                                                        files={projectGitInfo.diff_files ?? projectGitInfo.dirty_count}
+                                                        title={`Open read-only diff (${projectGitInfo.diff_files ?? projectGitInfo.dirty_count} ${(projectGitInfo.diff_files ?? projectGitInfo.dirty_count) === 1 ? 'file' : 'files'})`}
+                                                        onClick={() =>
+                                                            triggerOpenWorktreeDiff({
+                                                                serverId: selectedServer.id,
+                                                                worktreePath: selectedProject.root,
+                                                                projectId: selectedProject.id,
+                                                                title: `${selectedProject.name} · ${projectGitInfo.branch || 'changes'}`,
+                                                            })
+                                                        }
+                                                    />
                                                 )}
                                             </>
                                         )}
@@ -974,15 +1029,10 @@ export const RemotePanel: React.FC<RemotePanelProps> = ({
                                                             </span>
                                                         )}
                                                         {wt.dirty_count > 0 && (
-                                                            <span className="remote-badge warn">
-                                                                {wt.dirty_count} dirty
-                                                            </span>
-                                                        )}
-                                                        {(wtAdded > 0 || wtRemoved > 0 || wtFiles > 0) && (
                                                             <button
                                                                 type="button"
-                                                                className="remote-diff-pill"
-                                                                title={`Open worktree diff (${wtFiles} changed files)`}
+                                                                className="remote-badge warn remote-badge-btn"
+                                                                title={`Open worktree diff (${wt.dirty_count} dirty)`}
                                                                 onClick={() =>
                                                                     triggerOpenWorktreeDiff({
                                                                         serverId: selectedServer.id,
@@ -992,16 +1042,24 @@ export const RemotePanel: React.FC<RemotePanelProps> = ({
                                                                     })
                                                                 }
                                                             >
-                                                                {wtAdded > 0 && (
-                                                                    <span className="remote-diff-added">+{wtAdded}</span>
-                                                                )}
-                                                                {wtRemoved > 0 && (
-                                                                    <span className="remote-diff-removed">-{wtRemoved}</span>
-                                                                )}
-                                                                {wtAdded === 0 && wtRemoved === 0 && (
-                                                                    <span className="remote-diff-neutral">{wtFiles}f</span>
-                                                                )}
+                                                                {wt.dirty_count} dirty
                                                             </button>
+                                                        )}
+                                                        {(wtAdded > 0 || wtRemoved > 0 || wtFiles > 0) && (
+                                                            <DiffStatPill
+                                                                added={wtAdded}
+                                                                removed={wtRemoved}
+                                                                files={wtFiles}
+                                                                title={`Open worktree diff (${wtFiles} ${wtFiles === 1 ? 'file' : 'files'})`}
+                                                                onClick={() =>
+                                                                    triggerOpenWorktreeDiff({
+                                                                        serverId: selectedServer.id,
+                                                                        worktreePath: wt.path,
+                                                                        projectId: selectedProject.id,
+                                                                        title: `${selectedProject.name} · ${wt.branch || wt.id}`,
+                                                                    })
+                                                                }
+                                                            />
                                                         )}
                                                         {linkedAgent && (
                                                             <button

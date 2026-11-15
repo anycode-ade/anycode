@@ -75,6 +75,9 @@ export interface RemoteGitStateInfo {
     commits_ahead: number;
     commits_summary: string[];
     sync_meta?: RemoteGitSyncMeta | null;
+    diff_added?: number;
+    diff_removed?: number;
+    diff_files?: number;
 }
 
 export interface CreateWorktreeResult {
