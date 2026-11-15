@@ -998,7 +998,7 @@ fn create_git_worktree_supports_custom_name_and_base_ref() {
     .unwrap();
 
     run_git_checked(&repo_dir, &["checkout", "-b", "remote/newer-branch", "main"], &[]).unwrap();
-    std::fs::write(repo_dir.join("remote.txt"), "cloud\n").unwrap();
+    std::fs::write(repo_dir.join("remote.txt"), "remote\n").unwrap();
     run_git_checked(&repo_dir, &["add", "."], &[]).unwrap();
     run_git_checked(
         &repo_dir,
