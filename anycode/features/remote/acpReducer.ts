@@ -18,7 +18,7 @@ import type {
     AcpUserMessage,
 } from '../../types';
 import { generateUUID } from '../../utils';
-import type { CloudAgentSession } from './types';
+import type { RemoteAgentSession } from './types';
 
 const asRecord = (value: unknown): Record<string, unknown> | null => {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
@@ -246,7 +246,7 @@ const mergeConsecutiveErrors = (messages: AcpMessage[]): AcpMessage[] => {
     return merged;
 };
 
-export const mergeCloudQueue = (
+export const mergeRemoteQueue = (
     existingQueue: AcpQueuedMessage[] | undefined,
     incomingQueue: AcpQueuedMessage[],
 ): AcpQueuedMessage[] => {
@@ -258,7 +258,7 @@ export const mergeCloudQueue = (
     return [...incomingQueue, ...pendingOptimistic.slice(addedOnServer)];
 };
 
-const createBaseSession = (key: string, serverId: string, agentId: string): CloudAgentSession => ({
+const createBaseSession = (key: string, serverId: string, agentId: string): RemoteAgentSession => ({
     key,
     serverId,
     agentId,
@@ -268,12 +268,12 @@ const createBaseSession = (key: string, serverId: string, agentId: string): Clou
 });
 
 export const applyAcpMessageItem = (
-    existing: CloudAgentSession | undefined,
+    existing: RemoteAgentSession | undefined,
     key: string,
     serverId: string,
     agentId: string,
     item: AcpMessage,
-): CloudAgentSession | undefined => {
+): RemoteAgentSession | undefined => {
     const base = existing ?? createBaseSession(key, serverId, agentId);
 
     if (item.role === 'prompt_state') {
@@ -297,7 +297,7 @@ export const applyAcpMessageItem = (
 
     if (item.role === 'queue_update') {
         const q = (item as AcpQueueUpdateMessage).queue;
-        return { ...base, queue: mergeCloudQueue(base.queue, q) };
+        return { ...base, queue: mergeRemoteQueue(base.queue, q) };
     }
     if (item.role === 'session_model_selector') {
         const sel = item as AcpModelSelectorMessage;
@@ -408,12 +408,12 @@ export const applyAcpMessageItem = (
 };
 
 export const applyAcpHistory = (
-    existing: CloudAgentSession | undefined,
+    existing: RemoteAgentSession | undefined,
     key: string,
     serverId: string,
     agentId: string,
     history: AcpMessage[],
-): CloudAgentSession => {
+): RemoteAgentSession => {
     const base = existing ?? createBaseSession(key, serverId, agentId);
     const expanded: AcpMessage[] = [];
     for (const item of history) {
@@ -453,3 +453,5 @@ export const applyAcpHistory = (
         availableCommands: availableCommandsMsg ? availableCommandsMsg.commands : base.availableCommands,
     };
 };
+
+export const mergeCloudQueue = mergeRemoteQueue;

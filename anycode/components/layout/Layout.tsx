@@ -395,7 +395,7 @@ const panelDefinitions = [
     },
     {
         id: 'cloud',
-        title: 'Anycloud',
+        title: 'Remote',
         pickerVisible: true,
         defaultPlacements: [
             { direction: 'within', referenceIds: ['editor', 'agent', 'projects'] },

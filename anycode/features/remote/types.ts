@@ -9,7 +9,7 @@ export interface NodeServerInfo {
     version: string;
 }
 
-export interface CloudProjectInfo {
+export interface RemoteProjectInfo {
     id: string;
     name: string;
     root: string;
@@ -29,7 +29,7 @@ export interface NodeAgentSummary {
     diff_files?: number;
 }
 
-export interface CloudServerView {
+export interface RemoteServerView {
     id: string;
     name: string;
     url: string;
@@ -39,20 +39,20 @@ export interface CloudServerView {
     error?: string | null;
     ping_ms?: number | null;
     info?: NodeServerInfo | null;
-    projects: CloudProjectInfo[];
+    projects: RemoteProjectInfo[];
     agents: NodeAgentSummary[];
 }
 
-export interface CloudBrowseEntry {
+export interface RemoteBrowseEntry {
     name: string;
     path: string;
 }
 
-export interface CloudBrowseResponse {
+export interface RemoteBrowseResponse {
     path: string;
     name: string;
     parent?: string | null;
-    directories: CloudBrowseEntry[];
+    directories: RemoteBrowseEntry[];
 }
 
 export interface RemoteGitSyncMeta {
@@ -80,7 +80,7 @@ export interface RemoteGitStateInfo {
 export interface CreateWorktreeResult {
     worktree_path?: string;
     branch?: string;
-    project?: CloudProjectInfo;
+    project?: RemoteProjectInfo;
     already_present?: boolean;
 }
 
@@ -130,7 +130,7 @@ export interface WorktreeDiffResponse {
     files: WorktreeDiffFile[];
 }
 
-export interface CloudDiffStatsEvent {
+export interface RemoteDiffStatsEvent {
     server_id: string;
     agent_id: string;
     worktree_path?: string;
@@ -144,7 +144,7 @@ export interface PullProjectResult {
     changed: boolean;
     worktree_path?: string;
     branch?: string | null;
-    project?: CloudProjectInfo;
+    project?: RemoteProjectInfo;
     head_sha?: string;
     has_wip?: boolean;
     commits_count: number;
@@ -153,7 +153,7 @@ export interface PullProjectResult {
     dirty_files: string[];
 }
 
-export type CloudAgentSession = AcpSession & {
+export type RemoteAgentSession = AcpSession & {
     key: string;
     serverId: string;
     worktreePath?: string;
@@ -163,23 +163,23 @@ export type CloudAgentSession = AcpSession & {
     diffFiles?: number;
 };
 
-export type CloudSelection =
+export type RemoteSelection =
     | { kind: 'server'; serverId: string }
     | { kind: 'project'; serverId: string; projectId: string }
     | { kind: 'agent'; serverId: string; agentId: string };
 
-export const CLOUD_KEY_SEPARATOR = '::';
+export const REMOTE_KEY_SEPARATOR = '::';
 
-export const makeCloudSessionKey = (serverId: string, agentId: string): string =>
-    `${serverId}${CLOUD_KEY_SEPARATOR}${agentId}`;
+export const makeRemoteSessionKey = (serverId: string, agentId: string): string =>
+    `${serverId}${REMOTE_KEY_SEPARATOR}${agentId}`;
 
-export const parseCloudSessionKey = (
+export const parseRemoteSessionKey = (
     key: string,
 ): { serverId: string; agentId: string } | null => {
-    const idx = key.indexOf(CLOUD_KEY_SEPARATOR);
+    const idx = key.indexOf(REMOTE_KEY_SEPARATOR);
     if (idx <= 0) return null;
     return {
         serverId: key.slice(0, idx),
-        agentId: key.slice(idx + CLOUD_KEY_SEPARATOR.length),
+        agentId: key.slice(idx + REMOTE_KEY_SEPARATOR.length),
     };
 };

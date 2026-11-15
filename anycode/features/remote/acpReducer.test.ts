@@ -1,19 +1,19 @@
 import { describe, expect, it } from 'vitest';
-import { applyAcpHistory, applyAcpMessageItem, mergeCloudQueue } from './acpReducer';
-import { makeCloudSessionKey, parseCloudSessionKey } from './types';
+import { applyAcpHistory, applyAcpMessageItem, mergeRemoteQueue } from './acpReducer';
+import { makeRemoteSessionKey, parseRemoteSessionKey } from './types';
 
-describe('cloud session keys', () => {
+describe('remote session keys', () => {
     it('creates and parses composite keys cleanly', () => {
-        const key = makeCloudSessionKey('srv-1', 'claude-1');
+        const key = makeRemoteSessionKey('srv-1', 'claude-1');
         expect(key).toBe('srv-1::claude-1');
-        expect(parseCloudSessionKey(key)).toEqual({ serverId: 'srv-1', agentId: 'claude-1' });
-        expect(parseCloudSessionKey('invalid')).toBeNull();
+        expect(parseRemoteSessionKey(key)).toEqual({ serverId: 'srv-1', agentId: 'claude-1' });
+        expect(parseRemoteSessionKey('invalid')).toBeNull();
     });
 });
 
-describe('cloud acpReducer', () => {
+describe('remote acpReducer', () => {
     it('merges streamed assistant chunks and handles prompt_state', () => {
-        const key = makeCloudSessionKey('local', 'codex-1');
+        const key = makeRemoteSessionKey('local', 'codex-1');
         let session = applyAcpMessageItem(undefined, key, 'local', 'codex-1', {
             role: 'prompt_state',
             is_processing: true,
@@ -41,7 +41,7 @@ describe('cloud acpReducer', () => {
     });
 
     it('reconciles history selectors and merges chunks', () => {
-        const key = makeCloudSessionKey('srv-1', 'claude-1');
+        const key = makeRemoteSessionKey('srv-1', 'claude-1');
         const next = applyAcpHistory(undefined, key, 'srv-1', 'claude-1', [
             {
                 role: 'session_model_selector',
@@ -59,7 +59,7 @@ describe('cloud acpReducer', () => {
     });
 
     it('preserves pending optimistic queue items across snapshots', () => {
-        const merged = mergeCloudQueue(
+        const merged = mergeRemoteQueue(
             [{ id: 'queued-optimistic-1', prompt: 'next task', created_at: 100 }],
             [],
         );

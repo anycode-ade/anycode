@@ -1,4 +1,4 @@
-.cloud-panel {
+.remote-panel {
     display: flex;
     height: 100%;
     width: 100%;
@@ -11,20 +11,20 @@
     font-weight: 400;
 }
 
-.cloud-split {
+.remote-split {
     flex: 1;
     min-width: 0;
     min-height: 0;
     --dv-separator-border: transparent;
 }
 
-.cloud-split .dv-split-view-container,
-.cloud-split .dv-view,
-.cloud-split .dv-sash-container {
+.remote-split .dv-split-view-container,
+.remote-split .dv-view,
+.remote-split .dv-sash-container {
     background: transparent !important;
 }
 
-.cloud-sidebar {
+.remote-sidebar {
     width: 100%;
     height: 100%;
     min-width: 0;
@@ -34,7 +34,7 @@
     min-height: 0;
 }
 
-.cloud-sidebar-header {
+.remote-sidebar-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -42,7 +42,7 @@
     gap: 8px;
 }
 
-.cloud-sidebar-title {
+.remote-sidebar-title {
     font-size: 11px;
     font-weight: 700;
     letter-spacing: 0.06em;
@@ -50,13 +50,13 @@
     color: var(--theme-tab-foreground, #8b949e);
 }
 
-.cloud-sidebar-actions {
+.remote-sidebar-actions {
     display: flex;
     align-items: center;
     gap: 2px;
 }
 
-.cloud-header-btn {
+.remote-header-btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -71,21 +71,21 @@
     transition: background-color 0.15s ease, color 0.15s ease;
 }
 
-.cloud-header-btn:hover:not(:disabled) {
+.remote-header-btn:hover:not(:disabled) {
     background: var(--hover-bg, rgba(255, 255, 255, 0.07));
     color: var(--theme-foreground, #e4e7ec);
 }
 
-.cloud-header-btn:disabled {
+.remote-header-btn:disabled {
     opacity: 0.45;
     cursor: default;
 }
 
-.cloud-header-btn svg {
+.remote-header-btn svg {
     display: block;
 }
 
-.cloud-tree {
+.remote-tree {
     flex: 1;
     min-height: 0;
     overflow-y: auto;
@@ -95,7 +95,7 @@
     gap: 8px;
 }
 
-.cloud-server-group {
+.remote-server-group {
     position: relative;
     border: 1px solid color-mix(in srgb, var(--theme-border, #3f3f3f) 55%, transparent);
     border-radius: 8px;
@@ -105,9 +105,9 @@
     overflow: hidden;
 }
 
-.cloud-server-group::before,
-.cloud-project-row::before,
-.cloud-agent-row::before {
+.remote-server-group::before,
+.remote-project-row::before,
+.remote-agent-row::before {
     content: '';
     position: absolute;
     inset: 0;
@@ -123,23 +123,23 @@
     z-index: 1;
 }
 
-.cloud-server-group:hover::before,
-.cloud-project-row:hover::before,
-.cloud-agent-row:hover::before {
+.remote-server-group:hover::before,
+.remote-project-row:hover::before,
+.remote-agent-row:hover::before {
     opacity: 1;
 }
 
-.cloud-server-group:hover {
+.remote-server-group:hover {
     border-color: rgba(255, 255, 255, 0.14);
 }
 
-.cloud-server-group.selected {
+.remote-server-group.selected {
     border-color: color-mix(in srgb, var(--theme-accent-background, #007acc) 75%, transparent);
     box-shadow: 0 2px 10px color-mix(in srgb, var(--theme-accent-background, #007acc) 18%, transparent),
         0 0 0 1px color-mix(in srgb, var(--theme-accent-background, #007acc) 45%, transparent);
 }
 
-.cloud-server-row {
+.remote-server-row {
     display: flex;
     align-items: center;
     gap: 6px;
@@ -149,15 +149,15 @@
     transition: background 0.2s ease;
 }
 
-.cloud-server-row:hover {
+.remote-server-row:hover {
     background: rgba(255, 255, 255, 0.035);
 }
 
-.cloud-server-row.active {
+.remote-server-row.active {
     background: color-mix(in srgb, var(--theme-accent-background, #007acc) 11%, transparent);
 }
 
-.cloud-caret-btn {
+.remote-caret-btn {
     border: none;
     background: transparent;
     color: var(--theme-tab-foreground, #8b949e);
@@ -172,61 +172,61 @@
     flex-shrink: 0;
 }
 
-.cloud-caret-btn svg {
+.remote-caret-btn svg {
     display: block;
     transition: transform 0.15s ease;
 }
 
-.cloud-caret-btn.collapsed svg {
+.remote-caret-btn.collapsed svg {
     transform: rotate(-90deg);
 }
 
-.cloud-caret-btn:hover {
+.remote-caret-btn:hover {
     background: rgba(255, 255, 255, 0.08);
     color: var(--theme-foreground, #e4e7ec);
 }
 
-.cloud-status-dot {
+.remote-status-dot {
     width: 8px;
     height: 8px;
     border-radius: 999px;
     flex-shrink: 0;
 }
 
-.cloud-status-dot.online {
+.remote-status-dot.online {
     background: #3fb950;
     box-shadow: 0 0 0 2px rgba(63, 185, 80, 0.2);
 }
 
-.cloud-status-dot.connecting {
+.remote-status-dot.connecting {
     background: #d29922;
 }
 
-.cloud-status-dot.offline {
+.remote-status-dot.offline {
     background: #6e7681;
 }
 
-.cloud-status-dot.offline.has-error,
-.cloud-status-dot.auth_error {
+.remote-status-dot.offline.has-error,
+.remote-status-dot.auth_error {
     background: #f85149;
     box-shadow: 0 0 0 2px rgba(248, 81, 73, 0.18);
 }
 
-.cloud-server-meta {
+.remote-server-meta {
     flex: 1;
     min-width: 0;
     display: flex;
     flex-direction: column;
 }
 
-.cloud-server-name-line {
+.remote-server-name-line {
     display: flex;
     align-items: center;
     gap: 6px;
     min-width: 0;
 }
 
-.cloud-server-name {
+.remote-server-name {
     font-weight: 600;
     font-size: 13px;
     white-space: nowrap;
@@ -234,7 +234,7 @@
     text-overflow: ellipsis;
 }
 
-.cloud-badge {
+.remote-badge {
     font-size: 10px;
     font-weight: 600;
     line-height: 1.4;
@@ -246,22 +246,22 @@
     flex-shrink: 0;
 }
 
-.cloud-badge.ok {
+.remote-badge.ok {
     background: rgba(63, 185, 80, 0.14);
     color: #56d364;
 }
 
-.cloud-badge.err {
+.remote-badge.err {
     background: rgba(248, 81, 73, 0.15);
     color: #ff7b72;
 }
 
-.cloud-badge.warn {
+.remote-badge.warn {
     background: rgba(210, 153, 34, 0.15);
     color: #e3b341;
 }
 
-.cloud-server-sub {
+.remote-server-sub {
     font-size: 11px;
     font-weight: 400;
     line-height: 1.35;
@@ -271,53 +271,53 @@
     text-overflow: ellipsis;
 }
 
-.cloud-server-sub.is-error {
+.remote-server-sub.is-error {
     color: #ff8a80;
 }
 
-.cloud-row-actions {
+.remote-row-actions {
     display: flex;
     align-items: center;
     gap: 2px;
     flex-shrink: 0;
 }
 
-.cloud-server-row .cloud-row-actions,
-.cloud-project-row .cloud-row-actions,
-.cloud-agent-row .cloud-agent-remove-btn,
-.cloud-worktree-card .cloud-worktree-actions {
+.remote-server-row .remote-row-actions,
+.remote-project-row .remote-row-actions,
+.remote-agent-row .remote-agent-remove-btn,
+.remote-worktree-card .remote-worktree-actions {
     opacity: 0;
     pointer-events: none;
     transition: opacity 0.14s ease, background 0.14s ease, color 0.14s ease, border-color 0.14s ease;
 }
 
-.cloud-server-row:hover .cloud-row-actions,
-.cloud-server-row:focus-within .cloud-row-actions,
-.cloud-server-row .cloud-row-actions:has(.is-armed),
-.cloud-project-row:hover .cloud-row-actions,
-.cloud-project-row:focus-within .cloud-row-actions,
-.cloud-project-row .cloud-row-actions:has(.is-armed),
-.cloud-agent-row:hover .cloud-agent-remove-btn,
-.cloud-agent-row:focus-within .cloud-agent-remove-btn,
-.cloud-agent-row .cloud-agent-remove-btn.is-armed,
-.cloud-worktree-card:hover .cloud-worktree-actions,
-.cloud-worktree-card:focus-within .cloud-worktree-actions,
-.cloud-worktree-card .cloud-worktree-actions:has(.is-armed) {
+.remote-server-row:hover .remote-row-actions,
+.remote-server-row:focus-within .remote-row-actions,
+.remote-server-row .remote-row-actions:has(.is-armed),
+.remote-project-row:hover .remote-row-actions,
+.remote-project-row:focus-within .remote-row-actions,
+.remote-project-row .remote-row-actions:has(.is-armed),
+.remote-agent-row:hover .remote-agent-remove-btn,
+.remote-agent-row:focus-within .remote-agent-remove-btn,
+.remote-agent-row .remote-agent-remove-btn.is-armed,
+.remote-worktree-card:hover .remote-worktree-actions,
+.remote-worktree-card:focus-within .remote-worktree-actions,
+.remote-worktree-card .remote-worktree-actions:has(.is-armed) {
     opacity: 1;
     pointer-events: auto;
 }
 
 @media (hover: none) {
-    .cloud-server-row .cloud-row-actions,
-    .cloud-project-row .cloud-row-actions,
-    .cloud-agent-row .cloud-agent-remove-btn,
-    .cloud-worktree-card .cloud-worktree-actions {
+    .remote-server-row .remote-row-actions,
+    .remote-project-row .remote-row-actions,
+    .remote-agent-row .remote-agent-remove-btn,
+    .remote-worktree-card .remote-worktree-actions {
         opacity: 1;
         pointer-events: auto;
     }
 }
 
-.cloud-icon-btn {
+.remote-icon-btn {
     box-sizing: border-box;
     border: 1px solid transparent;
     background: transparent;
@@ -334,24 +334,24 @@
     transition: background 0.14s ease, color 0.14s ease, border-color 0.14s ease;
 }
 
-.cloud-icon-btn:hover:not(:disabled) {
+.remote-icon-btn:hover:not(:disabled) {
     background: rgba(255, 255, 255, 0.08);
     color: var(--theme-foreground, #ffffff);
 }
 
-.cloud-icon-btn.is-armed,
-.cloud-icon-btn.is-armed:hover:not(:disabled) {
+.remote-icon-btn.is-armed,
+.remote-icon-btn.is-armed:hover:not(:disabled) {
     background: rgba(248, 81, 73, 0.2);
     border-color: rgba(248, 81, 73, 0.55);
     color: #ff6b63;
 }
 
-.cloud-icon-btn:disabled {
+.remote-icon-btn:disabled {
     opacity: 0.4;
     cursor: not-allowed;
 }
 
-.cloud-server-children {
+.remote-server-children {
     border-top: 1px solid color-mix(in srgb, var(--theme-border, #3f3f3f) 45%, transparent);
     padding: 8px;
     display: flex;
@@ -359,13 +359,13 @@
     gap: 6px;
 }
 
-.cloud-project-block {
+.remote-project-block {
     display: flex;
     flex-direction: column;
     gap: 6px;
 }
 
-.cloud-project-row {
+.remote-project-row {
     position: relative;
     overflow: hidden;
     display: flex;
@@ -379,24 +379,24 @@
     transition: border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
 }
 
-.cloud-project-row:hover {
+.remote-project-row:hover {
     border-color: color-mix(in srgb, var(--theme-tab-foreground, #8f8f8f) 55%, transparent);
     background: rgba(255, 255, 255, 0.04);
 }
 
-.cloud-project-row.active {
+.remote-project-row.active {
     background: color-mix(in srgb, var(--theme-accent-background, #007acc) 12%, var(--background-color, #181818));
     border-color: color-mix(in srgb, var(--theme-accent-background, #007acc) 75%, transparent);
     box-shadow: 0 0 0 1px color-mix(in srgb, var(--theme-accent-background, #007acc) 35%, transparent);
 }
 
-.cloud-project-icon {
+.remote-project-icon {
     display: inline-flex;
     align-items: center;
     flex-shrink: 0;
 }
 
-.cloud-project-name {
+.remote-project-name {
     flex: 1;
     min-width: 0;
     font-weight: 500;
@@ -405,14 +405,14 @@
     text-overflow: ellipsis;
 }
 
-.cloud-agent-list {
+.remote-agent-list {
     display: flex;
     flex-direction: column;
     gap: 6px;
     padding-left: 14px;
 }
 
-.cloud-agent-row {
+.remote-agent-row {
     position: relative;
     overflow: hidden;
     display: flex;
@@ -426,7 +426,7 @@
     transition: border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
 }
 
-.cloud-agent-main {
+.remote-agent-main {
     display: flex;
     flex-direction: column;
     gap: 3px;
@@ -434,21 +434,21 @@
     flex: 1;
 }
 
-.cloud-agent-top-row {
+.remote-agent-top-row {
     display: flex;
     align-items: center;
     gap: 6px;
     min-width: 0;
 }
 
-.cloud-agent-top-right {
+.remote-agent-top-right {
     display: inline-flex;
     align-items: center;
     gap: 4px;
     flex-shrink: 0;
 }
 
-.cloud-agent-sub-row {
+.remote-agent-sub-row {
     display: flex;
     align-items: center;
     gap: 6px;
@@ -456,7 +456,7 @@
     flex-wrap: wrap;
 }
 
-.cloud-diff-pill {
+.remote-diff-pill {
     display: inline-flex;
     align-items: center;
     gap: 4px;
@@ -473,38 +473,38 @@
     transition: background 0.14s ease;
 }
 
-.cloud-diff-pill:hover {
+.remote-diff-pill:hover {
     background: rgba(255, 255, 255, 0.08);
 }
 
-.cloud-diff-added {
+.remote-diff-added {
     color: #3fb950;
 }
 
-.cloud-diff-removed {
+.remote-diff-removed {
     color: #f85149;
 }
 
-.cloud-diff-neutral {
+.remote-diff-neutral {
     color: var(--theme-tab-foreground, #9aa4b2);
 }
 
-.cloud-agent-row:hover {
+.remote-agent-row:hover {
     border-color: color-mix(in srgb, var(--theme-tab-foreground, #8f8f8f) 55%, transparent);
     background: rgba(255, 255, 255, 0.04);
 }
 
-.cloud-agent-row.is-working:not(.active) {
+.remote-agent-row.is-working:not(.active) {
     border-color: color-mix(in srgb, #65d68a 50%, var(--theme-border, #3f3f3f));
 }
 
-.cloud-agent-row.active {
+.remote-agent-row.active {
     background: color-mix(in srgb, var(--theme-accent-background, #007acc) 12%, var(--background-color, #181818));
     border-color: color-mix(in srgb, var(--theme-accent-background, #007acc) 75%, transparent);
     box-shadow: 0 0 0 1px color-mix(in srgb, var(--theme-accent-background, #007acc) 35%, transparent);
 }
 
-.cloud-agent-avatar {
+.remote-agent-avatar {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -512,12 +512,12 @@
     border-radius: 50%;
 }
 
-.cloud-agent-row.is-working .cloud-agent-avatar {
-    animation: cloud-agent-avatar-breathe 1.8s ease-in-out infinite;
+.remote-agent-row.is-working .remote-agent-avatar {
+    animation: remote-agent-avatar-breathe 1.8s ease-in-out infinite;
     will-change: transform, box-shadow;
 }
 
-@keyframes cloud-agent-avatar-breathe {
+@keyframes remote-agent-avatar-breathe {
     0%, 100% {
         box-shadow: 0 0 0 0 color-mix(in srgb, #65d68a 0%, transparent);
     }
@@ -526,7 +526,7 @@
     }
 }
 
-.cloud-agent-name {
+.remote-agent-name {
     flex: 1;
     min-width: 0;
     font-size: 12px;
@@ -535,7 +535,7 @@
     text-overflow: ellipsis;
 }
 
-.cloud-agent-wt-badge {
+.remote-agent-wt-badge {
     font-size: 10px;
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     line-height: 1.3;
@@ -551,7 +551,7 @@
     flex-shrink: 0;
 }
 
-.cloud-agent-state {
+.remote-agent-state {
     width: 7px;
     height: 7px;
     border-radius: 999px;
@@ -559,13 +559,13 @@
     flex-shrink: 0;
 }
 
-.cloud-agent-state.busy {
+.remote-agent-state.busy {
     background: #65d68a;
     box-shadow: 0 0 0 2px rgba(101, 214, 138, 0.16), 0 0 8px rgba(101, 214, 138, 0.7);
-    animation: cloud-agent-working-pulse 1.2s ease-in-out infinite;
+    animation: remote-agent-working-pulse 1.2s ease-in-out infinite;
 }
 
-@keyframes cloud-agent-working-pulse {
+@keyframes remote-agent-working-pulse {
     0%, 100% {
         opacity: 0.45;
         transform: scale(0.85);
@@ -576,34 +576,34 @@
     }
 }
 
-.cloud-agent-state.error {
+.remote-agent-state.error {
     background: #f85149;
 }
 
-.cloud-agent-spinner {
+.remote-agent-spinner {
     width: 12px;
     height: 12px;
     box-sizing: border-box;
     border-radius: 999px;
     border: 1.75px solid rgba(255, 255, 255, 0.22);
     border-top-color: var(--theme-accent-background, #60a5fa);
-    animation: cloud-spin 0.75s linear infinite;
+    animation: remote-spin 0.75s linear infinite;
     flex-shrink: 0;
 }
 
-@keyframes cloud-spin {
+@keyframes remote-spin {
     to {
         transform: rotate(360deg);
     }
 }
 
-.cloud-empty-hint {
+.remote-empty-hint {
     padding: 6px 8px;
     font-size: 11px;
     color: var(--theme-tab-foreground, #8b949e);
 }
 
-.cloud-main {
+.remote-main {
     width: 100%;
     height: 100%;
     flex: 1;
@@ -613,7 +613,7 @@
     flex-direction: column;
 }
 
-.cloud-topbar {
+.remote-topbar {
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -623,7 +623,7 @@
     flex-shrink: 0;
 }
 
-.cloud-breadcrumb {
+.remote-breadcrumb {
     display: flex;
     align-items: center;
     gap: 6px;
@@ -632,7 +632,7 @@
     color: var(--theme-tab-foreground, #8b949e);
 }
 
-.cloud-breadcrumb button {
+.remote-breadcrumb button {
     border: none;
     background: transparent;
     color: inherit;
@@ -642,24 +642,24 @@
     font: inherit;
 }
 
-.cloud-breadcrumb button:hover {
+.remote-breadcrumb button:hover {
     background: rgba(255, 255, 255, 0.07);
     color: var(--theme-foreground, #fff);
 }
 
-.cloud-breadcrumb-current {
+.remote-breadcrumb-current {
     color: var(--theme-foreground, #fff);
     font-weight: 600;
 }
 
-.cloud-topbar-actions {
+.remote-topbar-actions {
     display: flex;
     align-items: center;
     gap: 8px;
     flex-shrink: 0;
 }
 
-.cloud-btn {
+.remote-btn {
     border: 1px solid var(--theme-border, rgba(255, 255, 255, 0.14));
     background: rgba(255, 255, 255, 0.05);
     color: var(--theme-foreground, #e4e7ec);
@@ -676,55 +676,55 @@
     gap: 5px;
 }
 
-.cloud-btn:hover:not(:disabled) {
+.remote-btn:hover:not(:disabled) {
     background: rgba(255, 255, 255, 0.1);
 }
 
-.cloud-btn:disabled {
+.remote-btn:disabled {
     opacity: 0.45;
     cursor: not-allowed;
 }
 
-.cloud-btn.primary {
+.remote-btn.primary {
     background: var(--theme-accent, #3b82f6);
     border-color: transparent;
     color: #fff;
 }
 
-.cloud-btn.primary:hover:not(:disabled) {
+.remote-btn.primary:hover:not(:disabled) {
     filter: brightness(1.08);
 }
 
-.cloud-btn.accent-soft {
+.remote-btn.accent-soft {
     background: color-mix(in srgb, var(--theme-accent, #3b82f6) 16%, rgba(255, 255, 255, 0.03));
     border-color: color-mix(in srgb, var(--theme-accent, #3b82f6) 38%, rgba(255, 255, 255, 0.1));
     color: color-mix(in srgb, var(--theme-accent, #6ea1ff) 75%, #ffffff 25%);
 }
 
-.cloud-btn.accent-soft:hover:not(:disabled) {
+.remote-btn.accent-soft:hover:not(:disabled) {
     background: color-mix(in srgb, var(--theme-accent, #3b82f6) 24%, rgba(255, 255, 255, 0.05));
     border-color: color-mix(in srgb, var(--theme-accent, #3b82f6) 52%, rgba(255, 255, 255, 0.15));
 }
 
-.cloud-btn.danger {
+.remote-btn.danger {
     color: #ff7b72;
     border-color: rgba(248, 81, 73, 0.35);
 }
 
-.cloud-btn.subtle {
+.remote-btn.subtle {
     background: rgba(255, 255, 255, 0.03);
     border-color: var(--theme-border, rgba(255, 255, 255, 0.1));
     color: var(--theme-tab-foreground, #9ea7b3);
     font-weight: 500;
 }
 
-.cloud-btn.subtle:hover:not(:disabled) {
+.remote-btn.subtle:hover:not(:disabled) {
     background: rgba(255, 255, 255, 0.07);
     border-color: rgba(255, 255, 255, 0.18);
     color: var(--theme-foreground, #e4e7ec);
 }
 
-.cloud-detail {
+.remote-detail {
     flex: 1;
     min-height: 0;
     overflow-y: auto;
@@ -734,14 +734,14 @@
     gap: 18px;
 }
 
-.cloud-card {
+.remote-card {
     border: 1px solid color-mix(in srgb, var(--theme-border, rgba(255, 255, 255, 0.08)) 60%, transparent);
     border-radius: 10px;
     background: color-mix(in srgb, var(--background-color, #181818) 97.5%, var(--theme-foreground, #ffffff) 2.5%);
     padding: 14px 16px;
 }
 
-.cloud-card-header {
+.remote-card-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -749,11 +749,11 @@
     gap: 10px 12px;
 }
 
-.cloud-card-header:not(:last-child) {
+.remote-card-header:not(:last-child) {
     margin-bottom: 12px;
 }
 
-.cloud-detail-heading {
+.remote-detail-heading {
     flex: 1 1 220px;
     min-width: 0;
     display: flex;
@@ -761,7 +761,7 @@
     gap: 2px;
 }
 
-.cloud-card-actions {
+.remote-card-actions {
     display: flex;
     align-items: center;
     flex-wrap: wrap;
@@ -769,7 +769,7 @@
     max-width: 100%;
 }
 
-.cloud-card-title-row {
+.remote-card-title-row {
     display: flex;
     align-items: center;
     flex-wrap: wrap;
@@ -777,7 +777,7 @@
     min-width: 0;
 }
 
-.cloud-project-branch {
+.remote-project-branch {
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     font-size: 11px;
     font-weight: 500;
@@ -792,7 +792,7 @@
     text-overflow: ellipsis;
 }
 
-.cloud-card-title {
+.remote-card-title {
     font-size: 15px;
     font-weight: 600;
     margin: 0;
@@ -802,28 +802,28 @@
     text-overflow: ellipsis;
 }
 
-.cloud-card-sub {
+.remote-card-sub {
     font-size: 12px;
     font-weight: 400;
     color: var(--theme-tab-foreground, #8b949e);
     word-break: break-all;
 }
 
-.cloud-section {
+.remote-section {
     display: flex;
     flex-direction: column;
     gap: 10px;
     min-width: 0;
 }
 
-.cloud-section-header {
+.remote-section-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 10px;
 }
 
-.cloud-section-title {
+.remote-section-title {
     font-size: 11px;
     font-weight: 700;
     letter-spacing: 0.06em;
@@ -831,34 +831,34 @@
     color: var(--theme-tab-foreground, #8b949e);
 }
 
-.cloud-empty-detail {
+.remote-empty-detail {
     font-size: 12px;
     color: var(--theme-tab-foreground, #8b949e);
     padding: 4px 0;
 }
 
-.cloud-opened-agents-grid {
+.remote-opened-agents-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(min(290px, 100%), 1fr));
     gap: 10px;
 }
 
-.cloud-server-link {
+.remote-server-link {
     color: var(--theme-accent, #5b8cff);
     text-decoration: none;
 }
 
-.cloud-server-link:hover {
+.remote-server-link:hover {
     text-decoration: underline;
 }
 
-.cloud-grid {
+.remote-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr));
     gap: 10px;
 }
 
-.cloud-item-card {
+.remote-item-card {
     border: 1px solid color-mix(in srgb, var(--theme-border, rgba(255, 255, 255, 0.08)) 60%, transparent);
     border-radius: 10px;
     padding: 12px 14px;
@@ -871,12 +871,12 @@
     transition: border-color 0.15s ease, background 0.15s ease;
 }
 
-.cloud-item-card:hover {
+.remote-item-card:hover {
     border-color: rgba(255, 255, 255, 0.14);
     background: color-mix(in srgb, var(--background-color, #181818) 95%, var(--theme-foreground, #ffffff) 5%);
 }
 
-.cloud-item-title {
+.remote-item-title {
     font-weight: 600;
     font-size: 13px;
     display: flex;
@@ -887,7 +887,7 @@
     min-width: 0;
 }
 
-.cloud-item-name {
+.remote-item-name {
     display: inline-flex;
     align-items: center;
     gap: 6px;
@@ -895,7 +895,7 @@
     min-width: 0;
 }
 
-.cloud-item-actions {
+.remote-item-actions {
     display: flex;
     align-items: center;
     flex-wrap: wrap;
@@ -903,25 +903,25 @@
     max-width: 100%;
 }
 
-.cloud-item-name > svg {
+.remote-item-name > svg {
     flex-shrink: 0;
 }
 
-.cloud-item-name-label {
+.remote-item-name-label {
     min-width: 0;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
 }
 
-.cloud-item-path {
+.remote-item-path {
     font-size: 11px;
     color: var(--theme-tab-foreground, #8b949e);
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     word-break: break-all;
 }
 
-.cloud-agent-pane {
+.remote-agent-pane {
     flex: 1;
     min-height: 0;
     position: relative;
@@ -930,13 +930,13 @@
     flex-direction: column;
 }
 
-.cloud-worktree-list {
+.remote-worktree-list {
     display: flex;
     flex-direction: column;
     gap: 8px;
 }
 
-.cloud-worktree-card {
+.remote-worktree-card {
     border: 1px solid color-mix(in srgb, var(--theme-border, rgba(255, 255, 255, 0.08)) 60%, transparent);
     border-radius: 10px;
     padding: 11px 14px;
@@ -949,7 +949,7 @@
     min-width: 0;
 }
 
-.cloud-worktree-main {
+.remote-worktree-main {
     display: flex;
     flex-direction: column;
     gap: 4px;
@@ -957,7 +957,7 @@
     flex: 1 1 220px;
 }
 
-.cloud-worktree-top {
+.remote-worktree-top {
     display: flex;
     align-items: center;
     flex-wrap: wrap;
@@ -965,7 +965,7 @@
     min-width: 0;
 }
 
-.cloud-worktree-branch {
+.remote-worktree-branch {
     font-size: 13px;
     font-weight: 600;
     color: var(--theme-foreground, #f0f0f0);
@@ -974,13 +974,13 @@
     text-overflow: ellipsis;
 }
 
-.cloud-worktree-sha {
+.remote-worktree-sha {
     font-size: 11px;
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     color: var(--theme-tab-foreground, #8b949e);
 }
 
-.cloud-worktree-actions {
+.remote-worktree-actions {
     display: flex;
     align-items: center;
     flex-wrap: wrap;
@@ -989,14 +989,14 @@
     max-width: 100%;
 }
 
-.cloud-badge-btn {
+.remote-badge-btn {
     border: none;
     cursor: pointer;
     font: inherit;
 }
 
 /* Popovers */
-.cloud-popover {
+.remote-popover {
     position: fixed;
     z-index: 10000;
     box-sizing: border-box;
@@ -1017,21 +1017,21 @@
     font-family: var(--theme-font-ui, sans-serif);
 }
 
-.cloud-popover-form {
+.remote-popover-form {
     display: flex;
     flex-direction: column;
     gap: 12px;
     min-width: 0;
 }
 
-.cloud-popover-header {
+.remote-popover-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 8px;
 }
 
-.cloud-popover-heading {
+.remote-popover-heading {
     display: flex;
     align-items: baseline;
     gap: 8px;
@@ -1039,7 +1039,7 @@
     flex: 1;
 }
 
-.cloud-popover-subtitle {
+.remote-popover-subtitle {
     font-size: 12px;
     font-weight: 500;
     color: var(--theme-tab-foreground, #8b949e);
@@ -1049,7 +1049,7 @@
     white-space: nowrap;
 }
 
-.cloud-modal-title {
+.remote-modal-title {
     font-size: 13px;
     font-weight: 700;
     margin: 0;
@@ -1057,22 +1057,22 @@
     white-space: nowrap;
 }
 
-.cloud-field {
+.remote-field {
     display: flex;
     flex-direction: column;
     gap: 5px;
     min-width: 0;
 }
 
-.cloud-field label {
+.remote-field label {
     font-size: 11px;
     font-weight: 600;
     color: var(--theme-tab-foreground, #9ea7b3);
 }
 
-.cloud-input,
-.cloud-select,
-.cloud-textarea {
+.remote-input,
+.remote-select,
+.remote-textarea {
     width: 100%;
     min-width: 0;
     box-sizing: border-box;
@@ -1089,13 +1089,13 @@
     transition: border-color 0.15s ease;
 }
 
-.cloud-input:focus,
-.cloud-select:focus,
-.cloud-textarea:focus {
+.remote-input:focus,
+.remote-select:focus,
+.remote-textarea:focus {
     border-color: rgba(255, 255, 255, 0.28);
 }
 
-.cloud-select {
+.remote-select {
     appearance: none;
     -webkit-appearance: none;
     padding-right: 28px;
@@ -1108,18 +1108,18 @@
     cursor: pointer;
 }
 
-.cloud-select option {
+.remote-select option {
     background: #1c1f26;
     color: var(--theme-foreground, #e4e7ec);
     font-weight: 500;
 }
 
-.cloud-textarea {
+.remote-textarea {
     min-height: 76px;
     resize: vertical;
 }
 
-.cloud-code-box {
+.remote-code-box {
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -1134,14 +1134,14 @@
     overflow-x: auto;
 }
 
-.cloud-tabs {
+.remote-tabs {
     display: flex;
     gap: 6px;
     border-bottom: 1px solid var(--theme-border, rgba(255, 255, 255, 0.08));
     padding-bottom: 8px;
 }
 
-.cloud-tab {
+.remote-tab {
     border: none;
     background: transparent;
     color: var(--theme-tab-foreground, #8b949e);
@@ -1152,12 +1152,12 @@
     cursor: pointer;
 }
 
-.cloud-tab.active {
+.remote-tab.active {
     background: rgba(255, 255, 255, 0.1);
     color: var(--theme-foreground, #fff);
 }
 
-.cloud-sync-project-list {
+.remote-sync-project-list {
     display: flex;
     flex-direction: column;
     gap: 6px;
@@ -1165,7 +1165,7 @@
     overflow-y: auto;
 }
 
-.cloud-sync-project-row {
+.remote-sync-project-row {
     display: flex;
     align-items: center;
     gap: 10px;
@@ -1176,13 +1176,13 @@
     min-width: 0;
 }
 
-.cloud-sync-project-icon {
+.remote-sync-project-icon {
     display: inline-flex;
     align-items: center;
     flex-shrink: 0;
 }
 
-.cloud-sync-project-info {
+.remote-sync-project-info {
     flex: 1;
     min-width: 0;
     display: flex;
@@ -1190,7 +1190,7 @@
     gap: 2px;
 }
 
-.cloud-sync-project-name {
+.remote-sync-project-name {
     font-size: 13px;
     font-weight: 600;
     color: var(--theme-foreground, #e4e7ec);
@@ -1199,7 +1199,7 @@
     text-overflow: ellipsis;
 }
 
-.cloud-sync-project-path {
+.remote-sync-project-path {
     font-size: 11px;
     color: var(--theme-tab-foreground, #8b949e);
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -1208,14 +1208,14 @@
     text-overflow: ellipsis;
 }
 
-.cloud-sync-project-actions {
+.remote-sync-project-actions {
     display: flex;
     align-items: center;
     gap: 6px;
     flex-shrink: 0;
 }
 
-.cloud-error-banner {
+.remote-error-banner {
     padding: 8px 10px;
     border-radius: 8px;
     background: rgba(248, 81, 73, 0.14);
@@ -1224,24 +1224,24 @@
     font-size: 12px;
 }
 
-.cloud-modal-footer {
+.remote-modal-footer {
     display: flex;
     justify-content: flex-end;
     gap: 8px;
     margin-top: 4px;
 }
 
-.cloud-modal-wide {
+.remote-modal-wide {
     max-width: 580px;
 }
 
-.cloud-modal-row-2col {
+.remote-modal-row-2col {
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     gap: 10px;
 }
 
-.cloud-link-btn {
+.remote-link-btn {
     border: none;
     border-radius: 6px;
     background: transparent;
@@ -1253,12 +1253,12 @@
     transition: color 0.12s ease, background 0.12s ease;
 }
 
-.cloud-link-btn:hover {
+.remote-link-btn:hover {
     color: var(--theme-foreground, #e4e7ec);
     background: rgba(255, 255, 255, 0.06);
 }
 
-.cloud-checkbox-row {
+.remote-checkbox-row {
     display: inline-flex;
     align-items: center;
     gap: 8px;
@@ -1268,7 +1268,7 @@
     user-select: none;
 }
 
-.cloud-checkbox-row input[type='checkbox'] {
+.remote-checkbox-row input[type='checkbox'] {
     appearance: none;
     -webkit-appearance: none;
     width: 14px;
@@ -1284,7 +1284,7 @@
     transition: background 0.12s ease, border-color 0.12s ease;
 }
 
-.cloud-checkbox-row input[type='checkbox']::before {
+.remote-checkbox-row input[type='checkbox']::before {
     content: '';
     width: 8px;
     height: 8px;
@@ -1294,16 +1294,16 @@
     clip-path: polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 80% 0%, 43% 62%);
 }
 
-.cloud-checkbox-row input[type='checkbox']:checked {
+.remote-checkbox-row input[type='checkbox']:checked {
     background: rgba(255, 255, 255, 0.12);
     border-color: rgba(255, 255, 255, 0.34);
 }
 
-.cloud-checkbox-row input[type='checkbox']:checked::before {
+.remote-checkbox-row input[type='checkbox']:checked::before {
     transform: scale(1);
 }
 
-.cloud-wt-meta-row {
+.remote-wt-meta-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -1311,11 +1311,11 @@
     min-height: 22px;
 }
 
-.cloud-wt-name-input {
+.remote-wt-name-input {
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
-.cloud-wt-target-row {
+.remote-wt-target-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -1328,7 +1328,7 @@
     min-width: 0;
 }
 
-.cloud-wt-target-info {
+.remote-wt-target-info {
     display: flex;
     align-items: center;
     gap: 8px;
@@ -1336,25 +1336,25 @@
     overflow: hidden;
 }
 
-.cloud-wt-target-branch {
+.remote-wt-target-branch {
     color: var(--theme-tab-foreground, #8b949e);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
 }
 
-.cloud-hint-muted {
+.remote-hint-muted {
     font-size: 11px;
     color: var(--theme-tab-foreground, #8b949e);
 }
 
-.cloud-registry-box {
+.remote-registry-box {
     display: flex;
     flex-direction: column;
     gap: 8px;
 }
 
-.cloud-agent-picker {
+.remote-agent-picker {
     container: acp-start-actions / inline-size;
     display: flex;
     flex-direction: column;
@@ -1365,7 +1365,7 @@
     padding-right: 2px;
 }
 
-.cloud-agent-row-card {
+.remote-agent-row-card {
     display: flex;
     align-items: center;
     gap: 10px;
@@ -1377,7 +1377,7 @@
     box-sizing: border-box;
 }
 
-.cloud-agent-row-info {
+.remote-agent-row-info {
     flex: 1;
     min-width: 0;
     display: flex;
@@ -1385,14 +1385,14 @@
     gap: 2px;
 }
 
-.cloud-agent-row-head {
+.remote-agent-row-head {
     display: flex;
     align-items: center;
     gap: 6px;
     min-width: 0;
 }
 
-.cloud-agent-row-title {
+.remote-agent-row-title {
     font-size: 13px;
     font-weight: 600;
     color: var(--theme-foreground, #e4e7ec);
@@ -1401,7 +1401,7 @@
     text-overflow: ellipsis;
 }
 
-.cloud-agent-row-sub {
+.remote-agent-row-sub {
     font-size: 11px;
     color: var(--theme-tab-foreground, #8b949e);
     white-space: nowrap;
@@ -1409,30 +1409,30 @@
     text-overflow: ellipsis;
 }
 
-.app-container.app-with-dynamic-bg .cloud-server-group:not(.selected),
-.app-container[data-dynamic-bg="global"] .cloud-server-group:not(.selected),
-[data-dynamic-bg="global"] .cloud-server-group:not(.selected) {
+.app-container.app-with-dynamic-bg .remote-server-group:not(.selected),
+.app-container[data-dynamic-bg="global"] .remote-server-group:not(.selected),
+[data-dynamic-bg="global"] .remote-server-group:not(.selected) {
     background: color-mix(in srgb, var(--background-color, #181818) 65%, transparent 35%);
     backdrop-filter: blur(14px);
 }
 
-.app-container.app-with-dynamic-bg .cloud-project-row:not(.active),
-.app-container[data-dynamic-bg="global"] .cloud-project-row:not(.active),
-[data-dynamic-bg="global"] .cloud-project-row:not(.active),
-.app-container.app-with-dynamic-bg .cloud-agent-row:not(.active),
-.app-container[data-dynamic-bg="global"] .cloud-agent-row:not(.active),
-[data-dynamic-bg="global"] .cloud-agent-row:not(.active) {
+.app-container.app-with-dynamic-bg .remote-project-row:not(.active),
+.app-container[data-dynamic-bg="global"] .remote-project-row:not(.active),
+[data-dynamic-bg="global"] .remote-project-row:not(.active),
+.app-container.app-with-dynamic-bg .remote-agent-row:not(.active),
+.app-container[data-dynamic-bg="global"] .remote-agent-row:not(.active),
+[data-dynamic-bg="global"] .remote-agent-row:not(.active) {
     background: rgba(255, 255, 255, 0.015);
 }
 
-.app-container.app-with-dynamic-bg .cloud-server-row:not(.active):hover,
-.app-container[data-dynamic-bg="global"] .cloud-server-row:not(.active):hover,
-[data-dynamic-bg="global"] .cloud-server-row:not(.active):hover,
-.app-container.app-with-dynamic-bg .cloud-project-row:not(.active):hover,
-.app-container[data-dynamic-bg="global"] .cloud-project-row:not(.active):hover,
-[data-dynamic-bg="global"] .cloud-project-row:not(.active):hover,
-.app-container.app-with-dynamic-bg .cloud-agent-row:not(.active):hover,
-.app-container[data-dynamic-bg="global"] .cloud-agent-row:not(.active):hover,
-[data-dynamic-bg="global"] .cloud-agent-row:not(.active):hover {
+.app-container.app-with-dynamic-bg .remote-server-row:not(.active):hover,
+.app-container[data-dynamic-bg="global"] .remote-server-row:not(.active):hover,
+[data-dynamic-bg="global"] .remote-server-row:not(.active):hover,
+.app-container.app-with-dynamic-bg .remote-project-row:not(.active):hover,
+.app-container[data-dynamic-bg="global"] .remote-project-row:not(.active):hover,
+[data-dynamic-bg="global"] .remote-project-row:not(.active):hover,
+.app-container.app-with-dynamic-bg .remote-agent-row:not(.active):hover,
+.app-container[data-dynamic-bg="global"] .remote-agent-row:not(.active):hover,
+[data-dynamic-bg="global"] .remote-agent-row:not(.active):hover {
     background: rgba(255, 255, 255, 0.045);
 }

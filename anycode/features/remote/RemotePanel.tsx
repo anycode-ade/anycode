@@ -12,23 +12,24 @@ import {
     PullWorktreeModal,
     StartAgentModal,
     SyncAgentsModal,
-} from './CloudModals';
+} from './RemoteModals';
 import {
-    type CloudAgentSession,
-    type CloudProjectInfo,
-    type CloudSelection,
-    type CloudServerView,
+    type RemoteAgentSession,
+    type RemoteProjectInfo,
+    type RemoteSelection,
+    type RemoteServerView,
     type RemoteGitStateInfo,
     type RemoteWorktreeEntry,
-    makeCloudSessionKey,
+    makeRemoteSessionKey,
 } from './types';
-import type { UseCloudReturn } from './useCloud';
-import './CloudPanel.css';
+import type { UseRemoteReturn } from './useRemote';
+import './RemotePanel.css';
 
-interface CloudPanelProps {
-    cloud: UseCloudReturn;
+export interface RemotePanelProps {
+    remote?: UseRemoteReturn;
+    cloud?: UseRemoteReturn;
     isConnected: boolean;
-    workspaceProjects?: CloudProjectInfo[];
+    workspaceProjects?: RemoteProjectInfo[];
     onOpenWorktreeDiff?: (params: {
         serverId: string;
         worktreePath: string;
@@ -36,28 +37,32 @@ interface CloudPanelProps {
         title?: string;
     }) => Promise<void> | void;
 }
+export type CloudPanelProps = RemotePanelProps;
 
-const statusLabel: Record<CloudServerView['status'], string> = {
+const statusLabel: Record<RemoteServerView['status'], string> = {
     online: 'Online',
     connecting: 'Connecting',
     offline: 'Offline',
     auth_error: 'Auth error',
 };
 
-const statusBadgeClass: Record<CloudServerView['status'], string> = {
+const statusBadgeClass: Record<RemoteServerView['status'], string> = {
     online: 'ok',
     connecting: 'warn',
     offline: '',
     auth_error: 'err',
 };
 
-export const CloudPanel: React.FC<CloudPanelProps> = ({
-    cloud,
+export const RemotePanel: React.FC<RemotePanelProps> = ({
+    remote: remoteProp,
+    cloud: cloudProp,
     isConnected,
     workspaceProjects,
     onOpenWorktreeDiff,
 }) => {
-    const [selection, setSelection] = useState<CloudSelection>({
+    const remote = (remoteProp ?? cloudProp)!;
+    const cloud = remote;
+    const [selection, setSelection] = useState<RemoteSelection>({
         kind: 'server',
         serverId: 'local',
     });
@@ -65,11 +70,11 @@ export const CloudPanel: React.FC<CloudPanelProps> = ({
     const [collapsedProjects, setCollapsedProjects] = useState<Record<string, boolean>>({});
     const [addServerAnchor, setAddServerAnchor] = useState<HTMLElement | null>(null);
     const [addProjectState, setAddProjectState] = useState<{
-        server: CloudServerView;
+        server: RemoteServerView;
         anchor: HTMLElement | null;
     } | null>(null);
     const [syncAgentsState, setSyncAgentsState] = useState<{
-        server: CloudServerView;
+        server: RemoteServerView;
         anchor: HTMLElement | null;
     } | null>(null);
     const [startAgentTarget, setStartAgentTarget] = useState<{
@@ -85,15 +90,15 @@ export const CloudPanel: React.FC<CloudPanelProps> = ({
     const [removingWorktreePath, setRemovingWorktreePath] = useState<string | null>(null);
     const [worktreesRefreshTick, setWorktreesRefreshTick] = useState(0);
     const [pullWorktreeState, setPullWorktreeState] = useState<{
-        server: CloudServerView;
-        project: CloudProjectInfo;
+        server: RemoteServerView;
+        project: RemoteProjectInfo;
         remotePath?: string;
         remoteLabel?: string;
         anchor: HTMLElement | null;
     } | null>(null);
     const [createWorktreeState, setCreateWorktreeState] = useState<{
-        server: CloudServerView;
-        project: CloudProjectInfo;
+        server: RemoteServerView;
+        project: RemoteProjectInfo;
         anchor: HTMLElement | null;
     } | null>(null);
     const [actionError, setActionError] = useState<string | null>(null);
@@ -118,7 +123,7 @@ export const CloudPanel: React.FC<CloudPanelProps> = ({
         return (
             <button
                 type="button"
-                className={`${options.className || 'cloud-icon-btn'}${armed ? ' is-armed' : ''}`}
+                className={`${options.className || 'remote-icon-btn'}${armed ? ' is-armed' : ''}`}
                 disabled={options.disabled}
                 title={armed ? options.confirmTitle : options.title}
                 aria-label={armed ? options.confirmTitle : options.title}
@@ -160,7 +165,7 @@ export const CloudPanel: React.FC<CloudPanelProps> = ({
             return selectedServer.projects.find((p) => p.id === selection.projectId);
         }
         if (selection.kind === 'agent') {
-            const key = makeCloudSessionKey(selection.serverId, selection.agentId);
+            const key = makeRemoteSessionKey(selection.serverId, selection.agentId);
             const sess = cloud.sessions.get(key);
             if (sess?.projectId) {
                 return selectedServer.projects.find((p) => p.id === sess.projectId);
@@ -171,11 +176,11 @@ export const CloudPanel: React.FC<CloudPanelProps> = ({
 
     const selectedSession = useMemo(() => {
         if (selection.kind !== 'agent') return undefined;
-        return cloud.sessions.get(makeCloudSessionKey(selection.serverId, selection.agentId));
+        return cloud.sessions.get(makeRemoteSessionKey(selection.serverId, selection.agentId));
     }, [selection, cloud.sessions]);
 
     const sessionsByServer = useMemo(() => {
-        const grouped = new Map<string, CloudAgentSession[]>();
+        const grouped = new Map<string, RemoteAgentSession[]>();
         for (const sess of cloud.sessions.values()) {
             const list = grouped.get(sess.serverId) ?? [];
             list.push(sess);
@@ -288,7 +293,7 @@ export const CloudPanel: React.FC<CloudPanelProps> = ({
             && selection.serverId === serverId
             && selection.agentId === agentId
         ) {
-            const sess = cloud.sessions.get(makeCloudSessionKey(serverId, agentId));
+            const sess = cloud.sessions.get(makeRemoteSessionKey(serverId, agentId));
             if (sess?.projectId) {
                 setSelection({ kind: 'project', serverId, projectId: sess.projectId });
             } else {
@@ -297,7 +302,7 @@ export const CloudPanel: React.FC<CloudPanelProps> = ({
         }
     };
 
-    const formatWorktreeBadge = (agent: CloudAgentSession): string | undefined => {
+    const formatWorktreeBadge = (agent: RemoteAgentSession): string | undefined => {
         if (agent.worktreePath) {
             const name = agent.worktreePath.split(/[\\/]/).filter(Boolean).pop();
             if (name) return name;
@@ -320,7 +325,7 @@ export const CloudPanel: React.FC<CloudPanelProps> = ({
         [onOpenWorktreeDiff],
     );
 
-    const renderSidebarAgentRow = (serverId: string, agent: CloudAgentSession) => {
+    const renderSidebarAgentRow = (serverId: string, agent: RemoteAgentSession) => {
         const agentSelected =
             selection.kind === 'agent'
             && selection.serverId === serverId
@@ -339,7 +344,7 @@ export const CloudPanel: React.FC<CloudPanelProps> = ({
         return (
             <div
                 key={agent.key}
-                className={`cloud-agent-row${agentSelected ? ' active' : ''}${agent.isProcessing ? ' is-working' : ''}${agent.isStarting ? ' is-starting' : ''}`}
+                className={`remote-agent-row${agentSelected ? ' active' : ''}${agent.isProcessing ? ' is-working' : ''}${agent.isStarting ? ' is-starting' : ''}`}
                 onClick={() =>
                     setSelection({
                         kind: 'agent',
@@ -348,7 +353,7 @@ export const CloudPanel: React.FC<CloudPanelProps> = ({
                     })
                 }
             >
-                <span className="cloud-agent-avatar">
+                <span className="remote-agent-avatar">
                     <AcpAvatar
                         type="agent"
                         agentId={agent.agentConfigId ?? agent.agentId}
@@ -356,25 +361,25 @@ export const CloudPanel: React.FC<CloudPanelProps> = ({
                         size={showSubRow ? 24 : 16}
                     />
                 </span>
-                <div className="cloud-agent-main">
-                    <div className="cloud-agent-top-row">
-                        <span className="cloud-agent-name">
+                <div className="remote-agent-main">
+                    <div className="remote-agent-top-row">
+                        <span className="remote-agent-name">
                             {agent.agentName || agent.agentId}
                         </span>
-                        <div className="cloud-agent-top-right">
+                        <div className="remote-agent-top-right">
                             {agent.isStarting ? (
-                                <span className="cloud-agent-spinner" title="Starting agent..." />
+                                <span className="remote-agent-spinner" title="Starting agent..." />
                             ) : agent.startError ? (
-                                <span className="cloud-agent-state error" title={agent.startError} />
+                                <span className="remote-agent-state error" title={agent.startError} />
                             ) : (
                                 <span
-                                    className={`cloud-agent-state ${agent.isProcessing ? 'busy' : ''}`}
+                                    className={`remote-agent-state ${agent.isProcessing ? 'busy' : ''}`}
                                     title={agent.isProcessing ? 'Working...' : 'Ready'}
                                 />
                             )}
                             {renderArmedRemoveButton({
                                 confirmKey: `agent:${agent.key}`,
-                                className: 'cloud-icon-btn danger cloud-agent-remove-btn',
+                                className: 'remote-icon-btn danger remote-agent-remove-btn',
                                 title: 'Stop agent',
                                 confirmTitle: 'Click again to stop agent',
                                 onConfirm: () => void handleStopAgent(serverId, agent.agentId),
@@ -382,10 +387,10 @@ export const CloudPanel: React.FC<CloudPanelProps> = ({
                         </div>
                     </div>
                     {showSubRow && (
-                        <div className="cloud-agent-sub-row">
+                        <div className="remote-agent-sub-row">
                             {wtBadge && (
                                 <span
-                                    className="cloud-agent-wt-badge"
+                                    className="remote-agent-wt-badge"
                                     title={agent.worktreePath ? `${agent.worktreeBranch} · ${agent.worktreePath}` : agent.worktreeBranch}
                                 >
                                     {wtBadge}
@@ -394,7 +399,7 @@ export const CloudPanel: React.FC<CloudPanelProps> = ({
                             {hasDiffStats && agent.worktreePath && (
                                 <button
                                     type="button"
-                                    className="cloud-diff-pill"
+                                    className="remote-diff-pill"
                                     title={`Open worktree diff (${diffFiles} ${diffFiles === 1 ? 'file' : 'files'})`}
                                     onClick={(e) => {
                                         e.stopPropagation();
@@ -407,13 +412,13 @@ export const CloudPanel: React.FC<CloudPanelProps> = ({
                                     }}
                                 >
                                     {diffAdded > 0 && (
-                                        <span className="cloud-diff-added">+{diffAdded}</span>
+                                        <span className="remote-diff-added">+{diffAdded}</span>
                                     )}
                                     {diffRemoved > 0 && (
-                                        <span className="cloud-diff-removed">-{diffRemoved}</span>
+                                        <span className="remote-diff-removed">-{diffRemoved}</span>
                                     )}
                                     {diffAdded === 0 && diffRemoved === 0 && (
-                                        <span className="cloud-diff-neutral">{diffFiles}f</span>
+                                        <span className="remote-diff-neutral">{diffFiles}f</span>
                                     )}
                                 </button>
                             )}
@@ -425,22 +430,22 @@ export const CloudPanel: React.FC<CloudPanelProps> = ({
     };
 
     const renderOpenedAgentsSection = (
-        server: CloudServerView,
-        agents: CloudAgentSession[],
+        server: RemoteServerView,
+        agents: RemoteAgentSession[],
         emptyText: string,
     ) => {
         const availableAgents = cloud.availableAgentsByServer[server.id] ?? [];
         return (
-            <div className="cloud-section">
-                <div className="cloud-section-header">
-                    <span className="cloud-section-title">
+            <div className="remote-section">
+                <div className="remote-section-header">
+                    <span className="remote-section-title">
                         Active Agents ({agents.length})
                     </span>
                 </div>
                 {agents.length === 0 ? (
-                    <div className="cloud-empty-detail">{emptyText}</div>
+                    <div className="remote-empty-detail">{emptyText}</div>
                 ) : (
-                    <div className="cloud-opened-agents-grid">
+                    <div className="remote-opened-agents-grid">
                         {agents.map((a) => (
                             <AcpOpenedAgentCard
                                 key={a.key}
@@ -472,8 +477,8 @@ export const CloudPanel: React.FC<CloudPanelProps> = ({
     const handleTreeMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
         const origin = e.target as HTMLElement;
         const targets = [
-            origin.closest('.cloud-server-group'),
-            origin.closest('.cloud-project-row, .cloud-agent-row'),
+            origin.closest('.remote-server-group'),
+            origin.closest('.remote-project-row, .remote-agent-row'),
         ];
         for (const el of targets) {
             if (el instanceof HTMLElement) {
@@ -485,13 +490,13 @@ export const CloudPanel: React.FC<CloudPanelProps> = ({
     }, []);
 
     const sidebarPane = (
-        <aside className="cloud-sidebar">
-            <div className="cloud-sidebar-header">
-                <span className="cloud-sidebar-title">Servers ({cloud.servers.length})</span>
-                <div className="cloud-sidebar-actions">
+        <aside className="remote-sidebar">
+            <div className="remote-sidebar-header">
+                <span className="remote-sidebar-title">Servers ({cloud.servers.length})</span>
+                <div className="remote-sidebar-actions">
                     <button
                         type="button"
-                        className="cloud-header-btn"
+                        className="remote-header-btn"
                         title="Refresh servers"
                         aria-label="Refresh servers"
                         onClick={() => cloud.refreshServers()}
@@ -501,7 +506,7 @@ export const CloudPanel: React.FC<CloudPanelProps> = ({
                     </button>
                     <button
                         type="button"
-                        className="cloud-header-btn"
+                        className="remote-header-btn"
                         title="Add server"
                         aria-label="Add server"
                         onClick={(e) => {
@@ -515,7 +520,7 @@ export const CloudPanel: React.FC<CloudPanelProps> = ({
                 </div>
             </div>
 
-            <div className="cloud-tree" onMouseMove={handleTreeMouseMove}>
+            <div className="remote-tree" onMouseMove={handleTreeMouseMove}>
                 {cloud.servers.map((srv) => {
                     const isCollapsed = Boolean(collapsedServers[srv.id]);
                     const serverSelected = selection.kind === 'server' && selection.serverId === srv.id;
@@ -528,49 +533,49 @@ export const CloudPanel: React.FC<CloudPanelProps> = ({
                     return (
                         <div
                             key={srv.id}
-                            className={`cloud-server-group ${serverSelected ? 'selected' : ''}`}
+                            className={`remote-server-group ${serverSelected ? 'selected' : ''}`}
                         >
                             <div
-                                className={`cloud-server-row ${serverSelected ? 'active' : ''}`}
+                                className={`remote-server-row ${serverSelected ? 'active' : ''}`}
                                 onClick={() => setSelection({ kind: 'server', serverId: srv.id })}
                             >
                                 <button
                                     type="button"
-                                    className={`cloud-caret-btn ${isCollapsed ? 'collapsed' : ''}`}
+                                    className={`remote-caret-btn ${isCollapsed ? 'collapsed' : ''}`}
                                     onClick={(e) => toggleServerCollapsed(srv.id, e)}
                                     aria-label={isCollapsed ? 'Expand server' : 'Collapse server'}
                                 >
                                     <Icons.ChevronDown size={15} />
                                 </button>
                                 <span
-                                    className={`cloud-status-dot ${srv.status}${srv.error && srv.status !== 'online' ? ' has-error' : ''}`}
+                                    className={`remote-status-dot ${srv.status}${srv.error && srv.status !== 'online' ? ' has-error' : ''}`}
                                 />
-                                <div className="cloud-server-meta">
-                                    <div className="cloud-server-name-line">
-                                        <span className="cloud-server-name">{srv.name}</span>
-                                        {srv.is_local && <span className="cloud-badge">local</span>}
+                                <div className="remote-server-meta">
+                                    <div className="remote-server-name-line">
+                                        <span className="remote-server-name">{srv.name}</span>
+                                        {srv.is_local && <span className="remote-badge">local</span>}
                                         {srv.status === 'online' ? (
                                             srv.ping_ms != null && (
-                                                <span className="cloud-badge ok">{srv.ping_ms}ms</span>
+                                                <span className="remote-badge ok">{srv.ping_ms}ms</span>
                                             )
                                         ) : (
-                                            <span className={`cloud-badge ${statusBadgeClass[srv.status] || 'err'}`}>
+                                            <span className={`remote-badge ${statusBadgeClass[srv.status] || 'err'}`}>
                                                 {statusLabel[srv.status]}
                                             </span>
                                         )}
                                     </div>
                                     <span
-                                        className={`cloud-server-sub${srv.error ? ' is-error' : ''}`}
+                                        className={`remote-server-sub${srv.error ? ' is-error' : ''}`}
                                         title={srv.error || (srv.info ? `${srv.info.os}/${srv.info.arch}` : srv.url)}
                                     >
                                         {srv.error || (srv.info ? `${srv.info.os}/${srv.info.arch}` : srv.url)}
                                     </span>
                                 </div>
-                                <div className="cloud-row-actions">
+                                <div className="remote-row-actions">
                                     {srv.status === 'online' && (
                                         <button
                                             type="button"
-                                            className="cloud-icon-btn"
+                                            className="remote-icon-btn"
                                             title="Add project"
                                             onClick={(e) => {
                                                 e.stopPropagation();
@@ -588,7 +593,7 @@ export const CloudPanel: React.FC<CloudPanelProps> = ({
                                     {!srv.is_local && srv.status !== 'online' && (
                                         <button
                                             type="button"
-                                            className="cloud-icon-btn"
+                                            className="remote-icon-btn"
                                             title="Reconnect"
                                             onClick={(e) => {
                                                 e.stopPropagation();
@@ -608,9 +613,9 @@ export const CloudPanel: React.FC<CloudPanelProps> = ({
                             </div>
 
                             {!isCollapsed && (
-                                <div className="cloud-server-children">
+                                <div className="remote-server-children">
                                     {srv.projects.length === 0 ? (
-                                        <div className="cloud-empty-hint">
+                                        <div className="remote-empty-hint">
                                             {srv.status === 'online' ? 'No projects yet' : statusLabel[srv.status]}
                                         </div>
                                     ) : (
@@ -627,9 +632,9 @@ export const CloudPanel: React.FC<CloudPanelProps> = ({
                                             );
 
                                             return (
-                                                <div key={proj.id} className="cloud-project-block">
+                                                <div key={proj.id} className="remote-project-block">
                                                     <div
-                                                        className={`cloud-project-row ${projectSelected ? 'active' : ''}`}
+                                                        className={`remote-project-row ${projectSelected ? 'active' : ''}`}
                                                         onClick={() =>
                                                             setSelection({
                                                                 kind: 'project',
@@ -640,26 +645,26 @@ export const CloudPanel: React.FC<CloudPanelProps> = ({
                                                     >
                                                         <button
                                                             type="button"
-                                                            className={`cloud-caret-btn ${projectCollapsed ? 'collapsed' : ''}`}
+                                                            className={`remote-caret-btn ${projectCollapsed ? 'collapsed' : ''}`}
                                                             onClick={(e) => toggleProjectCollapsed(srv.id, proj.id, e)}
                                                             aria-label={projectCollapsed ? 'Expand project' : 'Collapse project'}
                                                         >
                                                             <Icons.ChevronDown size={15} />
                                                         </button>
-                                                        <span className="cloud-project-icon" aria-hidden="true">
+                                                        <span className="remote-project-icon" aria-hidden="true">
                                                             <FileIcon
                                                                 path={proj.root}
                                                                 isDirectory
                                                                 isExpanded={!projectCollapsed}
                                                             />
                                                         </span>
-                                                        <span className="cloud-project-name" title={proj.root}>
+                                                        <span className="remote-project-name" title={proj.root}>
                                                             {proj.name}
                                                         </span>
-                                                        <div className="cloud-row-actions">
+                                                        <div className="remote-row-actions">
                                                             <button
                                                                 type="button"
-                                                                className="cloud-icon-btn"
+                                                                className="remote-icon-btn"
                                                                 title="Start agent in project"
                                                                 onClick={(e) => {
                                                                     e.stopPropagation();
@@ -687,7 +692,7 @@ export const CloudPanel: React.FC<CloudPanelProps> = ({
                                                     </div>
 
                                                     {!projectCollapsed && projAgents.length > 0 && (
-                                                        <div className="cloud-agent-list">
+                                                        <div className="remote-agent-list">
                                                             {projAgents.map((agent) => renderSidebarAgentRow(srv.id, agent))}
                                                         </div>
                                                     )}
@@ -697,7 +702,7 @@ export const CloudPanel: React.FC<CloudPanelProps> = ({
                                     )}
 
                                     {orphanAgents.length > 0 && (
-                                        <div className="cloud-agent-list">
+                                        <div className="remote-agent-list">
                                             {orphanAgents.map((agent) => renderSidebarAgentRow(srv.id, agent))}
                                         </div>
                                     )}
@@ -711,15 +716,15 @@ export const CloudPanel: React.FC<CloudPanelProps> = ({
     );
 
     const mainPane = (
-        <main className="cloud-main">
+        <main className="remote-main">
                 {actionError && (
                     <div style={{ padding: '8px 14px 0' }}>
-                        <div className="cloud-error-banner">{actionError}</div>
+                        <div className="remote-error-banner">{actionError}</div>
                     </div>
                 )}
 
                 {selection.kind === 'agent' && selectedSession ? (
-                    <div className="cloud-agent-pane">
+                    <div className="remote-agent-pane">
                         <div style={{ flex: 1, minHeight: 0, position: 'relative', overflow: 'hidden' }}>
                         <AnycodeAgentSession
                             key={selectedSession.key}
@@ -813,44 +818,44 @@ export const CloudPanel: React.FC<CloudPanelProps> = ({
                         </div>
                     </div>
                 ) : selection.kind === 'project' && selectedServer && selectedProject ? (
-                    <div className="cloud-detail">
-                        <div className="cloud-card">
-                            <div className="cloud-card-header">
-                                <div className="cloud-detail-heading">
-                                    <div className="cloud-card-title-row">
-                                        <h2 className="cloud-card-title">{selectedProject.name}</h2>
+                    <div className="remote-detail">
+                        <div className="remote-card">
+                            <div className="remote-card-header">
+                                <div className="remote-detail-heading">
+                                    <div className="remote-card-title-row">
+                                        <h2 className="remote-card-title">{selectedProject.name}</h2>
                                         {projectGitInfo?.is_git_repo && (
                                             <>
-                                                <span className="cloud-project-branch">
+                                                <span className="remote-project-branch">
                                                     {projectGitInfo.branch || (projectGitInfo.head_sha ? 'detached' : 'unborn')}
                                                 </span>
                                                 {projectGitInfo.head_sha && (
-                                                    <span className="cloud-worktree-sha">
+                                                    <span className="remote-worktree-sha">
                                                         {projectGitInfo.head_sha.slice(0, 7)}
                                                     </span>
                                                 )}
                                                 {projectGitInfo.commits_ahead > 0 && (
-                                                    <span className="cloud-badge ok">
+                                                    <span className="remote-badge ok">
                                                         +{projectGitInfo.commits_ahead} commit
                                                         {projectGitInfo.commits_ahead === 1 ? '' : 's'}
                                                     </span>
                                                 )}
                                                 {projectGitInfo.dirty_count > 0 && (
-                                                    <span className="cloud-badge warn">
+                                                    <span className="remote-badge warn">
                                                         {projectGitInfo.dirty_count} dirty
                                                     </span>
                                                 )}
                                             </>
                                         )}
                                     </div>
-                                    <div className="cloud-card-sub">
+                                    <div className="remote-card-sub">
                                         {selectedServer.name} · {selectedProject.root}
                                     </div>
                                 </div>
-                                <div className="cloud-card-actions">
+                                <div className="remote-card-actions">
                                     <button
                                         type="button"
-                                        className="cloud-btn subtle"
+                                        className="remote-btn subtle"
                                         title="Create an isolated git worktree from this project"
                                         onClick={(e) => {
                                             const anchor = e.currentTarget;
@@ -871,7 +876,7 @@ export const CloudPanel: React.FC<CloudPanelProps> = ({
                                     {!selectedServer.is_local && (
                                         <button
                                             type="button"
-                                            className="cloud-btn subtle"
+                                            className="remote-btn subtle"
                                             title="Pull commits & changes into a local git worktree"
                                             onClick={(e) => {
                                                 const anchor = e.currentTarget;
@@ -891,7 +896,7 @@ export const CloudPanel: React.FC<CloudPanelProps> = ({
                                     )}
                                     <button
                                         type="button"
-                                        className="cloud-btn subtle"
+                                        className="remote-btn subtle"
                                         onClick={(e) => {
                                             const anchor = e.currentTarget;
                                             setStartAgentTarget((prev) =>
@@ -920,14 +925,14 @@ export const CloudPanel: React.FC<CloudPanelProps> = ({
                             'No running agents in this project yet.',
                         )}
 
-                        <section className="cloud-section">
-                            <div className="cloud-section-header">
-                                <span className="cloud-section-title">
+                        <section className="remote-section">
+                            <div className="remote-section-header">
+                                <span className="remote-section-title">
                                     Worktrees ({worktrees.length})
                                 </span>
                                 <button
                                     type="button"
-                                    className="cloud-icon-btn"
+                                    className="remote-icon-btn"
                                     onClick={() => setWorktreesRefreshTick((t) => t + 1)}
                                     title="Refresh worktrees"
                                     disabled={worktreesLoading}
@@ -937,13 +942,13 @@ export const CloudPanel: React.FC<CloudPanelProps> = ({
                             </div>
 
                             {worktreesLoading && worktrees.length === 0 ? (
-                                <div className="cloud-empty-detail">Loading worktrees...</div>
+                                <div className="remote-empty-detail">Loading worktrees...</div>
                             ) : worktrees.length === 0 ? (
-                                <div className="cloud-empty-detail">
+                                <div className="remote-empty-detail">
                                     No worktrees created for this project yet.
                                 </div>
                             ) : (
-                                <div className="cloud-worktree-list">
+                                <div className="remote-worktree-list">
                                     {worktrees.map((wt) => {
                                         const linkedAgent = (
                                             sessionsByServer.get(selectedServer.id) ?? []
@@ -953,35 +958,35 @@ export const CloudPanel: React.FC<CloudPanelProps> = ({
                                         const wtFiles = linkedAgent?.diffFiles ?? wt.diff_files ?? 0;
                                         const isRemoving = removingWorktreePath === wt.path;
                                         return (
-                                            <div key={wt.path} className="cloud-worktree-card">
-                                                <div className="cloud-worktree-main">
-                                                    <div className="cloud-worktree-top">
-                                                        <span className="cloud-agent-wt-badge">
+                                            <div key={wt.path} className="remote-worktree-card">
+                                                <div className="remote-worktree-main">
+                                                    <div className="remote-worktree-top">
+                                                        <span className="remote-agent-wt-badge">
                                                             {wt.id}
                                                         </span>
-                                                        <span className="cloud-worktree-branch">
+                                                        <span className="remote-worktree-branch">
                                                             {wt.branch || 'detached'}
                                                         </span>
                                                         {wt.short_sha && (
-                                                            <span className="cloud-worktree-sha">
+                                                            <span className="remote-worktree-sha">
                                                                 {wt.short_sha}
                                                             </span>
                                                         )}
                                                         {wt.commits_ahead > 0 && (
-                                                            <span className="cloud-badge ok">
+                                                            <span className="remote-badge ok">
                                                                 +{wt.commits_ahead} commit
                                                                 {wt.commits_ahead === 1 ? '' : 's'}
                                                             </span>
                                                         )}
                                                         {wt.dirty_count > 0 && (
-                                                            <span className="cloud-badge warn">
+                                                            <span className="remote-badge warn">
                                                                 {wt.dirty_count} dirty
                                                             </span>
                                                         )}
                                                         {(wtAdded > 0 || wtRemoved > 0 || wtFiles > 0) && (
                                                             <button
                                                                 type="button"
-                                                                className="cloud-diff-pill"
+                                                                className="remote-diff-pill"
                                                                 title={`Open worktree diff (${wtFiles} changed files)`}
                                                                 onClick={() =>
                                                                     triggerOpenWorktreeDiff({
@@ -993,20 +998,20 @@ export const CloudPanel: React.FC<CloudPanelProps> = ({
                                                                 }
                                                             >
                                                                 {wtAdded > 0 && (
-                                                                    <span className="cloud-diff-added">+{wtAdded}</span>
+                                                                    <span className="remote-diff-added">+{wtAdded}</span>
                                                                 )}
                                                                 {wtRemoved > 0 && (
-                                                                    <span className="cloud-diff-removed">-{wtRemoved}</span>
+                                                                    <span className="remote-diff-removed">-{wtRemoved}</span>
                                                                 )}
                                                                 {wtAdded === 0 && wtRemoved === 0 && (
-                                                                    <span className="cloud-diff-neutral">{wtFiles}f</span>
+                                                                    <span className="remote-diff-neutral">{wtFiles}f</span>
                                                                 )}
                                                             </button>
                                                         )}
                                                         {linkedAgent && (
                                                             <button
                                                                 type="button"
-                                                                className="cloud-badge accent cloud-badge-btn"
+                                                                className="remote-badge accent remote-badge-btn"
                                                                 title={`Open ${linkedAgent.agentName || linkedAgent.agentId}`}
                                                                 onClick={() =>
                                                                     setSelection({
@@ -1020,16 +1025,16 @@ export const CloudPanel: React.FC<CloudPanelProps> = ({
                                                             </button>
                                                         )}
                                                     </div>
-                                                    <div className="cloud-item-path" title={wt.path}>
+                                                    <div className="remote-item-path" title={wt.path}>
                                                         {wt.path}
                                                     </div>
                                                 </div>
 
-                                                <div className="cloud-worktree-actions">
+                                                <div className="remote-worktree-actions">
                                                     {onOpenWorktreeDiff && (
                                                         <button
                                                             type="button"
-                                                            className="cloud-btn subtle"
+                                                            className="remote-btn subtle"
                                                             title="View worktree diff in editor"
                                                             onClick={() =>
                                                                 triggerOpenWorktreeDiff({
@@ -1045,7 +1050,7 @@ export const CloudPanel: React.FC<CloudPanelProps> = ({
                                                     )}
                                                     <button
                                                         type="button"
-                                                        className="cloud-btn subtle"
+                                                        className="remote-btn subtle"
                                                         title="Start an agent in this worktree"
                                                         onClick={(e) => {
                                                             const anchor = e.currentTarget;
@@ -1068,7 +1073,7 @@ export const CloudPanel: React.FC<CloudPanelProps> = ({
                                                     {!selectedServer.is_local && (
                                                         <button
                                                             type="button"
-                                                            className="cloud-btn subtle"
+                                                            className="remote-btn subtle"
                                                             title="Pull commits & changes from this worktree into a local worktree"
                                                             onClick={(e) => {
                                                                 const anchor = e.currentTarget;
@@ -1092,7 +1097,7 @@ export const CloudPanel: React.FC<CloudPanelProps> = ({
                                                     )}
                                                     {renderArmedRemoveButton({
                                                         confirmKey: `worktree:${selectedServer.id}::${wt.path}`,
-                                                        className: 'cloud-icon-btn danger',
+                                                        className: 'remote-icon-btn danger',
                                                         disabled: isRemoving || Boolean(linkedAgent),
                                                         title: linkedAgent
                                                             ? `Stop active agent (${linkedAgent.agentName || linkedAgent.agentId}) before removing worktree`
@@ -1115,15 +1120,15 @@ export const CloudPanel: React.FC<CloudPanelProps> = ({
                         </section>
                     </div>
                 ) : selectedServer ? (
-                    <div className="cloud-detail">
-                        <div className="cloud-card">
-                            <div className="cloud-card-header">
-                                <div className="cloud-detail-heading">
-                                    <h2 className="cloud-card-title">{selectedServer.name}</h2>
-                                    <div className="cloud-card-sub">
+                    <div className="remote-detail">
+                        <div className="remote-card">
+                            <div className="remote-card-header">
+                                <div className="remote-detail-heading">
+                                    <h2 className="remote-card-title">{selectedServer.name}</h2>
+                                    <div className="remote-card-sub">
                                         {selectedServer.open_url ? (
                                             <a
-                                                className="cloud-server-link"
+                                                className="remote-server-link"
                                                 href={selectedServer.open_url}
                                                 target="_blank"
                                                 rel="noopener noreferrer"
@@ -1139,15 +1144,15 @@ export const CloudPanel: React.FC<CloudPanelProps> = ({
                                             : ''}
                                     </div>
                                 </div>
-                                <div className="cloud-card-actions">
-                                    <span className={`cloud-badge ${statusBadgeClass[selectedServer.status]}`}>
+                                <div className="remote-card-actions">
+                                    <span className={`remote-badge ${statusBadgeClass[selectedServer.status]}`}>
                                         {statusLabel[selectedServer.status]}
                                         {selectedServer.ping_ms != null ? ` (${selectedServer.ping_ms}ms)` : ''}
                                     </span>
                                     {!selectedServer.is_local && selectedServer.status === 'online' && (
                                         <button
                                             type="button"
-                                            className="cloud-btn subtle"
+                                            className="remote-btn subtle"
                                             onClick={(e) => {
                                                 const anchor = e.currentTarget;
                                                 setSyncAgentsState((prev) =>
@@ -1163,7 +1168,7 @@ export const CloudPanel: React.FC<CloudPanelProps> = ({
                                     {!selectedServer.is_local && (
                                         <button
                                             type="button"
-                                            className="cloud-btn subtle"
+                                            className="remote-btn subtle"
                                             onClick={() => cloud.reconnectServer(selectedServer.id)}
                                         >
                                             Reconnect
@@ -1172,19 +1177,19 @@ export const CloudPanel: React.FC<CloudPanelProps> = ({
                                 </div>
                             </div>
                             {selectedServer.error && (
-                                <div className="cloud-error-banner">{selectedServer.error}</div>
+                                <div className="remote-error-banner">{selectedServer.error}</div>
                             )}
                         </div>
 
-                        <div className="cloud-section">
-                            <div className="cloud-section-header">
-                                <span className="cloud-section-title">
+                        <div className="remote-section">
+                            <div className="remote-section-header">
+                                <span className="remote-section-title">
                                     Projects ({selectedServer.projects.length})
                                 </span>
                                 {selectedServer.status === 'online' && (
                                     <button
                                         type="button"
-                                        className="cloud-btn subtle"
+                                        className="remote-btn subtle"
                                         onClick={(e) => {
                                             const anchor = e.currentTarget;
                                             setAddProjectState((prev) =>
@@ -1200,15 +1205,15 @@ export const CloudPanel: React.FC<CloudPanelProps> = ({
                                 )}
                             </div>
                             {selectedServer.projects.length === 0 ? (
-                                <div className="cloud-empty-detail">
+                                <div className="remote-empty-detail">
                                     No projects registered on {selectedServer.name}.
                                 </div>
                             ) : (
-                                <div className="cloud-grid">
+                                <div className="remote-grid">
                                     {selectedServer.projects.map((proj) => (
                                         <div
                                             key={proj.id}
-                                            className="cloud-item-card"
+                                            className="remote-item-card"
                                             onClick={() =>
                                                 setSelection({
                                                     kind: 'project',
@@ -1217,15 +1222,15 @@ export const CloudPanel: React.FC<CloudPanelProps> = ({
                                                 })
                                             }
                                         >
-                                            <div className="cloud-item-title">
-                                                <span className="cloud-item-name">
+                                            <div className="remote-item-title">
+                                                <span className="remote-item-name">
                                                     <FileIcon path={proj.root} isDirectory />
-                                                    <span className="cloud-item-name-label">{proj.name}</span>
+                                                    <span className="remote-item-name-label">{proj.name}</span>
                                                 </span>
-                                                <div className="cloud-item-actions">
+                                                <div className="remote-item-actions">
                                                     <button
                                                         type="button"
-                                                        className="cloud-btn subtle"
+                                                        className="remote-btn subtle"
                                                         title="Create git worktree from this project"
                                                         onClick={(e) => {
                                                             e.stopPropagation();
@@ -1246,7 +1251,7 @@ export const CloudPanel: React.FC<CloudPanelProps> = ({
                                                     {!selectedServer.is_local && (
                                                         <button
                                                             type="button"
-                                                            className="cloud-btn subtle"
+                                                            className="remote-btn subtle"
                                                             title="Pull into local git worktree"
                                                             onClick={(e) => {
                                                                 e.stopPropagation();
@@ -1267,7 +1272,7 @@ export const CloudPanel: React.FC<CloudPanelProps> = ({
                                                     )}
                                                     <button
                                                         type="button"
-                                                        className="cloud-btn subtle"
+                                                        className="remote-btn subtle"
                                                         onClick={(e) => {
                                                             e.stopPropagation();
                                                             const anchor = e.currentTarget;
@@ -1287,7 +1292,7 @@ export const CloudPanel: React.FC<CloudPanelProps> = ({
                                                     </button>
                                                 </div>
                                             </div>
-                                            <div className="cloud-item-path">{proj.root}</div>
+                                            <div className="remote-item-path">{proj.root}</div>
                                         </div>
                                     ))}
                                 </div>
@@ -1301,8 +1306,8 @@ export const CloudPanel: React.FC<CloudPanelProps> = ({
                         )}
                     </div>
                 ) : (
-                    <div className="cloud-detail">
-                        <div className="cloud-card-sub">Waiting for backend connection...</div>
+                    <div className="remote-detail">
+                        <div className="remote-card-sub">Waiting for backend connection...</div>
                     </div>
                 )}
         </main>
@@ -1311,14 +1316,14 @@ export const CloudPanel: React.FC<CloudPanelProps> = ({
     const panes = useMemo(
         () => [
             {
-                id: 'cloud-sidebar',
+                id: 'remote-sidebar',
                 size: 276,
                 minSize: 180,
                 maxSize: 520,
                 content: sidebarPane,
             },
             {
-                id: 'cloud-main',
+                id: 'remote-main',
                 minSize: 200,
                 content: mainPane,
             },
@@ -1327,8 +1332,8 @@ export const CloudPanel: React.FC<CloudPanelProps> = ({
     );
 
     return (
-        <div className="cloud-panel">
-            <Split direction="row" className="cloud-split" panes={panes} />
+        <div className="remote-panel">
+            <Split direction="row" className="remote-split" panes={panes} />
 
             {addServerAnchor && (
                 <AddServerModal
@@ -1442,3 +1447,5 @@ export const CloudPanel: React.FC<CloudPanelProps> = ({
         </div>
     );
 };
+
+export const CloudPanel = RemotePanel;

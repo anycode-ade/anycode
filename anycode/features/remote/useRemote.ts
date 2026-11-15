@@ -11,28 +11,33 @@ import type {
 } from '../../types';
 import { getProfileEnvForAgent } from '../../agents';
 import { generateUUID } from '../../utils';
-import { applyAcpHistory, applyAcpMessageItem, mergeCloudQueue } from './acpReducer';
+import { applyAcpHistory, applyAcpMessageItem, mergeRemoteQueue } from './acpReducer';
 import {
-    type CloudAgentSession,
-    type CloudBrowseResponse,
-    type CloudDiffStatsEvent,
-    type CloudServerView,
     type CreateWorktreeResult,
     type PullProjectResult,
+    type RemoteAgentSession,
+    type RemoteBrowseResponse,
+    type RemoteDiffStatsEvent,
     type RemoteGitStateInfo,
+    type RemoteServerView,
     type RemoteWorktreeEntry,
     type WorktreeDiffResponse,
-    makeCloudSessionKey,
+    makeRemoteSessionKey,
 } from './types';
 
 const MESSAGE_FLUSH_MS = 25;
 
-interface UseCloudParams {
+export interface UseRemoteParams {
+    wsRef: React.RefObject<Socket | null>;
+    isConnected: boolean;
+}
+export type UseCloudParams = UseRemoteParams;
+interface _Unused_UseCloudParams {
     wsRef: React.RefObject<Socket | null>;
     isConnected: boolean;
 }
 
-type PendingCloudEvent = {
+type PendingRemoteEvent = {
     server_id: string;
     agent_id: string;
     item: AcpMessage;
@@ -58,25 +63,25 @@ const emitWithAck = <T = any>(
     });
 };
 
-export const useCloud = ({ wsRef, isConnected }: UseCloudParams) => {
-    const [servers, setServers] = useState<CloudServerView[]>([]);
-    const [sessions, setSessions] = useState<Map<string, CloudAgentSession>>(new Map());
+export const useRemote = ({ wsRef, isConnected }: UseRemoteParams) => {
+    const [servers, setServers] = useState<RemoteServerView[]>([]);
+    const [sessions, setSessions] = useState<Map<string, RemoteAgentSession>>(new Map());
     const [availableAgentsByServer, setAvailableAgentsByServer] = useState<Record<string, AcpAgent[]>>({});
     const [registryAgentsByServer, setRegistryAgentsByServer] = useState<Record<string, AcpRegistryAgentSummary[]>>({});
     const [isLoading, setIsLoading] = useState(false);
 
     const sessionsRef = useRef(sessions);
     sessionsRef.current = sessions;
-    const pendingEventsRef = useRef<PendingCloudEvent[]>([]);
+    const pendingEventsRef = useRef<PendingRemoteEvent[]>([]);
     const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const agentCountersRef = useRef<Record<string, number>>({});
     const reconnectedKeysRef = useRef<Set<string>>(new Set());
     const toolOutputCacheRef = useRef<Map<string, string>>(new Map());
-    const diffStatsListenersRef = useRef<Set<(event: CloudDiffStatsEvent) => void>>(new Set());
+    const diffStatsListenersRef = useRef<Set<(event: RemoteDiffStatsEvent) => void>>(new Set());
 
     const updateSession = useCallback((
         key: string,
-        updater: (session: CloudAgentSession | undefined) => CloudAgentSession | undefined,
+        updater: (session: RemoteAgentSession | undefined) => RemoteAgentSession | undefined,
     ) => {
         setSessions((prev) => {
             const next = updater(prev.get(key));
@@ -103,7 +108,7 @@ export const useCloud = ({ wsRef, isConnected }: UseCloudParams) => {
         return res.data;
     }, [wsRef]);
 
-    const reconcileSessionsFromServers = useCallback((serverList: CloudServerView[]) => {
+    const reconcileSessionsFromServers = useCallback((serverList: RemoteServerView[]) => {
         // Compute reconnect targets synchronously outside React's state updater:
         // React 19 batches setSessions(prev => ...) inside async callbacks, so an
         // array mutated inside the updater would still be empty right after it.
@@ -111,7 +116,7 @@ export const useCloud = ({ wsRef, isConnected }: UseCloudParams) => {
         for (const srv of serverList) {
             if (srv.status !== 'online') continue;
             for (const agent of srv.agents) {
-                const key = makeCloudSessionKey(srv.id, agent.id);
+                const key = makeRemoteSessionKey(srv.id, agent.id);
                 if (!reconnectedKeysRef.current.has(key)) {
                     reconnectedKeysRef.current.add(key);
                     const keys = reconnectByServer.get(srv.id) ?? [];
@@ -128,7 +133,7 @@ export const useCloud = ({ wsRef, isConnected }: UseCloudParams) => {
             for (const srv of serverList) {
                 if (srv.status !== 'online') continue;
                 for (const agent of srv.agents) {
-                    const key = makeCloudSessionKey(srv.id, agent.id);
+                    const key = makeRemoteSessionKey(srv.id, agent.id);
                     activeKeys.add(key);
                     const existing = copy.get(key);
                     if (existing) {
@@ -144,7 +149,7 @@ export const useCloud = ({ wsRef, isConnected }: UseCloudParams) => {
                             diffFiles: agent.diff_files ?? existing.diffFiles,
                             isActive: true,
                             isProcessing: agent.is_processing,
-                            queue: mergeCloudQueue(existing.queue, agent.queue),
+                            queue: mergeRemoteQueue(existing.queue, agent.queue),
                         });
                     } else {
                         copy.set(key, {
@@ -189,7 +194,7 @@ export const useCloud = ({ wsRef, isConnected }: UseCloudParams) => {
         if (!wsRef.current || !isConnected) return;
         setIsLoading(true);
         try {
-            const res = await emitWithAck<{ success: true; servers: CloudServerView[] }>(
+            const res = await emitWithAck<{ success: true; servers: RemoteServerView[] }>(
                 wsRef.current,
                 'cloud:servers:list',
                 {},
@@ -210,7 +215,7 @@ export const useCloud = ({ wsRef, isConnected }: UseCloudParams) => {
         if (pending.length === 0) return;
         pendingEventsRef.current = [];
         for (const evt of pending) {
-            const key = makeCloudSessionKey(evt.server_id, evt.agent_id);
+            const key = makeRemoteSessionKey(evt.server_id, evt.agent_id);
             updateSession(key, (existing) =>
                 applyAcpMessageItem(existing, key, evt.server_id, evt.agent_id, evt.item),
             );
@@ -221,13 +226,13 @@ export const useCloud = ({ wsRef, isConnected }: UseCloudParams) => {
         const socket = wsRef.current;
         if (!socket || !isConnected) return;
 
-        const handleServersUpdated = (data: { servers: CloudServerView[] }) => {
+        const handleServersUpdated = (data: { servers: RemoteServerView[] }) => {
             if (!Array.isArray(data?.servers)) return;
             setServers(data.servers);
             reconcileSessionsFromServers(data.servers);
         };
 
-        const handleCloudAcpMessage = (data: PendingCloudEvent) => {
+        const handleCloudAcpMessage = (data: PendingRemoteEvent) => {
             if (!data?.server_id || !data?.agent_id || !data?.item) return;
             pendingEventsRef.current.push(data);
             if (!flushTimerRef.current) {
@@ -242,7 +247,7 @@ export const useCloud = ({ wsRef, isConnected }: UseCloudParams) => {
         }) => {
             if (!data?.server_id || !data?.agent_id || !Array.isArray(data?.history)) return;
             flushPendingMessages();
-            const key = makeCloudSessionKey(data.server_id, data.agent_id);
+            const key = makeRemoteSessionKey(data.server_id, data.agent_id);
             updateSession(key, (existing) =>
                 applyAcpHistory(existing, key, data.server_id, data.agent_id, data.history),
             );
@@ -254,7 +259,7 @@ export const useCloud = ({ wsRef, isConnected }: UseCloudParams) => {
             queue: AcpQueuedMessage[];
         }) => {
             if (!data?.server_id || !data?.agent_id || !Array.isArray(data?.queue)) return;
-            const key = makeCloudSessionKey(data.server_id, data.agent_id);
+            const key = makeRemoteSessionKey(data.server_id, data.agent_id);
             updateSession(key, (existing) => {
                 if (!existing) {
                     return {
@@ -267,13 +272,13 @@ export const useCloud = ({ wsRef, isConnected }: UseCloudParams) => {
                         queue: data.queue,
                     };
                 }
-                return { ...existing, queue: mergeCloudQueue(existing.queue, data.queue) };
+                return { ...existing, queue: mergeRemoteQueue(existing.queue, data.queue) };
             });
         };
 
-        const handleCloudAcpDiffStats = (data: CloudDiffStatsEvent) => {
+        const handleCloudAcpDiffStats = (data: RemoteDiffStatsEvent) => {
             if (!data?.server_id || !data?.agent_id) return;
-            const key = makeCloudSessionKey(data.server_id, data.agent_id);
+            const key = makeRemoteSessionKey(data.server_id, data.agent_id);
             updateSession(key, (existing) => {
                 if (!existing) return existing;
                 return {
@@ -326,7 +331,7 @@ export const useCloud = ({ wsRef, isConnected }: UseCloudParams) => {
     }, [wsRef, isConnected, refreshServers, reconcileSessionsFromServers, flushPendingMessages, updateSession]);
 
     const addServer = useCallback(async (name: string, url: string, token?: string) => {
-        const res = await emitWithAck<{ success: true; server: CloudServerView }>(
+        const res = await emitWithAck<{ success: true; server: RemoteServerView }>(
             wsRef.current,
             'cloud:servers:add',
             { name, url, token: token?.trim() || null },
@@ -349,8 +354,8 @@ export const useCloud = ({ wsRef, isConnected }: UseCloudParams) => {
         await emitWithAck(wsRef.current, 'cloud:servers:reconnect', { server_id: serverId });
     }, [wsRef]);
 
-    const browseDir = useCallback(async (serverId: string, path?: string): Promise<CloudBrowseResponse> => {
-        return cloudRpc<CloudBrowseResponse>(serverId, 'workspace:browse', path ? { path } : {});
+    const browseDir = useCallback(async (serverId: string, path?: string): Promise<RemoteBrowseResponse> => {
+        return cloudRpc<RemoteBrowseResponse>(serverId, 'workspace:browse', path ? { path } : {});
     }, [cloudRpc]);
 
     const addProject = useCallback(async (serverId: string, path: string) => {
@@ -473,7 +478,7 @@ export const useCloud = ({ wsRef, isConnected }: UseCloudParams) => {
         });
     }, [cloudRpc]);
 
-    const subscribeDiffStats = useCallback((listener: (event: CloudDiffStatsEvent) => void) => {
+    const subscribeDiffStats = useCallback((listener: (event: RemoteDiffStatsEvent) => void) => {
         diffStatsListenersRef.current.add(listener);
         return () => {
             diffStatsListenersRef.current.delete(listener);
@@ -584,7 +589,7 @@ export const useCloud = ({ wsRef, isConnected }: UseCloudParams) => {
         prompt: string,
         attachments: AcpPromptAttachment[] = [],
     ) => {
-        const key = makeCloudSessionKey(serverId, agentId);
+        const key = makeRemoteSessionKey(serverId, agentId);
         const session = sessionsRef.current.get(key);
         const normalizedAttachments = attachments.length > 0 ? attachments : undefined;
 
@@ -678,7 +683,7 @@ export const useCloud = ({ wsRef, isConnected }: UseCloudParams) => {
         const nextNum = (agentCountersRef.current[countKey] ?? 0) + 1;
         agentCountersRef.current[countKey] = nextNum;
         const agentId = `${agent.id}-${nextNum}`;
-        const key = makeCloudSessionKey(serverId, agentId);
+        const key = makeRemoteSessionKey(serverId, agentId);
         const profileEnv = agent.profile ? getProfileEnvForAgent(agent, agentId) : {};
         const mergedEnv = { ...profileEnv, ...(agent.env ?? {}) };
 
@@ -766,7 +771,7 @@ export const useCloud = ({ wsRef, isConnected }: UseCloudParams) => {
     }, [cloudRpc, updateSession, sendPrompt]);
 
     const authenticateAgent = useCallback(async (serverId: string, agentId: string, methodId: string) => {
-        const key = makeCloudSessionKey(serverId, agentId);
+        const key = makeRemoteSessionKey(serverId, agentId);
         updateSession(key, (existing) => existing ? {
             ...existing,
             isAuthenticating: true,
@@ -800,7 +805,7 @@ export const useCloud = ({ wsRef, isConnected }: UseCloudParams) => {
     }, [cloudRpc]);
 
     const stopAgent = useCallback(async (serverId: string, agentId: string) => {
-        const key = makeCloudSessionKey(serverId, agentId);
+        const key = makeRemoteSessionKey(serverId, agentId);
         await cloudRpc(serverId, 'acp:stop', { agent_id: agentId }).catch(() => {});
         reconnectedKeysRef.current.delete(key);
         updateSession(key, () => undefined);
@@ -812,7 +817,7 @@ export const useCloud = ({ wsRef, isConnected }: UseCloudParams) => {
         checkpointId?: string,
         prompt?: string,
     ) => {
-        const key = makeCloudSessionKey(serverId, agentId);
+        const key = makeRemoteSessionKey(serverId, agentId);
         await cloudRpc(serverId, 'acp:undo', {
             agent_id: agentId,
             checkpoint_id: checkpointId,
@@ -837,7 +842,7 @@ export const useCloud = ({ wsRef, isConnected }: UseCloudParams) => {
     }, [cloudRpc, updateSession]);
 
     const setSessionModel = useCallback((serverId: string, agentId: string, option: AcpSelectOption) => {
-        const key = makeCloudSessionKey(serverId, agentId);
+        const key = makeRemoteSessionKey(serverId, agentId);
         updateSession(key, (existing) => existing?.modelSelector ? {
             ...existing,
             modelSelector: { ...existing.modelSelector, current_value: option.value },
@@ -846,7 +851,7 @@ export const useCloud = ({ wsRef, isConnected }: UseCloudParams) => {
     }, [cloudRpc, updateSession]);
 
     const setSessionReasoning = useCallback((serverId: string, agentId: string, option: AcpSelectOption) => {
-        const key = makeCloudSessionKey(serverId, agentId);
+        const key = makeRemoteSessionKey(serverId, agentId);
         updateSession(key, (existing) => existing?.reasoningSelector ? {
             ...existing,
             reasoningSelector: { ...existing.reasoningSelector, current_value: option.value },
@@ -935,4 +940,6 @@ export const useCloud = ({ wsRef, isConnected }: UseCloudParams) => {
     };
 };
 
-export type UseCloudReturn = ReturnType<typeof useCloud>;
+export type UseRemoteReturn = ReturnType<typeof useRemote>;
+export const useCloud = useRemote;
+export type UseCloudReturn = UseRemoteReturn;

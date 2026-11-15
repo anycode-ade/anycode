@@ -34,9 +34,9 @@ import type { MultibufferFile } from './features/editor/MultibufferPanel';
 import { TerminalPanel } from './features/terminal/TerminalPanel';
 import { AgentPanel } from './features/agents/AgentPanel';
 import { BrowserPanel } from './features/browser/BrowserPanel';
-import { CloudPanel } from './features/cloud/CloudPanel';
-import { useCloud } from './features/cloud/useCloud';
-import type { WorktreeDiffResponse } from './features/cloud/types';
+import { RemotePanel } from './features/remote/RemotePanel';
+import { useRemote } from './features/remote/useRemote';
+import type { WorktreeDiffResponse } from './features/remote/types';
 import { type DiffMode } from './types/diffMode';
 import { announceWarp, getLanguageFromFileName, normalizePath, pathBelongsToProject, uriToFilePath } from './utils';
 import { useSettings } from './hooks/useSettings';
@@ -97,7 +97,7 @@ const toRemoteWorktreeMultibufferFiles = (diff: WorktreeDiffResponse): Multibuff
         };
     });
 
-type CloudDiffReviewTarget = {
+type RemoteDiffReviewTarget = {
     serverId: string;
     worktreePath: string;
     projectId?: string;
@@ -112,7 +112,7 @@ type ReviewSession = {
     openedByReview: string[];
     activeFileId: string | null;
     focusRequest?: { path: string; line?: number; column?: number; token: number };
-    cloudDiffTarget?: CloudDiffReviewTarget;
+    remoteDiffTarget?: RemoteDiffReviewTarget;
 };
 
 const ACTIVE_PROJECT_SESSION_KEY = 'anycode.activeProjectId';
@@ -229,7 +229,7 @@ const App: React.FC<AppProps> = ({ initialWorkspace }) => {
     const git = useGit({ wsRef, isConnected, projectId: activeProjectId });
     const search = useSearch({ wsRef, isConnected, projectId: selectedSearchProjectId });
     const agents = useAgents({ wsRef, isConnected, projectId: activeProjectId });
-    const cloud = useCloud({ wsRef, isConnected });
+    const remote = useRemote({ wsRef, isConnected });
     const refreshProjectGit = useEvent((projectId: string, restoreStatus = false) => {
         if (restoreStatus) git.restoreProjectStatus(projectId);
         git.fetchGitStatus(projectId);
@@ -1107,13 +1107,13 @@ const App: React.FC<AppProps> = ({ initialWorkspace }) => {
         }));
     });
 
-    const handleOpenCloudWorktreeDiff = useEvent(async (params: {
+    const handleOpenRemoteWorktreeDiff = useEvent(async (params: {
         serverId: string;
         worktreePath: string;
         projectId?: string;
         title?: string;
     }) => {
-        const diff = await cloud.getWorktreeDiff(params.serverId, params.worktreePath, params.projectId);
+        const diff = await remote.getWorktreeDiff(params.serverId, params.worktreePath, params.projectId);
         const files = toRemoteWorktreeMultibufferFiles(diff);
         if (files.length === 0) {
             window.alert('No changes in this worktree yet.');
@@ -1122,8 +1122,8 @@ const App: React.FC<AppProps> = ({ initialWorkspace }) => {
 
         const existingPaneEntry = Object.entries(multibufferReviewsRef.current).find(
             ([, rev]) =>
-                rev.cloudDiffTarget?.serverId === params.serverId
-                && rev.cloudDiffTarget?.worktreePath === params.worktreePath,
+                rev.remoteDiffTarget?.serverId === params.serverId
+                && rev.remoteDiffTarget?.worktreePath === params.worktreePath,
         );
         const paneId = existingPaneEntry?.[0]
             ? layoutActionsRef.current?.ensureEditorPanel(existingPaneEntry[0])
@@ -1146,7 +1146,7 @@ const App: React.FC<AppProps> = ({ initialWorkspace }) => {
                 ignoreEdits: true,
                 openedByReview: [],
                 activeFileId: previous[paneId]?.activeFileId ?? files[0]?.id ?? null,
-                cloudDiffTarget: {
+                remoteDiffTarget: {
                     serverId: params.serverId,
                     worktreePath: params.worktreePath,
                     projectId: params.projectId,
@@ -1157,16 +1157,16 @@ const App: React.FC<AppProps> = ({ initialWorkspace }) => {
     });
 
     useEffect(() => {
-        return cloud.subscribeDiffStats((evt) => {
+        return remote.subscribeDiffStats((evt) => {
             if (!evt.worktree_path) return;
             const matches = Object.entries(multibufferReviewsRef.current).filter(
                 ([, rev]) =>
-                    rev.cloudDiffTarget?.serverId === evt.server_id
-                    && rev.cloudDiffTarget?.worktreePath === evt.worktree_path,
+                    rev.remoteDiffTarget?.serverId === evt.server_id
+                    && rev.remoteDiffTarget?.worktreePath === evt.worktree_path,
             );
             if (matches.length === 0) return;
 
-            void cloud.getWorktreeDiff(evt.server_id, evt.worktree_path, matches[0][1].cloudDiffTarget?.projectId)
+            void remote.getWorktreeDiff(evt.server_id, evt.worktree_path, matches[0][1].remoteDiffTarget?.projectId)
                 .then((diff) => {
                     const files = toRemoteWorktreeMultibufferFiles(diff);
                     setMultibufferReviews((previous) => {
@@ -1175,15 +1175,15 @@ const App: React.FC<AppProps> = ({ initialWorkspace }) => {
                         for (const [paneId] of matches) {
                             const cur = next[paneId];
                             if (
-                                !cur?.cloudDiffTarget
-                                || cur.cloudDiffTarget.serverId !== evt.server_id
-                                || cur.cloudDiffTarget.worktreePath !== evt.worktree_path
+                                !cur?.remoteDiffTarget
+                                || cur.remoteDiffTarget.serverId !== evt.server_id
+                                || cur.remoteDiffTarget.worktreePath !== evt.worktree_path
                             ) {
                                 continue;
                             }
                             const title = diff.truncated
-                                ? `${cur.cloudDiffTarget.title} (truncated)`
-                                : cur.cloudDiffTarget.title;
+                                ? `${cur.remoteDiffTarget.title} (truncated)`
+                                : cur.remoteDiffTarget.title;
                             next[paneId] = {
                                 ...cur,
                                 title,
@@ -1199,7 +1199,7 @@ const App: React.FC<AppProps> = ({ initialWorkspace }) => {
                 })
                 .catch(() => {});
         });
-    }, [cloud]);
+    }, [remote]);
 
     const activeChangedFile = useMemo<ChangedFile | null>(() => {
         if (!activeContextFilePath) {
@@ -1621,11 +1621,11 @@ const App: React.FC<AppProps> = ({ initialWorkspace }) => {
                 return <BrowserPanel panelKey={panelKey} />;
             case 'cloud':
                 return (
-                    <CloudPanel
-                        cloud={cloud}
+                    <RemotePanel
+                        remote={remote}
                         isConnected={isConnected}
                         workspaceProjects={workspaceState.projects}
-                        onOpenWorktreeDiff={handleOpenCloudWorktreeDiff}
+                        onOpenWorktreeDiff={handleOpenRemoteWorktreeDiff}
                     />
                 );
             case 'toolbar':

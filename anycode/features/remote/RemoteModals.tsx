@@ -8,8 +8,8 @@ import { AcpAvatar } from '../../components/agent/AcpAvatar';
 import { AcpStartCard, groupAvailableAgents } from '../../components/agent/AcpStartCard';
 import { loadSelectedProfiles, saveSelectedProfiles } from '../../storage';
 import type {
-    CloudProjectInfo,
-    CloudServerView,
+    RemoteProjectInfo,
+    RemoteServerView,
     CreateWorktreeResult,
     PullProjectResult,
     RemoteGitStateInfo,
@@ -18,7 +18,7 @@ import type {
 
 const VIEWPORT_MARGIN = 8;
 
-const getCloudPopoverStyle = (anchor: HTMLElement | null, width: number): React.CSSProperties => {
+const getRemotePopoverStyle = (anchor: HTMLElement | null, width: number): React.CSSProperties => {
     if (!anchor || !anchor.isConnected) {
         return {
             top: '50%',
@@ -57,7 +57,7 @@ const getCloudPopoverStyle = (anchor: HTMLElement | null, width: number): React.
     };
 };
 
-interface CloudPopoverProps {
+interface RemotePopoverProps {
     title: string;
     subtitle?: string;
     anchor?: HTMLElement | null;
@@ -67,7 +67,7 @@ interface CloudPopoverProps {
     children: React.ReactNode;
 }
 
-const CloudPopover: React.FC<CloudPopoverProps> = ({
+const RemotePopover: React.FC<RemotePopoverProps> = ({
     title,
     subtitle,
     anchor = null,
@@ -77,7 +77,7 @@ const CloudPopover: React.FC<CloudPopoverProps> = ({
     children,
 }) => {
     const popoverRef = useRef<HTMLDivElement>(null);
-    const [popoverStyle] = useState<React.CSSProperties>(() => getCloudPopoverStyle(anchor, width));
+    const [popoverStyle] = useState<React.CSSProperties>(() => getRemotePopoverStyle(anchor, width));
 
     useEffect(() => {
         const handleKeyDown = (event: KeyboardEvent) => {
@@ -109,14 +109,14 @@ const CloudPopover: React.FC<CloudPopoverProps> = ({
     }, [anchor, onClose]);
 
     const header = (
-        <div className="cloud-popover-header">
-            <div className="cloud-popover-heading">
-                <h3 className="cloud-modal-title">{title}</h3>
-                {subtitle && <span className="cloud-popover-subtitle">{subtitle}</span>}
+        <div className="remote-popover-header">
+            <div className="remote-popover-heading">
+                <h3 className="remote-modal-title">{title}</h3>
+                {subtitle && <span className="remote-popover-subtitle">{subtitle}</span>}
             </div>
             <button
                 type="button"
-                className="cloud-header-btn"
+                className="remote-header-btn"
                 aria-label="Close"
                 title="Close"
                 onClick={onClose}
@@ -127,14 +127,14 @@ const CloudPopover: React.FC<CloudPopoverProps> = ({
     );
 
     const content = onSubmit ? (
-        <div ref={popoverRef} className="cloud-popover" style={popoverStyle} role="dialog" aria-label={title}>
-            <form className="cloud-popover-form" onSubmit={onSubmit}>
+        <div ref={popoverRef} className="remote-popover" style={popoverStyle} role="dialog" aria-label={title}>
+            <form className="remote-popover-form" onSubmit={onSubmit}>
                 {header}
                 {children}
             </form>
         </div>
     ) : (
-        <div ref={popoverRef} className="cloud-popover" style={popoverStyle} role="dialog" aria-label={title}>
+        <div ref={popoverRef} className="remote-popover" style={popoverStyle} role="dialog" aria-label={title}>
             {header}
             {children}
         </div>
@@ -178,49 +178,49 @@ export const AddServerModal: React.FC<AddServerModalProps> = ({ anchor = null, o
     };
 
     return (
-        <CloudPopover
+        <RemotePopover
             title="Connect Anycode Server"
             anchor={anchor}
             width={400}
             onClose={onClose}
             onSubmit={handleSubmit}
         >
-                <div className="cloud-field">
+                <div className="remote-field">
                     <label>Display Name (optional)</label>
                     <input
-                        className="cloud-input"
+                        className="remote-input"
                         placeholder="e.g. EU-Worker or Port 3001"
                         value={name}
                         onChange={(e) => setName(e.target.value)}
                     />
                 </div>
-                <div className="cloud-field">
+                <div className="remote-field">
                     <label>Server URL</label>
                     <input
-                        className="cloud-input"
+                        className="remote-input"
                         placeholder="http://127.0.0.1:3001 or https://my-server.example.com"
                         value={url}
                         onChange={(e) => setUrl(e.target.value)}
                         required
                     />
                 </div>
-                <div className="cloud-field">
+                <div className="remote-field">
                     <label>Access Token (--token)</label>
                     <input
-                        className="cloud-input"
+                        className="remote-input"
                         type="password"
                         placeholder="Leave empty if server runs without --token"
                         value={token}
                         onChange={(e) => setToken(e.target.value)}
                     />
                 </div>
-                <div className="cloud-field">
+                <div className="remote-field">
                     <label>Run another instance on this machine or remote host</label>
-                    <div className="cloud-code-box">
+                    <div className="remote-code-box">
                         <span>{cliSnippet}</span>
                         <button
                             type="button"
-                            className="cloud-btn"
+                            className="remote-btn"
                             onClick={() => {
                                 navigator.clipboard?.writeText(cliSnippet);
                                 setCopied(true);
@@ -231,20 +231,20 @@ export const AddServerModal: React.FC<AddServerModalProps> = ({ anchor = null, o
                         </button>
                     </div>
                 </div>
-                {error && <div className="cloud-error-banner">{error}</div>}
-                <div className="cloud-modal-footer">
-                    <button type="button" className="cloud-btn" onClick={onClose}>Cancel</button>
-                    <button type="submit" className="cloud-btn primary" disabled={busy || !url.trim()}>
+                {error && <div className="remote-error-banner">{error}</div>}
+                <div className="remote-modal-footer">
+                    <button type="button" className="remote-btn" onClick={onClose}>Cancel</button>
+                    <button type="submit" className="remote-btn primary" disabled={busy || !url.trim()}>
                         {busy ? 'Connecting...' : 'Connect Server'}
                     </button>
                 </div>
-        </CloudPopover>
+        </RemotePopover>
     );
 };
 
 interface AddProjectModalProps {
-    server: CloudServerView;
-    projects: CloudProjectInfo[];
+    server: RemoteServerView;
+    projects: RemoteProjectInfo[];
     anchor?: HTMLElement | null;
     onClose: () => void;
     onSyncProject: (
@@ -268,7 +268,7 @@ export const AddProjectModal: React.FC<AddProjectModalProps> = ({
     const [error, setError] = useState<string | null>(null);
 
     const handleSync = async (
-        proj: CloudProjectInfo,
+        proj: RemoteProjectInfo,
         options?: { targetDir?: string; forceSync?: boolean },
     ) => {
         setBusyProjectId(proj.id);
@@ -283,17 +283,17 @@ export const AddProjectModal: React.FC<AddProjectModalProps> = ({
     };
 
     return (
-        <CloudPopover
+        <RemotePopover
             title={`Add Project on ${server.name}`}
             anchor={anchor}
             width={420}
             onClose={onClose}
         >
-            <div className="cloud-field">
+            <div className="remote-field">
                 <label>Projects from Projects panel</label>
-                <div className="cloud-sync-project-list">
+                <div className="remote-sync-project-list">
                     {projects.length === 0 ? (
-                        <div className="cloud-empty-hint">
+                        <div className="remote-empty-hint">
                             No projects added to the Projects panel yet.
                         </div>
                     ) : (
@@ -308,25 +308,25 @@ export const AddProjectModal: React.FC<AddProjectModalProps> = ({
                             const isBusy = busyProjectId === proj.id;
 
                             return (
-                                <div key={proj.id} className="cloud-sync-project-row">
-                                    <span className="cloud-sync-project-icon" aria-hidden="true">
+                                <div key={proj.id} className="remote-sync-project-row">
+                                    <span className="remote-sync-project-icon" aria-hidden="true">
                                         <FileIcon path={proj.root} isDirectory />
                                     </span>
-                                    <div className="cloud-sync-project-info">
-                                        <div className="cloud-sync-project-name">{proj.name}</div>
-                                        <div className="cloud-sync-project-path" title={proj.root}>
+                                    <div className="remote-sync-project-info">
+                                        <div className="remote-sync-project-name">{proj.name}</div>
+                                        <div className="remote-sync-project-path" title={proj.root}>
                                             {proj.root}
                                         </div>
                                     </div>
-                                    <div className="cloud-sync-project-actions">
+                                    <div className="remote-sync-project-actions">
                                         {exactMatch ? (
-                                            <span className="cloud-badge ok">Added</span>
+                                            <span className="remote-badge ok">Added</span>
                                         ) : nameMatch && !server.is_local ? (
                                             <>
-                                                <span className="cloud-badge ok">Synced</span>
+                                                <span className="remote-badge ok">Synced</span>
                                                 <button
                                                     type="button"
-                                                    className="cloud-btn"
+                                                    className="remote-btn"
                                                     disabled={busyProjectId !== null}
                                                     onClick={() =>
                                                         void handleSync(proj, {
@@ -341,7 +341,7 @@ export const AddProjectModal: React.FC<AddProjectModalProps> = ({
                                         ) : (
                                             <button
                                                 type="button"
-                                                className="cloud-btn"
+                                                className="remote-btn"
                                                 disabled={busyProjectId !== null}
                                                 onClick={() => void handleSync(proj)}
                                             >
@@ -361,8 +361,8 @@ export const AddProjectModal: React.FC<AddProjectModalProps> = ({
                     )}
                 </div>
             </div>
-            {error && <div className="cloud-error-banner">{error}</div>}
-        </CloudPopover>
+            {error && <div className="remote-error-banner">{error}</div>}
+        </RemotePopover>
     );
 };
 
@@ -463,9 +463,9 @@ const SyncAgentsList: React.FC<SyncAgentsListProps> = ({
     };
 
     return (
-        <div className="cloud-registry-box">
+        <div className="remote-registry-box">
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                <span className="cloud-agent-row-sub">
+                <span className="remote-agent-row-sub">
                     {loading
                         ? 'Loading local agents...'
                         : `Local agents -> ${serverName} (installs missing binaries natively)`}
@@ -473,7 +473,7 @@ const SyncAgentsList: React.FC<SyncAgentsListProps> = ({
                 {localAgents.length > 0 && (
                     <button
                         type="button"
-                        className="cloud-btn accent-soft"
+                        className="remote-btn accent-soft"
                         disabled={isBusy}
                         onClick={() => void handleSyncAll()}
                     >
@@ -484,9 +484,9 @@ const SyncAgentsList: React.FC<SyncAgentsListProps> = ({
                 )}
             </div>
 
-            <div className="cloud-sync-project-list">
+            <div className="remote-sync-project-list">
                 {localAgents.length === 0 && remoteOnlyAgents.length === 0 && !loading ? (
-                    <div className="cloud-empty-hint">
+                    <div className="remote-empty-hint">
                         No configured agents found on Local yet.
                     </div>
                 ) : (
@@ -497,22 +497,22 @@ const SyncAgentsList: React.FC<SyncAgentsListProps> = ({
                             const rowSyncing = busyAgentId === agent.id && busyAction === 'sync';
                             const rowRemoving = busyAgentId === agent.id && busyAction === 'remove';
                             return (
-                                <div key={agent.id} className="cloud-sync-project-row">
+                                <div key={agent.id} className="remote-sync-project-row">
                                     <AcpAvatar type="agent" agentId={agent.id} agentTitle={agent.name} size={20} />
-                                    <div className="cloud-sync-project-info">
-                                        <div className="cloud-agent-row-head">
-                                            <span className="cloud-sync-project-name">{baseName}</span>
-                                            {accountName && <span className="cloud-badge">{accountName}</span>}
+                                    <div className="remote-sync-project-info">
+                                        <div className="remote-agent-row-head">
+                                            <span className="remote-sync-project-name">{baseName}</span>
+                                            {accountName && <span className="remote-badge">{accountName}</span>}
                                         </div>
-                                        <div className="cloud-sync-project-path" title={getAgentSyncSubtext(agent)}>
+                                        <div className="remote-sync-project-path" title={getAgentSyncSubtext(agent)}>
                                             {getAgentSyncSubtext(agent)}
                                         </div>
                                     </div>
-                                    <div className="cloud-sync-project-actions">
-                                        {isSynced && <span className="cloud-badge ok">Synced</span>}
+                                    <div className="remote-sync-project-actions">
+                                        {isSynced && <span className="remote-badge ok">Synced</span>}
                                         <button
                                             type="button"
-                                            className="cloud-btn"
+                                            className="remote-btn"
                                             disabled={isBusy}
                                             onClick={() => void handleSyncOne(agent.id)}
                                         >
@@ -521,7 +521,7 @@ const SyncAgentsList: React.FC<SyncAgentsListProps> = ({
                                         {isSynced && onRemoveAgent && (
                                             <button
                                                 type="button"
-                                                className="cloud-btn danger"
+                                                className="remote-btn danger"
                                                 disabled={isBusy}
                                                 title={`Remove ${agent.id} and its profile from ${serverName}`}
                                                 onClick={() => void handleRemoveOne(agent.id)}
@@ -537,22 +537,22 @@ const SyncAgentsList: React.FC<SyncAgentsListProps> = ({
                             const { baseName, accountName } = resolveAgentDisplay(agent, remoteAgents);
                             const rowRemoving = busyAgentId === agent.id && busyAction === 'remove';
                             return (
-                                <div key={`remote-${agent.id}`} className="cloud-sync-project-row">
+                                <div key={`remote-${agent.id}`} className="remote-sync-project-row">
                                     <AcpAvatar type="agent" agentId={agent.id} agentTitle={agent.name} size={20} />
-                                    <div className="cloud-sync-project-info">
-                                        <div className="cloud-agent-row-head">
-                                            <span className="cloud-sync-project-name">{baseName}</span>
-                                            {accountName && <span className="cloud-badge">{accountName}</span>}
-                                            <span className="cloud-badge">Remote only</span>
+                                    <div className="remote-sync-project-info">
+                                        <div className="remote-agent-row-head">
+                                            <span className="remote-sync-project-name">{baseName}</span>
+                                            {accountName && <span className="remote-badge">{accountName}</span>}
+                                            <span className="remote-badge">Remote only</span>
                                         </div>
-                                        <div className="cloud-sync-project-path" title={getAgentSyncSubtext(agent)}>
+                                        <div className="remote-sync-project-path" title={getAgentSyncSubtext(agent)}>
                                             {getAgentSyncSubtext(agent)}
                                         </div>
                                     </div>
-                                    <div className="cloud-sync-project-actions">
+                                    <div className="remote-sync-project-actions">
                                         <button
                                             type="button"
-                                            className="cloud-btn danger"
+                                            className="remote-btn danger"
                                             disabled={isBusy}
                                             title={`Remove ${agent.id} and its profile from ${serverName}`}
                                             onClick={() => void handleRemoveOne(agent.id)}
@@ -566,13 +566,13 @@ const SyncAgentsList: React.FC<SyncAgentsListProps> = ({
                     </>
                 )}
             </div>
-            {error && <div className="cloud-error-banner">{error}</div>}
+            {error && <div className="remote-error-banner">{error}</div>}
         </div>
     );
 };
 
 interface SyncAgentsModalProps {
-    server: CloudServerView;
+    server: RemoteServerView;
     anchor?: HTMLElement | null;
     availableAgentsByServer: Record<string, AcpAgent[]>;
     onLoadAvailableAgents: (serverId: string) => Promise<{
@@ -604,7 +604,7 @@ export const SyncAgentsModal: React.FC<SyncAgentsModalProps> = ({
     }, [server.id, onLoadAvailableAgents]);
 
     return (
-        <CloudPopover
+        <RemotePopover
             title={`Sync Agents to ${server.name}`}
             anchor={anchor}
             width={450}
@@ -618,12 +618,12 @@ export const SyncAgentsModal: React.FC<SyncAgentsModalProps> = ({
                 onSyncAgent={(agentId) => onSyncAgent(server.id, agentId)}
                 onRemoveAgent={onRemoveAgent ? (agentId) => onRemoveAgent(server.id, agentId) : undefined}
             />
-        </CloudPopover>
+        </RemotePopover>
     );
 };
 
 interface StartAgentModalProps {
-    servers: CloudServerView[];
+    servers: RemoteServerView[];
     initialServerId: string;
     initialProjectId?: string;
     initialWorktreePath?: string;
@@ -864,7 +864,7 @@ export const StartAgentModal: React.FC<StartAgentModalProps> = ({
     };
 
     return (
-        <CloudPopover
+        <RemotePopover
             title="Start Agent"
             subtitle={[selectedServer?.name, selectedProjectName].filter(Boolean).join(' · ') || undefined}
             anchor={anchor}
@@ -875,20 +875,20 @@ export const StartAgentModal: React.FC<StartAgentModalProps> = ({
                 {(!projectGitInfo || (projectGitInfo.is_git_repo && projectGitInfo.has_commits && !projectGitInfo.is_worktree)) && (
                     worktreeMode === 'new' ? (
                         <>
-                            <div className="cloud-modal-row-2col">
-                                <div className="cloud-field">
+                            <div className="remote-modal-row-2col">
+                                <div className="remote-field">
                                     <label>Worktree name</label>
                                     <input
-                                        className="cloud-input cloud-wt-name-input"
+                                        className="remote-input remote-wt-name-input"
                                         value={worktreeName}
                                         onChange={(e) => setWorktreeName(e.target.value)}
                                         placeholder="auto"
                                     />
                                 </div>
-                                <div className="cloud-field">
+                                <div className="remote-field">
                                     <label>From branch</label>
                                     <select
-                                        className="cloud-select"
+                                        className="remote-select"
                                         value={effectiveBaseRef}
                                         disabled={branchOptions.length === 0}
                                         onChange={(e) => {
@@ -914,9 +914,9 @@ export const StartAgentModal: React.FC<StartAgentModalProps> = ({
                             </div>
 
                             {isCurrentBranch && (
-                                <div className="cloud-wt-meta-row">
+                                <div className="remote-wt-meta-row">
                                     {!projectGitInfo || dirtyCount > 0 ? (
-                                        <label className="cloud-checkbox-row">
+                                        <label className="remote-checkbox-row">
                                             <input
                                                 type="checkbox"
                                                 checked={includeDirty}
@@ -929,15 +929,15 @@ export const StartAgentModal: React.FC<StartAgentModalProps> = ({
                                             </span>
                                         </label>
                                     ) : (
-                                        <span className="cloud-hint-muted">Working tree clean</span>
+                                        <span className="remote-hint-muted">Working tree clean</span>
                                     )}
                                 </div>
                             )}
                         </>
                     ) : (
-                        <div className="cloud-wt-target-row">
-                            <div className="cloud-wt-target-info">
-                                <span className="cloud-agent-wt-badge">
+                        <div className="remote-wt-target-row">
+                            <div className="remote-wt-target-info">
+                                <span className="remote-agent-wt-badge">
                                     {(selectedWorktreePath || initialWorktreePath || '')
                                         .split(/[\\/]/)
                                         .filter(Boolean)
@@ -945,7 +945,7 @@ export const StartAgentModal: React.FC<StartAgentModalProps> = ({
                                 </span>
                                 {availableWorktrees.length > 1 || (!initialWorktreePath && availableWorktrees.length > 0) ? (
                                     <select
-                                        className="cloud-select"
+                                        className="remote-select"
                                         value={selectedWorktreePath}
                                         onChange={(e) => setSelectedWorktreePath(e.target.value)}
                                     >
@@ -958,14 +958,14 @@ export const StartAgentModal: React.FC<StartAgentModalProps> = ({
                                         ))}
                                     </select>
                                 ) : (
-                                    <span className="cloud-wt-target-branch">
+                                    <span className="remote-wt-target-branch">
                                         {availableWorktrees[0]?.branch || initialWorktreeBranch || 'detached'}
                                     </span>
                                 )}
                             </div>
                             <button
                                 type="button"
-                                className="cloud-link-btn"
+                                className="remote-link-btn"
                                 onClick={() => setWorktreeMode('new')}
                             >
                                 New worktree
@@ -974,13 +974,13 @@ export const StartAgentModal: React.FC<StartAgentModalProps> = ({
                     )
                 )}
 
-                <div className="cloud-field">
+                <div className="remote-field">
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
                         <label>Agent {loadingAgents ? '(loading...)' : ''}</label>
                         {canSyncFromLocal && (
                             <button
                                 type="button"
-                                className="cloud-link-btn"
+                                className="remote-link-btn"
                                 onClick={() =>
                                     setPanelMode((m) => (m === 'sync' ? 'configured' : 'sync'))
                                 }
@@ -1006,9 +1006,9 @@ export const StartAgentModal: React.FC<StartAgentModalProps> = ({
                             onSyncedAll={() => setPanelMode('configured')}
                         />
                     ) : (
-                        <div className="cloud-agent-picker">
+                        <div className="remote-agent-picker">
                             {agentGroups.length === 0 && !loadingAgents ? (
-                                <div className="cloud-empty-hint">
+                                <div className="remote-empty-hint">
                                     {canSyncFromLocal
                                         ? 'No agents configured on this server yet. Use "Sync".'
                                         : 'No agents configured on this server yet.'}
@@ -1034,17 +1034,17 @@ export const StartAgentModal: React.FC<StartAgentModalProps> = ({
                     )}
                 </div>
 
-                {error && <div className="cloud-error-banner">{error}</div>}
-        </CloudPopover>
+                {error && <div className="remote-error-banner">{error}</div>}
+        </RemotePopover>
     );
 };
 
 interface PullWorktreeModalProps {
-    server: CloudServerView;
-    remoteProject: CloudProjectInfo;
+    server: RemoteServerView;
+    remoteProject: RemoteProjectInfo;
     remotePath?: string;
     remoteLabel?: string;
-    localProjects: CloudProjectInfo[];
+    localProjects: RemoteProjectInfo[];
     anchor?: HTMLElement | null;
     onLoadGitInfo: (
         serverId: string,
@@ -1164,7 +1164,7 @@ export const PullWorktreeModal: React.FC<PullWorktreeModalProps> = ({
     }, [gitInfo]);
 
     return (
-        <CloudPopover
+        <RemotePopover
             title={`Pull Worktree from ${server.name}`}
             anchor={anchor}
             width={450}
@@ -1174,39 +1174,39 @@ export const PullWorktreeModal: React.FC<PullWorktreeModalProps> = ({
             {result ? (
                 result.changed ? (
                     <>
-                        <div className="cloud-field">
+                        <div className="remote-field">
                             <label>Worktree Created Locally</label>
-                            <div className="cloud-code-box">
+                            <div className="remote-code-box">
                                 <span>
                                     {result.branch}
                                     {result.worktree_path ? `\n${result.worktree_path}` : ''}
                                 </span>
                             </div>
                         </div>
-                        <div className="cloud-field">
+                        <div className="remote-field">
                             <label>Pulled Changes</label>
                             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                                <span className="cloud-badge ok">
+                                <span className="remote-badge ok">
                                     {result.commits_count} commit{result.commits_count === 1 ? '' : 's'}
                                 </span>
                                 {result.dirty_count > 0 && (
-                                    <span className="cloud-badge warn">
+                                    <span className="remote-badge warn">
                                         {result.dirty_count} unstaged file{result.dirty_count === 1 ? '' : 's'}
                                     </span>
                                 )}
                             </div>
                         </div>
-                        <div className="cloud-empty-hint" style={{ padding: 0 }}>
+                        <div className="remote-empty-hint" style={{ padding: 0 }}>
                             Added to your local Projects panel & Changes tab for review.
                         </div>
-                        <div className="cloud-modal-footer">
-                            <button type="button" className="cloud-btn" onClick={onClose}>
+                        <div className="remote-modal-footer">
+                            <button type="button" className="remote-btn" onClick={onClose}>
                                 Close
                             </button>
                             {result.project?.id && onOpenPulledProject && (
                                 <button
                                     type="button"
-                                    className="cloud-btn accent-soft"
+                                    className="remote-btn accent-soft"
                                     onClick={() => {
                                         onOpenPulledProject(result.project!.id);
                                         onClose();
@@ -1219,11 +1219,11 @@ export const PullWorktreeModal: React.FC<PullWorktreeModalProps> = ({
                     </>
                 ) : (
                     <>
-                        <div className="cloud-empty-hint" style={{ padding: 0 }}>
+                        <div className="remote-empty-hint" style={{ padding: 0 }}>
                             Remote project has no new commits or uncommitted edits to pull.
                         </div>
-                        <div className="cloud-modal-footer">
-                            <button type="button" className="cloud-btn" onClick={onClose}>
+                        <div className="remote-modal-footer">
+                            <button type="button" className="remote-btn" onClick={onClose}>
                                 Close
                             </button>
                         </div>
@@ -1231,16 +1231,16 @@ export const PullWorktreeModal: React.FC<PullWorktreeModalProps> = ({
                 )
             ) : (
                 <>
-                    <div className="cloud-field">
+                    <div className="remote-field">
                         <label>
                             Remote Repository ({remoteLabel || remoteProject.name})
                         </label>
                         {loadingInfo ? (
-                            <div className="cloud-empty-hint" style={{ padding: 0 }}>
+                            <div className="remote-empty-hint" style={{ padding: 0 }}>
                                 Inspecting remote git state...
                             </div>
                         ) : gitInfo && !gitInfo.is_git_repo ? (
-                            <div className="cloud-error-banner">
+                            <div className="remote-error-banner">
                                 Remote folder has no <code>.git</code> directory yet. Re-sync it via
                                 {' '}<strong>+ Project → Sync</strong> so it uses Git bundles.
                             </div>
@@ -1248,22 +1248,22 @@ export const PullWorktreeModal: React.FC<PullWorktreeModalProps> = ({
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
                                     {gitInfo.is_worktree && (
-                                        <span className="cloud-badge accent">worktree</span>
+                                        <span className="remote-badge accent">worktree</span>
                                     )}
-                                    <span className="cloud-badge">
+                                    <span className="remote-badge">
                                         {gitInfo.branch || 'detached'}
                                         {gitInfo.head_sha ? ` @ ${gitInfo.head_sha.slice(0, 7)}` : ''}
                                     </span>
-                                    <span className={`cloud-badge ${gitInfo.commits_ahead > 0 ? 'ok' : ''}`}>
+                                    <span className={`remote-badge ${gitInfo.commits_ahead > 0 ? 'ok' : ''}`}>
                                         {gitInfo.commits_ahead} commit{gitInfo.commits_ahead === 1 ? '' : 's'} ahead
                                     </span>
-                                    <span className={`cloud-badge ${gitInfo.dirty_count > 0 ? 'warn' : ''}`}>
+                                    <span className={`remote-badge ${gitInfo.dirty_count > 0 ? 'warn' : ''}`}>
                                         {gitInfo.dirty_count} modified/untracked
                                     </span>
                                 </div>
                                 {previewItems.length > 0 && (
                                     <div
-                                        className="cloud-code-box"
+                                        className="remote-code-box"
                                         style={{
                                             maxHeight: 110,
                                             overflowY: 'auto',
@@ -1278,15 +1278,15 @@ export const PullWorktreeModal: React.FC<PullWorktreeModalProps> = ({
                         ) : null}
                     </div>
 
-                    <div className="cloud-field">
+                    <div className="remote-field">
                         <label>Target Local Repository</label>
                         {localProjects.length === 0 ? (
-                            <div className="cloud-empty-hint" style={{ padding: 0 }}>
+                            <div className="remote-empty-hint" style={{ padding: 0 }}>
                                 Add a matching local Git project to the Projects panel first.
                             </div>
                         ) : (
                             <select
-                                className="cloud-select"
+                                className="remote-select"
                                 value={localPath}
                                 onChange={(e) => setLocalPath(e.target.value)}
                                 disabled={busy}
@@ -1300,10 +1300,10 @@ export const PullWorktreeModal: React.FC<PullWorktreeModalProps> = ({
                         )}
                     </div>
 
-                    <div className="cloud-field">
+                    <div className="remote-field">
                         <label>New Worktree Branch</label>
                         <input
-                            className="cloud-input"
+                            className="remote-input"
                             value={branch}
                             onChange={(e) => setBranch(e.target.value)}
                             placeholder="cloud/node/branch"
@@ -1311,20 +1311,20 @@ export const PullWorktreeModal: React.FC<PullWorktreeModalProps> = ({
                         />
                     </div>
 
-                    <div className="cloud-empty-hint" style={{ padding: 0 }}>
+                    <div className="remote-empty-hint" style={{ padding: 0 }}>
                         Creates a local <code>git worktree</code> without touching your current branch.
                         Uncommitted remote edits stay unstaged for review.
                     </div>
 
-                    {error && <div className="cloud-error-banner">{error}</div>}
+                    {error && <div className="remote-error-banner">{error}</div>}
 
-                    <div className="cloud-modal-footer">
-                        <button type="button" className="cloud-btn" onClick={onClose} disabled={busy}>
+                    <div className="remote-modal-footer">
+                        <button type="button" className="remote-btn" onClick={onClose} disabled={busy}>
                             Cancel
                         </button>
                         <button
                             type="submit"
-                            className="cloud-btn accent-soft"
+                            className="remote-btn accent-soft"
                             disabled={
                                 busy
                                 || loadingInfo
@@ -1337,14 +1337,14 @@ export const PullWorktreeModal: React.FC<PullWorktreeModalProps> = ({
                     </div>
                 </>
             )}
-        </CloudPopover>
+        </RemotePopover>
     );
 };
 
 interface CreateWorktreeModalProps {
     anchor: HTMLElement | null;
-    server: CloudServerView;
-    project: CloudProjectInfo;
+    server: RemoteServerView;
+    project: RemoteProjectInfo;
     onCreateWorktree: (
         serverId: string,
         options: { projectId: string; branch?: string; includeDirty?: boolean },
@@ -1386,26 +1386,26 @@ export const CreateWorktreeModal: React.FC<CreateWorktreeModalProps> = ({
     };
 
     return (
-        <CloudPopover
+        <RemotePopover
             title={`New Worktree on ${server.name}`}
             anchor={anchor}
             width={410}
             onClose={onClose}
             onSubmit={handleSubmit}
         >
-            <div className="cloud-field">
+            <div className="remote-field">
                 <label>Base Project</label>
-                <div className="cloud-code-box">
+                <div className="remote-code-box">
                     <span>
                         {project.name} ({project.root})
                     </span>
                 </div>
             </div>
 
-            <div className="cloud-field">
+            <div className="remote-field">
                 <label>Branch Name (optional)</label>
                 <input
-                    className="cloud-input"
+                    className="remote-input"
                     value={branch}
                     onChange={(e) => setBranch(e.target.value)}
                     placeholder="agent/task-..."
@@ -1433,21 +1433,21 @@ export const CreateWorktreeModal: React.FC<CreateWorktreeModalProps> = ({
                 <span>Copy uncommitted edits from base project</span>
             </label>
 
-            <div className="cloud-empty-hint" style={{ padding: 0 }}>
+            <div className="remote-empty-hint" style={{ padding: 0 }}>
                 Creates an isolated <code>git worktree</code> with full commit history so agents can
                 commit work without touching the base checkout.
             </div>
 
-            {error && <div className="cloud-error-banner">{error}</div>}
+            {error && <div className="remote-error-banner">{error}</div>}
 
-            <div className="cloud-modal-footer">
-                <button type="button" className="cloud-btn" onClick={onClose} disabled={busy}>
+            <div className="remote-modal-footer">
+                <button type="button" className="remote-btn" onClick={onClose} disabled={busy}>
                     Cancel
                 </button>
-                <button type="submit" className="cloud-btn accent-soft" disabled={busy}>
+                <button type="submit" className="remote-btn accent-soft" disabled={busy}>
                     {busy ? 'Creating...' : 'Create Worktree'}
                 </button>
             </div>
-        </CloudPopover>
+        </RemotePopover>
     );
 };
