@@ -794,16 +794,19 @@ const App: React.FC<AppProps> = ({ initialWorkspace }) => {
         git.fetchBranches(projectId);
     }, [git.fetchGitStatus, git.fetchBranches]);
 
-    const openProjectReview = useEvent((projectId: string): boolean => {
+    const openProjectReview = useEvent((projectId: string, options?: { activate?: boolean }): boolean => {
+        const activate = options?.activate ?? true;
         const changedFiles = workspaceChangedFiles.filter((file) => file.project_id === projectId);
         if (changedFiles.length === 0) return false;
 
-        const paneId = layoutActionsRef.current?.ensureEditorPanel(editors.activeEditorPaneId);
+        const paneId = layoutActionsRef.current?.ensureEditorPanel(editors.activeEditorPaneId, { activate });
         if (!paneId) return false;
 
         closeReview(paneId);
         sessionStorage.setItem(REVIEW_PROJECT_SESSION_KEY, projectId);
-        editors.setActiveEditorPaneId(paneId);
+        if (activate) {
+            editors.setActiveEditorPaneId(paneId);
+        }
         editors.setEditorDiffMode(paneId, 'diff');
         const files = toMultibufferFiles(changedFiles);
         setMultibufferReviews((previous) => ({
@@ -834,7 +837,7 @@ const App: React.FC<AppProps> = ({ initialWorkspace }) => {
         }
         if (!workspaceState.projects.some((project) => project.id === projectId)) return;
         // Retry on later renders until git changes and the editor layout are ready.
-        if (openProjectReview(projectId)) reviewRestoreDoneRef.current = true;
+        if (openProjectReview(projectId, { activate: false })) reviewRestoreDoneRef.current = true;
     }, [workspaceState.projects, workspaceChangedFiles, multibufferReviews, openProjectReview]);
 
     const handleOpenMultibuffer = useEvent(() => {

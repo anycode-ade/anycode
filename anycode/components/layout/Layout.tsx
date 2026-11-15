@@ -296,7 +296,7 @@ type LayoutProps = {
 };
 
 export type LayoutActions = {
-    ensureEditorPanel: (preferredPanelId?: string | null) => string | null;
+    ensureEditorPanel: (preferredPanelId?: string | null, options?: { activate?: boolean }) => string | null;
     isEditorPanelVisible: (preferredPanelId?: string | null) => boolean;
     ensurePanel: (panelId: PanelId, preferredPanelId?: string | null) => string | null;
 };
@@ -304,6 +304,23 @@ export type LayoutActions = {
 export const LayoutVersionContext = React.createContext<number>(0);
 export const LayoutPanelApiContext = React.createContext<DockviewPanelApi | null>(null);
 const LayoutRenderContext = React.createContext<((panelId: PanelId, panelKey: string) => React.ReactNode) | null>(null);
+
+type LayoutHeaderActionsConfig = {
+    onSplitRight: (api: DockviewApi, referencePanelId: string) => void;
+    onSplitDown: (api: DockviewApi, referencePanelId: string) => void;
+    onAddTab: (api: DockviewApi, referencePanelId: string) => void;
+    onClosePanel: (api: DockviewApi, panel: IDockviewPanel) => void;
+    onCycleEditorDiffMode?: (panelKey: string) => void;
+    isEditorDiffEnabled?: (panelKey: string) => boolean;
+    getEditorDiffMode?: (panelKey: string) => DiffMode;
+    canResetPanel?: (panelKey: string, panelId: PanelId) => boolean;
+    onResetPanel?: (panelKey: string, panelId: PanelId) => void;
+    isEditorMarkdown?: (panelKey: string) => boolean;
+    isEditorMarkdownPreviewOpen?: (panelKey: string) => boolean;
+    onToggleEditorMarkdownPreview?: (panelKey: string) => void;
+};
+
+const LayoutHeaderActionsContext = React.createContext<LayoutHeaderActionsConfig | null>(null);
 
 const PANEL_INSTANCE_SEPARATOR = '__';
 const EMPTY_PANE_PREFIX = 'empty-pane-';
@@ -583,38 +600,30 @@ const DOCKVIEW_COMPONENTS = {
     panelPicker: PanelPicker,
 };
 
-const LayoutHeaderActions: React.FC<IDockviewHeaderActionsProps & {
-    onSplitRight: (api: DockviewApi, referencePanelId: string) => void;
-    onSplitDown: (api: DockviewApi, referencePanelId: string) => void;
-    onAddTab: (api: DockviewApi, referencePanelId: string) => void;
-    onClosePanel: (api: DockviewApi, panel: IDockviewPanel) => void;
-    onCycleEditorDiffMode?: (panelKey: string) => void;
-    isEditorDiffEnabled?: (panelKey: string) => boolean;
-    getEditorDiffMode?: (panelKey: string) => DiffMode;
-    canResetPanel?: (panelKey: string, panelId: PanelId) => boolean;
-    onResetPanel?: (panelKey: string, panelId: PanelId) => void;
-    isEditorMarkdown?: (panelKey: string) => boolean;
-    isEditorMarkdownPreviewOpen?: (panelKey: string) => boolean;
-    onToggleEditorMarkdownPreview?: (panelKey: string) => void;
-}> = ({
+const LayoutHeaderActions: React.FC<IDockviewHeaderActionsProps> = ({
     containerApi,
     activePanel,
-    onSplitRight,
-    onSplitDown,
-    onAddTab,
-    onClosePanel,
-    onCycleEditorDiffMode,
-    isEditorDiffEnabled,
-    getEditorDiffMode,
-    canResetPanel,
-    onResetPanel,
-    isEditorMarkdown,
-    isEditorMarkdownPreviewOpen,
-    onToggleEditorMarkdownPreview,
 }) => {
-    if (!activePanel) {
+    const actions = useContext(LayoutHeaderActionsContext);
+
+    if (!activePanel || !actions) {
         return null;
     }
+
+    const {
+        onSplitRight,
+        onSplitDown,
+        onAddTab,
+        onClosePanel,
+        onCycleEditorDiffMode,
+        isEditorDiffEnabled,
+        getEditorDiffMode,
+        canResetPanel,
+        onResetPanel,
+        isEditorMarkdown,
+        isEditorMarkdownPreviewOpen,
+        onToggleEditorMarkdownPreview,
+    } = actions;
 
     const activePanelBaseId = getPanelBaseId(activePanel.id);
     const isEditorPanel = activePanelBaseId === 'editor';
@@ -939,7 +948,11 @@ export const Layout: React.FC<LayoutProps> = ({
         findEditorPanel(preferredPanelId)?.api.isVisible ?? false
     ), [findEditorPanel]);
 
-    const ensureEditorPanel = useCallback((preferredPanelId?: string | null): string | null => {
+    const ensureEditorPanel = useCallback((
+        preferredPanelId?: string | null,
+        options?: { activate?: boolean },
+    ): string | null => {
+        const activate = options?.activate ?? true;
         const api = apiRef.current;
         if (!api) {
             return null;
@@ -947,8 +960,14 @@ export const Layout: React.FC<LayoutProps> = ({
 
         const existingPanel = findEditorPanel(preferredPanelId);
         if (existingPanel) {
-            existingPanel.api.setActive();
+            if (activate) {
+                existingPanel.api.setActive();
+            }
             return existingPanel.id;
+        }
+
+        if (!activate) {
+            return null;
         }
 
         const panelKey = createPanelKey('editor');
@@ -1375,23 +1394,20 @@ export const Layout: React.FC<LayoutProps> = ({
         closePanelRef.current = handleClosePanel;
     }, [handleAddEmptyTab, handleClosePanel, handleSplitPanelDown, handleSplitPanelRight]);
 
-    const renderRightHeaderActions = useCallback((props: IDockviewHeaderActionsProps) => (
-        <LayoutHeaderActions
-            {...props}
-            onSplitRight={(api, referencePanelId) => splitRightRef.current(api, referencePanelId)}
-            onSplitDown={(api, referencePanelId) => splitDownRef.current(api, referencePanelId)}
-            onAddTab={(api, referencePanelId) => addTabRef.current(api, referencePanelId)}
-            onClosePanel={(api, panel) => closePanelRef.current(api, panel)}
-            onCycleEditorDiffMode={onCycleEditorDiffMode}
-            isEditorDiffEnabled={isEditorDiffEnabled}
-            getEditorDiffMode={getEditorDiffMode}
-            canResetPanel={canResetPanel}
-            onResetPanel={onResetPanel}
-            isEditorMarkdown={isEditorMarkdown}
-            isEditorMarkdownPreviewOpen={isEditorMarkdownPreviewOpen}
-            onToggleEditorMarkdownPreview={onToggleEditorMarkdownPreview}
-        />
-    ), [getEditorDiffMode, isEditorDiffEnabled, onCycleEditorDiffMode, canResetPanel, onResetPanel, isEditorMarkdown, isEditorMarkdownPreviewOpen, onToggleEditorMarkdownPreview]);
+    const headerActionsConfig = useMemo<LayoutHeaderActionsConfig>(() => ({
+        onSplitRight: (api, referencePanelId) => splitRightRef.current(api, referencePanelId),
+        onSplitDown: (api, referencePanelId) => splitDownRef.current(api, referencePanelId),
+        onAddTab: (api, referencePanelId) => addTabRef.current(api, referencePanelId),
+        onClosePanel: (api, panel) => closePanelRef.current(api, panel),
+        onCycleEditorDiffMode,
+        isEditorDiffEnabled,
+        getEditorDiffMode,
+        canResetPanel,
+        onResetPanel,
+        isEditorMarkdown,
+        isEditorMarkdownPreviewOpen,
+        onToggleEditorMarkdownPreview,
+    }), [getEditorDiffMode, isEditorDiffEnabled, onCycleEditorDiffMode, canResetPanel, onResetPanel, isEditorMarkdown, isEditorMarkdownPreviewOpen, onToggleEditorMarkdownPreview]);
 
     useEffect(() => () => {
         if (layoutSaveTimerRef.current !== null) {
@@ -1701,12 +1717,15 @@ export const Layout: React.FC<LayoutProps> = ({
             <div className="layout-main">
                 <LayoutVersionContext.Provider value={layoutVersion}>
                     <LayoutRenderContext.Provider value={renderPanel}>
-                        <DockviewReact
-                            components={DOCKVIEW_COMPONENTS}
-                            className="layout-root"
-                            onReady={handleReady}
-                            rightHeaderActionsComponent={renderRightHeaderActions}
-                        />
+                        <LayoutHeaderActionsContext.Provider value={headerActionsConfig}>
+                            <DockviewReact
+                                components={DOCKVIEW_COMPONENTS}
+                                className="layout-root"
+                                onReady={handleReady}
+                                rightHeaderActionsComponent={LayoutHeaderActions}
+                                disableTabsOverflowList
+                            />
+                        </LayoutHeaderActionsContext.Provider>
                     </LayoutRenderContext.Provider>
                 </LayoutVersionContext.Provider>
             </div>
