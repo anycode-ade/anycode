@@ -24,7 +24,6 @@ const defaultPanelKeysById: Record<PanelId, string[]> = {
     history: ['history'],
     projects: ['projects'],
     remote: ['remote'],
-    cloud: ['remote'],
     editor: [],
     terminal: [],
     agent: [],

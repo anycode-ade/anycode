@@ -389,15 +389,7 @@ const TRANSFER_TTL: Duration = Duration::from_secs(30 * 60);
 const REMOTE_WORKTREES_DIR: &str = "remote-worktrees";
 
 fn remote_worktrees_root(state: &AppState) -> PathBuf {
-    let modern = state.data_dir.join(REMOTE_WORKTREES_DIR);
-    if modern.exists() {
-        return modern;
-    }
-    let legacy = state.data_dir.join("cloud-worktrees");
-    if legacy.exists() {
-        return legacy;
-    }
-    modern
+    state.data_dir.join(REMOTE_WORKTREES_DIR)
 }
 
 fn transfer_store() -> &'static std::sync::Mutex<HashMap<String, ActiveTransfer>> {
@@ -1115,7 +1107,6 @@ pub async fn dispatch_node_method(
             let req: SyncProjectRequest = serde_json::from_value(params)?;
             let dir_name = sanitize_project_dir_name(&req.name);
             let remote_projects_root = state.data_dir.join("remote-projects");
-            let legacy_cloud_projects_root = state.data_dir.join("cloud-projects");
             let target_path = match req
                 .target_dir
                 .as_deref()
@@ -1131,10 +1122,7 @@ pub async fn dispatch_node_method(
                         .projects()
                         .into_iter()
                         .any(|p| PathBuf::from(&p.root) == candidate);
-                    if !in_workspace
-                        && !candidate.starts_with(&remote_projects_root)
-                        && !candidate.starts_with(&legacy_cloud_projects_root)
-                    {
+                    if !in_workspace && !candidate.starts_with(&remote_projects_root) {
                         anyhow::bail!("Invalid sync target directory");
                     }
                     candidate

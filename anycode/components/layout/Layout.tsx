@@ -248,7 +248,7 @@ export const Split: React.FC<SplitProps> = ({ direction, panes, className }) => 
     );
 };
 
-export type PanelId = 'files' | 'search' | 'changes' | 'history' | 'projects' | 'remote' | 'cloud' | 'editor' | 'agent' | 'terminal' | 'browser' | 'toolbar' | 'settings';
+export type PanelId = 'files' | 'search' | 'changes' | 'history' | 'projects' | 'remote' | 'editor' | 'agent' | 'terminal' | 'browser' | 'toolbar' | 'settings';
 
 type PanelParams = {
     panelKey: string;
@@ -466,8 +466,7 @@ const loadPanelVisibility = (): PanelVisibility => ({
     changes: (loadItem<number>(LAYOUT_VERSION_STORAGE_KEY) ?? 0) < CURRENT_LAYOUT_VERSION ? true : (loadItem<boolean>('changesPanelVisible') ?? false),
     history: (loadItem<boolean>('historyPanelVisible') ?? true),
     projects: (loadItem<boolean>('projectsPanelVisible') ?? false),
-    remote: (loadItem<boolean>('remotePanelVisible') ?? loadItem<boolean>('cloudPanelVisible') ?? false),
-    cloud: false,
+    remote: (loadItem<boolean>('remotePanelVisible') ?? false),
     editor: (loadItem<number>(LAYOUT_VERSION_STORAGE_KEY) ?? 0) < CURRENT_LAYOUT_VERSION ? true : loadEditorPanelVisible(),
     agent: (loadItem<number>(LAYOUT_VERSION_STORAGE_KEY) ?? 0) < CURRENT_LAYOUT_VERSION ? true : loadAgentPanelVisible(),
     terminal: loadTerminalPanelVisible(),
@@ -551,7 +550,6 @@ const pickerIconMap: Record<PanelId, React.ComponentType | undefined> = {
     history: Icons.Git,
     projects: Icons.Folder,
     remote: Icons.Agent,
-    cloud: Icons.Agent,
     editor: Icons.Editor,
     agent: Icons.Agent,
     terminal: Icons.Terminal,
@@ -923,7 +921,6 @@ export const Layout: React.FC<LayoutProps> = ({
         saveItem('historyPanelVisible', visibility.history);
         saveItem('projectsPanelVisible', visibility.projects);
         saveItem('remotePanelVisible', visibility.remote);
-        saveItem('cloudPanelVisible', visibility.cloud);
         saveItem('editorPanelVisible', visibility.editor);
         saveItem('agentPanelVisible', visibility.agent);
         saveItem('terminalPanelVisible', visibility.terminal);

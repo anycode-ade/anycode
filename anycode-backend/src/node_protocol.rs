@@ -77,7 +77,7 @@ pub struct NodeAgentSummary {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CloudServerView {
+pub struct RemoteServerView {
     pub id: String,
     pub name: String,
     pub url: String,

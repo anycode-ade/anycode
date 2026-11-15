@@ -21,7 +21,7 @@ use crate::acp_registry::AcpRegistryAgentEntry;
 use crate::app_state::AppState;
 use crate::handlers::acp_handler::{AcpAgentsConfigFile, agents_config_path};
 use crate::node_protocol::{
-    CloudServerView, NodeAgentSummary, NodeFrame, NodeServerInfo, SavedServerConfig,
+    RemoteServerView, NodeAgentSummary, NodeFrame, NodeServerInfo, SavedServerConfig,
     ServerConnectionStatus,
 };
 use crate::node_server::{
@@ -106,10 +106,10 @@ impl ServerHub {
         Ok(())
     }
 
-    pub async fn list_servers(&self, state: &AppState) -> Vec<CloudServerView> {
+    pub async fn list_servers(&self, state: &AppState) -> Vec<RemoteServerView> {
         let local_projects = state.workspace.lock().await.projects();
         let local_agents = collect_agent_summaries(state).await;
-        let local_view = CloudServerView {
+        let local_view = RemoteServerView {
             id: "local".to_string(),
             name: state.server_name.clone(),
             url: "local".to_string(),
@@ -125,9 +125,9 @@ impl ServerHub {
 
         let mut list = vec![local_view];
         let guard = self.remotes.lock().await;
-        let mut remote_views: Vec<CloudServerView> = guard
+        let mut remote_views: Vec<RemoteServerView> = guard
             .values()
-            .map(|r| CloudServerView {
+            .map(|r| RemoteServerView {
                 id: r.config.id.clone(),
                 name: r.config.name.clone(),
                 url: r.config.url.clone(),
@@ -213,7 +213,7 @@ impl ServerHub {
         name: String,
         url: String,
         token: Option<String>,
-    ) -> Result<CloudServerView> {
+    ) -> Result<RemoteServerView> {
         let normalized_url = url.trim().trim_end_matches('/').to_string();
         if normalized_url.is_empty() {
             anyhow::bail!("Server URL cannot be empty");

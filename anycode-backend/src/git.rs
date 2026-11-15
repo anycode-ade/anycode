@@ -2195,7 +2195,7 @@ const MAX_DIRTY_SUMMARY_ITEMS: usize = 100;
 const MAX_KNOWN_BASES: usize = 200;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CloudSyncMetadata {
+pub struct RemoteSyncMetadata {
     pub base_sha: String,
     #[serde(default)]
     pub branch: Option<String>,
@@ -2259,7 +2259,7 @@ pub struct RemoteGitStateInfo {
     #[serde(default)]
     pub commits_summary: Vec<String>,
     #[serde(default)]
-    pub sync_meta: Option<CloudSyncMetadata>,
+    pub sync_meta: Option<RemoteSyncMetadata>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -2380,15 +2380,7 @@ fn validate_safe_rel_path(rel_str: &str) -> Result<PathBuf> {
 }
 
 fn sync_metadata_path(git_dir: &Path) -> PathBuf {
-    let modern = git_dir.join("anycode-remote-sync.json");
-    if modern.exists() {
-        return modern;
-    }
-    let legacy = git_dir.join("anycode-cloud-sync.json");
-    if legacy.exists() {
-        return legacy;
-    }
-    modern
+    git_dir.join("anycode-remote-sync.json")
 }
 
 fn resolve_git_dir(repo_dir: &Path) -> Result<PathBuf> {
@@ -2401,14 +2393,14 @@ fn resolve_git_dir(repo_dir: &Path) -> Result<PathBuf> {
     }
 }
 
-fn read_sync_metadata(repo_dir: &Path) -> Option<CloudSyncMetadata> {
+fn read_sync_metadata(repo_dir: &Path) -> Option<RemoteSyncMetadata> {
     let git_dir = resolve_git_dir(repo_dir).ok()?;
     let path = sync_metadata_path(&git_dir);
     let raw = std::fs::read_to_string(path).ok()?;
     serde_json::from_str(&raw).ok()
 }
 
-fn write_sync_metadata(repo_dir: &Path, meta: &CloudSyncMetadata) -> Result<()> {
+fn write_sync_metadata(repo_dir: &Path, meta: &RemoteSyncMetadata) -> Result<()> {
     let git_dir = resolve_git_dir(repo_dir)?;
     let path = sync_metadata_path(&git_dir);
     let encoded = serde_json::to_string_pretty(meta)?;
@@ -2746,7 +2738,7 @@ pub fn apply_git_sync_from_bundle_file(
         crate::node_server::unpack_project_archive(overlay_b64, target_path)?;
     }
 
-    let meta = CloudSyncMetadata {
+    let meta = RemoteSyncMetadata {
         base_sha: payload.head_sha.clone(),
         branch: payload.branch.clone(),
         source_root: payload.source_root.clone(),
@@ -3310,7 +3302,7 @@ pub fn create_git_worktree(
         }
     }
 
-    let meta = CloudSyncMetadata {
+    let meta = RemoteSyncMetadata {
         base_sha: head_sha,
         branch: Some(branch.clone()),
         source_root: parent_meta.as_ref().and_then(|m| m.source_root.clone()),
